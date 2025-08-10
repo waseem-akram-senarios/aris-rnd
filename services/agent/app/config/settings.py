@@ -18,6 +18,7 @@ class Settings:
     USER_POOL_ID: Optional[str] = None
     USER_POOL_CLIENT_ID: Optional[str] = None
     REGION: Optional[str] = None
+    BEDROCK_REGION: Optional[str] = None
 
     # ADOSEA Core integration
     ADOSEA_BASE_URL: Optional[str] = None
@@ -45,6 +46,7 @@ def load_settings() -> Settings:
         USER_POOL_ID=os.environ.get("USER_POOL_ID"),
         USER_POOL_CLIENT_ID=os.environ.get("USER_POOL_CLIENT_ID"),
         REGION=os.environ.get("REGION"),
+        BEDROCK_REGION=os.environ.get("BEDROCK_REGION") or os.environ.get("REGION"),
         ADOSEA_BASE_URL=os.environ.get("ADOSEA_BASE_URL"),
         ADOSEA_API_KEY=os.environ.get("ADOSEA_API_KEY"),
     )
