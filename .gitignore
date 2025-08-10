@@ -48,3 +48,15 @@ Thumbs.db
 *.mov
 *.wmv
 
+# Memory bank
+memory-bank/
+__pycache__/
+*.pyc
+.venv/
+.env
+dist/
+build/
+*.egg-info/
+/.pytest_cache/
+/.mypy_cache/
+.DS_Store

@@ -1,0 +1,26 @@
+services:
+  aris-agent:
+    build:
+      context: ../services/agent
+      dockerfile: Dockerfile
+    image: intelycx-aris-agent:dev
+    container_name: aris-agent
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../config/.env
+    restart: unless-stopped
+    networks:
+      - intelycx_net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  intelycx_net:
+    external: true
+    name: intelycx_default
+
+
