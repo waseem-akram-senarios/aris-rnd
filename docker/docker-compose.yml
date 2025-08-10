@@ -6,9 +6,11 @@ services:
     image: intelycx-aris-agent:dev
     container_name: aris-agent
     ports:
-      - "8080:8080"
+      - "4444:443"
     env_file:
       - ../config/.env
+    volumes:
+      - ../services/agent/app:/app/app
     restart: unless-stopped
     networks:
       - intelycx_net
