@@ -72,6 +72,12 @@ class WebSocketHandler:
                 if msg_text is None:
                     msg_text = ""
 
+                # Emit early chain-of-thought style update for better UX
+                await ws.send_json({
+                    "message": "Thinking...",
+                    "type": "chain_of_thought",
+                })
+
                 # Streaming response in small chunks similar to old agent (skip empty first chunk)
                 text = (await agent.process_message(msg_text)).text
                 words = text.split(" ")
