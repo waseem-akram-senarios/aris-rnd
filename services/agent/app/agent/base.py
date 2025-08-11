@@ -18,4 +18,12 @@ class BaseAgent:
         # Default: ignore
         return
 
+    def get_recent_messages(self) -> list[Dict[str, Any]]:
+        """Return a small window of recent conversation messages for guardrail context.
+
+        Default implementation returns empty. Agents that keep in-session memory
+        should override to provide recent messages in Bedrock-friendly format.
+        """
+        return []
+
 

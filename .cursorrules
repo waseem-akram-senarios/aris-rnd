@@ -1,0 +1,20 @@
+# Project Intelligence (.cursorrules)
+
+## Patterns
+- WebSocket at `/ws`; expects `Authorization` header (Bearer).
+- Messages support `{ "message": string }` or `{ "action": "agent", "question": string }`.
+- Guardrails toggled by `rag_params.guardrails` (bool). Default currently off.
+- Model selection: `payload.model_id` or `rag_params.model_params.model_id` → forwarded to agent runtime.
+- On guardrail failure, default allow to avoid UX regressions.
+
+## Developer workflow
+- Local: use `docker/docker-compose.yml` with `config/.env`.
+- Health check: `GET /health`.
+- When editing agent code, prefer readable names and guard clauses; keep streaming behavior intact.
+
+## Infra notes
+- `infra` uses AWS CDK v2; default app context `env=dev`.
+- `AgentStack` is a placeholder to be expanded with ECS/ALB and secrets.
+
+## Documentation
+- Memory Bank maintained in `memory-bank/` with brief, high-signal content.

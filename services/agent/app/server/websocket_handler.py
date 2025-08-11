@@ -8,6 +8,7 @@ import contextlib
 from ..agent.factory import AgentFactory
 from ..config.settings import Settings
 from ..security.cognito import CognitoAuthService
+from ..security.guardrails import GuardrailService, get_guardrail_message
 
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,7 @@ class WebSocketHandler:
         self.settings = settings
         self.auth_service = CognitoAuthService(settings)
         self.agent_factory = AgentFactory(settings)
+        self.guardrails = GuardrailService(settings)
 
     async def handle_connection(self, request: web.Request) -> web.StreamResponse:
         try:
@@ -98,6 +100,30 @@ class WebSocketHandler:
                     }
                     await ws.send_json(outgoing_think)
                     logger.info("WSS OUT: %s", json.dumps(outgoing_think))
+
+                    # Guardrails: optionally block irrelevant queries when requested
+                    try:
+                        rag_params: Dict[str, Any] = payload.get("rag_params", {}) or {}
+                        guardrails_enabled = bool(rag_params.get("guardrails", False))
+                    except Exception:
+                        guardrails_enabled = False
+
+                    if guardrails_enabled:
+                        try:
+                            recent_history = []
+                            try:
+                                recent_history = getattr(agent, "get_recent_messages", lambda: [])()
+                            except Exception:
+                                recent_history = []
+                            is_rel = self.guardrails.is_relevant(msg_text or "", recent_history)
+                            if not is_rel:
+                                gr_msg = get_guardrail_message()
+                                final_msg = {"message": gr_msg["text"], "data": gr_msg.get("data", {}), "type": "message", "action": "close"}
+                                await ws.send_json(final_msg)
+                                logger.info("WSS OUT: %s", _truncate(json.dumps(final_msg)))
+                                continue
+                        except Exception as exc:
+                            logger.exception("Guardrail check failed (allow by default): %s", exc)
 
                     # Streaming response in small chunks similar to old agent (skip empty first chunk)
                     text = (await agent.process_message(msg_text)).text

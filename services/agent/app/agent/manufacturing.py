@@ -46,4 +46,8 @@ class ManufacturingAgent(BaseAgent):
             }
         }
 
+    def get_recent_messages(self) -> list[dict]:
+        # Provide last few turns for guardrail context
+        return self._messages[-5:]
+
 
