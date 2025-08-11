@@ -87,9 +87,68 @@ class WebSocketHandler:
                     if msg_text is None:
                         msg_text = ""
 
-                    model_id = payload.get("model_id") or payload.get("rag_params", {}).get("model_params", {}).get("model_id")
+                    # Extract model/config knobs
+                    rag_params: Dict[str, Any] = {}
                     try:
-                        agent.set_runtime_options({"model_id": model_id})
+                        rag_params = payload.get("rag_params", {}) or {}
+                    except Exception:
+                        rag_params = {}
+
+                    model_params = {}
+                    try:
+                        model_params = rag_params.get("model_params", {}) or {}
+                    except Exception:
+                        model_params = {}
+
+                    model_id = payload.get("model_id") or model_params.get("model_id")
+                    temperature = None
+                    try:
+                        temperature = model_params.get("temperature")
+                    except Exception:
+                        temperature = None
+
+                    # Optional search toggles from rag_params or top-level payload
+                    def _get_bool(path_default_false: Any) -> bool:
+                        try:
+                            return bool(path_default_false)
+                        except Exception:
+                            return False
+
+                    deep_search = False
+                    web_search = False
+                    try:
+                        search_block = rag_params.get("search", {}) or {}
+                        deep_search = _get_bool(search_block.get("deep_search", rag_params.get("deep_search", payload.get("deep_search"))))
+                        web_search = _get_bool(search_block.get("web_search", rag_params.get("web_search", payload.get("web_search"))))
+                    except Exception:
+                        deep_search = False
+                        web_search = False
+
+                    # Guardrails flag (computed here for logging as well)
+                    try:
+                        guardrails_enabled = bool(rag_params.get("guardrails", False))
+                    except Exception:
+                        guardrails_enabled = False
+
+                    # Log planning configuration snapshot before any planning/guardrails
+                    try:
+                        planning_config = {
+                            "agent_type": self.settings.AGENT_TYPE,
+                            "region": self.settings.REGION,
+                            "bedrock_region": self.settings.BEDROCK_REGION,
+                            "model_id": model_id,
+                            "temperature": temperature,
+                            "guardrails": guardrails_enabled,
+                            "deep_search": deep_search,
+                            "web_search": web_search,
+                        }
+                        logger.info("Planning config: %s", json.dumps(planning_config))
+                    except Exception:
+                        logger.info("Planning config: <unserializable>")
+
+                    # Forward runtime options to agent
+                    try:
+                        agent.set_runtime_options({"model_id": model_id, "temperature": temperature})
                     except Exception:
                         pass
 
@@ -101,12 +160,7 @@ class WebSocketHandler:
                     await ws.send_json(outgoing_think)
                     logger.info("WSS OUT: %s", json.dumps(outgoing_think))
 
-                    # Guardrails: optionally block irrelevant queries when requested
-                    try:
-                        rag_params: Dict[str, Any] = payload.get("rag_params", {}) or {}
-                        guardrails_enabled = bool(rag_params.get("guardrails", False))
-                    except Exception:
-                        guardrails_enabled = False
+                    # Guardrails: optionally block irrelevant queries when requested (flag already computed)
 
                     if guardrails_enabled:
                         try:

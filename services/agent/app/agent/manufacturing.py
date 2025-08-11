@@ -12,12 +12,16 @@ class ManufacturingAgent(BaseAgent):
         self._bedrock = BedrockClient(region=self._settings.BEDROCK_REGION or "us-east-2")
         self._logger = logging.getLogger("agent.manufacturing")
         self._model_id_override: Optional[str] = None
+        self._temperature_override: Optional[float] = None
         self._messages: list[dict] = []  # in-connection conversation memory
 
     async def process_message(self, message: str) -> AgentResponse:
         # Minimal LLM call to Bedrock (no tools yet)
         model_id = self._model_id_override or "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-        self._logger.info(f"Starting ManufacturingAgent with model={model_id} region={self._settings.BEDROCK_REGION}")        
+        temperature = self._temperature_override if self._temperature_override is not None else 0.1
+        self._logger.info(
+            f"Starting ManufacturingAgent with model={model_id} region={self._settings.BEDROCK_REGION} temp={temperature}"
+        )        
 
         # Append user message to in-session memory
         self._messages.append({"role": "user", "content": [{"text": message or ""}]})
@@ -26,7 +30,7 @@ class ManufacturingAgent(BaseAgent):
             model_id=model_id,
             messages=self._messages[-20:],
             system=[{"text": "You are ARIS, a helpful manufacturing assistant. Maintain context across the conversation and remember user-provided details such as their name during this session."}],
-            temperature=0.1,
+            temperature=temperature,
         )
 
         # Append assistant reply to memory
@@ -35,6 +39,11 @@ class ManufacturingAgent(BaseAgent):
 
     def set_runtime_options(self, options: Dict[str, Any]) -> None:
         self._model_id_override = options.get("model_id")
+        temp = options.get("temperature")
+        try:
+            self._temperature_override = float(temp) if temp is not None else None
+        except Exception:
+            self._temperature_override = None
 
     async def process_document(self, bucket: str, key: str) -> Dict[str, Any]:
         doc = get_document_content_from_s3(bucket, key)
