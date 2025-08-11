@@ -13,4 +13,9 @@ class BaseAgent:
     async def process_message(self, message: str) -> AgentResponse:  # pragma: no cover - to be implemented by subclasses
         raise NotImplementedError
 
+    def set_runtime_options(self, options: Dict[str, Any]) -> None:
+        """Pass per-request options such as model_id, temperature, etc."""
+        # Default: ignore
+        return
+
 

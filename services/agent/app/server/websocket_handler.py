@@ -65,12 +65,18 @@ class WebSocketHandler:
                         await ws.send_json({"type": "error", "message": f"doc_processing_failed: {exc}"})
 
                 # Accept both {"message": ...} and old format {"action":"agent", "question": ...};
-                # pass model_id through memory (simple approach for now)
+                # pass model_id to agent runtime options
                 msg_text = payload.get("message")
                 if msg_text is None and payload.get("action") == "agent":
                     msg_text = payload.get("question", "")
                 if msg_text is None:
                     msg_text = ""
+
+                model_id = payload.get("model_id") or payload.get("rag_params", {}).get("model_params", {}).get("model_id")
+                try:
+                    agent.set_runtime_options({"model_id": model_id})
+                except Exception:
+                    pass
 
                 # Emit early chain-of-thought style update for better UX
                 await ws.send_json({

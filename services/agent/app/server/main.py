@@ -37,6 +37,7 @@ def main() -> None:
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "443"))
+    logging.getLogger(__name__).info(f"Initializing ARIS agent service host={host} port={port}")
 
     # Optional TLS similar to old agent
     cert_path = Path(os.environ.get("TLS_CERT_PATH", "/certs/server.crt"))
