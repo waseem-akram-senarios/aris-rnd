@@ -17,8 +17,7 @@ class ManufacturingAgent(BaseAgent):
     async def process_message(self, message: str) -> AgentResponse:
         # Minimal LLM call to Bedrock (no tools yet)
         model_id = self._model_id_override or "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-        self._logger.info(f"Starting ManufacturingAgent with model={model_id} region={self._settings.BEDROCK_REGION}")
-        self._logger.info(f"User message: {message}")
+        self._logger.info(f"Starting ManufacturingAgent with model={model_id} region={self._settings.BEDROCK_REGION}")        
 
         # Append user message to in-session memory
         self._messages.append({"role": "user", "content": [{"text": message or ""}]})
@@ -31,8 +30,7 @@ class ManufacturingAgent(BaseAgent):
         )
 
         # Append assistant reply to memory
-        self._messages.append({"role": "assistant", "content": [{"text": text or ""}]})
-        self._logger.info(f"Agent response (truncated 500 chars): {text[:500] if text else ''}")
+        self._messages.append({"role": "assistant", "content": [{"text": text or ""}]})        
         return AgentResponse(is_final=True, text=text or "", data={})
 
     def set_runtime_options(self, options: Dict[str, Any]) -> None:
