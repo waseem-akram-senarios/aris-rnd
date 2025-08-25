@@ -67,18 +67,6 @@ class WebSocketHandler:
                     except Exception:
                         logger.info("WSS IN: <unserializable payload>")
 
-                    # Optional document handling: { doc_bucket, doc_key }
-                    if payload.get("doc_bucket") and payload.get("doc_key"):
-                        try:
-                            doc_resp = await agent.process_document(payload["doc_bucket"], payload["doc_key"])  # type: ignore[attr-defined]
-                            outgoing_doc = {"type": "doc", "data": {"document": {"name": doc_resp["document"]["name"], "format": doc_resp["document"]["format"]}}}
-                            await ws.send_json(outgoing_doc)
-                            logger.info("WSS OUT: %s", _truncate(json.dumps(outgoing_doc)))
-                        except Exception as exc:
-                            err = {"type": "error", "message": f"doc_processing_failed: {exc}"}
-                            await ws.send_json(err)
-                            logger.info("WSS OUT: %s", _truncate(json.dumps(err)))
-
                     # Accept both {"message": ...} and old format {"action":"agent", "question": ...};
                     # pass model_id to agent runtime options
                     msg_text = payload.get("message")
@@ -86,6 +74,35 @@ class WebSocketHandler:
                         msg_text = payload.get("question", "")
                     if msg_text is None:
                         msg_text = ""
+
+                    # Optional document handling: { doc_bucket, doc_key }
+                    if payload.get("doc_bucket") and payload.get("doc_key"):
+                        try:
+                            # Pass the message to process_document so it can inject file content
+                            doc_resp = await agent.process_document(
+                                payload["doc_bucket"], 
+                                payload["doc_key"],
+                                msg_text  # Pass the message for context injection
+                            )  # type: ignore[attr-defined]
+                            
+                            # Send document processing notification
+                            outgoing_doc = {
+                                "type": "doc", 
+                                "data": {
+                                    "document": {
+                                        "name": doc_resp["document"]["name"], 
+                                        "format": doc_resp["document"].get("format", "unknown"),
+                                        "type": doc_resp["document"].get("type", "text"),
+                                        "metadata": doc_resp["document"].get("metadata", {})
+                                    }
+                                }
+                            }
+                            await ws.send_json(outgoing_doc)
+                            logger.info("WSS OUT: %s", _truncate(json.dumps(outgoing_doc)))
+                        except Exception as exc:
+                            err = {"type": "error", "message": f"doc_processing_failed: {exc}"}
+                            await ws.send_json(err)
+                            logger.info("WSS OUT: %s", _truncate(json.dumps(err)))
 
                     # Extract model/config knobs
                     rag_params: Dict[str, Any] = {}
