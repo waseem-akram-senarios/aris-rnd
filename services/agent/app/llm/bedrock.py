@@ -38,7 +38,8 @@ class BedrockClient:
             return "\n".join([c.get("text", "") for c in message.get("content", [])])
         
         # Tool-enabled flow
-        self._logger.info(f"Bedrock.converse model_id={model_id} temp={temperature} msgs={len(messages)} (tools mode)")
+        self._logger.info(f"Bedrock.converse model_id={model_id} temp={temperature} msgs={len(messages)} (tools mode) - {len(tools)} tools available")
+        self._logger.info(f"Available tools: {[tool['toolSpec']['name'] for tool in tools]}")
         
         recursion_count = 0
         current_messages = messages.copy()
@@ -76,11 +77,15 @@ class BedrockClient:
                         tool_input = tool_use["input"]
                         tool_id = tool_use["toolUseId"]
                         
-                        self._logger.info(f"Executing tool: {tool_name}")
+                        self._logger.info(f"🔧 TOOL CALL: {tool_name}")
+                        self._logger.info(f"📥 TOOL INPUT: {json.dumps(tool_input, indent=2)}")
                         
                         try:
                             # Execute the tool
                             result = await tool_executor.execute_tool(tool_name, tool_input)
+                            
+                            self._logger.info(f"✅ TOOL SUCCESS: {tool_name}")
+                            self._logger.info(f"📤 TOOL OUTPUT: {json.dumps(result, indent=2)}")
                             
                             tool_results.append({
                                 "toolResult": {
@@ -89,7 +94,7 @@ class BedrockClient:
                                 }
                             })
                         except Exception as e:
-                            self._logger.error(f"Tool execution failed: {str(e)}")
+                            self._logger.error(f"❌ TOOL ERROR: {tool_name} - {str(e)}")
                             tool_results.append({
                                 "toolResult": {
                                     "toolUseId": tool_id,

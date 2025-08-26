@@ -1,7 +1,8 @@
 """MCP (Model Context Protocol) integration module."""
 
-from .tools import IntelycxCoreTools
+from .server_manager import MCPServerManager, MCPServerConfig
 
 __all__ = [
-    'IntelycxCoreTools',
+    'MCPServerManager',
+    'MCPServerConfig',
 ]

@@ -14,6 +14,56 @@ services:
     restart: unless-stopped
     networks:
       - intelycx_net
+      - mcp_internal
+    depends_on:
+      - aris-mcp-intelycx-core
+      - aris-mcp-intelycx-email
+    environment:
+      - INTELYCX_CORE_MCP_URL=http://aris-mcp-intelycx-core:8080
+      - INTELYCX_EMAIL_MCP_URL=http://aris-mcp-intelycx-email:8081
+      - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  aris-mcp-intelycx-core:
+    build:
+      context: ../services/mcp-servers/intelycx-core
+      dockerfile: Dockerfile
+    image: aris-mcp-intelycx-core:dev
+    container_name: aris-mcp-intelycx-core
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../config/.env
+    environment:
+      - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+    restart: unless-stopped
+    networks:
+      - mcp_internal
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  aris-mcp-intelycx-email:
+    build:
+      context: ../services/mcp-servers/intelycx-email
+      dockerfile: Dockerfile
+    image: aris-mcp-intelycx-email:dev
+    container_name: aris-mcp-intelycx-email
+    ports:
+      - "8081:8081"
+    env_file:
+      - ../config/.env
+    environment:
+      - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+    restart: unless-stopped
+    networks:
+      - mcp_internal
     logging:
       driver: "json-file"
       options:
@@ -24,5 +74,8 @@ networks:
   intelycx_net:
     external: true
     name: intelycx_default
+  mcp_internal:
+    driver: bridge
+    internal: false  # Allow external access for development
 
 
