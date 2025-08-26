@@ -4,6 +4,8 @@ from pathlib import Path
 from ..utils.documents import get_document_content_from_s3
 from ..utils.file_handlers import FileProcessor
 from ..llm.bedrock import BedrockClient
+from ..clients.intelycx_core_client import IntelycxCoreClient
+from ..mcp.tools import IntelycxCoreTools
 from ..config.settings import load_settings
 import logging
 
@@ -18,6 +20,13 @@ class ManufacturingAgent(BaseAgent):
         self._messages: list[dict] = []  # in-connection conversation memory
         self._file_processor = FileProcessor(aws_region=self._settings.BEDROCK_REGION or "us-east-2")
         self._pending_file_content: Optional[str] = None  # Store file content to inject
+        
+        # Initialize Intelycx Core client and MCP tools
+        self._intelycx_client = IntelycxCoreClient(
+            base_url=self._settings.INTEELYCX_CORE_BASE_URL or "https://api.intelycx.com",
+            api_key=self._settings.INTEELYCX_CORE_API_KEY
+        )
+        self._mcp_tools = IntelycxCoreTools(self._intelycx_client)
 
     async def process_message(self, message: str) -> AgentResponse:
         # Minimal LLM call to Bedrock (no tools yet)
@@ -38,10 +47,16 @@ class ManufacturingAgent(BaseAgent):
         # Append user message to in-session memory
         self._messages.append({"role": "user", "content": [{"text": enhanced_message}]})
 
-        text = self._bedrock.converse(
+        # Get available tools for the LLM
+        tools = self._mcp_tools.get_tool_definitions()
+        
+        # Use the enhanced converse method with tools
+        text = await self._bedrock.converse(
             model_id=model_id,
             messages=self._messages[-20:],
-            system=[{"text": "You are ARIS, a helpful manufacturing assistant. Maintain context across the conversation and remember user-provided details such as their name during this session. When documents are provided, analyze them and answer questions based on their content."}],
+            tools=tools,
+            tool_executor=self._mcp_tools,
+            system=[{"text": "You are ARIS, a helpful manufacturing assistant with access to production data tools. You can query machine information, machine group details, and production summaries. Maintain context across the conversation and remember user-provided details such as their name during this session. When documents are provided, analyze them and answer questions based on their content. Use the available tools when users ask about machines, production lines, or manufacturing metrics."}],
             temperature=temperature,
         )
 

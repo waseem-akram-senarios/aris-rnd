@@ -25,4 +25,4 @@ WebSocket: `ws://localhost:8080/ws` with `Authorization: <token>` header.
 ## Next steps
 - Implement Cognito JWT verification and agent OOP framework per design
 - Add CDK resources (ECS + ALB, Lambda + Step Functions)
-- Implement ADOSEA REST client wrappers
+- Implement Intelycx Core API client wrappers

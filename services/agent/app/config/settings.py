@@ -20,9 +20,9 @@ class Settings:
     REGION: Optional[str] = None
     BEDROCK_REGION: Optional[str] = None
 
-    # ADOSEA Core integration
-    ADOSEA_BASE_URL: Optional[str] = None
-    ADOSEA_API_KEY: Optional[str] = None
+    # Intelycx Core API integration
+    INTEELYCX_CORE_BASE_URL: Optional[str] = None
+    INTEELYCX_CORE_API_KEY: Optional[str] = None
 
 
 def load_settings() -> Settings:
@@ -47,8 +47,8 @@ def load_settings() -> Settings:
         USER_POOL_CLIENT_ID=os.environ.get("USER_POOL_CLIENT_ID"),
         REGION=os.environ.get("REGION"),
         BEDROCK_REGION=os.environ.get("BEDROCK_REGION") or os.environ.get("REGION"),
-        ADOSEA_BASE_URL=os.environ.get("ADOSEA_BASE_URL"),
-        ADOSEA_API_KEY=os.environ.get("ADOSEA_API_KEY"),
+        INTEELYCX_CORE_BASE_URL=os.environ.get("INTEELYCX_CORE_BASE_URL"),
+        INTEELYCX_CORE_API_KEY=os.environ.get("INTEELYCX_CORE_API_KEY"),
     )
 
 
