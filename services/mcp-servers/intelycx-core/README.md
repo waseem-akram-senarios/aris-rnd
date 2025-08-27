@@ -19,6 +19,8 @@ GET /health
 ```
 
 ### MCP Protocol
+
+#### Manufacturing Data Access
 ```
 POST /mcp
 Authorization: Bearer <api-key>
@@ -45,14 +47,36 @@ Authorization: Bearer <api-key>
 
 ## Available Tools
 
+### Authentication
+Authentication is handled automatically by the system using environment variables. No manual authentication tools are exposed to users.
+
+### Manufacturing Data
 1. **get_machine**: Get machine information by ID
 2. **get_machine_group**: Get machine group details by ID  
 3. **get_production_summary**: Get production metrics and summaries
 
+**Note**: Authentication is handled automatically by the system using environment credentials.
+
+## Authentication Flow
+
+1. **Automatic Authentication**: The AI Agent automatically authenticates using stored environment credentials
+2. **JWT Token Management**: JWT tokens are obtained and managed automatically by the system
+3. **Transparent Access**: Manufacturing data tools work seamlessly without manual authentication
+4. **Token Refresh**: Expired tokens are automatically renewed without user intervention
+5. **System Attribution**: All API calls are made on behalf of the configured system user
+
+### Benefits
+- **Seamless Experience**: No manual authentication required from users
+- **Automatic Token Management**: JWT tokens are handled transparently
+- **System-Level Security**: Credentials are stored securely as environment variables
+- **Reliable Access**: Automatic token refresh ensures continuous data availability
+
 ## Environment Variables
 
 - `INTEELYCX_CORE_BASE_URL`: Base URL for Intelycx Core API (default: https://api.intelycx.com)
-- `INTEELYCX_CORE_API_KEY`: API key for Intelycx Core API
+- `INTEELYCX_CORE_API_KEY`: API key for Intelycx Core API (legacy, may not be needed)
+- `INTELYCX_CORE_USERNAME`: Username for Intelycx Core API authentication (required)
+- `INTELYCX_CORE_PASSWORD`: Password for Intelycx Core API authentication (required)
 - `MCP_API_KEY`: API key for MCP server authentication (default: mcp-dev-key-12345)
 
 ## Development

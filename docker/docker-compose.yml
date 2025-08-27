@@ -42,6 +42,7 @@ services:
       - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
     restart: unless-stopped
     networks:
+      - intelycx_net
       - mcp_internal
     logging:
       driver: "json-file"

@@ -52,8 +52,8 @@ class IntelycxCoreMCPServer:
     
     def __init__(self):
         self.client = IntelycxCoreClient(
-            base_url=os.environ.get("INTEELYCX_CORE_BASE_URL", "https://api.intelycx.com"),
-            api_key=os.environ.get("INTEELYCX_CORE_API_KEY")
+            base_url=os.environ.get("INTELYCX_CORE_BASE_URL", "https://api.intelycx.com"),
+            api_key=os.environ.get("INTELYCX_CORE_API_KEY")
         )
         self.logger = logger
         
@@ -61,36 +61,63 @@ class IntelycxCoreMCPServer:
         self.initialized = False
         self.tools = [
             {
+                "name": "intelycx_login",
+                "description": "Authenticate with Intelycx Core API to obtain a JWT token for accessing manufacturing data. This must be called first before using any other Intelycx tools.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "username": {
+                            "type": "string",
+                            "description": "Intelycx Core API username"
+                        },
+                        "password": {
+                            "type": "string",
+                            "description": "Intelycx Core API password"
+                        }
+                    },
+                    "required": ["username", "password"]
+                }
+            },
+
+            {
                 "name": "get_machine",
-                "description": "Get detailed information about a specific machine including status, location, maintenance schedule, and performance metrics.",
+                "description": "Get detailed information about a specific machine including status, location, maintenance schedule, and performance metrics. Requires authentication via intelycx_login first.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "machine_id": {
                             "type": "string",
                             "description": "The unique identifier of the machine"
+                        },
+                        "jwt_token": {
+                            "type": "string",
+                            "description": "JWT token obtained from intelycx_login tool"
                         }
                     },
-                    "required": ["machine_id"]
+                    "required": ["machine_id", "jwt_token"]
                 }
             },
             {
                 "name": "get_machine_group",
-                "description": "Get comprehensive information about a machine group including all machines, performance metrics, shift schedules, and capacity information.",
+                "description": "Get comprehensive information about a machine group including all machines, performance metrics, shift schedules, and capacity information. Requires authentication via intelycx_login first.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "group_id": {
                             "type": "string",
                             "description": "The unique identifier of the machine group"
+                        },
+                        "jwt_token": {
+                            "type": "string",
+                            "description": "JWT token obtained from intelycx_login tool"
                         }
                     },
-                    "required": ["group_id"]
+                    "required": ["group_id", "jwt_token"]
                 }
             },
             {
                 "name": "get_production_summary",
-                "description": "Get production summary data and metrics for analysis and reporting.",
+                "description": "Get production summary data and metrics for analysis and reporting. Requires authentication via intelycx_login first.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -112,9 +139,13 @@ class IntelycxCoreMCPServer:
                                     "description": "List of machine IDs to filter by"
                                 }
                             }
+                        },
+                        "jwt_token": {
+                            "type": "string",
+                            "description": "JWT token obtained from intelycx_login tool"
                         }
                     },
-                    "required": ["params"]
+                    "required": ["params", "jwt_token"]
                 }
             }
         ]
@@ -193,12 +224,28 @@ class IntelycxCoreMCPServer:
         self.logger.info(f"📥 TOOL INPUT: {json.dumps(arguments, indent=2)}")
         
         try:
-            if tool_name == "get_machine":
+            if tool_name == "intelycx_login":
+                username = arguments.get("username")
+                password = arguments.get("password")
+                if not username or not password:
+                    raise ValueError("username and password are required")
+                
+                result = await self.client.login(username, password)
+                self.logger.info(f"✅ TOOL SUCCESS: {tool_name}")
+                # Don't log the full result as it contains sensitive token info
+                self.logger.info(f"📤 TOOL OUTPUT: Login {'successful' if result.get('success') else 'failed'}")
+                
+                return MCPResponse(result=result, id=request.id)
+                
+            elif tool_name == "get_machine":
                 machine_id = arguments.get("machine_id")
+                jwt_token = arguments.get("jwt_token")
                 if not machine_id:
                     raise ValueError("machine_id is required")
+                if not jwt_token:
+                    raise ValueError("jwt_token is required - please authenticate first using intelycx_login")
                 
-                result = await self.client.get_machine(machine_id)
+                result = await self.client.get_machine(jwt_token, machine_id)
                 self.logger.info(f"✅ TOOL SUCCESS: {tool_name}")
                 self.logger.info(f"📤 TOOL OUTPUT: {json.dumps(result, indent=2)}")
                 
@@ -206,10 +253,13 @@ class IntelycxCoreMCPServer:
                 
             elif tool_name == "get_machine_group":
                 group_id = arguments.get("group_id")
+                jwt_token = arguments.get("jwt_token")
                 if not group_id:
                     raise ValueError("group_id is required")
+                if not jwt_token:
+                    raise ValueError("jwt_token is required - please authenticate first using intelycx_login")
                 
-                result = await self.client.get_machine_group(group_id)
+                result = await self.client.get_machine_group(jwt_token, group_id)
                 self.logger.info(f"✅ TOOL SUCCESS: {tool_name}")
                 self.logger.info(f"📤 TOOL OUTPUT: {json.dumps(result, indent=2)}")
                 
@@ -217,7 +267,11 @@ class IntelycxCoreMCPServer:
                 
             elif tool_name == "get_production_summary":
                 params_arg = arguments.get("params", {})
-                result = await self.client.get_production_summary(params_arg)
+                jwt_token = arguments.get("jwt_token")
+                if not jwt_token:
+                    raise ValueError("jwt_token is required - please authenticate first using intelycx_login")
+                
+                result = await self.client.get_production_summary(jwt_token, params_arg)
                 self.logger.info(f"✅ TOOL SUCCESS: {tool_name}")
                 self.logger.info(f"📤 TOOL OUTPUT: {json.dumps(result, indent=2)}")
                 

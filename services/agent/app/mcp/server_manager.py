@@ -300,7 +300,7 @@ class MCPServerManager:
         """Determine which MCP server should handle a specific tool."""
         # Tool routing logic
         email_tools = ["send_email", "send_simple_email"]
-        core_tools = ["get_machine", "get_machine_group", "get_production_summary"]
+        core_tools = ["intelycx_login", "get_machine", "get_machine_group", "get_production_summary"]
         
         if tool_name in email_tools:
             return "intelycx-email"
