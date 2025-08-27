@@ -11,11 +11,13 @@
 - **Tool calling**: Dynamic system prompts based on tool availability, comprehensive logging
 - **Streaming UX**: Splits agent final text by words and emits in small chunks, then sends a final message
 - **Chain of thought**: Real-time progress updates via WebSocket during authentication, tool loading, and execution
+- **Session memory**: Variable storage system with metadata tracking for complex multi-step workflows
 
 ## Key flows
 - **Auth on connect**: JWT pulled from `Authorization` header or query; invalid → `HTTPUnauthorized`
 - **Message handling**: accepts `{ "message": string }` or legacy `{ "action": "agent", "question": string }`
 - **Chain of thought**: Initial "Thinking..." message, then progress updates during authentication, tool loading, and execution
+- **Memory management**: Tools with `result_variable_name` automatically store results; memory tools manage session variables
 - **Document processing**: `{ doc_bucket, doc_key }` triggers S3 download, content extraction, and injection into conversation
 - **MCP tool calling**: Agent routes tool calls to appropriate MCP servers, handles initialization and error cases
 - **Guardrails toggle**: `payload.rag_params.guardrails` (bool). When true and irrelevant, return `get_guardrail_message()` and skip processing
@@ -35,6 +37,14 @@
 - **Authentication**: Bearer token authentication with configurable API keys
 - **Error handling**: Graceful degradation when servers unavailable, honest limitation reporting
 - **JWT authentication**: AI Agent manages Intelycx Core credentials, automatic token refresh on expiration
+
+## Memory Management Patterns
+- **Session storage**: `_session_memory` dict stores variables with `_memory_metadata` for tracking
+- **Automatic storage**: Tools with `result_variable_name` parameter automatically store results
+- **Metadata tracking**: Creation time, tool source, data type, and size information for each variable
+- **Memory tools**: `list_variables`, `get_variable`, `clear_memory`, `get_memory_stats` for session management
+- **Tool executor integration**: Memory operations handled transparently during tool execution
+- **Error handling**: Only successful tool results are stored; errors are not cached
 
 ## Configuration
 - `.env` loaded best-effort via `Settings.load_settings()` with search order: `DOTENV_PATH` → `config/.env` → `.env`
