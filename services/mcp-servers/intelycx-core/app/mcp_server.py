@@ -147,6 +147,20 @@ class IntelycxCoreMCPServer:
                     },
                     "required": ["params", "jwt_token"]
                 }
+            },
+            {
+                "name": "get_fake_data",
+                "description": "Get comprehensive fake production data for testing and development purposes. Returns detailed manufacturing metrics, production lines, alerts, inventory, and energy consumption data. Requires authentication via intelycx_login first.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "jwt_token": {
+                            "type": "string",
+                            "description": "JWT token obtained from intelycx_login tool"
+                        }
+                    },
+                    "required": ["jwt_token"]
+                }
             }
         ]
     
@@ -274,6 +288,17 @@ class IntelycxCoreMCPServer:
                 result = await self.client.get_production_summary(jwt_token, params_arg)
                 self.logger.info(f"✅ TOOL SUCCESS: {tool_name}")
                 self.logger.info(f"📤 TOOL OUTPUT: {json.dumps(result, indent=2)}")
+                
+                return MCPResponse(result=result, id=request.id)
+                
+            elif tool_name == "get_fake_data":
+                jwt_token = arguments.get("jwt_token")
+                if not jwt_token:
+                    raise ValueError("jwt_token is required - please authenticate first using intelycx_login")
+                
+                result = await self.client.get_fake_data(jwt_token)
+                self.logger.info(f"✅ TOOL SUCCESS: {tool_name}")
+                self.logger.info(f"📤 TOOL OUTPUT: Generated fake production data with {len(result)} top-level keys")
                 
                 return MCPResponse(result=result, id=request.id)
                 

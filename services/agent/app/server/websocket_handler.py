@@ -35,6 +35,22 @@ class WebSocketHandler:
 
         agent = self.agent_factory.create()
         stop_event = asyncio.Event()
+        
+        # Set up progress callback for chain of thought messages
+        async def send_progress(message: str) -> None:
+            progress_msg = {
+                "message": message,
+                "type": "chain_of_thought",
+            }
+            try:
+                await ws.send_json(progress_msg)
+                logger.info("WSS OUT: %s", json.dumps(progress_msg))
+            except Exception as e:
+                logger.warning(f"Failed to send progress message: {e}")
+        
+        # Set the progress callback on the agent
+        if hasattr(agent, 'set_progress_callback'):
+            agent.set_progress_callback(send_progress)
 
         async def _ping_loop() -> None:
             try:

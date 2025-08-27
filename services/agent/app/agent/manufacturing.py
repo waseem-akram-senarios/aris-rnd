@@ -1,5 +1,5 @@
 from .base import BaseAgent, AgentResponse
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Callable, Awaitable
 from pathlib import Path
 from ..utils.documents import get_document_content_from_s3
 from ..utils.file_handlers import FileProcessor
@@ -47,6 +47,21 @@ class ManufacturingAgent(BaseAgent):
         
         self._mcp_manager = MCPServerManager(config_path=config_path)
         self._mcp_initialized = False
+        
+        # Progress callback for chain of thought messages
+        self._progress_callback: Optional[Callable[[str], Awaitable[None]]] = None
+
+    def set_progress_callback(self, callback: Optional[Callable[[str], Awaitable[None]]]) -> None:
+        """Set a callback function to send progress updates during processing."""
+        self._progress_callback = callback
+
+    async def _send_progress(self, message: str) -> None:
+        """Send a progress update if callback is available."""
+        if self._progress_callback:
+            try:
+                await self._progress_callback(message)
+            except Exception as e:
+                self._logger.warning(f"Failed to send progress update: {e}")
 
     async def process_message(self, message: str) -> AgentResponse:
         # Minimal LLM call to Bedrock (no tools yet)
@@ -69,6 +84,7 @@ class ManufacturingAgent(BaseAgent):
 
         # Start MCP servers if not already started
         if not self._mcp_initialized:
+            await self._send_progress("Initializing manufacturing systems...")
             self._logger.info("🚀 Starting MCP servers...")
             start_results = await self._mcp_manager.start_all_servers()
             self._logger.info(f"📊 MCP START RESULTS: {start_results}")
@@ -76,6 +92,7 @@ class ManufacturingAgent(BaseAgent):
             
             # Automatically authenticate with Intelycx Core if not already authenticated
             if not self._intelycx_jwt_token:
+                await self._send_progress("Authenticating with manufacturing systems...")
                 self._logger.info("🔑 Attempting automatic authentication with Intelycx Core...")
                 try:
                     # Get credentials from environment
@@ -90,15 +107,20 @@ class ManufacturingAgent(BaseAgent):
                         if auth_result.get("success"):
                             self._intelycx_jwt_token = auth_result.get("jwt_token")
                             self._intelycx_user = username
+                            await self._send_progress("Authentication successful. Ready to access manufacturing data...")
                             self._logger.info(f"✅ Automatic authentication successful for user: {username}")
                         else:
+                            await self._send_progress("Authentication failed. Limited functionality available...")
                             self._logger.warning(f"⚠️ Automatic authentication failed: {auth_result.get('error', 'Unknown error')}")
                     else:
+                        await self._send_progress("Authentication credentials not configured...")
                         self._logger.warning("⚠️ Missing INTELYCX_CORE_USERNAME or INTELYCX_CORE_PASSWORD environment variables")
                 except Exception as e:
+                    await self._send_progress("Authentication error occurred...")
                     self._logger.error(f"❌ Automatic authentication error: {str(e)}")
         
         # Get available tools from MCP servers
+        await self._send_progress("Loading available tools...")
         tools = []
         self._logger.info(f"🔍 MCP SERVERS: Found {len(self._mcp_manager.servers)} configured servers")
         self._logger.info(f"🔗 MCP CONNECTIONS: {len(self._mcp_manager.connections)} active connections")
@@ -134,6 +156,7 @@ class ManufacturingAgent(BaseAgent):
             system_prompt = "You are ARIS, a helpful manufacturing assistant. Currently, I don't have access to production data tools or email capabilities, so I cannot provide specific information about machines, machine groups, production metrics, or send notifications. Please let the user know that the tools are temporarily unavailable and suggest they try again later. Never make up or fabricate manufacturing data. Be honest about your limitations."
         
         # Use the enhanced converse method with tools
+        await self._send_progress("Processing your request...")
         text = await self._bedrock.converse(
             model_id=model_id,
             messages=self._messages[-20:],
@@ -208,72 +231,93 @@ class ManufacturingAgent(BaseAgent):
     
     def _create_tool_executor(self):
         """Create a custom tool executor that handles JWT token management."""
-        async def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-            self._logger.info(f"🔧 Executing tool: {tool_name}")
-            
-            # For Intelycx Core tools, automatically inject JWT token
-            intelycx_core_tools = ["get_machine", "get_machine_group", "get_production_summary"]
-            if tool_name in intelycx_core_tools:
-                if not self._intelycx_jwt_token:
-                    return {
-                        "error": "Manufacturing data access is currently unavailable due to authentication issues. Please check system configuration."
-                    }
-                
-                # Inject JWT token into arguments
-                arguments_with_token = arguments.copy()
-                arguments_with_token["jwt_token"] = self._intelycx_jwt_token
-                self._logger.info(f"🔑 Injected JWT token for tool: {tool_name}")
-                
-                result = await self._mcp_manager.execute_tool(tool_name, arguments_with_token)
-                
-                # Check if token expired and try to re-authenticate
-                if isinstance(result, dict) and "error" in result:
-                    error_msg = result["error"].lower()
-                    if "authentication failed" in error_msg or "token" in error_msg and "expired" in error_msg:
-                        self._logger.warning("🔑 JWT token expired, attempting re-authentication...")
-                        try:
-                            # Try to re-authenticate using environment credentials
-                            username = os.environ.get("INTELYCX_CORE_USERNAME")
-                            password = os.environ.get("INTELYCX_CORE_PASSWORD")
-                            
-                            if username and password:
-                                auth_result = await self._mcp_manager.execute_tool("intelycx_login", {
-                                    "username": username,
-                                    "password": password
-                                })
-                                if auth_result.get("success"):
-                                    self._intelycx_jwt_token = auth_result.get("jwt_token")
-                                    self._logger.info("✅ Re-authentication successful, retrying tool call...")
-                                    
-                                    # Retry the original tool call with new token
-                                    arguments_with_token["jwt_token"] = self._intelycx_jwt_token
-                                    result = await self._mcp_manager.execute_tool(tool_name, arguments_with_token)
-                                else:
-                                    self._intelycx_jwt_token = None
-                                    self._intelycx_user = None
-                                    return {
-                                        "error": "Authentication token expired and re-authentication failed. Manufacturing data is temporarily unavailable."
-                                    }
-                            else:
-                                self._intelycx_jwt_token = None
-                                self._intelycx_user = None
-                                return {
-                                    "error": "Authentication token expired and credentials not available for re-authentication."
-                                }
-                        except Exception as e:
-                            self._logger.error(f"❌ Re-authentication error: {str(e)}")
-                            self._intelycx_jwt_token = None
-                            self._intelycx_user = None
-                            return {
-                                "error": "Authentication token expired and re-authentication failed. Manufacturing data is temporarily unavailable."
-                            }
-                
-                return result
-            
-            # For other tools (like email), use normal execution
-            return await self._mcp_manager.execute_tool(tool_name, arguments)
         
-        return execute_tool
+        class ToolExecutor:
+            def __init__(self, agent):
+                self.agent = agent
+            
+            async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+                self.agent._logger.info(f"🔧 Executing tool: {tool_name}")
+                
+                # Send progress update based on tool type
+                if tool_name in ["get_machine", "get_machine_group", "get_production_summary"]:
+                    await self.agent._send_progress(f"Retrieving {tool_name.replace('get_', '').replace('_', ' ')} data...")
+                elif tool_name == "get_fake_data":
+                    await self.agent._send_progress("Generating sample manufacturing data...")
+                elif tool_name in ["send_email", "send_simple_email"]:
+                    await self.agent._send_progress("Sending email notification...")
+                else:
+                    await self.agent._send_progress(f"Executing {tool_name}...")
+                
+                # For Intelycx Core tools that require JWT authentication
+                intelycx_core_auth_tools = ["get_machine", "get_machine_group", "get_production_summary", "get_fake_data"]
+                intelycx_core_no_auth_tools = []
+                
+                if tool_name in intelycx_core_auth_tools:
+                    if not self.agent._intelycx_jwt_token:
+                        return {
+                            "error": "Manufacturing data access is currently unavailable due to authentication issues. Please check system configuration."
+                        }
+                    
+                    # Inject JWT token into arguments
+                    arguments_with_token = arguments.copy()
+                    arguments_with_token["jwt_token"] = self.agent._intelycx_jwt_token
+                    self.agent._logger.info(f"🔑 Injected JWT token for tool: {tool_name}")
+                    
+                    result = await self.agent._mcp_manager.execute_tool(tool_name, arguments_with_token)
+                    
+                    # Check if token expired and try to re-authenticate
+                    if isinstance(result, dict) and "error" in result:
+                        error_msg = result["error"].lower()
+                        if "authentication failed" in error_msg or "token" in error_msg and "expired" in error_msg:
+                            self.agent._logger.warning("🔑 JWT token expired, attempting re-authentication...")
+                            try:
+                                # Try to re-authenticate using environment credentials
+                                username = os.environ.get("INTELYCX_CORE_USERNAME")
+                                password = os.environ.get("INTELYCX_CORE_PASSWORD")
+                                
+                                if username and password:
+                                    auth_result = await self.agent._mcp_manager.execute_tool("intelycx_login", {
+                                        "username": username,
+                                        "password": password
+                                    })
+                                    if auth_result.get("success"):
+                                        self.agent._intelycx_jwt_token = auth_result.get("jwt_token")
+                                        self.agent._logger.info("✅ Re-authentication successful, retrying tool call...")
+                                        
+                                        # Retry the original tool call with new token
+                                        arguments_with_token["jwt_token"] = self.agent._intelycx_jwt_token
+                                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments_with_token)
+                                    else:
+                                        self.agent._intelycx_jwt_token = None
+                                        self.agent._intelycx_user = None
+                                        return {
+                                            "error": "Authentication token expired and re-authentication failed. Manufacturing data is temporarily unavailable."
+                                        }
+                                else:
+                                    self.agent._intelycx_jwt_token = None
+                                    self.agent._intelycx_user = None
+                                    return {
+                                        "error": "Authentication token expired and credentials not available for re-authentication."
+                                    }
+                            except Exception as e:
+                                self.agent._logger.error(f"❌ Re-authentication error: {str(e)}")
+                                self.agent._intelycx_jwt_token = None
+                                self.agent._intelycx_user = None
+                                return {
+                                    "error": "Authentication token expired and re-authentication failed. Manufacturing data is temporarily unavailable."
+                                }
+                    
+                    return result
+                
+                elif tool_name in intelycx_core_no_auth_tools:
+                    # For Intelycx Core tools that don't require authentication
+                    return await self.agent._mcp_manager.execute_tool(tool_name, arguments)
+                
+                # For other tools (like email), use normal execution
+                return await self.agent._mcp_manager.execute_tool(tool_name, arguments)
+        
+        return ToolExecutor(self)
     
     def _get_intelycx_core_tools(self) -> List[Dict[str, Any]]:
         """Get tool definitions for Intelycx Core API."""
@@ -344,6 +388,19 @@ class ManufacturingAgent(BaseAgent):
                                 }
                             },
                             "required": ["params"]
+                        }
+                    }
+                }
+            },
+            {
+                "toolSpec": {
+                    "name": "get_fake_data",
+                    "description": "Get comprehensive fake production data for testing and development purposes. Returns detailed manufacturing metrics, production lines, alerts, inventory, and energy consumption data. Authentication is handled automatically.",
+                    "inputSchema": {
+                        "json": {
+                            "type": "object",
+                            "properties": {},
+                            "required": []
                         }
                     }
                 }

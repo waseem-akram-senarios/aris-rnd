@@ -154,3 +154,104 @@ class IntelycxCoreClient:
         except Exception as e:
             logger.error(f"❌ Machine group {group_id} error: {str(e)}")
             return {"error": f"Request failed: {str(e)}"}
+    
+    async def get_fake_data(self, jwt_token: str) -> Dict[str, Any]:
+        """Get fake production data for testing and development purposes with JWT authentication."""
+        logger.info("✅ Generating fake production data (authenticated)")
+        
+        # Simulate JWT token validation (in real implementation, this would validate against the API)
+        if not jwt_token or len(jwt_token) < 10:
+            logger.error("❌ Invalid JWT token for fake data request")
+            return {"error": "Authentication failed - invalid or missing JWT token"}
+        
+        # Generate comprehensive fake production data
+        fake_data = {
+            "timestamp": "2025-08-27T20:55:00Z",
+            "facility": {
+                "name": "Intelycx Manufacturing Plant A",
+                "location": "Detroit, Michigan",
+                "total_machines": 24,
+                "active_machines": 22,
+                "maintenance_machines": 2
+            },
+            "production_lines": [
+                {
+                    "line_id": "LINE_001",
+                    "name": "Assembly Line Alpha",
+                    "status": "running",
+                    "efficiency": 0.87,
+                    "current_output": 145,
+                    "target_output": 160,
+                    "machines": [
+                        {"machine_id": "M001", "name": "CNC Mill 1", "status": "running", "efficiency": 0.92},
+                        {"machine_id": "M002", "name": "CNC Mill 2", "status": "running", "efficiency": 0.89},
+                        {"machine_id": "M003", "name": "Assembly Robot 1", "status": "running", "efficiency": 0.95}
+                    ]
+                },
+                {
+                    "line_id": "LINE_002", 
+                    "name": "Assembly Line Beta",
+                    "status": "running",
+                    "efficiency": 0.91,
+                    "current_output": 132,
+                    "target_output": 140,
+                    "machines": [
+                        {"machine_id": "M004", "name": "CNC Mill 3", "status": "running", "efficiency": 0.88},
+                        {"machine_id": "M005", "name": "CNC Mill 4", "status": "maintenance", "efficiency": 0.0},
+                        {"machine_id": "M006", "name": "Assembly Robot 2", "status": "running", "efficiency": 0.93}
+                    ]
+                }
+            ],
+            "daily_metrics": {
+                "total_units_produced": 2847,
+                "target_units": 3200,
+                "efficiency_percentage": 88.97,
+                "downtime_minutes": 47,
+                "quality_rate": 0.96,
+                "oee": 0.85
+            },
+            "shift_data": {
+                "current_shift": "day",
+                "shift_start": "06:00",
+                "shift_end": "14:00",
+                "operators_on_duty": 18,
+                "supervisor": "Mike Johnson"
+            },
+            "alerts": [
+                {
+                    "id": "ALERT_001",
+                    "type": "maintenance",
+                    "severity": "medium",
+                    "machine_id": "M005",
+                    "message": "Scheduled maintenance required for CNC Mill 4",
+                    "timestamp": "2025-08-27T19:30:00Z"
+                },
+                {
+                    "id": "ALERT_002",
+                    "type": "efficiency",
+                    "severity": "low", 
+                    "line_id": "LINE_001",
+                    "message": "Assembly Line Alpha efficiency below target (87% vs 90%)",
+                    "timestamp": "2025-08-27T20:15:00Z"
+                }
+            ],
+            "inventory": {
+                "raw_materials": {
+                    "steel_sheets": {"quantity": 1247, "unit": "pieces", "status": "adequate"},
+                    "aluminum_bars": {"quantity": 892, "unit": "pieces", "status": "low"},
+                    "electronic_components": {"quantity": 3456, "unit": "pieces", "status": "adequate"}
+                },
+                "finished_goods": {
+                    "product_a": {"quantity": 234, "unit": "pieces", "status": "ready_to_ship"},
+                    "product_b": {"quantity": 156, "unit": "pieces", "status": "quality_check"}
+                }
+            },
+            "energy_consumption": {
+                "current_usage_kw": 1247.5,
+                "daily_consumption_kwh": 28945.2,
+                "efficiency_rating": "B+",
+                "cost_per_hour": 124.75
+            }
+        }
+        
+        return fake_data
