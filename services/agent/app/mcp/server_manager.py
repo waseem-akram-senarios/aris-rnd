@@ -299,7 +299,7 @@ class MCPServerManager:
     def _get_server_for_tool(self, tool_name: str) -> str:
         """Determine which MCP server should handle a specific tool."""
         # Tool routing logic
-        email_tools = ["send_email", "send_simple_email"]
+        email_tools = ["send_email"]
         core_tools = ["intelycx_login", "get_machine", "get_machine_group", "get_production_summary", "get_fake_data"]
         
         if tool_name in email_tools:

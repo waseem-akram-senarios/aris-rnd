@@ -1,110 +1,83 @@
 # Intelycx Email MCP Server
 
-HTTP-based MCP (Model Context Protocol) server for Intelycx Email communication service.
+FastMCP-based email server for the Intelycx ARIS agent system.
 
 ## Features
 
-- **Email Sending**: Send emails with full control over recipients, content, and formatting
-- **Simple Email**: Quick email sending with minimal parameters
-- **HTML Support**: Send both plain text and HTML formatted emails
-- **Multiple Recipients**: Support for TO, CC, and BCC recipients
-- **Logging Mode**: Currently logs email details instead of actually sending (for development)
-- **HTTP API**: RESTful interface with MCP protocol support
-- **Authentication**: API key-based security
-- **Health Monitoring**: Built-in health check endpoint
+- **Single `send_email` tool** with flexible recipient support
+- **Multiple recipient formats**: strings, lists, or objects with name/email
+- **CC/BCC support** with same flexible formats
+- **HTML/Plain text** email support
+- **Built with FastMCP** for minimal boilerplate and maximum performance
 
-## API Endpoints
+## Tool: `send_email`
 
-### Health Check
-```
-GET /health
-```
+Send emails with flexible recipient formats.
 
-### MCP Protocol
-```
-POST /mcp
-Authorization: Bearer <api-key>
-Content-Type: application/json
+### Parameters
 
-{
-  "jsonrpc": "2.0",
-  "method": "tools/call",
-  "params": {
-    "name": "send_simple_email",
-    "arguments": {
-      "to_email": "user@example.com",
-      "subject": "Test Email",
-      "body": "This is a test email from the MCP server."
-    }
-  },
-  "id": "1"
-}
-```
+- `to` (required): Recipients - string, list of strings, or list of dicts with email/name
+- `subject` (required): Email subject line
+- `body` (required): Email body content
+- `cc` (optional): CC recipients - same formats as 'to'
+- `bcc` (optional): BCC recipients - same formats as 'to'  
+- `is_html` (optional): Whether body is HTML format (default: False)
 
-### List Tools
-```
-GET /tools
-Authorization: Bearer <api-key>
-```
+### Examples
 
-## Available Tools
-
-1. **send_email**: Send an email with full control over recipients, subject, body, and formatting
-   - Supports multiple TO, CC, BCC recipients
-   - HTML and plain text content
-   - Comprehensive recipient management
-
-2. **send_simple_email**: Send a simple email to a single recipient
-   - Quick and easy for notifications
-   - Minimal parameters required
-   - Ideal for alerts and simple messages
-
-## Tool Examples
-
-### Send Simple Email
 ```json
+// Simple email
 {
-  "name": "send_simple_email",
-  "arguments": {
-    "to_email": "user@example.com",
-    "subject": "Production Alert",
-    "body": "Machine M001 requires maintenance attention.",
-    "to_name": "John Smith"
-  }
+  "to": "user@example.com",
+  "subject": "Hello",
+  "body": "Hello World!"
 }
-```
 
-### Send Complex Email
-```json
+// Multiple recipients with names
 {
-  "name": "send_email",
-  "arguments": {
-    "to": [
-      {"email": "manager@example.com", "name": "Production Manager"},
-      {"email": "operator@example.com", "name": "Machine Operator"}
-    ],
-    "cc": [
-      {"email": "supervisor@example.com", "name": "Supervisor"}
-    ],
-    "subject": "Daily Production Report",
-    "body": "<h1>Production Summary</h1><p>Today's production metrics...</p>",
-    "is_html": true
-  }
+  "to": [
+    {"email": "user1@example.com", "name": "User One"},
+    {"email": "user2@example.com", "name": "User Two"}
+  ],
+  "subject": "Team Update",
+  "body": "<h1>Important Update</h1><p>Please review...</p>",
+  "is_html": true
+}
+
+// With CC and BCC
+{
+  "to": "recipient@example.com",
+  "subject": "Project Status", 
+  "body": "Here's the latest update...",
+  "cc": ["manager@example.com"],
+  "bcc": ["archive@example.com"]
 }
 ```
 
 ## Environment Variables
 
-- `SMTP_HOST`: SMTP server hostname (default: smtp.gmail.com)
+- `SMTP_HOST`: SMTP server host (default: smtp.gmail.com)
 - `SMTP_PORT`: SMTP server port (default: 587)
-- `SMTP_USER`: SMTP username for authentication
-- `SMTP_PASSWORD`: SMTP password for authentication
+- `SMTP_USER`: SMTP username
+- `SMTP_PASSWORD`: SMTP password
 - `SMTP_USE_TLS`: Use TLS encryption (default: true)
-- `MCP_API_KEY`: API key for MCP server authentication (default: mcp-dev-key-12345)
 
-## Development Mode
+## Health Check
 
-Currently, the server operates in **logging mode** - it logs all email details instead of actually sending emails. This is perfect for development and testing without sending real emails.
+The server includes a custom health check endpoint at `GET /health` that returns:
+
+```json
+{
+  "status": "healthy",
+  "service": "intelycx-email-mcp-server", 
+  "version": "0.1.0",
+  "transport": "http",
+  "smtp_configured": true,
+  "timestamp": "2024-08-26T00:00:00Z"
+}
+```
+
+This endpoint is used by Docker health checks and monitoring systems.
 
 ## Development
 
@@ -113,31 +86,23 @@ Currently, the server operates in **logging mode** - it logs all email details i
 pip install -e .
 
 # Run server
+python -m app.server
+
+# Or use the entry point
 intelycx-email-mcp-server
 
-# Or run directly
-python -m app.main
+# Test health endpoint
+curl http://localhost:8081/health
 ```
 
 ## Docker
 
 ```bash
-# Build image
-docker build -t intelycx-email-mcp-server .
+# Build
+docker build -t aris-mcp-intelycx-email:dev .
 
-# Run container
-docker run -p 8081:8081 \
-  -e SMTP_USER=your-smtp-user \
-  -e SMTP_PASSWORD=your-smtp-password \
-  -e MCP_API_KEY=your-mcp-key \
-  intelycx-email-mcp-server
+# Run
+docker run -p 8081:8081 -e SMTP_USER=your@email.com aris-mcp-intelycx-email:dev
 ```
 
-## Production Setup
-
-To enable actual email sending in production:
-
-1. Set proper SMTP credentials in environment variables
-2. Modify the `EmailClient.send_email()` method to use actual SMTP sending
-3. Add proper error handling and retry logic
-4. Consider using email service providers like SendGrid, AWS SES, etc.
+The server will be available at `http://localhost:8081/mcp`.
