@@ -154,7 +154,7 @@ class ManufacturingAgent(BaseAgent):
             self._mcp_initialized = True
             
             # Automatically authenticate with Intelycx Core if not already authenticated
-            if not self._intelycx_jwt_token:
+            if not self._intelycx_jwt_token and "intelycx-core" in self._mcp_manager.connections:
                 await self._send_progress("Authenticating with manufacturing systems...")
                 self._logger.info("🔑 Attempting automatic authentication with Intelycx Core...")
                 try:
@@ -181,28 +181,39 @@ class ManufacturingAgent(BaseAgent):
                 except Exception as e:
                     await self._send_progress("Authentication error occurred...")
                     self._logger.error(f"❌ Automatic authentication error: {str(e)}")
+            elif not self._intelycx_jwt_token:
+                await self._send_progress("Manufacturing core system not available. Limited functionality...")
+                self._logger.warning("⚠️ Intelycx Core server not connected - skipping authentication")
         
-        # Get available tools from MCP servers
+        # Get available tools from MCP servers dynamically
         await self._send_progress("Loading available tools...")
         tools = []
         self._logger.info(f"🔍 MCP SERVERS: Found {len(self._mcp_manager.servers)} configured servers")
         self._logger.info(f"🔗 MCP CONNECTIONS: {len(self._mcp_manager.connections)} active connections")
         
-        for server_name, server_config in self._mcp_manager.servers.items():
-            self._logger.info(f"📋 Checking server: {server_name}")
-            if server_name in self._mcp_manager.connections:
-                self._logger.info(f"✅ Server {server_name} is connected")
-                # Get tools based on server type
-                if server_name == "intelycx-core":
-                    intelycx_tools = self._get_intelycx_core_tools()
-                    tools.extend(intelycx_tools)
-                    self._logger.info(f"🛠️  Added {len(intelycx_tools)} tools from {server_name}")
-                elif server_name == "intelycx-email":
-                    email_tools = self._get_intelycx_email_tools()
-                    tools.extend(email_tools)
-                    self._logger.info(f"📧 Added {len(email_tools)} tools from {server_name}")
-            else:
-                self._logger.warning(f"⚠️  Server {server_name} is not connected")
+        # Dynamically discover tools from connected MCP servers
+        try:
+            discovered_tools = await self._mcp_manager.list_tools()
+            for tool in discovered_tools:
+                # Convert MCP tool format to Bedrock tool format
+                bedrock_tool = {
+                    "toolSpec": {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "inputSchema": {
+                            "json": tool["inputSchema"]
+                        }
+                    }
+                }
+                tools.append(bedrock_tool)
+                self._logger.info(f"🔧 Discovered tool: {tool['name']} from {tool['server']}")
+            
+            self._logger.info(f"🎯 DISCOVERED {len(discovered_tools)} tools from MCP servers")
+            
+        except Exception as e:
+            self._logger.error(f"❌ Error discovering tools from MCP servers: {str(e)}")
+            # Fallback: no tools from MCP servers
+            self._logger.warning("⚠️ Falling back to no MCP tools due to discovery error")
         
         # Add memory management tools (always available)
         memory_tools = self._get_memory_management_tools()
@@ -323,23 +334,21 @@ class ManufacturingAgent(BaseAgent):
                     return {"variable_name": variable_name, "value": value, "exists": value is not None}
                 
                 # Send progress update based on tool type
-                if tool_name in ["get_machine", "get_machine_group", "get_production_summary"]:
+                if tool_name.startswith("get_"):
                     await self.agent._send_progress(f"Retrieving {tool_name.replace('get_', '').replace('_', ' ')} data...")
-                elif tool_name == "get_fake_data":
-                    await self.agent._send_progress("Generating sample manufacturing data...")
-                elif tool_name in ["send_email", "send_simple_email"]:
-                    await self.agent._send_progress("Sending email notification...")
+                elif tool_name.startswith("send_"):
+                    await self.agent._send_progress(f"Sending {tool_name.replace('send_', '').replace('_', ' ')}...")
                 else:
                     await self.agent._send_progress(f"Executing {tool_name}...")
                 
                 # Extract result_variable_name before processing
                 result_variable_name = arguments.get("result_variable_name")
                 
-                # For Intelycx Core tools that require JWT authentication
-                intelycx_core_auth_tools = ["get_machine", "get_machine_group", "get_production_summary", "get_fake_data"]
-                intelycx_core_no_auth_tools = []
+                # Check if this tool requires JWT authentication (from intelycx-core server)
+                # We determine this by checking which server provides the tool
+                tool_server = await self._get_tool_server(tool_name)
                 
-                if tool_name in intelycx_core_auth_tools:
+                if tool_server == "intelycx-core":
                     if not self.agent._intelycx_jwt_token:
                         return {
                             "error": "Manufacturing data access is currently unavailable due to authentication issues. Please check system configuration."
@@ -400,17 +409,7 @@ class ManufacturingAgent(BaseAgent):
                     
                     return result
                 
-                elif tool_name in intelycx_core_no_auth_tools:
-                    # For Intelycx Core tools that don't require authentication
-                    result = await self.agent._mcp_manager.execute_tool(tool_name, arguments)
-                    
-                    # Store result in memory if requested
-                    if result_variable_name and not (isinstance(result, dict) and "error" in result):
-                        await self.agent._store_variable(result_variable_name, result, tool_name)
-                    
-                    return result
-                
-                # For other tools (like email), use normal execution
+                # For all other tools (email, etc.), use normal execution
                 result = await self.agent._mcp_manager.execute_tool(tool_name, arguments)
                 
                 # Store result in memory if requested
@@ -421,99 +420,17 @@ class ManufacturingAgent(BaseAgent):
         
         return ToolExecutor(self)
     
-    def _get_intelycx_core_tools(self) -> List[Dict[str, Any]]:
-        """Get tool definitions for Intelycx Core API."""
-        return [
-            # Note: intelycx_login and intelycx_auto_login are internal tools, not exposed to users
-            {
-                "toolSpec": {
-                    "name": "get_machine",
-                    "description": "Get detailed information about a specific machine including status, location, maintenance schedule, and performance metrics.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "machine_id": {
-                                    "type": "string",
-                                    "description": "The unique identifier of the machine"
-                                }
-                            },
-                            "required": ["machine_id"]
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "get_machine_group",
-                    "description": "Get comprehensive information about a machine group including all machines, performance metrics, shift schedules, and capacity information.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "group_id": {
-                                    "type": "string",
-                                    "description": "The unique identifier of the machine group"
-                                }
-                            },
-                            "required": ["group_id"]
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "get_production_summary",
-                    "description": "Get production summary data and metrics for analysis and reporting.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "params": {
-                                    "type": "object",
-                                    "description": "Parameters for filtering production data",
-                                    "properties": {
-                                        "date_from": {
-                                            "type": "string",
-                                            "description": "Start date for data range (YYYY-MM-DD)"
-                                        },
-                                        "date_to": {
-                                            "type": "string",
-                                            "description": "End date for data range (YYYY-MM-DD)"
-                                        },
-                                        "machine_ids": {
-                                            "type": "array",
-                                            "items": {"type": "string"},
-                                            "description": "List of machine IDs to filter by"
-                                        }
-                                    }
-                                }
-                            },
-                            "required": ["params"]
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "get_fake_data",
-                    "description": "Get comprehensive fake production data for testing and development purposes. Returns detailed manufacturing metrics, production lines, alerts, inventory, and energy consumption data. Authentication is handled automatically.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "result_variable_name": {
-                                    "type": "string",
-                                    "description": "Optional. The name of the variable to store the result for later use in the session."
-                                }
-                            },
-                            "required": []
-                        }
-                    }
-                }
-            }
-        ]
-    
+    async def _get_tool_server(self, tool_name: str) -> Optional[str]:
+        """Dynamically determine which server provides a specific tool."""
+        try:
+            discovered_tools = await self._mcp_manager.list_tools()
+            for tool in discovered_tools:
+                if tool["name"] == tool_name:
+                    return tool["server"]
+        except Exception as e:
+            self._logger.error(f"Error getting tool server for {tool_name}: {str(e)}")
+        return None
+
     def _get_memory_management_tools(self) -> List[Dict[str, Any]]:
         """Get tool definitions for memory management."""
         return [
@@ -584,105 +501,6 @@ class ManufacturingAgent(BaseAgent):
             }
         ]
     
-    def _get_intelycx_email_tools(self) -> List[Dict[str, Any]]:
-        """Get tool definitions for Intelycx Email API."""
-        return [
-            {
-                "toolSpec": {
-                    "name": "send_email",
-                    "description": "Send an email with full control over recipients, subject, body, and formatting. Supports HTML content and multiple recipients (TO, CC, BCC).",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "to": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "email": {"type": "string", "description": "Recipient email address"},
-                                            "name": {"type": "string", "description": "Recipient name (optional)"}
-                                        },
-                                        "required": ["email"]
-                                    },
-                                    "description": "List of email recipients"
-                                },
-                                "subject": {
-                                    "type": "string",
-                                    "description": "Email subject line"
-                                },
-                                "body": {
-                                    "type": "string",
-                                    "description": "Email body content"
-                                },
-                                "cc": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "email": {"type": "string"},
-                                            "name": {"type": "string"}
-                                        },
-                                        "required": ["email"]
-                                    },
-                                    "description": "CC recipients (optional)"
-                                },
-                                "bcc": {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "email": {"type": "string"},
-                                            "name": {"type": "string"}
-                                        },
-                                        "required": ["email"]
-                                    },
-                                    "description": "BCC recipients (optional)"
-                                },
-                                "is_html": {
-                                    "type": "boolean",
-                                    "description": "Whether the body content is HTML format"
-                                }
-                            },
-                            "required": ["to", "subject", "body"]
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "send_simple_email",
-                    "description": "Send a simple email to a single recipient with basic parameters. Ideal for quick notifications and alerts.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "to_email": {
-                                    "type": "string",
-                                    "description": "Recipient email address"
-                                },
-                                "subject": {
-                                    "type": "string",
-                                    "description": "Email subject line"
-                                },
-                                "body": {
-                                    "type": "string",
-                                    "description": "Email body content"
-                                },
-                                "to_name": {
-                                    "type": "string",
-                                    "description": "Recipient name (optional)"
-                                },
-                                "is_html": {
-                                    "type": "boolean",
-                                    "description": "Whether the body content is HTML format"
-                                }
-                            },
-                            "required": ["to_email", "subject", "body"]
-                        }
-                    }
-                }
-            }
-        ]
+
 
 
