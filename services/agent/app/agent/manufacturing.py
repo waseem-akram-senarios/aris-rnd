@@ -1,10 +1,9 @@
 from .base import BaseAgent, AgentResponse
 from typing import Any, Dict, Optional, List, Callable, Awaitable
 from pathlib import Path
-from ..utils.documents import get_document_content_from_s3
-from ..utils.file_handlers import FileProcessor
+from ..core.files import FileProcessor, get_document_content_from_s3
 from ..llm.bedrock import BedrockClient
-
+from ..core.memory import SessionMemoryManager
 from ..mcp import MCPServerManager
 from ..config.settings import load_settings
 import logging
@@ -53,9 +52,11 @@ class ManufacturingAgent(BaseAgent):
         # Progress callback for chain of thought messages
         self._progress_callback: Optional[Callable[[str], Awaitable[None]]] = None
         
-        # Session memory for variable storage across tool calls
-        self._session_memory: Dict[str, Any] = {}
-        self._memory_metadata: Dict[str, Dict[str, Any]] = {}  # Store metadata about variables
+        # Initialize session memory manager
+        self._memory = SessionMemoryManager(
+            auto_store_results=True,
+            max_size_mb=50.0  # Reasonable limit for session memory
+        )
 
     def set_progress_callback(self, callback: Optional[Callable[[str], Awaitable[None]]]) -> None:
         """Set a callback function to send progress updates during processing."""
@@ -69,62 +70,7 @@ class ManufacturingAgent(BaseAgent):
             except Exception as e:
                 self._logger.warning(f"Failed to send progress update: {e}")
 
-    # Memory Management Methods
-    
-    async def _store_variable(self, name: str, value: Any, tool_name: Optional[str] = None) -> None:
-        """Store a variable in session memory with metadata."""
-        self._session_memory[name] = value
-        self._memory_metadata[name] = {
-            'created_at': datetime.now().isoformat(),
-            'tool_name': tool_name,
-            'type': type(value).__name__,
-            'size_bytes': len(json.dumps(value, default=str)) if value is not None else 0
-        }
-        self._logger.info(f"📝 Stored variable '{name}' from tool '{tool_name}' (type: {type(value).__name__})")
-
-    async def _get_variable(self, name: str) -> Any:
-        """Retrieve a variable from session memory."""
-        return self._session_memory.get(name)
-
-    async def _list_variables(self) -> Dict[str, Dict[str, Any]]:
-        """List all variables in session memory with their metadata."""
-        result = {}
-        for name, value in self._session_memory.items():
-            metadata = self._memory_metadata.get(name, {})
-            result[name] = {
-                'value_preview': str(value)[:100] + '...' if len(str(value)) > 100 else str(value),
-                'metadata': metadata
-            }
-        return result
-
-    async def _clear_memory(self, variable_names: Optional[List[str]] = None) -> Dict[str, Any]:
-        """Clear specific variables or all memory."""
-        if variable_names:
-            cleared = []
-            for name in variable_names:
-                if name in self._session_memory:
-                    del self._session_memory[name]
-                    if name in self._memory_metadata:
-                        del self._memory_metadata[name]
-                    cleared.append(name)
-            return {'cleared_variables': cleared, 'total_remaining': len(self._session_memory)}
-        else:
-            count = len(self._session_memory)
-            self._session_memory.clear()
-            self._memory_metadata.clear()
-            return {'cleared_variables': 'all', 'total_cleared': count}
-
-    async def _get_memory_stats(self) -> Dict[str, Any]:
-        """Get memory usage statistics."""
-        total_variables = len(self._session_memory)
-        total_size = sum(meta.get('size_bytes', 0) for meta in self._memory_metadata.values())
-        
-        return {
-            'total_variables': total_variables,
-            'total_size_bytes': total_size,
-            'total_size_mb': round(total_size / (1024 * 1024), 2),
-            'variables': list(self._session_memory.keys())
-        }
+    # Memory management is now handled by SessionMemoryManager
 
     async def process_message(self, message: str) -> AgentResponse:
         # Minimal LLM call to Bedrock (no tools yet)
@@ -214,11 +160,7 @@ class ManufacturingAgent(BaseAgent):
             self._logger.error(f"❌ Error discovering tools from MCP servers: {str(e)}")
             # Fallback: no tools from MCP servers
             self._logger.warning("⚠️ Falling back to no MCP tools due to discovery error")
-        
-        # Add memory management tools (always available)
-        memory_tools = self._get_memory_management_tools()
-        tools.extend(memory_tools)
-        self._logger.info(f"🧠 Added {len(memory_tools)} memory management tools")
+        # Memory management is now handled internally, not exposed as tools
         
         self._logger.info(f"🎯 TOTAL TOOLS AVAILABLE: {len(tools)}")
         
@@ -318,20 +260,8 @@ class ManufacturingAgent(BaseAgent):
             async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 self.agent._logger.info(f"🔧 Executing tool: {tool_name}")
                 
-                # Handle memory management tools first
-                if tool_name == "list_variables":
-                    return await self.agent._list_variables()
-                elif tool_name == "clear_memory":
-                    variable_names = arguments.get("variable_names")
-                    return await self.agent._clear_memory(variable_names)
-                elif tool_name == "get_memory_stats":
-                    return await self.agent._get_memory_stats()
-                elif tool_name == "get_variable":
-                    variable_name = arguments.get("variable_name")
-                    if not variable_name:
-                        return {"error": "variable_name is required"}
-                    value = await self.agent._get_variable(variable_name)
-                    return {"variable_name": variable_name, "value": value, "exists": value is not None}
+                # Note: Memory management is no longer exposed as tools to the LLM
+                # It's handled automatically when tools specify result_variable_name
                 
                 # Send progress update based on tool type
                 if tool_name.startswith("get_"):
@@ -341,8 +271,7 @@ class ManufacturingAgent(BaseAgent):
                 else:
                     await self.agent._send_progress(f"Executing {tool_name}...")
                 
-                # Extract result_variable_name before processing
-                result_variable_name = arguments.get("result_variable_name")
+                # The memory manager will handle result storage automatically
                 
                 # Check if this tool requires JWT authentication (from intelycx-core server)
                 # We determine this by checking which server provides the tool
@@ -403,20 +332,14 @@ class ManufacturingAgent(BaseAgent):
                                     "error": "Authentication token expired and re-authentication failed. Manufacturing data is temporarily unavailable."
                                 }
                     
-                    # Store result in memory if requested
-                    if result_variable_name and not (isinstance(result, dict) and "error" in result):
-                        await self.agent._store_variable(result_variable_name, result, tool_name)
-                    
-                    return result
+                    # Let memory manager handle the result
+                    return await self.agent._memory.handle_tool_result(tool_name, arguments, result)
                 
                 # For all other tools (email, etc.), use normal execution
                 result = await self.agent._mcp_manager.execute_tool(tool_name, arguments)
                 
-                # Store result in memory if requested
-                if result_variable_name and not (isinstance(result, dict) and "error" in result):
-                    await self.agent._store_variable(result_variable_name, result, tool_name)
-                
-                return result
+                # Let memory manager handle the result
+                return await self.agent._memory.handle_tool_result(tool_name, arguments, result)
         
         return ToolExecutor(self)
     
@@ -431,75 +354,9 @@ class ManufacturingAgent(BaseAgent):
             self._logger.error(f"Error getting tool server for {tool_name}: {str(e)}")
         return None
 
-    def _get_memory_management_tools(self) -> List[Dict[str, Any]]:
-        """Get tool definitions for memory management."""
-        return [
-            {
-                "toolSpec": {
-                    "name": "list_variables",
-                    "description": "List all variables currently stored in session memory with their metadata and preview of values.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {},
-                            "required": []
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "get_variable",
-                    "description": "Retrieve the value of a specific variable from session memory.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "variable_name": {
-                                    "type": "string",
-                                    "description": "The name of the variable to retrieve"
-                                }
-                            },
-                            "required": ["variable_name"]
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "clear_memory",
-                    "description": "Clear specific variables or all variables from session memory.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {
-                                "variable_names": {
-                                    "type": "array",
-                                    "description": "Optional. List of specific variable names to clear. If not provided, all variables will be cleared.",
-                                    "items": {
-                                        "type": "string"
-                                    }
-                                }
-                            },
-                            "required": []
-                        }
-                    }
-                }
-            },
-            {
-                "toolSpec": {
-                    "name": "get_memory_stats",
-                    "description": "Get statistics about current memory usage including number of variables, total size, and variable names.",
-                    "inputSchema": {
-                        "json": {
-                            "type": "object",
-                            "properties": {},
-                            "required": []
-                        }
-                    }
-                }
-            }
-        ]
+    # Memory management tools removed - memory is now handled internally
+    # The SessionMemoryManager automatically stores tool results when
+    # 'result_variable_name' is provided in tool arguments
     
 
 

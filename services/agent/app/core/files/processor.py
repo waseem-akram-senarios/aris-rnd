@@ -8,7 +8,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from .factory import FileHandlerFactory
-from .base import FileContent
+from .models import FileContent
 
 logger = logging.getLogger(__name__)
 

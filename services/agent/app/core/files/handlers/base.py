@@ -2,34 +2,12 @@
 
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from pathlib import Path
 
+from ..models import FileContent
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class FileContent:
-    """Structured representation of extracted file content."""
-    
-    filename: str
-    extension: str
-    content_type: str  # 'text', 'table', 'structured', 'error'
-    text_content: str
-    metadata: Dict[str, Any]
-    error: Optional[str] = None
-    
-    def to_context_string(self) -> str:
-        """Convert file content to string suitable for LLM context."""
-        if self.error:
-            return f"[Error processing {self.filename}: {self.error}]"
-        
-        header = f"--- Document: {self.filename} ---\n"
-        content = self.text_content
-        footer = f"\n--- End of {self.filename} ---"
-        
-        return header + content + footer
 
 
 class BaseFileHandler(ABC):
@@ -66,4 +44,3 @@ class BaseFileHandler(ABC):
             "extension": path.suffix.lower(),
             "stem": path.stem
         }
-

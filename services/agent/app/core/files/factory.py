@@ -4,10 +4,11 @@ import logging
 from typing import Optional, List
 from pathlib import Path
 
-from .base import BaseFileHandler, FileContent
-from .text_handlers import TextFileHandler, CSVFileHandler, RTFFileHandler
-from .office_handlers import WordDocumentHandler, ExcelFileHandler, PowerPointHandler
-from .pdf_handler import PDFFileHandler
+from .handlers.base import BaseFileHandler
+from .models import FileContent
+from .handlers.text import TextHandler, CSVHandler, JSONHandler, XMLHandler, HTMLHandler, MarkdownHandler
+from .handlers.pdf import PDFHandler
+from .handlers.office import WordHandler, ExcelHandler, PowerPointHandler, RTFHandler
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,11 @@ class FileHandlerFactory:
     
     # Define supported file extensions
     SUPPORTED_EXTENSIONS = {
-        '.txt', '.text', '.log', '.md', '.markdown',  # Text files
+        '.txt', '.text', '.log', '.md', '.markdown', '.mkd', '.mdx',  # Text/Markdown files
         '.csv', '.tsv',  # CSV files
+        '.json', '.jsonl',  # JSON files
+        '.xml', '.xhtml', '.svg',  # XML files
+        '.html', '.htm',  # HTML files
         '.rtf',  # RTF files
         '.pdf',  # PDF files
         '.doc', '.docx',  # Word documents
@@ -29,13 +33,17 @@ class FileHandlerFactory:
     def __init__(self):
         # Initialize all handlers
         self.handlers: List[BaseFileHandler] = [
-            TextFileHandler(),
-            CSVFileHandler(),
-            RTFFileHandler(),
-            PDFFileHandler(),
-            WordDocumentHandler(),
-            ExcelFileHandler(),
+            TextHandler(),
+            CSVHandler(),
+            JSONHandler(),
+            XMLHandler(),
+            HTMLHandler(),
+            MarkdownHandler(),
+            PDFHandler(),
+            WordHandler(),
+            ExcelHandler(),
             PowerPointHandler(),
+            RTFHandler(),
         ]
         logger.info(f"FileHandlerFactory initialized with {len(self.handlers)} handlers")
     

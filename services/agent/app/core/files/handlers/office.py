@@ -4,12 +4,13 @@ import logging
 from typing import List, Dict, Any
 import io
 
-from .base import BaseFileHandler, FileContent
+from .base import BaseFileHandler
+from ..models import FileContent
 
 logger = logging.getLogger(__name__)
 
 
-class WordDocumentHandler(BaseFileHandler):
+class WordHandler(BaseFileHandler):
     """Handler for Word documents (.doc, .docx)."""
     
     SUPPORTED_EXTENSIONS = {'.doc', '.docx'}
@@ -88,7 +89,74 @@ class WordDocumentHandler(BaseFileHandler):
             )
 
 
-class ExcelFileHandler(BaseFileHandler):
+class RTFHandler(BaseFileHandler):
+    """Handler for RTF (Rich Text Format) files."""
+    
+    SUPPORTED_EXTENSIONS = {'.rtf'}
+    
+    def can_handle(self, file_extension: str) -> bool:
+        return file_extension.lower() in self.SUPPORTED_EXTENSIONS
+    
+    def extract_content(self, file_path: str, file_bytes: bytes) -> FileContent:
+        """Extract content from RTF file."""
+        file_info = self.get_file_info(file_path)
+        
+        if not self.validate_file_size(file_bytes):
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="error",
+                text_content="",
+                metadata={},
+                error=f"File size exceeds {self.MAX_FILE_SIZE} bytes limit"
+            )
+        
+        try:
+            # Import striprtf only when needed
+            try:
+                from striprtf.striprtf import rtf_to_text
+            except ImportError:
+                # Fallback: basic RTF stripping if striprtf not available
+                text = file_bytes.decode('utf-8', errors='ignore')
+                # Very basic RTF stripping - not perfect but better than nothing
+                import re
+                text = re.sub(r'\\[a-z]+\d*\s?', '', text)
+                text = re.sub(r'[{}]', '', text)
+                text = text.strip()
+                
+                return FileContent(
+                    filename=file_info["filename"],
+                    extension=file_info["extension"],
+                    content_type="text",
+                    text_content=text,
+                    metadata={"rtf_parser": "basic"}
+                )
+            
+            # Use striprtf for better extraction
+            text = file_bytes.decode('utf-8', errors='ignore')
+            text_content = rtf_to_text(text)
+            
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="text",
+                text_content=text_content,
+                metadata={"rtf_parser": "striprtf"}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting RTF content: {str(e)}")
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="error",
+                text_content="",
+                metadata={},
+                error=str(e)
+            )
+
+
+class ExcelHandler(BaseFileHandler):
     """Handler for Excel files (.xls, .xlsx)."""
     
     SUPPORTED_EXTENSIONS = {'.xls', '.xlsx'}
@@ -168,6 +236,73 @@ class ExcelFileHandler(BaseFileHandler):
             )
         except Exception as e:
             self.logger.error(f"Error extracting Excel content: {str(e)}")
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="error",
+                text_content="",
+                metadata={},
+                error=str(e)
+            )
+
+
+class RTFHandler(BaseFileHandler):
+    """Handler for RTF (Rich Text Format) files."""
+    
+    SUPPORTED_EXTENSIONS = {'.rtf'}
+    
+    def can_handle(self, file_extension: str) -> bool:
+        return file_extension.lower() in self.SUPPORTED_EXTENSIONS
+    
+    def extract_content(self, file_path: str, file_bytes: bytes) -> FileContent:
+        """Extract content from RTF file."""
+        file_info = self.get_file_info(file_path)
+        
+        if not self.validate_file_size(file_bytes):
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="error",
+                text_content="",
+                metadata={},
+                error=f"File size exceeds {self.MAX_FILE_SIZE} bytes limit"
+            )
+        
+        try:
+            # Import striprtf only when needed
+            try:
+                from striprtf.striprtf import rtf_to_text
+            except ImportError:
+                # Fallback: basic RTF stripping if striprtf not available
+                text = file_bytes.decode('utf-8', errors='ignore')
+                # Very basic RTF stripping - not perfect but better than nothing
+                import re
+                text = re.sub(r'\\[a-z]+\d*\s?', '', text)
+                text = re.sub(r'[{}]', '', text)
+                text = text.strip()
+                
+                return FileContent(
+                    filename=file_info["filename"],
+                    extension=file_info["extension"],
+                    content_type="text",
+                    text_content=text,
+                    metadata={"rtf_parser": "basic"}
+                )
+            
+            # Use striprtf for better extraction
+            text = file_bytes.decode('utf-8', errors='ignore')
+            text_content = rtf_to_text(text)
+            
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="text",
+                text_content=text_content,
+                metadata={"rtf_parser": "striprtf"}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting RTF content: {str(e)}")
             return FileContent(
                 filename=file_info["filename"],
                 extension=file_info["extension"],
@@ -265,6 +400,73 @@ class PowerPointHandler(BaseFileHandler):
             )
         except Exception as e:
             self.logger.error(f"Error extracting PowerPoint content: {str(e)}")
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="error",
+                text_content="",
+                metadata={},
+                error=str(e)
+            )
+
+
+class RTFHandler(BaseFileHandler):
+    """Handler for RTF (Rich Text Format) files."""
+    
+    SUPPORTED_EXTENSIONS = {'.rtf'}
+    
+    def can_handle(self, file_extension: str) -> bool:
+        return file_extension.lower() in self.SUPPORTED_EXTENSIONS
+    
+    def extract_content(self, file_path: str, file_bytes: bytes) -> FileContent:
+        """Extract content from RTF file."""
+        file_info = self.get_file_info(file_path)
+        
+        if not self.validate_file_size(file_bytes):
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="error",
+                text_content="",
+                metadata={},
+                error=f"File size exceeds {self.MAX_FILE_SIZE} bytes limit"
+            )
+        
+        try:
+            # Import striprtf only when needed
+            try:
+                from striprtf.striprtf import rtf_to_text
+            except ImportError:
+                # Fallback: basic RTF stripping if striprtf not available
+                text = file_bytes.decode('utf-8', errors='ignore')
+                # Very basic RTF stripping - not perfect but better than nothing
+                import re
+                text = re.sub(r'\\[a-z]+\d*\s?', '', text)
+                text = re.sub(r'[{}]', '', text)
+                text = text.strip()
+                
+                return FileContent(
+                    filename=file_info["filename"],
+                    extension=file_info["extension"],
+                    content_type="text",
+                    text_content=text,
+                    metadata={"rtf_parser": "basic"}
+                )
+            
+            # Use striprtf for better extraction
+            text = file_bytes.decode('utf-8', errors='ignore')
+            text_content = rtf_to_text(text)
+            
+            return FileContent(
+                filename=file_info["filename"],
+                extension=file_info["extension"],
+                content_type="text",
+                text_content=text_content,
+                metadata={"rtf_parser": "striprtf"}
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting RTF content: {str(e)}")
             return FileContent(
                 filename=file_info["filename"],
                 extension=file_info["extension"],

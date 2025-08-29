@@ -4,12 +4,13 @@ import logging
 import io
 from typing import Dict, Any
 
-from .base import BaseFileHandler, FileContent
+from .base import BaseFileHandler
+from ..models import FileContent
 
 logger = logging.getLogger(__name__)
 
 
-class PDFFileHandler(BaseFileHandler):
+class PDFHandler(BaseFileHandler):
     """Handler for PDF files."""
     
     SUPPORTED_EXTENSIONS = {'.pdf'}
