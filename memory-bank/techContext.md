@@ -7,11 +7,11 @@
 ## Dependencies (agent)
 - **Core**: aiohttp, python-dotenv, python-jose, requests, boto3
 - **File processing**: pymupdf, python-docx, pandas, openpyxl, xlrd, python-pptx, striprtf
-- **MCP integration**: aiohttp (for HTTP client communication)
+- **MCP integration**: fastmcp>=2.11.0 (FastMCP client library)
 
 ## Dependencies (MCP servers)
-- **FastAPI stack**: fastapi, uvicorn, aiohttp, python-dotenv
-- **Authentication**: HTTPBearer for API key validation
+- **FastMCP stack**: fastmcp>=2.11.0, pydantic>=2.5.0, aiohttp>=3.9.0, starlette>=0.27.0
+- **Authentication**: Bearer token authentication via FastMCP
 
 ## Infra dependencies
 - aws-cdk-lib v2, constructs v10
@@ -43,18 +43,28 @@
 - **Agent**: Health `GET /health`, WebSocket `GET /ws` with `Authorization` header (Bearer token)
 - **MCP servers**: Health `GET /health`, MCP protocol `POST /mcp`, Tools list `GET /tools`
 
-## File Processing
-- **Supported types**: txt, csv, rtf, pdf, xls, xlsx, doc, docx, ppt, pptx
+## Core Libraries Architecture
+
+### File Processing (`app/core/files/`)
+- **Supported types**: txt, csv, json, xml, html, markdown, rtf, pdf, xls, xlsx, doc, docx, ppt, pptx
 - **Size limit**: 4MB maximum
 - **S3 integration**: Boto3 client with proper error handling
 - **Content extraction**: Type-specific handlers with fallback error handling
+- **Modular structure**: `handlers/`, `models.py`, `factory.py`, `processor.py`
+
+### Memory Management (`app/core/memory/`)
+- **SessionMemoryManager**: Main memory interface with pluggable backends
+- **Storage options**: InMemoryStorage (default), FileStorage for persistence
+- **Automatic integration**: Tools with `result_variable_name` auto-store results
+- **Metadata tracking**: Full lifecycle and access analytics
 
 ## MCP Integration
-- **Protocol**: HTTP-based MCP over REST APIs
+- **Protocol**: FastMCP over HTTP with automatic client management
 - **Authentication**: Bearer token with configurable API keys
 - **Server lifecycle**: Health checks, initialization, tool routing
 - **Tool categories**: Core manufacturing data, email services
 - **Error handling**: Graceful degradation, honest limitation reporting
+- **Client library**: FastMCP handles connection management and protocol details
 
 ## Notable patterns
 - **Guardrails default**: Off (opt-in per-message via `rag_params.guardrails`)

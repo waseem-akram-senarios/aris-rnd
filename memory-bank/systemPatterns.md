@@ -6,29 +6,34 @@
 - **Security**: `CognitoAuthService` verifies JWT using AWS Cognito JWKS with caching
 - **Guardrails**: `GuardrailService` runs a fast Bedrock boolean relevance check with heuristic fallback; allow-on-error
 - **LLM access**: `BedrockClient.converse` wraps `bedrock-runtime`, supports tool calling, returns concatenated text content
-- **File processing**: Modular `FileProcessor` with type-specific handlers for document extraction
-- **MCP integration**: `MCPServerManager` manages HTTP-based MCP servers with initialization and tool routing
+- **Core libraries**: Modular `app/core/` with reusable memory and file processing libraries
+- **Memory management**: `SessionMemoryManager` handles transparent session storage with pluggable backends
+- **File processing**: `FileProcessor` with comprehensive format support and S3 integration
+- **MCP integration**: `MCPServerManager` manages HTTP-based MCP servers with FastMCP client
 - **Tool calling**: Dynamic system prompts based on tool availability, comprehensive logging
 - **Streaming UX**: Splits agent final text by words and emits in small chunks, then sends a final message
 - **Chain of thought**: Real-time progress updates via WebSocket during authentication, tool loading, and execution
-- **Session memory**: Variable storage system with metadata tracking for complex multi-step workflows
 
 ## Key flows
 - **Auth on connect**: JWT pulled from `Authorization` header or query; invalid → `HTTPUnauthorized`
 - **Message handling**: accepts `{ "message": string }` or legacy `{ "action": "agent", "question": string }`
 - **Chain of thought**: Initial "Thinking..." message, then progress updates during authentication, tool loading, and execution
-- **Memory management**: Tools with `result_variable_name` automatically store results; memory tools manage session variables
+- **Memory management**: Tools with `result_variable_name` automatically store results; memory handled internally by `SessionMemoryManager`
 - **Document processing**: `{ doc_bucket, doc_key }` triggers S3 download, content extraction, and injection into conversation
 - **MCP tool calling**: Agent routes tool calls to appropriate MCP servers, handles initialization and error cases
 - **Guardrails toggle**: `payload.rag_params.guardrails` (bool). When true and irrelevant, return `get_guardrail_message()` and skip processing
 - **Model selection**: `payload.model_id` or `rag_params.model_params.model_id` forwarded to agent runtime options
 
-## File Processing Patterns
+## Core Library Patterns
+
+### File Processing (`app/core/files/`)
 - **Factory pattern**: `FileHandlerFactory` routes by extension to specific handlers
-- **Handler hierarchy**: `BaseFileHandler` → `TextHandler`, `PDFHandler`, `OfficeHandler`, etc.
+- **Handler hierarchy**: `BaseFileHandler` → `TextHandler`, `PDFHandler`, `WordHandler`, etc.
 - **Content structure**: `FileContent` dataclass with metadata, text content, and error handling
+- **Comprehensive format support**: Text, CSV, JSON, XML, HTML, Markdown, PDF, Word, Excel, PowerPoint, RTF
 - **Size limits**: 4MB maximum, enforced before processing
 - **S3 integration**: Boto3 client with proper error handling and logging
+- **Modular design**: Easy to extend with new file format handlers
 
 ## MCP Integration Patterns
 - **Server management**: HTTP-based servers in separate Docker containers
@@ -38,12 +43,14 @@
 - **Error handling**: Graceful degradation when servers unavailable, honest limitation reporting
 - **JWT authentication**: AI Agent manages Intelycx Core credentials, automatic token refresh on expiration
 
-## Memory Management Patterns
-- **Session storage**: `_session_memory` dict stores variables with `_memory_metadata` for tracking
+### Memory Management (`app/core/memory/`)
+- **SessionMemoryManager**: Centralized memory management with pluggable storage backends
 - **Automatic storage**: Tools with `result_variable_name` parameter automatically store results
-- **Metadata tracking**: Creation time, tool source, data type, and size information for each variable
-- **Memory tools**: `list_variables`, `get_variable`, `clear_memory`, `get_memory_stats` for session management
-- **Tool executor integration**: Memory operations handled transparently during tool execution
+- **Metadata tracking**: Creation time, tool source, data type, size, and access information for each variable
+- **Storage backends**: InMemoryStorage (default) and FileStorage for persistence
+- **Internal API**: Memory not exposed as tools to LLM; handled transparently by agent
+- **Search capabilities**: Search by tool, tag, or key patterns
+- **Memory statistics**: Usage tracking, size monitoring, and access analytics
 - **Error handling**: Only successful tool results are stored; errors are not cached
 
 ## Configuration
