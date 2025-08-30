@@ -1,6 +1,10 @@
 # Active Context
 
 ## Current focus
+- ✅ **Complete FastMCP architecture** - Both intelycx-core and intelycx-email servers operational
+- ✅ **Working multi-tool pipeline** - Login → fake data → email chain functional
+- ✅ **Volume-mounted development** - Live code reload for all MCP servers
+- ✅ **Fixed tool execution** - Resolved JWT token injection and routing issues
 - ✅ **Core libraries architecture** - Memory and file processing extracted to `app/core/`
 - ✅ **Enhanced document processing** with 12+ file types including JSON, XML, HTML, Markdown
 - ✅ **Modern MCP integration** using FastMCP client library for better performance
@@ -14,15 +18,15 @@
 - ✅ **Chain of thought messaging** - Real-time progress updates during authentication, tool loading, and execution
 
 ## Recent achievements
+- **Completed Intelycx-Core MCP server** - FastMCP implementation with login and fake data tools
+- **Fixed tool execution pipeline** - Resolved JWT token injection for login vs data tools
+- **Implemented volume mounting** - Live development for all MCP servers
 - **Core libraries extraction** - Memory and file processing moved to `app/core/` for reusability
 - **Enhanced file processing** for 12+ document types (added JSON, XML, HTML, Markdown support)
 - **FastMCP integration** - Modern MCP client library for better performance and reliability
 - **Transparent memory management** - SessionMemoryManager with pluggable backends, no longer exposed as tools
 - **Clean architecture** - Removed utils folder, proper separation of concerns
 - S3 integration with 4MB file size limits and proper error handling
-- Tool calling capabilities for manufacturing data (machines, groups, production summaries)
-- Email service integration for notifications and reports
-- Comprehensive logging for tool usage and debugging
 - **JWT authentication system** for Intelycx Core API with automatic token management and refresh
 - **Chain of thought messaging** providing real-time user feedback during system operations
 
@@ -32,9 +36,9 @@
 - Authentication strategy for MCP servers in production (currently using simple API keys)
 
 ## Next steps (proposed)
-- **Create Intelycx-Core MCP server** using FastMCP to replace old implementation
-- **Migrate old agent tools** using the core libraries foundation for complex workflows
-- **Add unit tests** for core libraries (memory management, file processing)
+- **Migrate additional tools** from old agent implementation using core libraries
+- **Add unit tests** for core libraries (memory management, file processing, MCP servers)
+- **Implement real API endpoints** beyond fake data (machine details, production summaries)
 - Add config-level guardrails default and server-side override rules
 - Flesh out `AgentStack` with ECS/ALB and secret wiring; add CI/CD pipeline
 - Complete real API integrations (Intelycx Core API authentication now implemented)

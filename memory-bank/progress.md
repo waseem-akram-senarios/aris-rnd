@@ -19,7 +19,7 @@
 - **Session memory management** with transparent storage, pluggable backends, and automatic tool integration
 
 ## What's left 🚧
-- **Intelycx-Core MCP server** migration from old implementation to FastMCP
+
 - **Old agent tool migration** (manufacturing data, analytics, search, reports using core libraries)
 - **Production-grade infra** resources in CDK (ECS, ALB, networking, secrets)
 - **Real API integrations** (Intelycx Core authentication implemented, need actual API endpoints)
@@ -31,6 +31,9 @@
 - **Performance optimization** (caching, connection pooling, memory backend optimization)
 
 ## Recent achievements 🎉
+- **Created Intelycx-Core MCP server** - FastMCP implementation with login and fake data tools
+- **Fixed tool execution pipeline** - Resolved JWT token injection and tool routing issues
+- **Implemented volume mounting** - Live development for all MCP servers with code reload
 - **Extracted memory management to core library** - SessionMemoryManager with pluggable storage backends
 - **Moved file processing to core library** - Comprehensive file handling with 12+ format support
 - **Removed utils folder** - Clean architecture with proper core/libraries organization
@@ -42,10 +45,13 @@
 - **Established development patterns** for Docker compose, container naming, logging
 
 ## Current status 🎯
+- **Complete MCP architecture** - Both intelycx-core and intelycx-email servers fully operational
+- **Working tool chain** - Login → get fake data → send email pipeline functional
 - **Well-architected core libraries** - Memory and file processing properly modularized
+- **Volume-mounted development** - Live code reload for all services
 - **Ready for production development** - all core features implemented and tested
 - **Stable local development** experience with multi-container setup
-- **Rich tool capabilities** providing real data instead of hallucinations
+- **Rich tool capabilities** providing comprehensive fake manufacturing data
 - **Enhanced document processing** with comprehensive format support for manufacturing use cases
 - **Modern MCP architecture** with FastMCP client, scalable for additional tool categories
 - **Guardrails available** as opt-in per message; pending decision on default behavior

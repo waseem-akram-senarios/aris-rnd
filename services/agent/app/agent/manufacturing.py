@@ -275,23 +275,34 @@ class ManufacturingAgent(BaseAgent):
                 
                 # Check if this tool requires JWT authentication (from intelycx-core server)
                 # We determine this by checking which server provides the tool
-                tool_server = await self._get_tool_server(tool_name)
+                tool_server = await self.agent._get_tool_server(tool_name)
                 
                 if tool_server == "intelycx-core":
-                    if not self.agent._intelycx_jwt_token:
-                        return {
-                            "error": "Manufacturing data access is currently unavailable due to authentication issues. Please check system configuration."
-                        }
+                    # Special handling for login tool - it generates JWT tokens, doesn't need one
+                    if tool_name == "intelycx_login":
+                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments)
+                    else:
+                        # All other intelycx-core tools require JWT authentication
+                        if not self.agent._intelycx_jwt_token:
+                            return {
+                                "error": "Manufacturing data access is currently unavailable due to authentication issues. Please check system configuration."
+                            }
+                        
+                        # Inject JWT token into arguments
+                        arguments_with_token = arguments.copy()
+                        arguments_with_token["jwt_token"] = self.agent._intelycx_jwt_token
+                        self.agent._logger.info(f"🔑 Injected JWT token for tool: {tool_name}")
+                        
+                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments_with_token)
                     
-                    # Inject JWT token into arguments
-                    arguments_with_token = arguments.copy()
-                    arguments_with_token["jwt_token"] = self.agent._intelycx_jwt_token
-                    self.agent._logger.info(f"🔑 Injected JWT token for tool: {tool_name}")
+                    # Handle successful login - store JWT token
+                    if tool_name == "intelycx_login" and isinstance(result, dict) and result.get("success"):
+                        self.agent._intelycx_jwt_token = result.get("jwt_token")
+                        self.agent._intelycx_user = result.get("user")
+                        self.agent._logger.info(f"✅ Stored JWT token for user: {self.agent._intelycx_user}")
                     
-                    result = await self.agent._mcp_manager.execute_tool(tool_name, arguments_with_token)
-                    
-                    # Check if token expired and try to re-authenticate
-                    if isinstance(result, dict) and "error" in result:
+                    # Check if token expired and try to re-authenticate (for non-login tools)
+                    if tool_name != "intelycx_login" and isinstance(result, dict) and "error" in result:
                         error_msg = result["error"].lower()
                         if "authentication failed" in error_msg or "token" in error_msg and "expired" in error_msg:
                             self.agent._logger.warning("🔑 JWT token expired, attempting re-authentication...")

@@ -36,12 +36,13 @@
 - **Modular design**: Easy to extend with new file format handlers
 
 ## MCP Integration Patterns
-- **Server management**: HTTP-based servers in separate Docker containers
+- **Server management**: HTTP-based FastMCP servers in separate Docker containers with volume mounting
 - **Initialization**: Required before tool calls, handled automatically by `MCPServerManager`
-- **Tool routing**: Server-specific tool mappings (core tools → intelycx-core, email → intelycx-email)
+- **Tool routing**: Dynamic tool discovery and server-specific routing (core tools → intelycx-core, email → intelycx-email)
 - **Authentication**: Bearer token authentication with configurable API keys
+- **JWT handling**: Special logic for login tool (generates tokens) vs data tools (requires tokens)
 - **Error handling**: Graceful degradation when servers unavailable, honest limitation reporting
-- **JWT authentication**: AI Agent manages Intelycx Core credentials, automatic token refresh on expiration
+- **Development**: Live code reload via volume mounting for rapid iteration
 
 ### Memory Management (`app/core/memory/`)
 - **SessionMemoryManager**: Centralized memory management with pluggable storage backends
