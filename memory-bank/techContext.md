@@ -12,6 +12,7 @@
 ## Dependencies (MCP servers)
 - **FastMCP stack**: fastmcp>=2.11.0, pydantic>=2.5.0, aiohttp>=3.9.0, starlette>=0.27.0
 - **Authentication**: Bearer token authentication via FastMCP
+- **Advanced Features**: Enum support, Field validation, structured responses, output schemas
 
 ## Infra dependencies
 - aws-cdk-lib v2, constructs v10
@@ -66,6 +67,8 @@
 - **Tool categories**: Core manufacturing data, email services
 - **Error handling**: Graceful degradation, honest limitation reporting
 - **Client library**: FastMCP handles connection management and protocol details
+- **Advanced Implementation**: Production-ready tools with type safety, validation, and structured outputs
+- **Tool Enhancement**: Comprehensive metadata, annotations, progress tracking, and notification system
 
 ## Notable patterns
 - **Guardrails default**: Off (opt-in per-message via `rag_params.guardrails`)

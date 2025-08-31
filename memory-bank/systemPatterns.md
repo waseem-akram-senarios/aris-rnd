@@ -49,6 +49,18 @@
 - **Error handling**: Graceful degradation when servers unavailable, honest limitation reporting
 - **Development**: Live code reload via volume mounting for rapid iteration
 
+### Advanced FastMCP Implementation Patterns
+- **Type Safety**: Pydantic Field validation with constraints (min_length, max_length, pattern matching)
+- **Tool Metadata**: Comprehensive `@mcp.tool` decorators with name, description, tags, meta, and annotations
+- **Structured Responses**: Pydantic models for consistent API contracts (LoginResponse, ManufacturingDataResponse, EmailResponse)
+- **Output Schemas**: JSON schemas defined in tool decorators for better LLM understanding
+- **Enum Constraints**: Type-safe parameter validation using Python enums (DataType, EmailPriority)
+- **Context Enhancement**: Multi-stage progress with notifications (`ctx.notify()`) and structured logging
+- **Error Architecture**: Consistent error handling patterns with structured error responses
+- **Parameter Placement**: Context parameter always last for consistency across all tools
+- **Version Management**: Tool versioning via meta field and semantic versioning practices
+- **Annotation System**: Tool behavior hints (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
+
 ### Memory Management (`app/core/memory/`)
 - **SessionMemoryManager**: Centralized memory management with pluggable storage backends
 - **Automatic storage**: Tools with `result_variable_name` parameter automatically store results

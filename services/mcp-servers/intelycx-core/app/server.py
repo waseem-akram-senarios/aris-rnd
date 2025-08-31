@@ -2,9 +2,11 @@
 
 import os
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Annotated
+from enum import Enum
 
 from fastmcp import FastMCP, Context
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from .core_client import IntelycxCoreClient
@@ -13,11 +15,52 @@ from .core_client import IntelycxCoreClient
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create FastMCP server
-mcp = FastMCP("Intelycx Core")
+# Create FastMCP server with enhanced configuration
+mcp = FastMCP(
+    "Intelycx Core",
+    on_duplicate_tools="warn"  # Warn about duplicate tool registrations
+)
 
 # Initialize core client
 core_client = IntelycxCoreClient()
+
+
+# Enums for constrained values
+class DataType(Enum):
+    """Supported data types for manufacturing data retrieval."""
+    ALL = "all"
+    PRODUCTION = "production"
+    INVENTORY = "inventory"
+    ALERTS = "alerts"
+    METRICS = "metrics"
+    ENERGY = "energy"
+
+
+# Pydantic models for structured responses
+class LoginResponse(BaseModel):
+    """Response model for login operations."""
+    success: bool = Field(description="Whether the login was successful")
+    jwt_token: Optional[str] = Field(None, description="JWT token for API authentication")
+    expires_in: Optional[int] = Field(None, description="Token expiration time in seconds")
+    expires_at: Optional[str] = Field(None, description="ISO timestamp when token expires")
+    user: Optional[str] = Field(None, description="Username that was authenticated")
+    error: Optional[str] = Field(None, description="Error message if unsuccessful")
+    status_code: Optional[int] = Field(None, description="HTTP status code")
+
+
+class ManufacturingDataResponse(BaseModel):
+    """Response model for manufacturing data operations."""
+    success: bool = Field(True, description="Whether the data retrieval was successful")
+    timestamp: Optional[str] = Field(None, description="Data timestamp")
+    facility: Optional[Dict[str, Any]] = Field(None, description="Facility information")
+    production_lines: Optional[list] = Field(None, description="Production line data")
+    daily_metrics: Optional[Dict[str, Any]] = Field(None, description="Daily production metrics")
+    shift_data: Optional[Dict[str, Any]] = Field(None, description="Current shift information")
+    alerts: Optional[list] = Field(None, description="Active alerts and notifications")
+    inventory: Optional[Dict[str, Any]] = Field(None, description="Inventory status")
+    energy_consumption: Optional[Dict[str, Any]] = Field(None, description="Energy usage data")
+    error: Optional[str] = Field(None, description="Error message if unsuccessful")
+    data_size_kb: Optional[float] = Field(None, description="Size of returned data in KB")
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -40,12 +83,47 @@ async def health_check(request: Request) -> JSONResponse:
     return JSONResponse(content=health_status, status_code=200)
 
 
-@mcp.tool
+@mcp.tool(
+    name="intelycx_login",
+    description="Authenticate with Intelycx Core API and obtain JWT token for subsequent API calls",
+    tags={"authentication", "core", "security"},
+    meta={"version": "2.0", "category": "authentication", "author": "intelycx"},
+    annotations={
+        "title": "Intelycx Core Authentication",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether login was successful"},
+            "jwt_token": {"type": "string", "description": "JWT authentication token"},
+            "expires_in": {"type": "integer", "description": "Token expiration time in seconds"},
+            "expires_at": {"type": "string", "description": "ISO timestamp when token expires"},
+            "user": {"type": "string", "description": "Authenticated username"},
+            "error": {"type": "string", "description": "Error message if unsuccessful"},
+            "status_code": {"type": "integer", "description": "HTTP status code"}
+        },
+        "required": ["success"]
+    }
+)
 async def intelycx_login(
-    username: Optional[str] = None,
-    password: Optional[str] = None,
+    username: Annotated[Optional[str], Field(
+        None,
+        min_length=3,
+        max_length=50,
+        pattern=r"^[a-zA-Z0-9_.-]+$",
+        description="Username for authentication (defaults to INTELYCX_CORE_USERNAME env var)"
+    )] = None,
+    password: Annotated[Optional[str], Field(
+        None,
+        min_length=1,
+        description="Password for authentication (defaults to INTELYCX_CORE_PASSWORD env var)"
+    )] = None,
     ctx: Context = None
-) -> Dict[str, Any]:
+) -> LoginResponse:
     """
     Login to Intelycx Core API and obtain JWT token for subsequent API calls.
     
@@ -78,16 +156,20 @@ async def intelycx_login(
             jwt_token = result["jwt_token"]
             # Use jwt_token for subsequent API calls
     """
-    # Enhanced multi-stage progress with structured logging
+    # Enhanced multi-stage progress with structured logging and notifications
     await ctx.info(
         "🔧 Starting Intelycx Core authentication...",
         extra={
             "stage": "authentication_start",
             "username": username or "from_environment",
-            "api_url": core_client.base_url
+            "api_url": core_client.base_url,
+            "tool_version": "2.0"
         }
     )
     await ctx.report_progress(progress=10, total=100)
+    
+    # Notify start of authentication process
+    await ctx.notify("Authentication process initiated", level="info")
     
     # Infrastructure logging only
     logger.debug(f"Login attempt: username={username}, password={'***' if password else None}")
@@ -118,7 +200,11 @@ async def intelycx_login(
                 }
             )
             await ctx.report_progress(progress=100, total=100)
+            await ctx.notify(f"Successfully authenticated as {result.get('user')}", level="success")
             logger.debug("Authentication successful")
+            
+            # Return structured response using Pydantic model
+            return LoginResponse(**result)
         else:
             await ctx.error(
                 f"❌ Authentication failed: {result.get('error')}",
@@ -128,9 +214,11 @@ async def intelycx_login(
                     "status_code": result.get('status_code')
                 }
             )
+            await ctx.notify(f"Authentication failed: {result.get('error')}", level="error")
             logger.error(f"Authentication failed: {result.get('error')}")
-        
-        return result
+            
+            # Return structured error response
+            return LoginResponse(**result)
         
     except Exception as e:
         error_msg = f"Login tool execution failed: {str(e)}"
@@ -142,19 +230,54 @@ async def intelycx_login(
                 "exception_class": type(e).__name__
             }
         )
+        await ctx.notify(f"Authentication error: {str(e)}", level="error")
         logger.error(f"Login tool error: {str(e)}")
-        return {
-            "success": False,
-            "error": error_msg
-        }
+        
+        # Return structured error response
+        return LoginResponse(
+            success=False,
+            error=error_msg
+        )
 
 
-@mcp.tool
+@mcp.tool(
+    name="get_fake_data",
+    description="Generate comprehensive fake manufacturing data for testing and development with JWT authentication",
+    tags={"manufacturing", "data", "testing", "development"},
+    meta={"version": "2.0", "category": "data_access", "author": "intelycx"},
+    annotations={
+        "title": "Manufacturing Data Generator",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether data generation was successful"},
+            "timestamp": {"type": "string", "description": "Data generation timestamp"},
+            "facility": {"type": "object", "description": "Facility information"},
+            "production_lines": {"type": "array", "description": "Production line data"},
+            "daily_metrics": {"type": "object", "description": "Daily production metrics"},
+            "shift_data": {"type": "object", "description": "Current shift information"},
+            "alerts": {"type": "array", "description": "Active alerts and notifications"},
+            "inventory": {"type": "object", "description": "Inventory status"},
+            "energy_consumption": {"type": "object", "description": "Energy usage data"},
+            "error": {"type": "string", "description": "Error message if unsuccessful"},
+            "data_size_kb": {"type": "number", "description": "Size of returned data in KB"}
+        },
+        "required": ["success"]
+    }
+)
 async def get_fake_data(
-    jwt_token: str,
-    data_type: Optional[str] = None,
+    jwt_token: Annotated[str, Field(
+        description="Valid JWT token from intelycx_login (required for authentication)",
+        min_length=10
+    )],
+    data_type: DataType = DataType.ALL,
     ctx: Context = None
-) -> Dict[str, Any]:
+) -> ManufacturingDataResponse:
     """
     Generate comprehensive fake manufacturing data for testing and development.
     
@@ -189,16 +312,20 @@ async def get_fake_data(
         # - Inventory levels for raw materials and finished goods
         # - Energy consumption and cost data
     """
-    # Enhanced multi-stage progress with structured logging
+    # Enhanced multi-stage progress with structured logging and notifications
     await ctx.info(
         "🔧 Starting fake data generation...",
         extra={
             "stage": "data_generation_start",
-            "data_type": data_type or "all",
-            "token_provided": bool(jwt_token)
+            "data_type": data_type.value,
+            "token_provided": bool(jwt_token),
+            "tool_version": "2.0"
         }
     )
     await ctx.report_progress(progress=5, total=100)
+    
+    # Notify start of data generation
+    await ctx.notify(f"Generating {data_type.value} manufacturing data", level="info")
     
     # Infrastructure logging only
     logger.debug(f"get_fake_data called: jwt_token={'***' if jwt_token else None}, data_type={data_type}")
@@ -211,7 +338,7 @@ async def get_fake_data(
         )
         await ctx.report_progress(progress=15, total=100)
         
-        result = await core_client.get_fake_data(jwt_token=jwt_token, data_type=data_type)
+        result = await core_client.get_fake_data(jwt_token=jwt_token, data_type=data_type.value)
         
         # Check if there was an authentication error
         if isinstance(result, dict) and "error" in result:
@@ -222,8 +349,14 @@ async def get_fake_data(
                     "error_type": "authentication_failed"
                 }
             )
+            await ctx.notify(f"Token validation failed: {result.get('error')}", level="error")
             logger.error(f"Token validation failed: {result.get('error')}")
-            return result
+            
+            # Return structured error response
+            return ManufacturingDataResponse(
+                success=False,
+                error=result.get('error')
+            )
         
         # Stage 2: Generate facility data (15-30%)
         await ctx.info(
@@ -279,20 +412,33 @@ async def get_fake_data(
         
         # Success - result is the fake data directly
         data_size = len(str(result))
+        data_size_kb = round(data_size / 1024, 2)
+        
         await ctx.info(
             f"✅ Generated comprehensive manufacturing data successfully!",
             extra={
                 "stage": "generation_complete",
                 "data_size_chars": data_size,
-                "data_size_kb": round(data_size / 1024, 2),
+                "data_size_kb": data_size_kb,
                 "sections": ["facility", "production_lines", "daily_metrics", "shift_data", "alerts", "inventory", "energy_consumption"]
             }
         )
         await ctx.report_progress(progress=100, total=100)
+        await ctx.notify(f"Manufacturing data generated successfully ({data_size_kb} KB)", level="success")
         
         logger.debug(f"Fake data generated successfully: {data_size} characters")
         
-        return result
+        # Return structured response with metadata
+        if isinstance(result, dict):
+            result["success"] = True
+            result["data_size_kb"] = data_size_kb
+            return ManufacturingDataResponse(**result)
+        else:
+            return ManufacturingDataResponse(
+                success=True,
+                data_size_kb=data_size_kb,
+                **result if isinstance(result, dict) else {}
+            )
         
     except Exception as e:
         error_msg = f"Get fake data tool execution failed: {str(e)}"
@@ -304,10 +450,14 @@ async def get_fake_data(
                 "exception_class": type(e).__name__
             }
         )
+        await ctx.notify(f"Data generation error: {str(e)}", level="error")
         logger.error(f"get_fake_data error: {str(e)}")
-        return {
-            "error": error_msg
-        }
+        
+        # Return structured error response
+        return ManufacturingDataResponse(
+            success=False,
+            error=error_msg
+        )
 
 
 def main():

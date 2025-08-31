@@ -2,9 +2,11 @@
 
 import os
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Annotated
+from enum import Enum
 
 from fastmcp import FastMCP, Context
+from pydantic import BaseModel, Field, EmailStr
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from .email_client import EmailClient
@@ -13,8 +15,11 @@ from .email_client import EmailClient
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Create FastMCP server
-mcp = FastMCP("Intelycx Email")
+# Create FastMCP server with enhanced configuration
+mcp = FastMCP(
+    "Intelycx Email",
+    on_duplicate_tools="warn"  # Warn about duplicate tool registrations
+)
 
 # Initialize email client
 email_client = EmailClient(
@@ -24,6 +29,35 @@ email_client = EmailClient(
     password=os.environ.get("SMTP_PASSWORD"),
     use_tls=os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
 )
+
+
+# Enums for constrained values
+class EmailPriority(Enum):
+    """Email priority levels."""
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+    URGENT = "urgent"
+
+
+# Pydantic models for structured parameters and responses
+class EmailRecipient(BaseModel):
+    """Email recipient with optional display name."""
+    email: str = Field(description="Email address")
+    name: Optional[str] = Field(None, description="Display name")
+
+
+class EmailResponse(BaseModel):
+    """Response model for email operations."""
+    success: bool = Field(description="Whether the email was sent successfully")
+    message_id: Optional[str] = Field(None, description="Unique message identifier")
+    recipients_count: Optional[int] = Field(None, description="Number of primary recipients")
+    cc_count: Optional[int] = Field(None, description="Number of CC recipients")
+    bcc_count: Optional[int] = Field(None, description="Number of BCC recipients")
+    status: Optional[str] = Field(None, description="Detailed status message")
+    error: Optional[str] = Field(None, description="Error message if unsuccessful")
+    sent_at: Optional[str] = Field(None, description="Timestamp when email was sent")
+    size_kb: Optional[float] = Field(None, description="Email size in kilobytes")
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -45,16 +79,59 @@ async def health_check(request: Request) -> JSONResponse:
     return JSONResponse(content=health_status, status_code=200)
 
 
-@mcp.tool
+@mcp.tool(
+    name="send_email",
+    description="Send emails with flexible recipient support, rich formatting, and comprehensive delivery tracking",
+    tags={"email", "communication", "notification", "messaging"},
+    meta={"version": "2.0", "category": "communication", "author": "intelycx"},
+    annotations={
+        "title": "Email Sender",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True
+    },
+    output_schema={
+        "type": "object",
+        "properties": {
+            "success": {"type": "boolean", "description": "Whether email was sent successfully"},
+            "message_id": {"type": "string", "description": "Unique message identifier"},
+            "recipients_count": {"type": "integer", "description": "Number of primary recipients"},
+            "cc_count": {"type": "integer", "description": "Number of CC recipients"},
+            "bcc_count": {"type": "integer", "description": "Number of BCC recipients"},
+            "status": {"type": "string", "description": "Detailed status message"},
+            "error": {"type": "string", "description": "Error message if unsuccessful"},
+            "sent_at": {"type": "string", "description": "Timestamp when email was sent"},
+            "size_kb": {"type": "number", "description": "Email size in kilobytes"}
+        },
+        "required": ["success"]
+    }
+)
 async def send_email(
-    ctx: Context,
-    to: Union[str, List[str], List[Dict[str, str]]],
-    subject: str,
-    body: str,
-    cc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
-    bcc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
-    is_html: bool = False    
-) -> Dict[str, Any]:
+    to: Annotated[Union[str, List[str], List[Dict[str, str]]], Field(
+        description="Email recipients - string, list of strings, or list of dicts with email/name"
+    )],
+    subject: Annotated[str, Field(
+        min_length=1,
+        max_length=200,
+        description="Email subject line"
+    )],
+    body: Annotated[str, Field(
+        min_length=1,
+        description="Email body content"
+    )],
+    cc: Annotated[Optional[Union[str, List[str], List[Dict[str, str]]]], Field(
+        None,
+        description="CC recipients - same formats as 'to'"
+    )] = None,
+    bcc: Annotated[Optional[Union[str, List[str], List[Dict[str, str]]]], Field(
+        None,
+        description="BCC recipients - same formats as 'to'"
+    )] = None,
+    is_html: bool = False,
+    priority: EmailPriority = EmailPriority.NORMAL,
+    ctx: Context = None
+) -> EmailResponse:
     """
     Send an email with flexible recipient support.
     
@@ -95,7 +172,7 @@ async def send_email(
             bcc=["archive@example.com"]
         )
     """
-    # Enhanced multi-stage progress with structured logging
+    # Enhanced multi-stage progress with structured logging and notifications
     await ctx.info(
         "📧 Starting email composition...",
         extra={
@@ -104,11 +181,16 @@ async def send_email(
             "has_cc": bool(cc),
             "has_bcc": bool(bcc),
             "is_html": is_html,
+            "priority": priority.value,
             "subject_length": len(subject),
-            "body_length": len(body)
+            "body_length": len(body),
+            "tool_version": "2.0"
         }
     )
     await ctx.report_progress(progress=10, total=100)
+    
+    # Notify start of email process
+    await ctx.notify(f"Composing {priority.value} priority email to {len(to) if isinstance(to, list) else 1} recipient(s)", level="info")
     
     # Infrastructure logging only
     logger.debug(f"send_email called: to={to}, subject='{subject}', cc={cc}, bcc={bcc}, is_html={is_html}")
@@ -167,6 +249,8 @@ async def send_email(
         )
         
         # Stage 5: Completion (90-100%)
+        email_size_kb = round(len(f"{subject}{body}") / 1024, 2)
+        
         await ctx.info(
             f"✅ Email sent successfully! Message ID: {result.get('message_id')}",
             extra={
@@ -175,14 +259,25 @@ async def send_email(
                 "recipients_count": result.get('recipients_count'),
                 "cc_count": result.get('cc_count'),
                 "bcc_count": result.get('bcc_count'),
-                "status": result.get('status')
+                "status": result.get('status'),
+                "email_size_kb": email_size_kb
             }
         )
         await ctx.report_progress(progress=100, total=100)
+        await ctx.notify(f"Email sent successfully to {result.get('recipients_count', 0)} recipients", level="success")
         
         logger.debug(f"Email sent successfully: {result.get('message_id')}")
         
-        return result
+        # Return structured response with metadata
+        if isinstance(result, dict):
+            result["size_kb"] = email_size_kb
+            return EmailResponse(**result)
+        else:
+            return EmailResponse(
+                success=True,
+                message_id=result.get('message_id') if hasattr(result, 'get') else None,
+                size_kb=email_size_kb
+            )
         
     except Exception as e:
         error_msg = f"Email sending failed: {str(e)}"
@@ -195,10 +290,14 @@ async def send_email(
                 "recipients": to
             }
         )
+        await ctx.notify(f"Email sending failed: {str(e)}", level="error")
         logger.error(f"send_email error: {str(e)}")
-        return {
-            "error": error_msg
-        }
+        
+        # Return structured error response
+        return EmailResponse(
+            success=False,
+            error=error_msg
+        )
 
 
 def main():
