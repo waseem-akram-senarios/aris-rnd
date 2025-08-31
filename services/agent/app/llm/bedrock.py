@@ -77,15 +77,17 @@ class BedrockClient:
                         tool_input = tool_use["input"]
                         tool_id = tool_use["toolUseId"]
                         
-                        self._logger.info(f"🔧 TOOL CALL: {tool_name}")
-                        self._logger.info(f"📥 TOOL INPUT: {json.dumps(tool_input, indent=2)}")
+                        self._logger.debug(f"🔧 TOOL CALL: {tool_name}")
+                        self._logger.debug(f"📥 TOOL INPUT: {json.dumps(tool_input, indent=2)}")
                         
                         try:
                             # Execute the tool
                             result = await tool_executor.execute_tool(tool_name, tool_input)
                             
-                            self._logger.info(f"✅ TOOL SUCCESS: {tool_name}")
-                            self._logger.info(f"📤 TOOL OUTPUT: {json.dumps(result, indent=2)}")
+                            self._logger.debug(f"✅ TOOL SUCCESS: {tool_name}")
+                            # Don't log full tool output here - it's already logged by MCPServerManager
+                            result_size = len(json.dumps(result, default=str))
+                            self._logger.debug(f"📤 TOOL OUTPUT: {result_size} characters")
                             
                             tool_results.append({
                                 "toolResult": {

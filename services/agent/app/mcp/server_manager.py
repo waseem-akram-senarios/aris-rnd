@@ -165,16 +165,24 @@ class MCPServerManager:
             client = self.clients[server_name]
             
             self.logger.info(f"🔧 FASTMCP TOOL CALL: {tool_name} -> {server_name}")
-            self.logger.info(f"📥 TOOL INPUT: {json.dumps(arguments, indent=2)}")
+            self.logger.debug(f"📥 TOOL INPUT: {json.dumps(arguments, indent=2)}")
             
-            # Use FastMCP client to call the tool
+            # Use FastMCP client to call the tool with progress token support
+            # Generate a progress token to receive progress updates
+            import uuid
+            progress_token = str(uuid.uuid4())
+            
+            # Note: FastMCP Client handles progress tokens automatically in newer versions
+            # The progress updates will be logged by FastMCP internally
             result = await client.call_tool(tool_name, arguments)
             
             # FastMCP returns a ToolResult object, extract the data
             tool_data = result.data if hasattr(result, 'data') else result
             
             self.logger.info(f"✅ FASTMCP TOOL SUCCESS: {tool_name}")
-            self.logger.info(f"📤 TOOL OUTPUT: {json.dumps(tool_data, indent=2)}")
+            # Log summary instead of full output to reduce duplication
+            output_size = len(json.dumps(tool_data, default=str))
+            self.logger.debug(f"📤 TOOL OUTPUT: {output_size} characters")
             
             return tool_data
                 

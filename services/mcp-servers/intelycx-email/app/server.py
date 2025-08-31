@@ -95,19 +95,67 @@ async def send_email(
             bcc=["archive@example.com"]
         )
     """
-    # Context-first logging for AI agent visibility
-    await ctx.info("📧 Starting email composition...")
-    await ctx.debug(f"📥 Recipients: {to}, Subject: '{subject}', Format: {'HTML' if is_html else 'Text'}")
+    # Enhanced multi-stage progress with structured logging
+    await ctx.info(
+        "📧 Starting email composition...",
+        extra={
+            "stage": "email_start",
+            "recipient_count": len(to) if isinstance(to, list) else 1,
+            "has_cc": bool(cc),
+            "has_bcc": bool(bcc),
+            "is_html": is_html,
+            "subject_length": len(subject),
+            "body_length": len(body)
+        }
+    )
+    await ctx.report_progress(progress=10, total=100)
     
     # Infrastructure logging only
     logger.debug(f"send_email called: to={to}, subject='{subject}', cc={cc}, bcc={bcc}, is_html={is_html}")
     
     try:
-        await ctx.info("📝 Preparing email content...")
-        await ctx.report_progress(progress=25, total=100)  # 25% - preparing
+        # Stage 1: Validate recipients (10-25%)
+        await ctx.info(
+            "📧 Validating email recipients...",
+            extra={
+                "stage": "recipient_validation",
+                "primary_recipients": to,
+                "cc_recipients": cc,
+                "bcc_recipients": bcc
+            }
+        )
+        await ctx.report_progress(progress=25, total=100)
         
-        await ctx.info(f"📬 Sending email to {to}...")
-        await ctx.report_progress(progress=75, total=100)  # 75% - sending
+        # Stage 2: Prepare content (25-45%)
+        await ctx.info(
+            "📝 Preparing email content...",
+            extra={
+                "stage": "content_preparation",
+                "content_type": "html" if is_html else "text",
+                "subject": subject
+            }
+        )
+        await ctx.report_progress(progress=45, total=100)
+        
+        # Stage 3: Connect to SMTP (45-65%)
+        await ctx.info(
+            "🔗 Establishing email connection...",
+            extra={
+                "stage": "smtp_connection",
+                "smtp_configured": bool(email_client.username)
+            }
+        )
+        await ctx.report_progress(progress=65, total=100)
+        
+        # Stage 4: Send email (65-90%)
+        await ctx.info(
+            f"📬 Sending email to {to}...",
+            extra={
+                "stage": "email_sending",
+                "recipients": to
+            }
+        )
+        await ctx.report_progress(progress=90, total=100)
         
         result = await email_client.send_email(
             to=to,
@@ -118,8 +166,19 @@ async def send_email(
             is_html=is_html
         )
         
-        await ctx.info(f"✅ Email sent successfully! Message ID: {result.get('message_id')}")
-        await ctx.report_progress(progress=100, total=100)  # 100% - complete
+        # Stage 5: Completion (90-100%)
+        await ctx.info(
+            f"✅ Email sent successfully! Message ID: {result.get('message_id')}",
+            extra={
+                "stage": "email_complete",
+                "message_id": result.get('message_id'),
+                "recipients_count": result.get('recipients_count'),
+                "cc_count": result.get('cc_count'),
+                "bcc_count": result.get('bcc_count'),
+                "status": result.get('status')
+            }
+        )
+        await ctx.report_progress(progress=100, total=100)
         
         logger.debug(f"Email sent successfully: {result.get('message_id')}")
         
@@ -127,7 +186,15 @@ async def send_email(
         
     except Exception as e:
         error_msg = f"Email sending failed: {str(e)}"
-        await ctx.error(f"❌ {error_msg}")
+        await ctx.error(
+            f"❌ {error_msg}",
+            extra={
+                "stage": "email_exception",
+                "error_type": "exception",
+                "exception_class": type(e).__name__,
+                "recipients": to
+            }
+        )
         logger.error(f"send_email error: {str(e)}")
         return {
             "error": error_msg

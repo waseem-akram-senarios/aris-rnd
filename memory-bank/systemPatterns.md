@@ -41,8 +41,11 @@
 - **Tool routing**: Dynamic tool discovery and server-specific routing (core tools → intelycx-core, email → intelycx-email)
 - **Authentication**: Bearer token authentication with configurable API keys
 - **JWT handling**: Special logic for login tool (generates tokens) vs data tools (requires tokens)
-- **Context logging**: FastMCP Context provides rich logging and progress reporting to AI agent
+- **Context logging**: Multi-stage FastMCP Context logging with structured metadata and progress reporting
+- **Progress reporting**: 6-stage data generation workflow and 5-stage email workflow with rich feedback
+- **Structured logging**: Extra parameters provide detailed metadata for debugging and monitoring
 - **Health monitoring**: Health checks configured in docker-compose.yml with reduced log noise
+- **Log optimization**: Reduced duplication between LLM Bedrock and MCP Server Manager
 - **Error handling**: Graceful degradation when servers unavailable, honest limitation reporting
 - **Development**: Live code reload via volume mounting for rapid iteration
 

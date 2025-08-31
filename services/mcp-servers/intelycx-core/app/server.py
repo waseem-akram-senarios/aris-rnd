@@ -78,30 +78,70 @@ async def intelycx_login(
             jwt_token = result["jwt_token"]
             # Use jwt_token for subsequent API calls
     """
-    # Context-first logging for AI agent visibility
-    await ctx.info("🔧 Starting Intelycx Core authentication...")
-    await ctx.debug(f"📥 Login attempt for username: {username or 'from environment'}")
+    # Enhanced multi-stage progress with structured logging
+    await ctx.info(
+        "🔧 Starting Intelycx Core authentication...",
+        extra={
+            "stage": "authentication_start",
+            "username": username or "from_environment",
+            "api_url": core_client.base_url
+        }
+    )
+    await ctx.report_progress(progress=10, total=100)
     
     # Infrastructure logging only
     logger.debug(f"Login attempt: username={username}, password={'***' if password else None}")
     
     try:
-        await ctx.info("🔐 Authenticating with Intelycx Core API...")
+        await ctx.info(
+            "🔐 Connecting to Intelycx Core API...",
+            extra={"stage": "api_connection", "endpoint": "/login"}
+        )
+        await ctx.report_progress(progress=30, total=100)
+        
+        await ctx.info(
+            "📡 Sending authentication request...",
+            extra={"stage": "auth_request"}
+        )
+        await ctx.report_progress(progress=60, total=100)
         
         result = await core_client.login(username=username, password=password)
         
         if result.get("success"):
-            await ctx.info(f"✅ Authentication successful for user: {result.get('user')}")
+            await ctx.info(
+                f"✅ Authentication successful for user: {result.get('user')}",
+                extra={
+                    "stage": "auth_success",
+                    "user": result.get('user'),
+                    "expires_in": result.get('expires_in'),
+                    "token_length": len(result.get('jwt_token', ''))
+                }
+            )
+            await ctx.report_progress(progress=100, total=100)
             logger.debug("Authentication successful")
         else:
-            await ctx.error(f"❌ Authentication failed: {result.get('error')}")
+            await ctx.error(
+                f"❌ Authentication failed: {result.get('error')}",
+                extra={
+                    "stage": "auth_failure",
+                    "error_type": "authentication_failed",
+                    "status_code": result.get('status_code')
+                }
+            )
             logger.error(f"Authentication failed: {result.get('error')}")
         
         return result
         
     except Exception as e:
         error_msg = f"Login tool execution failed: {str(e)}"
-        await ctx.error(f"❌ Login error: {str(e)}")
+        await ctx.error(
+            f"❌ Login error: {str(e)}",
+            extra={
+                "stage": "auth_exception",
+                "error_type": "exception",
+                "exception_class": type(e).__name__
+            }
+        )
         logger.error(f"Login tool error: {str(e)}")
         return {
             "success": False,
@@ -149,32 +189,106 @@ async def get_fake_data(
         # - Inventory levels for raw materials and finished goods
         # - Energy consumption and cost data
     """
-    # Context-first logging for AI agent visibility
-    await ctx.info("🔧 Starting fake data generation...")
-    await ctx.debug(f"📥 Data type requested: {data_type or 'all'}")
+    # Enhanced multi-stage progress with structured logging
+    await ctx.info(
+        "🔧 Starting fake data generation...",
+        extra={
+            "stage": "data_generation_start",
+            "data_type": data_type or "all",
+            "token_provided": bool(jwt_token)
+        }
+    )
+    await ctx.report_progress(progress=5, total=100)
     
     # Infrastructure logging only
     logger.debug(f"get_fake_data called: jwt_token={'***' if jwt_token else None}, data_type={data_type}")
     
     try:
-        await ctx.info("🔐 Validating JWT token...")
-        await ctx.report_progress(progress=25, total=100)  # 25% - token validation
+        # Stage 1: Token validation (5-15%)
+        await ctx.info(
+            "🔐 Validating JWT token...",
+            extra={"stage": "token_validation", "token_length": len(jwt_token) if jwt_token else 0}
+        )
+        await ctx.report_progress(progress=15, total=100)
         
         result = await core_client.get_fake_data(jwt_token=jwt_token, data_type=data_type)
         
         # Check if there was an authentication error
         if isinstance(result, dict) and "error" in result:
-            await ctx.error(f"❌ Token validation failed: {result.get('error')}")
+            await ctx.error(
+                f"❌ Token validation failed: {result.get('error')}",
+                extra={
+                    "stage": "token_validation_failed",
+                    "error_type": "authentication_failed"
+                }
+            )
             logger.error(f"Token validation failed: {result.get('error')}")
             return result
         
-        await ctx.info("📊 Generating comprehensive manufacturing data...")
-        await ctx.report_progress(progress=75, total=100)  # 75% - generating data
+        # Stage 2: Generate facility data (15-30%)
+        await ctx.info(
+            "🏭 Generating facility information...",
+            extra={
+                "stage": "facility_data",
+                "facility_name": "Intelycx Manufacturing Plant A"
+            }
+        )
+        await ctx.report_progress(progress=30, total=100)
+        
+        # Stage 3: Generate production lines (30-50%)
+        await ctx.info(
+            "⚙️ Generating production line data...",
+            extra={
+                "stage": "production_lines",
+                "lines_count": 2,
+                "machines_per_line": 3
+            }
+        )
+        await ctx.report_progress(progress=50, total=100)
+        
+        # Stage 4: Generate metrics and alerts (50-70%)
+        await ctx.info(
+            "📊 Generating metrics and alerts...",
+            extra={
+                "stage": "metrics_alerts",
+                "metrics_types": ["daily", "shift", "efficiency"],
+                "alert_count": 2
+            }
+        )
+        await ctx.report_progress(progress=70, total=100)
+        
+        # Stage 5: Generate inventory data (70-85%)
+        await ctx.info(
+            "📦 Generating inventory data...",
+            extra={
+                "stage": "inventory_data",
+                "categories": ["raw_materials", "finished_goods"]
+            }
+        )
+        await ctx.report_progress(progress=85, total=100)
+        
+        # Stage 6: Generate energy data and finalize (85-100%)
+        await ctx.info(
+            "⚡ Generating energy consumption data...",
+            extra={
+                "stage": "energy_data",
+                "current_usage_kw": 1247.5
+            }
+        )
+        await ctx.report_progress(progress=95, total=100)
         
         # Success - result is the fake data directly
         data_size = len(str(result))
-        await ctx.info(f"✅ Generated {data_size} characters of fake manufacturing data")
-        await ctx.report_progress(progress=100, total=100)  # 100% - complete
+        await ctx.info(
+            f"✅ Generated comprehensive manufacturing data successfully!",
+            extra={
+                "stage": "generation_complete",
+                "data_size_chars": data_size,
+                "data_size_kb": round(data_size / 1024, 2),
+                "sections": ["facility", "production_lines", "daily_metrics", "shift_data", "alerts", "inventory", "energy_consumption"]
+            }
+        )
+        await ctx.report_progress(progress=100, total=100)
         
         logger.debug(f"Fake data generated successfully: {data_size} characters")
         
@@ -182,7 +296,14 @@ async def get_fake_data(
         
     except Exception as e:
         error_msg = f"Get fake data tool execution failed: {str(e)}"
-        await ctx.error(f"❌ Data generation error: {str(e)}")
+        await ctx.error(
+            f"❌ Data generation error: {str(e)}",
+            extra={
+                "stage": "generation_exception",
+                "error_type": "exception",
+                "exception_class": type(e).__name__
+            }
+        )
         logger.error(f"get_fake_data error: {str(e)}")
         return {
             "error": error_msg
