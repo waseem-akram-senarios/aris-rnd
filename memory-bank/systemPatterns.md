@@ -41,6 +41,8 @@
 - **Tool routing**: Dynamic tool discovery and server-specific routing (core tools → intelycx-core, email → intelycx-email)
 - **Authentication**: Bearer token authentication with configurable API keys
 - **JWT handling**: Special logic for login tool (generates tokens) vs data tools (requires tokens)
+- **Context logging**: FastMCP Context provides rich logging and progress reporting to AI agent
+- **Health monitoring**: Health checks configured in docker-compose.yml with reduced log noise
 - **Error handling**: Graceful degradation when servers unavailable, honest limitation reporting
 - **Development**: Live code reload via volume mounting for rapid iteration
 

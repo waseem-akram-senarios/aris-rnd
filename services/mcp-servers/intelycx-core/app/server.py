@@ -4,7 +4,7 @@ import os
 import logging
 from typing import Any, Dict, Optional
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from .core_client import IntelycxCoreClient
@@ -23,7 +23,8 @@ core_client = IntelycxCoreClient()
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request: Request) -> JSONResponse:
     """Health check endpoint for monitoring and Docker health checks."""
-    logger.info("🏥 Health check requested")
+    # Don't log routine health checks to reduce noise
+    # Only log on startup or if there are issues
     
     # Perform basic health checks
     health_status = {
@@ -36,14 +37,14 @@ async def health_check(request: Request) -> JSONResponse:
         "timestamp": "2024-08-29T00:00:00Z"  # Would be actual timestamp in real implementation
     }
     
-    logger.info(f"✅ Health check passed: {health_status['status']}")
     return JSONResponse(content=health_status, status_code=200)
 
 
 @mcp.tool
 async def intelycx_login(
     username: Optional[str] = None,
-    password: Optional[str] = None
+    password: Optional[str] = None,
+    ctx: Context = None
 ) -> Dict[str, Any]:
     """
     Login to Intelycx Core API and obtain JWT token for subsequent API calls.
@@ -77,32 +78,42 @@ async def intelycx_login(
             jwt_token = result["jwt_token"]
             # Use jwt_token for subsequent API calls
     """
-    logger.info("🔧 CORE TOOL CALL: intelycx_login")
-    logger.info(f"📥 TOOL INPUT: username={username}, password={'***' if password else None}")
+    # Context-first logging for AI agent visibility
+    await ctx.info("🔧 Starting Intelycx Core authentication...")
+    await ctx.debug(f"📥 Login attempt for username: {username or 'from environment'}")
+    
+    # Infrastructure logging only
+    logger.debug(f"Login attempt: username={username}, password={'***' if password else None}")
     
     try:
+        await ctx.info("🔐 Authenticating with Intelycx Core API...")
+        
         result = await core_client.login(username=username, password=password)
         
         if result.get("success"):
-            logger.info("✅ CORE TOOL SUCCESS: intelycx_login - Authentication successful")
-            logger.info(f"📤 TOOL OUTPUT: Login successful for user {result.get('user')}")
+            await ctx.info(f"✅ Authentication successful for user: {result.get('user')}")
+            logger.debug("Authentication successful")
         else:
-            logger.error(f"❌ CORE TOOL ERROR: intelycx_login - {result.get('error')}")
+            await ctx.error(f"❌ Authentication failed: {result.get('error')}")
+            logger.error(f"Authentication failed: {result.get('error')}")
         
         return result
         
     except Exception as e:
-        logger.error(f"❌ CORE TOOL ERROR: intelycx_login - {str(e)}")
+        error_msg = f"Login tool execution failed: {str(e)}"
+        await ctx.error(f"❌ Login error: {str(e)}")
+        logger.error(f"Login tool error: {str(e)}")
         return {
             "success": False,
-            "error": f"Login tool execution failed: {str(e)}"
+            "error": error_msg
         }
 
 
 @mcp.tool
 async def get_fake_data(
     jwt_token: str,
-    data_type: Optional[str] = None
+    data_type: Optional[str] = None,
+    ctx: Context = None
 ) -> Dict[str, Any]:
     """
     Generate comprehensive fake manufacturing data for testing and development.
@@ -138,28 +149,43 @@ async def get_fake_data(
         # - Inventory levels for raw materials and finished goods
         # - Energy consumption and cost data
     """
-    logger.info("🔧 CORE TOOL CALL: get_fake_data")
-    logger.info(f"📥 TOOL INPUT: jwt_token={'***' if jwt_token else None}, data_type={data_type}")
+    # Context-first logging for AI agent visibility
+    await ctx.info("🔧 Starting fake data generation...")
+    await ctx.debug(f"📥 Data type requested: {data_type or 'all'}")
+    
+    # Infrastructure logging only
+    logger.debug(f"get_fake_data called: jwt_token={'***' if jwt_token else None}, data_type={data_type}")
     
     try:
+        await ctx.info("🔐 Validating JWT token...")
+        await ctx.report_progress(progress=25, total=100)  # 25% - token validation
+        
         result = await core_client.get_fake_data(jwt_token=jwt_token, data_type=data_type)
         
         # Check if there was an authentication error
         if isinstance(result, dict) and "error" in result:
-            logger.error(f"❌ CORE TOOL ERROR: get_fake_data - {result.get('error')}")
+            await ctx.error(f"❌ Token validation failed: {result.get('error')}")
+            logger.error(f"Token validation failed: {result.get('error')}")
             return result
         
+        await ctx.info("📊 Generating comprehensive manufacturing data...")
+        await ctx.report_progress(progress=75, total=100)  # 75% - generating data
+        
         # Success - result is the fake data directly
-        logger.info("✅ CORE TOOL SUCCESS: get_fake_data - Fake data generated successfully")
         data_size = len(str(result))
-        logger.info(f"📤 TOOL OUTPUT: Generated {data_size} characters of fake manufacturing data")
+        await ctx.info(f"✅ Generated {data_size} characters of fake manufacturing data")
+        await ctx.report_progress(progress=100, total=100)  # 100% - complete
+        
+        logger.debug(f"Fake data generated successfully: {data_size} characters")
         
         return result
         
     except Exception as e:
-        logger.error(f"❌ CORE TOOL ERROR: get_fake_data - {str(e)}")
+        error_msg = f"Get fake data tool execution failed: {str(e)}"
+        await ctx.error(f"❌ Data generation error: {str(e)}")
+        logger.error(f"get_fake_data error: {str(e)}")
         return {
-            "error": f"Get fake data tool execution failed: {str(e)}"
+            "error": error_msg
         }
 
 

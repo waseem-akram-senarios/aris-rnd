@@ -22,6 +22,12 @@ services:
       - INTELYCX_CORE_MCP_URL=http://aris-mcp-intelycx-core:8080
       - INTELYCX_EMAIL_MCP_URL=http://aris-mcp-intelycx-email:8081
       - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:443/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     logging:
       driver: "json-file"
       options:
@@ -42,10 +48,17 @@ services:
       - ../services/mcp-servers/intelycx-core/app:/app/app
     environment:
       - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+      - UVICORN_ACCESS_LOG=false
     restart: unless-stopped
     networks:
       - intelycx_net
       - mcp_internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     logging:
       driver: "json-file"
       options:
@@ -66,9 +79,16 @@ services:
       - ../services/mcp-servers/intelycx-email/app:/app/app
     environment:
       - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+      - UVICORN_ACCESS_LOG=false
     restart: unless-stopped
     networks:
       - mcp_internal
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     logging:
       driver: "json-file"
       options:

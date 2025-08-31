@@ -31,6 +31,9 @@
 - **Performance optimization** (caching, connection pooling, memory backend optimization)
 
 ## Recent achievements 🎉
+- **Implemented FastMCP Context logging** - Rich progress reporting and client-visible logs with reduced noise
+- **Moved health checks to docker-compose.yml** - Better environment-specific configuration and cleaner Dockerfiles
+- **Simplified to Context-first logging** - Cleaner code with AI agent visibility, reduced log redundancy
 - **Created Intelycx-Core MCP server** - FastMCP implementation with login and fake data tools
 - **Fixed tool execution pipeline** - Resolved JWT token injection and tool routing issues
 - **Implemented volume mounting** - Live development for all MCP servers with code reload

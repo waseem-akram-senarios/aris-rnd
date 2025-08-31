@@ -35,7 +35,8 @@
 ## Build & Run
 - **Local development**: `docker compose up -d` in `docker/` directory
 - **Agent container**: Built from `services/agent/Dockerfile` with editable install
-- **MCP containers**: Separate builds for `intelycx-core` and `intelycx-email`
+- **MCP containers**: Separate FastMCP builds for `intelycx-core` and `intelycx-email` with volume mounting
+- **Health checks**: Configured in docker-compose.yml with reduced log noise
 - **Entrypoint script**: `aris-agent` (from `pyproject.toml` console script)
 - **Container naming**: `aris-mcp-[server-name]` convention
 

@@ -4,7 +4,7 @@ import os
 import logging
 from typing import Any, Dict, List, Optional, Union
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from .email_client import EmailClient
@@ -29,7 +29,8 @@ email_client = EmailClient(
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request: Request) -> JSONResponse:
     """Health check endpoint for monitoring and Docker health checks."""
-    logger.info("🏥 Health check requested")
+    # Don't log routine health checks to reduce noise
+    # Only log on startup or if there are issues
     
     # Perform basic health checks
     health_status = {
@@ -41,18 +42,18 @@ async def health_check(request: Request) -> JSONResponse:
         "timestamp": "2024-08-26T00:00:00Z"  # Would be actual timestamp in real implementation
     }
     
-    logger.info(f"✅ Health check passed: {health_status['status']}")
     return JSONResponse(content=health_status, status_code=200)
 
 
 @mcp.tool
 async def send_email(
+    ctx: Context,
     to: Union[str, List[str], List[Dict[str, str]]],
     subject: str,
     body: str,
     cc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
     bcc: Optional[Union[str, List[str], List[Dict[str, str]]]] = None,
-    is_html: bool = False
+    is_html: bool = False    
 ) -> Dict[str, Any]:
     """
     Send an email with flexible recipient support.
@@ -94,10 +95,20 @@ async def send_email(
             bcc=["archive@example.com"]
         )
     """
-    logger.info(f"🔧 EMAIL TOOL CALL: send_email")
-    logger.info(f"📥 TOOL INPUT: to={to}, subject='{subject}', cc={cc}, bcc={bcc}, is_html={is_html}")
+    # Context-first logging for AI agent visibility
+    await ctx.info("📧 Starting email composition...")
+    await ctx.debug(f"📥 Recipients: {to}, Subject: '{subject}', Format: {'HTML' if is_html else 'Text'}")
+    
+    # Infrastructure logging only
+    logger.debug(f"send_email called: to={to}, subject='{subject}', cc={cc}, bcc={bcc}, is_html={is_html}")
     
     try:
+        await ctx.info("📝 Preparing email content...")
+        await ctx.report_progress(progress=25, total=100)  # 25% - preparing
+        
+        await ctx.info(f"📬 Sending email to {to}...")
+        await ctx.report_progress(progress=75, total=100)  # 75% - sending
+        
         result = await email_client.send_email(
             to=to,
             subject=subject,
@@ -107,14 +118,20 @@ async def send_email(
             is_html=is_html
         )
         
-        logger.info(f"✅ EMAIL TOOL SUCCESS: send_email")
-        logger.info(f"📤 TOOL OUTPUT: {result}")
+        await ctx.info(f"✅ Email sent successfully! Message ID: {result.get('message_id')}")
+        await ctx.report_progress(progress=100, total=100)  # 100% - complete
+        
+        logger.debug(f"Email sent successfully: {result.get('message_id')}")
         
         return result
         
     except Exception as e:
-        logger.error(f"❌ EMAIL TOOL ERROR: send_email - {str(e)}")
-        raise
+        error_msg = f"Email sending failed: {str(e)}"
+        await ctx.error(f"❌ {error_msg}")
+        logger.error(f"send_email error: {str(e)}")
+        return {
+            "error": error_msg
+        }
 
 
 def main():

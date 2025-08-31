@@ -61,7 +61,7 @@ class IntelycxCoreClient:
         }
         
         try:
-            logger.info(f"🔐 Attempting login to {login_url} with username: {auth_username}")
+            logger.debug(f"Attempting login to {login_url} with username: {auth_username}")
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -71,7 +71,7 @@ class IntelycxCoreClient:
                     timeout=30.0
                 )
                 
-                logger.info(f"📡 Login response status: {response.status_code}")
+                logger.debug(f"Login response status: {response.status_code}")
                 
                 if response.status_code == 200:
                     response_data = response.json()
@@ -85,7 +85,7 @@ class IntelycxCoreClient:
                         expires_in = response_data.get("expires_in", 3600)  # Default 1 hour
                         self._token_expires_at = datetime.now() + timedelta(seconds=expires_in)
                         
-                        logger.info(f"✅ Login successful! Token expires at: {self._token_expires_at}")
+                        logger.debug(f"Login successful, token expires at: {self._token_expires_at}")
                         
                         return {
                             "success": True,
@@ -97,7 +97,7 @@ class IntelycxCoreClient:
                         }
                     else:
                         error_msg = "No JWT token found in login response"
-                        logger.error(f"❌ {error_msg}")
+                        logger.error(error_msg)
                         return {
                             "success": False,
                             "error": error_msg,
@@ -105,7 +105,7 @@ class IntelycxCoreClient:
                         }
                 else:
                     error_msg = f"Login failed with status {response.status_code}"
-                    logger.error(f"❌ {error_msg}")
+                    logger.error(error_msg)
                     
                     try:
                         error_details = response.json()
@@ -121,14 +121,14 @@ class IntelycxCoreClient:
                     
         except httpx.TimeoutException:
             error_msg = f"Login request timed out to {login_url}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(error_msg)
             return {
                 "success": False,
                 "error": error_msg
             }
         except Exception as e:
             error_msg = f"Login request failed: {str(e)}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(error_msg)
             return {
                 "success": False,
                 "error": error_msg
@@ -167,16 +167,14 @@ class IntelycxCoreClient:
         Returns:
             Dictionary with comprehensive fake manufacturing data
         """
-        logger.info("✅ Generating fake production data (authenticated)")
+        logger.debug("Generating fake production data")
         
         # Simple JWT token validation - just check it exists and looks valid
         if not jwt_token or len(jwt_token) < 10:
-            logger.error("❌ Invalid JWT token for fake data request")
+            logger.debug("Invalid JWT token provided")
             return {"error": "Authentication failed - invalid or missing JWT token"}
         
-        logger.info(f"📊 Generating fake manufacturing data")
-        if data_type:
-            logger.info(f"   Data type requested: {data_type}")
+        logger.debug(f"Generating fake data, type: {data_type or 'all'}")
         
         # Generate comprehensive fake production data (same as old implementation)
         fake_data = {
@@ -268,5 +266,5 @@ class IntelycxCoreClient:
             }
         }
         
-        logger.info(f"✅ Generated fake data with {len(fake_data)} top-level sections")
+        logger.debug(f"Generated fake data with {len(fake_data)} top-level sections")
         return fake_data

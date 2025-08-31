@@ -21,9 +21,7 @@ RUN pip install --upgrade pip && pip install -e .
 # Expose port
 EXPOSE 8081
 
-# Health check using custom /health endpoint
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8081/health || exit 1
+# Health check moved to docker-compose.yml
 
 # Run the server
 CMD ["intelycx-email-mcp-server"]
