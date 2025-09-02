@@ -4,12 +4,14 @@ import os
 import logging
 from typing import Any, Dict, List, Optional, Union, Annotated
 from enum import Enum
+from datetime import datetime
 
 from fastmcp import FastMCP, Context
 from pydantic import BaseModel, Field, EmailStr
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from .email_client import EmailClient
+from .drivers import EmailPriority, EmailAttachment
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,23 +23,23 @@ mcp = FastMCP(
     on_duplicate_tools="warn"  # Warn about duplicate tool registrations
 )
 
-# Initialize email client
+# Initialize enhanced email client with driver support
+# Default to log driver if no credentials are configured
+default_driver = "log"
+if os.environ.get("SMTP_USER") and os.environ.get("SMTP_PASSWORD"):
+    default_driver = "smtp"
+elif os.environ.get("EMAIL_SENDER") and os.environ.get("EMAIL_REGION"):
+    default_driver = "ses"
+
 email_client = EmailClient(
+    driver_name=os.environ.get("EMAIL_DRIVER", default_driver),
+    # Legacy fallback for backward compatibility
     smtp_host=os.environ.get("SMTP_HOST", "smtp.gmail.com"),
     smtp_port=int(os.environ.get("SMTP_PORT", "587")),
     username=os.environ.get("SMTP_USER"),
     password=os.environ.get("SMTP_PASSWORD"),
     use_tls=os.environ.get("SMTP_USE_TLS", "true").lower() == "true"
 )
-
-
-# Enums for constrained values
-class EmailPriority(Enum):
-    """Email priority levels."""
-    LOW = "low"
-    NORMAL = "normal"
-    HIGH = "high"
-    URGENT = "urgent"
 
 
 # Pydantic models for structured parameters and responses
@@ -51,13 +53,18 @@ class EmailResponse(BaseModel):
     """Response model for email operations."""
     success: bool = Field(description="Whether the email was sent successfully")
     message_id: Optional[str] = Field(None, description="Unique message identifier")
-    recipients_count: Optional[int] = Field(None, description="Number of primary recipients")
-    cc_count: Optional[int] = Field(None, description="Number of CC recipients")
-    bcc_count: Optional[int] = Field(None, description="Number of BCC recipients")
-    status: Optional[str] = Field(None, description="Detailed status message")
+    recipients_count: int = Field(0, description="Number of primary recipients")
+    cc_count: int = Field(0, description="Number of CC recipients") 
+    bcc_count: int = Field(0, description="Number of BCC recipients")
+    status: str = Field("unknown", description="Detailed status message")
     error: Optional[str] = Field(None, description="Error message if unsuccessful")
     sent_at: Optional[str] = Field(None, description="Timestamp when email was sent")
-    size_kb: Optional[float] = Field(None, description="Email size in kilobytes")
+    size_kb: float = Field(0.0, description="Email size in kilobytes")
+    
+    class Config:
+        # Allow None values and provide defaults
+        validate_assignment = True
+        extra = "ignore"
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -67,13 +74,16 @@ async def health_check(request: Request) -> JSONResponse:
     # Only log on startup or if there are issues
     
     # Perform basic health checks
+    driver_info = email_client.get_driver_info()
+    
     health_status = {
         "status": "healthy",
         "service": "intelycx-email-mcp-server",
         "version": "0.1.0",
         "transport": "http",
-        "smtp_configured": bool(email_client.username),
-        "timestamp": "2024-08-26T00:00:00Z"  # Would be actual timestamp in real implementation
+        "email_driver": driver_info["driver_name"],
+        "driver_configured": bool(email_client.driver.config),
+        "timestamp": datetime.now().isoformat()
     }
     
     return JSONResponse(content=health_status, status_code=200)
@@ -95,13 +105,13 @@ async def health_check(request: Request) -> JSONResponse:
         "type": "object",
         "properties": {
             "success": {"type": "boolean", "description": "Whether email was sent successfully"},
-            "message_id": {"type": "string", "description": "Unique message identifier"},
+            "message_id": {"type": ["string", "null"], "description": "Unique message identifier"},
             "recipients_count": {"type": "integer", "description": "Number of primary recipients"},
             "cc_count": {"type": "integer", "description": "Number of CC recipients"},
             "bcc_count": {"type": "integer", "description": "Number of BCC recipients"},
             "status": {"type": "string", "description": "Detailed status message"},
-            "error": {"type": "string", "description": "Error message if unsuccessful"},
-            "sent_at": {"type": "string", "description": "Timestamp when email was sent"},
+            "error": {"type": ["string", "null"], "description": "Error message if unsuccessful"},
+            "sent_at": {"type": ["string", "null"], "description": "Timestamp when email was sent"},
             "size_kb": {"type": "number", "description": "Email size in kilobytes"}
         },
         "required": ["success"]
@@ -130,6 +140,14 @@ async def send_email(
     )] = None,
     is_html: bool = False,
     priority: EmailPriority = EmailPriority.NORMAL,
+    reply_to: Annotated[Optional[str], Field(
+        None,
+        description="Reply-to email address"
+    )] = None,
+    attachment_urls: Annotated[Optional[List[str]], Field(
+        None,
+        description="List of URLs to download and attach to email"
+    )] = None,
     ctx: Context = None
 ) -> EmailResponse:
     """
@@ -189,8 +207,8 @@ async def send_email(
     )
     await ctx.report_progress(progress=10, total=100)
     
-    # Notify start of email process
-    await ctx.notify(f"Composing {priority.value} priority email to {len(to) if isinstance(to, list) else 1} recipient(s)", level="info")
+    # Log start of email process (notify not available in current FastMCP version)
+    logger.info(f"Composing {priority.value} priority email to {len(to) if isinstance(to, list) else 1} recipient(s)")
     
     # Infrastructure logging only
     logger.debug(f"send_email called: to={to}, subject='{subject}', cc={cc}, bcc={bcc}, is_html={is_html}")
@@ -223,18 +241,62 @@ async def send_email(
         await ctx.info(
             "🔗 Establishing email connection...",
             extra={
-                "stage": "smtp_connection",
-                "smtp_configured": bool(email_client.username)
+                "stage": "email_connection",
+                "driver_name": email_client.driver.driver_name,
+                "driver_configured": bool(email_client.driver.config)
             }
         )
         await ctx.report_progress(progress=65, total=100)
         
-        # Stage 4: Send email (65-90%)
+        # Stage 4: Process attachments (65-75%)
+        attachments = []
+        if attachment_urls:
+            await ctx.info(
+                f"📎 Processing {len(attachment_urls)} attachments...",
+                extra={
+                    "stage": "attachment_processing",
+                    "attachment_count": len(attachment_urls)
+                }
+            )
+            await ctx.report_progress(progress=75, total=100)
+            
+            try:
+                import httpx
+                async with httpx.AsyncClient() as client:
+                    for i, url in enumerate(attachment_urls):
+                        try:
+                            response = await client.get(url)
+                            response.raise_for_status()
+                            
+                            # Extract filename from URL or use default
+                            filename = url.split('/')[-1] or f"attachment_{i+1}"
+                            content_type = response.headers.get('content-type', 'application/octet-stream')
+                            
+                            attachment = EmailAttachment(
+                                filename=filename,
+                                content=response.content,
+                                content_type=content_type
+                            )
+                            attachments.append(attachment)
+                            
+                            await ctx.info(f"📎 Downloaded attachment: {filename}")
+                            
+                        except Exception as e:
+                            await ctx.error(f"Failed to download attachment from {url}: {e}")
+                            # Continue with other attachments
+                            
+            except ImportError:
+                await ctx.error("httpx library not available for attachment downloads")
+            except Exception as e:
+                await ctx.error(f"Error processing attachments: {e}")
+        
+        # Stage 5: Send email (75-90%)
         await ctx.info(
             f"📬 Sending email to {to}...",
             extra={
                 "stage": "email_sending",
-                "recipients": to
+                "recipients": to,
+                "attachments_count": len(attachments)
             }
         )
         await ctx.report_progress(progress=90, total=100)
@@ -245,11 +307,15 @@ async def send_email(
             body=body,
             cc=cc,
             bcc=bcc,
-            is_html=is_html
+            is_html=is_html,
+            priority=priority,
+            attachments=attachments if attachments else None,
+            reply_to=reply_to
         )
         
-        # Stage 5: Completion (90-100%)
-        email_size_kb = round(len(f"{subject}{body}") / 1024, 2)
+        # Stage 6: Completion (90-100%)
+        # Use size from result if available, otherwise calculate
+        email_size_kb = result.get("size_kb", round(len(f"{subject}{body}") / 1024, 2))
         
         await ctx.info(
             f"✅ Email sent successfully! Message ID: {result.get('message_id')}",
@@ -264,18 +330,35 @@ async def send_email(
             }
         )
         await ctx.report_progress(progress=100, total=100)
-        await ctx.notify(f"Email sent successfully to {result.get('recipients_count', 0)} recipients", level="success")
+        # Log success (notify not available in current FastMCP version)
+        logger.info(f"Email sent successfully to {result.get('recipients_count', 0)} recipients")
         
         logger.debug(f"Email sent successfully: {result.get('message_id')}")
         
         # Return structured response with metadata
         if isinstance(result, dict):
-            result["size_kb"] = email_size_kb
-            return EmailResponse(**result)
+            # Ensure all required fields have proper values
+            response_data = {
+                "success": result.get("success", True),
+                "message_id": result.get("message_id") or "",
+                "recipients_count": result.get("recipients_count", 0),
+                "cc_count": result.get("cc_count", 0),
+                "bcc_count": result.get("bcc_count", 0),
+                "status": result.get("status", "completed"),
+                "error": result.get("error") or "",
+                "sent_at": result.get("sent_at") or datetime.now().isoformat(),
+                "size_kb": result.get("size_kb", email_size_kb)
+            }
+            return EmailResponse(**response_data)
         else:
             return EmailResponse(
                 success=True,
-                message_id=result.get('message_id') if hasattr(result, 'get') else None,
+                message_id=result.get('message_id') if hasattr(result, 'get') else "",
+                recipients_count=1,
+                cc_count=0,
+                bcc_count=0,
+                status="completed",
+                sent_at=datetime.now().isoformat(),
                 size_kb=email_size_kb
             )
         
@@ -290,14 +373,111 @@ async def send_email(
                 "recipients": to
             }
         )
-        await ctx.notify(f"Email sending failed: {str(e)}", level="error")
+        # Log error (notify not available in current FastMCP version)
+        logger.error(f"Email sending failed: {str(e)}")
         logger.error(f"send_email error: {str(e)}")
         
         # Return structured error response
         return EmailResponse(
             success=False,
-            error=error_msg
+            message_id="",
+            status="failed",
+            error=error_msg,
+            sent_at=datetime.now().isoformat()
         )
+
+
+@mcp.tool(
+    name="test_email_driver",
+    description="Test the current email driver configuration and connectivity",
+    tags={"email", "testing", "diagnostics"},
+    meta={"version": "1.0", "category": "diagnostics", "author": "intelycx"},
+    annotations={
+        "title": "Email Driver Tester",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
+    }
+)
+async def test_email_driver(ctx: Context = None) -> Dict[str, Any]:
+    """
+    Test the current email driver configuration and connectivity.
+    
+    This tool checks if the email driver is properly configured and can connect
+    to the email service. It provides diagnostic information about the driver
+    and its configuration without sending any actual emails.
+    
+    Returns:
+        Dictionary containing:
+        - success: Whether the driver test passed
+        - driver_info: Information about the current driver
+        - connection_test: Result of connection test
+        - configuration_status: Status of driver configuration
+        - error: Error message if test failed
+    """
+    await ctx.info("🔧 Testing email driver configuration...")
+    await ctx.report_progress(progress=20, total=100)
+    
+    try:
+        # Get driver information
+        driver_info = email_client.get_driver_info()
+        
+        await ctx.info(
+            f"📧 Testing {driver_info['driver_name']} driver...",
+            extra={
+                "driver_name": driver_info['driver_name'],
+                "driver_class": driver_info['driver_class']
+            }
+        )
+        await ctx.report_progress(progress=50, total=100)
+        
+        # Test connection
+        connection_test = await email_client.test_connection()
+        
+        await ctx.info(
+            f"🔗 Connection test: {'PASSED' if connection_test else 'FAILED'}",
+            extra={"connection_test": connection_test}
+        )
+        await ctx.report_progress(progress=80, total=100)
+        
+        # Get configuration status
+        config_status = "configured" if email_client.driver.config else "missing_config"
+        
+        await ctx.info(
+            f"✅ Driver test completed",
+            extra={
+                "connection_test": connection_test,
+                "config_status": config_status
+            }
+        )
+        await ctx.report_progress(progress=100, total=100)
+        
+        # Log test results (notify not available in current FastMCP version)
+        if connection_test:
+            logger.info(f"Email driver ({driver_info['driver_name']}) test passed")
+        else:
+            logger.warning(f"Email driver ({driver_info['driver_name']}) test failed")
+        
+        return {
+            "success": connection_test,
+            "driver_info": driver_info,
+            "connection_test": connection_test,
+            "configuration_status": config_status,
+            "test_timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        error_msg = f"Email driver test failed: {str(e)}"
+        await ctx.error(error_msg)
+        # Log error (notify not available in current FastMCP version)
+        logger.error(f"Email driver test error: {str(e)}")
+        
+        return {
+            "success": False,
+            "error": error_msg,
+            "test_timestamp": datetime.now().isoformat()
+        }
 
 
 def main():

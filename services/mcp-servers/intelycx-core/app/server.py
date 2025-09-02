@@ -46,6 +46,11 @@ class LoginResponse(BaseModel):
     user: Optional[str] = Field(None, description="Username that was authenticated")
     error: Optional[str] = Field(None, description="Error message if unsuccessful")
     status_code: Optional[int] = Field(None, description="HTTP status code")
+    
+    class Config:
+        # Allow None values for optional fields
+        validate_assignment = True
+        extra = "ignore"
 
 
 class ManufacturingDataResponse(BaseModel):
@@ -99,12 +104,12 @@ async def health_check(request: Request) -> JSONResponse:
         "type": "object",
         "properties": {
             "success": {"type": "boolean", "description": "Whether login was successful"},
-            "jwt_token": {"type": "string", "description": "JWT authentication token"},
-            "expires_in": {"type": "integer", "description": "Token expiration time in seconds"},
-            "expires_at": {"type": "string", "description": "ISO timestamp when token expires"},
-            "user": {"type": "string", "description": "Authenticated username"},
-            "error": {"type": "string", "description": "Error message if unsuccessful"},
-            "status_code": {"type": "integer", "description": "HTTP status code"}
+            "jwt_token": {"type": ["string", "null"], "description": "JWT authentication token"},
+            "expires_in": {"type": ["integer", "null"], "description": "Token expiration time in seconds"},
+            "expires_at": {"type": ["string", "null"], "description": "ISO timestamp when token expires"},
+            "user": {"type": ["string", "null"], "description": "Authenticated username"},
+            "error": {"type": ["string", "null"], "description": "Error message if unsuccessful"},
+            "status_code": {"type": ["integer", "null"], "description": "HTTP status code"}
         },
         "required": ["success"]
     }
@@ -168,8 +173,8 @@ async def intelycx_login(
     )
     await ctx.report_progress(progress=10, total=100)
     
-    # Notify start of authentication process
-    await ctx.notify("Authentication process initiated", level="info")
+    # Log authentication start (notify not available in current FastMCP version)
+    logger.info("Authentication process initiated")
     
     # Infrastructure logging only
     logger.debug(f"Login attempt: username={username}, password={'***' if password else None}")
@@ -200,11 +205,20 @@ async def intelycx_login(
                 }
             )
             await ctx.report_progress(progress=100, total=100)
-            await ctx.notify(f"Successfully authenticated as {result.get('user')}", level="success")
+            # Log success (notify not available in current FastMCP version)
+            logger.info(f"Successfully authenticated as {result.get('user')}")
             logger.debug("Authentication successful")
             
-            # Return structured response using Pydantic model
-            return LoginResponse(**result)
+            # Return structured response using Pydantic model with proper defaults
+            return LoginResponse(
+                success=result.get("success", True),
+                jwt_token=result.get("jwt_token") or "",
+                expires_in=result.get("expires_in") or 3600,
+                expires_at=result.get("expires_at") or "",
+                user=result.get("user") or "",
+                error=result.get("error") or "",
+                status_code=result.get("status_code") or 200
+            )
         else:
             await ctx.error(
                 f"❌ Authentication failed: {result.get('error')}",
@@ -214,11 +228,20 @@ async def intelycx_login(
                     "status_code": result.get('status_code')
                 }
             )
-            await ctx.notify(f"Authentication failed: {result.get('error')}", level="error")
+            # Log error (notify not available in current FastMCP version)
+            logger.error(f"Authentication failed: {result.get('error')}")
             logger.error(f"Authentication failed: {result.get('error')}")
             
-            # Return structured error response
-            return LoginResponse(**result)
+            # Return structured error response with proper defaults
+            return LoginResponse(
+                success=result.get("success", False),
+                jwt_token=result.get("jwt_token") or "",
+                expires_in=result.get("expires_in") or 0,
+                expires_at=result.get("expires_at") or "",
+                user=result.get("user") or "",
+                error=result.get("error") or "Authentication failed",
+                status_code=result.get("status_code") or 400
+            )
         
     except Exception as e:
         error_msg = f"Login tool execution failed: {str(e)}"
@@ -230,13 +253,19 @@ async def intelycx_login(
                 "exception_class": type(e).__name__
             }
         )
-        await ctx.notify(f"Authentication error: {str(e)}", level="error")
+        # Log error (notify not available in current FastMCP version)
+        logger.error(f"Authentication error: {str(e)}")
         logger.error(f"Login tool error: {str(e)}")
         
-        # Return structured error response
+        # Return structured error response with proper defaults
         return LoginResponse(
             success=False,
-            error=error_msg
+            jwt_token="",
+            expires_in=0,
+            expires_at="",
+            user="",
+            error=error_msg,
+            status_code=500
         )
 
 
@@ -324,8 +353,8 @@ async def get_fake_data(
     )
     await ctx.report_progress(progress=5, total=100)
     
-    # Notify start of data generation
-    await ctx.notify(f"Generating {data_type.value} manufacturing data", level="info")
+    # Log data generation start (notify not available in current FastMCP version)
+    logger.info(f"Generating {data_type.value} manufacturing data")
     
     # Infrastructure logging only
     logger.debug(f"get_fake_data called: jwt_token={'***' if jwt_token else None}, data_type={data_type}")
@@ -349,7 +378,8 @@ async def get_fake_data(
                     "error_type": "authentication_failed"
                 }
             )
-            await ctx.notify(f"Token validation failed: {result.get('error')}", level="error")
+            # Log error (notify not available in current FastMCP version)
+            logger.error(f"Token validation failed: {result.get('error')}")
             logger.error(f"Token validation failed: {result.get('error')}")
             
             # Return structured error response
@@ -424,7 +454,8 @@ async def get_fake_data(
             }
         )
         await ctx.report_progress(progress=100, total=100)
-        await ctx.notify(f"Manufacturing data generated successfully ({data_size_kb} KB)", level="success")
+        # Log success (notify not available in current FastMCP version)
+        logger.info(f"Manufacturing data generated successfully ({data_size_kb} KB)")
         
         logger.debug(f"Fake data generated successfully: {data_size} characters")
         
@@ -450,7 +481,8 @@ async def get_fake_data(
                 "exception_class": type(e).__name__
             }
         )
-        await ctx.notify(f"Data generation error: {str(e)}", level="error")
+        # Log error (notify not available in current FastMCP version)
+        logger.error(f"Data generation error: {str(e)}")
         logger.error(f"get_fake_data error: {str(e)}")
         
         # Return structured error response

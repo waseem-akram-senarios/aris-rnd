@@ -192,8 +192,8 @@ class MCPServerManager:
     
     def _get_server_for_tool(self, tool_name: str) -> str:
         """Determine which MCP server should handle a specific tool."""
-        # Tool routing logic (same as before)
-        email_tools = ["send_email"]
+        # Tool routing logic - updated with new tools
+        email_tools = ["send_email", "test_email_driver"]
         core_tools = ["intelycx_login", "get_machine", "get_machine_group", "get_production_summary", "get_fake_data"]
         
         if tool_name in email_tools:
