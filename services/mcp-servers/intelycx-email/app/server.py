@@ -67,6 +67,20 @@ class EmailResponse(BaseModel):
         extra = "ignore"
 
 
+class EmailDriverTestResponse(BaseModel):
+    """Response model for email driver testing operations."""
+    success: bool = Field(description="Whether the driver test passed")
+    driver_info: Optional[Dict[str, Any]] = Field(None, description="Information about the current driver")
+    connection_test: bool = Field(False, description="Result of connection test")
+    configuration_status: str = Field("unknown", description="Status of driver configuration")
+    error: Optional[str] = Field(None, description="Error message if test failed")
+    test_timestamp: str = Field(description="Timestamp when test was performed")
+    
+    class Config:
+        validate_assignment = True
+        extra = "ignore"
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request: Request) -> JSONResponse:
     """Health check endpoint for monitoring and Docker health checks."""
@@ -100,21 +114,6 @@ async def health_check(request: Request) -> JSONResponse:
         "destructiveHint": False,
         "idempotentHint": False,
         "openWorldHint": True
-    },
-    output_schema={
-        "type": "object",
-        "properties": {
-            "success": {"type": "boolean", "description": "Whether email was sent successfully"},
-            "message_id": {"type": ["string", "null"], "description": "Unique message identifier"},
-            "recipients_count": {"type": "integer", "description": "Number of primary recipients"},
-            "cc_count": {"type": "integer", "description": "Number of CC recipients"},
-            "bcc_count": {"type": "integer", "description": "Number of BCC recipients"},
-            "status": {"type": "string", "description": "Detailed status message"},
-            "error": {"type": ["string", "null"], "description": "Error message if unsuccessful"},
-            "sent_at": {"type": ["string", "null"], "description": "Timestamp when email was sent"},
-            "size_kb": {"type": "number", "description": "Email size in kilobytes"}
-        },
-        "required": ["success"]
     }
 )
 async def send_email(
@@ -335,29 +334,28 @@ async def send_email(
         
         logger.debug(f"Email sent successfully: {result.get('message_id')}")
         
-        # Return structured response with metadata
+        # Return structured response using Pydantic model
         if isinstance(result, dict):
-            # Ensure all required fields have proper values
-            response_data = {
-                "success": result.get("success", True),
-                "message_id": result.get("message_id") or "",
-                "recipients_count": result.get("recipients_count", 0),
-                "cc_count": result.get("cc_count", 0),
-                "bcc_count": result.get("bcc_count", 0),
-                "status": result.get("status", "completed"),
-                "error": result.get("error") or "",
-                "sent_at": result.get("sent_at") or datetime.now().isoformat(),
-                "size_kb": result.get("size_kb", email_size_kb)
-            }
-            return EmailResponse(**response_data)
+            return EmailResponse(
+                success=result.get("success", True),
+                message_id=result.get("message_id"),
+                recipients_count=result.get("recipients_count", 0),
+                cc_count=result.get("cc_count", 0),
+                bcc_count=result.get("bcc_count", 0),
+                status=result.get("status", "completed"),
+                error=result.get("error"),
+                sent_at=result.get("sent_at", datetime.now().isoformat()),
+                size_kb=result.get("size_kb", email_size_kb)
+            )
         else:
             return EmailResponse(
                 success=True,
-                message_id=result.get('message_id') if hasattr(result, 'get') else "",
+                message_id=result.get('message_id') if hasattr(result, 'get') else None,
                 recipients_count=1,
                 cc_count=0,
                 bcc_count=0,
                 status="completed",
+                error=None,
                 sent_at=datetime.now().isoformat(),
                 size_kb=email_size_kb
             )
@@ -377,13 +375,17 @@ async def send_email(
         logger.error(f"Email sending failed: {str(e)}")
         logger.error(f"send_email error: {str(e)}")
         
-        # Return structured error response
+        # Return structured error response using Pydantic model
         return EmailResponse(
             success=False,
-            message_id="",
+            message_id=None,
+            recipients_count=0,
+            cc_count=0,
+            bcc_count=0,
             status="failed",
             error=error_msg,
-            sent_at=datetime.now().isoformat()
+            sent_at=datetime.now().isoformat(),
+            size_kb=0.0
         )
 
 
@@ -400,7 +402,7 @@ async def send_email(
         "openWorldHint": False
     }
 )
-async def test_email_driver(ctx: Context = None) -> Dict[str, Any]:
+async def test_email_driver(ctx: Context = None) -> EmailDriverTestResponse:
     """
     Test the current email driver configuration and connectivity.
     
@@ -459,13 +461,13 @@ async def test_email_driver(ctx: Context = None) -> Dict[str, Any]:
         else:
             logger.warning(f"Email driver ({driver_info['driver_name']}) test failed")
         
-        return {
-            "success": connection_test,
-            "driver_info": driver_info,
-            "connection_test": connection_test,
-            "configuration_status": config_status,
-            "test_timestamp": datetime.now().isoformat()
-        }
+        return EmailDriverTestResponse(
+            success=connection_test,
+            driver_info=driver_info,
+            connection_test=connection_test,
+            configuration_status=config_status,
+            test_timestamp=datetime.now().isoformat()
+        )
         
     except Exception as e:
         error_msg = f"Email driver test failed: {str(e)}"
@@ -473,11 +475,11 @@ async def test_email_driver(ctx: Context = None) -> Dict[str, Any]:
         # Log error (notify not available in current FastMCP version)
         logger.error(f"Email driver test error: {str(e)}")
         
-        return {
-            "success": False,
-            "error": error_msg,
-            "test_timestamp": datetime.now().isoformat()
-        }
+        return EmailDriverTestResponse(
+            success=False,
+            error=error_msg,
+            test_timestamp=datetime.now().isoformat()
+        )
 
 
 def main():

@@ -302,8 +302,8 @@ class ManufacturingAgent(BaseAgent):
                         self.agent._logger.info(f"✅ Stored JWT token for user: {self.agent._intelycx_user}")
                     
                     # Check if token expired and try to re-authenticate (for non-login tools)
-                    if tool_name != "intelycx_login" and isinstance(result, dict) and "error" in result:
-                        error_msg = result["error"].lower()
+                    if tool_name != "intelycx_login" and isinstance(result, dict) and "error" in result and result["error"]:
+                        error_msg = str(result["error"]).lower()
                         if "authentication failed" in error_msg or "token" in error_msg and "expired" in error_msg:
                             self.agent._logger.warning("🔑 JWT token expired, attempting re-authentication...")
                             try:

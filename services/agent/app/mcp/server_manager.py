@@ -177,7 +177,64 @@ class MCPServerManager:
             result = await client.call_tool(tool_name, arguments)
             
             # FastMCP returns a ToolResult object, extract the data
+            self.logger.info(f"🔍 Raw result type: {type(result)}")
+            self.logger.info(f"🔍 Raw result hasattr data: {hasattr(result, 'data')}")
+            if hasattr(result, 'data'):
+                self.logger.info(f"🔍 result.data type: {type(result.data)}")
+            
             tool_data = result.data if hasattr(result, 'data') else result
+            
+            # Handle FastMCP Root object - convert to dictionary for JSON serialization (recursive)
+            def convert_root_objects(obj):
+                """Recursively convert FastMCP objects (Root, Pydantic models) to dictionaries."""
+                # Check if this is a FastMCP object (Root or Pydantic model from types module)
+                obj_type_str = str(type(obj))
+                is_fastmcp_object = (
+                    hasattr(obj, '__class__') and (
+                        'Root' in obj_type_str or 
+                        'types.' in obj_type_str or  # FastMCP Pydantic models
+                        (hasattr(obj, 'model_dump') and hasattr(obj, '__dict__'))  # Generic Pydantic model
+                    )
+                )
+                
+                if is_fastmcp_object:
+                    # Convert FastMCP object to dictionary
+                    if hasattr(obj, 'model_dump'):
+                        obj = obj.model_dump()
+                    elif hasattr(obj, 'dict'):
+                        obj = obj.dict()
+                    elif hasattr(obj, '__dict__'):
+                        obj = {k: v for k, v in obj.__dict__.items() if not k.startswith('_')}
+                    else:
+                        return str(obj)  # Fallback to string
+                
+                # Recursively handle nested structures
+                if isinstance(obj, dict):
+                    return {k: convert_root_objects(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_root_objects(item) for item in obj]
+                elif isinstance(obj, tuple):
+                    return tuple(convert_root_objects(item) for item in obj)
+                else:
+                    return obj
+            
+            self.logger.info(f"🔍 Tool result type: {type(tool_data)}")
+            self.logger.info(f"🔍 Tool result str(type): {str(type(tool_data))}")
+            
+            # Apply recursive FastMCP object conversion
+            original_type = type(tool_data)
+            tool_data = convert_root_objects(tool_data)
+            self.logger.info(f"✅ After recursive conversion: {type(tool_data)} (was {original_type})")
+            
+            # Final JSON serialization test
+            try:
+                json.dumps(tool_data, default=str)
+                self.logger.info(f"✅ Final JSON serialization test passed")
+            except Exception as e:
+                self.logger.error(f"❌ Final JSON serialization test failed: {e}")
+                # Last resort: convert entire result to string
+                tool_data = {"data": str(tool_data), "error": "JSON serialization failed, converted to string"}
+                self.logger.warning(f"🔄 Converted entire result to string wrapper")
             
             self.logger.info(f"✅ FASTMCP TOOL SUCCESS: {tool_name}")
             # Log summary instead of full output to reduce duplication

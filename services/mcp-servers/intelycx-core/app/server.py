@@ -66,6 +66,11 @@ class ManufacturingDataResponse(BaseModel):
     energy_consumption: Optional[Dict[str, Any]] = Field(None, description="Energy usage data")
     error: Optional[str] = Field(None, description="Error message if unsuccessful")
     data_size_kb: Optional[float] = Field(None, description="Size of returned data in KB")
+    
+    class Config:
+        # Allow None values for optional fields
+        validate_assignment = True
+        extra = "ignore"
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -99,19 +104,6 @@ async def health_check(request: Request) -> JSONResponse:
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": False
-    },
-    output_schema={
-        "type": "object",
-        "properties": {
-            "success": {"type": "boolean", "description": "Whether login was successful"},
-            "jwt_token": {"type": ["string", "null"], "description": "JWT authentication token"},
-            "expires_in": {"type": ["integer", "null"], "description": "Token expiration time in seconds"},
-            "expires_at": {"type": ["string", "null"], "description": "ISO timestamp when token expires"},
-            "user": {"type": ["string", "null"], "description": "Authenticated username"},
-            "error": {"type": ["string", "null"], "description": "Error message if unsuccessful"},
-            "status_code": {"type": ["integer", "null"], "description": "HTTP status code"}
-        },
-        "required": ["success"]
     }
 )
 async def intelycx_login(
@@ -209,15 +201,15 @@ async def intelycx_login(
             logger.info(f"Successfully authenticated as {result.get('user')}")
             logger.debug("Authentication successful")
             
-            # Return structured response using Pydantic model with proper defaults
+            # Return structured response using Pydantic model
             return LoginResponse(
                 success=result.get("success", True),
-                jwt_token=result.get("jwt_token") or "",
-                expires_in=result.get("expires_in") or 3600,
-                expires_at=result.get("expires_at") or "",
-                user=result.get("user") or "",
-                error=result.get("error") or "",
-                status_code=result.get("status_code") or 200
+                jwt_token=result.get("jwt_token"),
+                expires_in=result.get("expires_in"),
+                expires_at=result.get("expires_at"),
+                user=result.get("user"),
+                error=result.get("error"),
+                status_code=result.get("status_code")
             )
         else:
             await ctx.error(
@@ -232,15 +224,15 @@ async def intelycx_login(
             logger.error(f"Authentication failed: {result.get('error')}")
             logger.error(f"Authentication failed: {result.get('error')}")
             
-            # Return structured error response with proper defaults
+            # Return structured error response using Pydantic model
             return LoginResponse(
                 success=result.get("success", False),
-                jwt_token=result.get("jwt_token") or "",
-                expires_in=result.get("expires_in") or 0,
-                expires_at=result.get("expires_at") or "",
-                user=result.get("user") or "",
-                error=result.get("error") or "Authentication failed",
-                status_code=result.get("status_code") or 400
+                jwt_token=result.get("jwt_token"),
+                expires_in=result.get("expires_in", 0),
+                expires_at=result.get("expires_at"),
+                user=result.get("user"),
+                error=result.get("error", "Authentication failed"),
+                status_code=result.get("status_code", 400)
             )
         
     except Exception as e:
@@ -257,7 +249,7 @@ async def intelycx_login(
         logger.error(f"Authentication error: {str(e)}")
         logger.error(f"Login tool error: {str(e)}")
         
-        # Return structured error response with proper defaults
+        # Return structured error response using Pydantic model
         return LoginResponse(
             success=False,
             jwt_token="",
@@ -280,23 +272,6 @@ async def intelycx_login(
         "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": False
-    },
-    output_schema={
-        "type": "object",
-        "properties": {
-            "success": {"type": "boolean", "description": "Whether data generation was successful"},
-            "timestamp": {"type": "string", "description": "Data generation timestamp"},
-            "facility": {"type": "object", "description": "Facility information"},
-            "production_lines": {"type": "array", "description": "Production line data"},
-            "daily_metrics": {"type": "object", "description": "Daily production metrics"},
-            "shift_data": {"type": "object", "description": "Current shift information"},
-            "alerts": {"type": "array", "description": "Active alerts and notifications"},
-            "inventory": {"type": "object", "description": "Inventory status"},
-            "energy_consumption": {"type": "object", "description": "Energy usage data"},
-            "error": {"type": "string", "description": "Error message if unsuccessful"},
-            "data_size_kb": {"type": "number", "description": "Size of returned data in KB"}
-        },
-        "required": ["success"]
     }
 )
 async def get_fake_data(
@@ -382,7 +357,7 @@ async def get_fake_data(
             logger.error(f"Token validation failed: {result.get('error')}")
             logger.error(f"Token validation failed: {result.get('error')}")
             
-            # Return structured error response
+            # Return structured error response using Pydantic model
             return ManufacturingDataResponse(
                 success=False,
                 error=result.get('error')
@@ -459,16 +434,17 @@ async def get_fake_data(
         
         logger.debug(f"Fake data generated successfully: {data_size} characters")
         
-        # Return structured response with metadata
+        # Return structured response using Pydantic model
         if isinstance(result, dict):
-            result["success"] = True
-            result["data_size_kb"] = data_size_kb
-            return ManufacturingDataResponse(**result)
-        else:
             return ManufacturingDataResponse(
                 success=True,
                 data_size_kb=data_size_kb,
-                **result if isinstance(result, dict) else {}
+                **result  # Unpack the fake data into the model
+            )
+        else:
+            return ManufacturingDataResponse(
+                success=True,
+                data_size_kb=data_size_kb
             )
         
     except Exception as e:
@@ -485,7 +461,7 @@ async def get_fake_data(
         logger.error(f"Data generation error: {str(e)}")
         logger.error(f"get_fake_data error: {str(e)}")
         
-        # Return structured error response
+        # Return structured error response using Pydantic model
         return ManufacturingDataResponse(
             success=False,
             error=error_msg

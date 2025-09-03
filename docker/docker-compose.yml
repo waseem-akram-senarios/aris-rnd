@@ -98,7 +98,7 @@ services:
 networks:
   intelycx_net:
     external: true
-    name: intelycx_default
+    name: intelycx_intelycx_default  # Updated to use the correct network name
   mcp_internal:
     driver: bridge
     internal: false  # Allow external access for development
