@@ -49,7 +49,6 @@ Thumbs.db
 *.wmv
 
 # Memory bank
-memory-bank/
 __pycache__/
 *.pyc
 .venv/
