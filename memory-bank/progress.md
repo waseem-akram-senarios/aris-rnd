@@ -31,6 +31,15 @@
 - **Performance optimization** (caching, connection pooling, memory backend optimization)
 
 ## Recent achievements 🎉
+- **🎯 CRITICAL: Docker Network & FastMCP Serialization Resolution** - Fixed major production blocking issues
+  - **Network Connectivity Fix**: Resolved DNS resolution failures by connecting ARIS containers to `intelycx_intelycx_default` network
+  - **Docker Compose Update**: Permanent fix to use correct external network name for container communication
+  - **Authentication Recovery**: Restored JWT authentication flow with Intelycx Core API after network fix
+  - **FastMCP Compliance**: Removed invalid `output_schema` parameters that don't exist in FastMCP API
+  - **Pydantic Model Implementation**: Proper structured response models (LoginResponse, ManufacturingDataResponse, EmailResponse)
+  - **Object Conversion System**: Comprehensive FastMCP object conversion for Bedrock LLM JSON serialization compatibility
+  - **Error Handling Improvements**: Fixed NoneType errors in authentication error processing
+  - **Root Cause Discovery**: Identified FastMCP design requiring manual deserialization for external system integration
 - **🎯 MAJOR: Production-Ready FastMCP Implementation** - Complete overhaul of all MCP tools with enterprise-grade features
   - **Type Safety & Validation**: Pydantic Field constraints with patterns, length limits, and custom validation rules
   - **Rich Tool Metadata**: Comprehensive decorators with tags, descriptions, annotations, and semantic versioning
@@ -38,7 +47,6 @@
   - **Enhanced Error Handling**: Structured error responses with proper HTTP status codes and detailed error messages
   - **Advanced Context Features**: Multi-stage progress reporting, notifications, and structured logging with metadata
   - **Enum-Based Constraints**: Type-safe parameter validation using Python enums (DataType, EmailPriority)
-  - **Output Schemas**: JSON schemas for tool outputs improving LLM understanding and integration
   - **Consistent Architecture**: Standardized parameter placement, error patterns, and response structures across all tools
 - **Enhanced FastMCP Context with multi-stage progress** - 6-stage data generation and 5-stage email workflow
 - **Implemented structured logging with extra parameters** - Rich metadata for debugging and monitoring
@@ -59,14 +67,15 @@
 - **Established development patterns** for Docker compose, container naming, logging
 
 ## Current status 🎯
-- **Complete MCP architecture** - Both intelycx-core and intelycx-email servers fully operational
-- **Working tool chain** - Login → get fake data → send email pipeline functional
+- **Complete MCP architecture** - Both intelycx-core and intelycx-email servers fully operational with proper FastMCP compliance
+- **Working tool chain** - Login → get fake data → send email pipeline functional without serialization errors
 - **Well-architected core libraries** - Memory and file processing properly modularized
 - **Volume-mounted development** - Live code reload for all services
-- **Ready for production development** - all core features implemented and tested
-- **Stable local development** experience with multi-container setup
-- **Rich tool capabilities** providing comprehensive fake manufacturing data
+- **Production-ready networking** - Docker network connectivity resolved and documented
+- **Stable local development** experience with multi-container setup and proper network configuration
+- **Rich tool capabilities** providing comprehensive fake manufacturing data with proper Pydantic model structure
 - **Enhanced document processing** with comprehensive format support for manufacturing use cases
-- **Modern MCP architecture** with FastMCP client, scalable for additional tool categories
+- **Modern MCP architecture** with FastMCP client and proper object conversion for external system integration
 - **Guardrails available** as opt-in per message; pending decision on default behavior
 - **Core libraries foundation** ready for complex multi-step workflows and tool migrations
+- **FastMCP serialization resolved** - All tools work properly with Bedrock LLM integration

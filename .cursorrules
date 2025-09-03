@@ -12,6 +12,17 @@
 - Health check: `GET /health`.
 - When editing agent code, prefer readable names and guard clauses; keep streaming behavior intact.
 
+## Critical Docker Configuration
+- **Network requirement**: ARIS containers MUST be on `intelycx_intelycx_default` network to communicate with Intelycx API.
+- **Network fix**: `docker network connect intelycx_intelycx_default [container]` for immediate fix.
+- **Permanent fix**: Update docker-compose.yml `intelycx_net` to use `name: intelycx_intelycx_default`.
+
+## FastMCP Integration Patterns
+- **Server compliance**: Use Pydantic models for return types, avoid invalid `output_schema` parameter.
+- **Client handling**: `result.data` contains Pydantic objects requiring conversion to JSON-serializable dicts.
+- **Object conversion**: Comprehensive recursive conversion needed in `MCPServerManager.execute_tool()`.
+- **Debugging**: Always log object types when troubleshooting serialization issues.
+
 ## Infra notes
 - `infra` uses AWS CDK v2; default app context `env=dev`.
 - `AgentStack` is a placeholder to be expanded with ECS/ALB and secrets.

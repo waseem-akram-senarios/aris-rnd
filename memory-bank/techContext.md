@@ -77,3 +77,6 @@
 - **Docker preference**: Use `docker compose` (not `docker-compose`)
 - **Logging**: Comprehensive tool usage logging for debugging
 - **Virtual environments**: `.venv` in `services/agent` for local development
+- **Docker networking**: ARIS containers must be on `intelycx_intelycx_default` network for API communication
+- **FastMCP compliance**: Use Pydantic models, avoid invalid `output_schema` parameters
+- **Object conversion**: FastMCP Pydantic models require manual conversion to JSON-serializable dictionaries for Bedrock integration

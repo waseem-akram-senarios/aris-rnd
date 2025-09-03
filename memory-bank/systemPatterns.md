@@ -48,6 +48,8 @@
 - **Log optimization**: Reduced duplication between LLM Bedrock and MCP Server Manager
 - **Error handling**: Graceful degradation when servers unavailable, honest limitation reporting
 - **Development**: Live code reload via volume mounting for rapid iteration
+- **Network Configuration**: ARIS containers must be on `intelycx_intelycx_default` network to communicate with Intelycx API
+- **FastMCP Object Conversion**: Comprehensive recursive conversion of FastMCP Pydantic models to JSON-serializable dictionaries for Bedrock LLM compatibility
 
 ### Advanced FastMCP Implementation Patterns
 - **Type Safety**: Pydantic Field validation with constraints (min_length, max_length, pattern matching)

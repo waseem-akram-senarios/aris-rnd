@@ -17,12 +17,20 @@
 - ✅ **JWT authentication for Intelycx Core API** - AI Agent manages credentials and tokens automatically
 - ✅ **Chain of thought messaging** - Real-time progress updates during authentication, tool loading, and execution
 - ✅ **Advanced FastMCP implementation** - All tools enhanced with comprehensive metadata, validation, and structured outputs
+- ✅ **RESOLVED: Docker network connectivity** - Fixed DNS resolution between ARIS containers and Intelycx API
+- ✅ **RESOLVED: FastMCP serialization** - Implemented proper Pydantic models and object conversion for Bedrock compatibility
 
 ## Recent achievements
+- **🎯 MAJOR: Docker Network & FastMCP Serialization Resolution** - Fixed critical production issues
+  - **Network Connectivity**: Resolved DNS resolution failures between ARIS containers and Intelycx API by connecting to correct Docker network
+  - **FastMCP Compliance**: Removed invalid `output_schema` parameters and implemented proper Pydantic model patterns
+  - **Object Serialization**: Added comprehensive FastMCP object conversion to handle Pydantic models for Bedrock LLM compatibility
+  - **Error Handling**: Fixed NoneType errors and improved error resilience in authentication flows
+  - **Root Cause Analysis**: Discovered FastMCP design patterns requiring manual deserialization for external system integration
 - **🎯 MAJOR: Advanced FastMCP Implementation** - Complete enhancement of all tools following FastMCP best practices
   - **Type Safety**: Pydantic Field validation with constraints (min_length, max_length, patterns)
   - **Rich Metadata**: Comprehensive tool decorators with tags, annotations, descriptions, and version info
-  - **Structured Outputs**: Output schemas and Pydantic response models for consistent API contracts
+  - **Structured Outputs**: Pydantic response models for consistent API contracts (LoginResponse, ManufacturingDataResponse, EmailResponse)
   - **Enhanced Context Usage**: Multi-stage progress reporting with notifications and structured logging
   - **Enum Support**: Type-safe constrained values (DataType, EmailPriority) for better validation
   - **Parameter Validation**: Input constraints and error handling for security and reliability
