@@ -6,6 +6,8 @@
 - Guardrails toggled by `rag_params.guardrails` (bool). Default currently off.
 - Model selection: `payload.model_id` or `rag_params.model_params.model_id` → forwarded to agent runtime.
 - On guardrail failure, default allow to avoid UX regressions.
+- **Planning Phase**: Agent creates execution plans before tool execution, sends "tool" type messages with planned actions.
+- **Chain-of-Thought**: Enhanced real-time progress with action-specific updates during execution.
 
 ## Developer workflow
 - Local: use `docker/docker-compose.yml` with `config/.env`.
@@ -29,3 +31,20 @@
 
 ## Documentation
 - Memory Bank maintained in `memory-bank/` with brief, high-signal content.
+
+## Commit Message Standards
+- **MANDATORY**: Follow Conventional Commits specification for all commits.
+- **Format**: `<type>[optional scope]: <description>`
+- **Core types**: 
+  - `feat:` - new features (MINOR version)
+  - `fix:` - bug fixes (PATCH version)
+  - `docs:` - documentation changes
+  - `refactor:` - code refactoring without functional changes
+  - `test:` - adding or updating tests
+  - `chore:` - maintenance tasks, dependency updates
+  - `ci:` - CI/CD pipeline changes
+  - `perf:` - performance improvements
+- **Breaking changes**: Use `!` after type (e.g., `feat!:`) or `BREAKING CHANGE:` footer (MAJOR version)
+- **Scope examples**: `feat(agent):`, `fix(websocket):`, `docs(api):`, `chore(docker):`
+- **Description**: Imperative mood, lowercase, no period, max 50 chars
+- **Body/Footer**: Optional, separated by blank line, explain "what" and "why"

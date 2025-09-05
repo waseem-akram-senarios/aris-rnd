@@ -67,18 +67,7 @@ class EmailResponse(BaseModel):
         extra = "ignore"
 
 
-class EmailDriverTestResponse(BaseModel):
-    """Response model for email driver testing operations."""
-    success: bool = Field(description="Whether the driver test passed")
-    driver_info: Optional[Dict[str, Any]] = Field(None, description="Information about the current driver")
-    connection_test: bool = Field(False, description="Result of connection test")
-    configuration_status: str = Field("unknown", description="Status of driver configuration")
-    error: Optional[str] = Field(None, description="Error message if test failed")
-    test_timestamp: str = Field(description="Timestamp when test was performed")
-    
-    class Config:
-        validate_assignment = True
-        extra = "ignore"
+
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -389,97 +378,7 @@ async def send_email(
         )
 
 
-@mcp.tool(
-    name="test_email_driver",
-    description="Test the current email driver configuration and connectivity",
-    tags={"email", "testing", "diagnostics"},
-    meta={"version": "1.0", "category": "diagnostics", "author": "intelycx"},
-    annotations={
-        "title": "Email Driver Tester",
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False
-    }
-)
-async def test_email_driver(ctx: Context = None) -> EmailDriverTestResponse:
-    """
-    Test the current email driver configuration and connectivity.
-    
-    This tool checks if the email driver is properly configured and can connect
-    to the email service. It provides diagnostic information about the driver
-    and its configuration without sending any actual emails.
-    
-    Returns:
-        Dictionary containing:
-        - success: Whether the driver test passed
-        - driver_info: Information about the current driver
-        - connection_test: Result of connection test
-        - configuration_status: Status of driver configuration
-        - error: Error message if test failed
-    """
-    await ctx.info("🔧 Testing email driver configuration...")
-    await ctx.report_progress(progress=20, total=100)
-    
-    try:
-        # Get driver information
-        driver_info = email_client.get_driver_info()
-        
-        await ctx.info(
-            f"📧 Testing {driver_info['driver_name']} driver...",
-            extra={
-                "driver_name": driver_info['driver_name'],
-                "driver_class": driver_info['driver_class']
-            }
-        )
-        await ctx.report_progress(progress=50, total=100)
-        
-        # Test connection
-        connection_test = await email_client.test_connection()
-        
-        await ctx.info(
-            f"🔗 Connection test: {'PASSED' if connection_test else 'FAILED'}",
-            extra={"connection_test": connection_test}
-        )
-        await ctx.report_progress(progress=80, total=100)
-        
-        # Get configuration status
-        config_status = "configured" if email_client.driver.config else "missing_config"
-        
-        await ctx.info(
-            f"✅ Driver test completed",
-            extra={
-                "connection_test": connection_test,
-                "config_status": config_status
-            }
-        )
-        await ctx.report_progress(progress=100, total=100)
-        
-        # Log test results (notify not available in current FastMCP version)
-        if connection_test:
-            logger.info(f"Email driver ({driver_info['driver_name']}) test passed")
-        else:
-            logger.warning(f"Email driver ({driver_info['driver_name']}) test failed")
-        
-        return EmailDriverTestResponse(
-            success=connection_test,
-            driver_info=driver_info,
-            connection_test=connection_test,
-            configuration_status=config_status,
-            test_timestamp=datetime.now().isoformat()
-        )
-        
-    except Exception as e:
-        error_msg = f"Email driver test failed: {str(e)}"
-        await ctx.error(error_msg)
-        # Log error (notify not available in current FastMCP version)
-        logger.error(f"Email driver test error: {str(e)}")
-        
-        return EmailDriverTestResponse(
-            success=False,
-            error=error_msg,
-            test_timestamp=datetime.now().isoformat()
-        )
+
 
 
 def main():

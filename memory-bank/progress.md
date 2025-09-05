@@ -17,6 +17,7 @@
 - **JWT authentication** for Intelycx Core API with automatic token management and refresh
 - **Chain of thought messaging** with real-time progress updates during system operations
 - **Session memory management** with transparent storage, pluggable backends, and automatic tool integration
+- **Well-organized planning module** with proper domain structure (models, planner, executioner, observers)
 
 ## What's left 🚧
 
@@ -65,6 +66,7 @@
 - **Implemented JWT authentication** for Intelycx Core API with automatic token lifecycle management
 - **Added chain of thought messaging** - Users now see real-time progress during authentication, tool loading, and execution
 - **Established development patterns** for Docker compose, container naming, logging
+- **Refactored planning module architecture** - Moved models to proper domain structure for better organization
 
 ## Current status 🎯
 - **Complete MCP architecture** - Both intelycx-core and intelycx-email servers fully operational with proper FastMCP compliance

@@ -9,6 +9,8 @@ from ..agent.factory import AgentFactory
 from ..config.settings import Settings
 from ..security.cognito import CognitoAuthService
 from ..security.guardrails import GuardrailService, get_guardrail_message
+from ..planning import ExecutionPlan, ChainOfThoughtMessage, create_planning_websocket_message, create_plan_update_websocket_message
+from ..planning import PlanManager, WebSocketPlanObserver
 
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,22 @@ class WebSocketHandler:
         agent = self.agent_factory.create()
         stop_event = asyncio.Event()
         
-        # Set up progress callback for chain of thought messages
+        # Create plan manager with WebSocket observer
+        plan_manager = PlanManager(logger)
+        
+        # WebSocket send function for the observer
+        async def send_websocket_message(message: dict) -> None:
+            try:
+                await ws.send_json(message)
+                logger.info("WSS OUT: %s", json.dumps(message))
+            except Exception as e:
+                logger.warning(f"Failed to send WebSocket message: {e}")
+        
+        # Add WebSocket observer to plan manager
+        websocket_observer = WebSocketPlanObserver(send_websocket_message, logger)
+        plan_manager.add_observer(websocket_observer)
+        
+        # Set up progress callback for chain of thought messages (legacy)
         async def send_progress(message: str) -> None:
             progress_msg = {
                 "message": message,
@@ -48,9 +65,34 @@ class WebSocketHandler:
             except Exception as e:
                 logger.warning(f"Failed to send progress message: {e}")
         
-        # Set the progress callback on the agent
+        # Set up planning callback for execution plans
+        async def send_plan(plan: ExecutionPlan) -> None:
+            planning_msg = create_planning_websocket_message(plan)
+            try:
+                await ws.send_json(planning_msg)
+                logger.info("WSS OUT: %s", json.dumps(planning_msg))
+            except Exception as e:
+                logger.warning(f"Failed to send planning message: {e}")
+        
+        # Set up plan update callback for execution updates
+        async def send_plan_update(plan: ExecutionPlan) -> None:
+            plan_msg = create_plan_update_websocket_message(plan)
+            try:
+                await ws.send_json(plan_msg)
+                logger.info("WSS OUT: %s", json.dumps(plan_msg))
+            except Exception as e:
+                logger.warning(f"Failed to send plan update message: {e}")
+        
+        # Set the callbacks on the agent
         if hasattr(agent, 'set_progress_callback'):
             agent.set_progress_callback(send_progress)
+        if hasattr(agent, 'set_plan_manager'):
+            agent.set_plan_manager(plan_manager)
+        # Keep legacy callbacks for backward compatibility
+        if hasattr(agent, 'set_planning_callback'):
+            agent.set_planning_callback(send_plan)
+        if hasattr(agent, 'set_plan_update_callback'):
+            agent.set_plan_update_callback(send_plan_update)
 
         async def _ping_loop() -> None:
             try:
@@ -212,18 +254,9 @@ class WebSocketHandler:
                         except Exception as exc:
                             logger.exception("Guardrail check failed (allow by default): %s", exc)
 
-                    # Streaming response in small chunks similar to old agent (skip empty first chunk)
+                    # Process message and send final response only (no streaming)
                     text = (await agent.process_message(msg_text)).text
-                    words = text.split(" ")
-                    if len(words) > 3:
-                        for i in range(3, len(words), 3):
-                            await ws.send_json({
-                                "message": " ".join(words[:i]),
-                                "data": {},
-                                "type": "stream",
-                            })
-                            await asyncio.sleep(0.1)
-
+                    
                     final_msg = {
                         "message": text,
                         "data": {},

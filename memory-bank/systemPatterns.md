@@ -12,12 +12,14 @@
 - **MCP integration**: `MCPServerManager` manages HTTP-based MCP servers with FastMCP client
 - **Tool calling**: Dynamic system prompts based on tool availability, comprehensive logging
 - **Streaming UX**: Splits agent final text by words and emits in small chunks, then sends a final message
-- **Chain of thought**: Real-time progress updates via WebSocket during authentication, tool loading, and execution
+- **Planning module**: Complete domain module at `app/planning/` with models, planner, executioner, and observers
+- **Chain of thought**: Enhanced real-time progress with both legacy text updates and structured action-specific updates
 
 ## Key flows
 - **Auth on connect**: JWT pulled from `Authorization` header or query; invalid → `HTTPUnauthorized`
 - **Message handling**: accepts `{ "message": string }` or legacy `{ "action": "agent", "question": string }`
-- **Chain of thought**: Initial "Thinking..." message, then progress updates during authentication, tool loading, and execution
+- **Planning flow**: "Thinking..." → "Creating execution plan..." → Send "tool" type message with planned actions → "Executing plan..." → Structured chain-of-thought updates during execution
+- **Chain of thought**: Legacy text updates plus new structured action updates with status (starting/in_progress/completed/failed)
 - **Memory management**: Tools with `result_variable_name` automatically store results; memory handled internally by `SessionMemoryManager`
 - **Document processing**: `{ doc_bucket, doc_key }` triggers S3 download, content extraction, and injection into conversation
 - **MCP tool calling**: Agent routes tool calls to appropriate MCP servers, handles initialization and error cases
