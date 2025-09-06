@@ -18,6 +18,9 @@
 - **Chain of thought messaging** with real-time progress updates during system operations
 - **Session memory management** with transparent storage, pluggable backends, and automatic tool integration
 - **Well-organized planning module** with proper domain structure (models, planner, executioner, observers)
+- **True concurrent processing** - Multiple users can execute tasks simultaneously without blocking
+- **Per-connection state isolation** - Each WebSocket connection has independent agent instance and session data
+- **Lazy session initialization** - Efficient resource usage with agent created on connection, MCP servers on first message
 
 ## What's left 🚧
 
@@ -30,6 +33,7 @@
 - **Observability** (structured logs, metrics, tracing, MCP server monitoring)
 - **Error recovery** and retry logic for MCP server failures
 - **Performance optimization** (caching, connection pooling, memory backend optimization)
+- **Concurrency improvements** (connection limits, rate limiting, resource monitoring for high-scale deployments)
 
 ## Recent achievements 🎉
 - **🎯 CRITICAL: Docker Network & FastMCP Serialization Resolution** - Fixed major production blocking issues

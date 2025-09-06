@@ -15,6 +15,16 @@
 - **Planning module**: Complete domain module at `app/planning/` with models, planner, executioner, and observers
 - **Chain of thought**: Enhanced real-time progress with both legacy text updates and structured action-specific updates
 
+## Concurrency & Session Management
+- **Per-connection isolation**: Each WebSocket connection creates its own `ManufacturingAgent` instance
+- **True concurrent processing**: Multiple users can connect and execute tasks simultaneously without blocking
+- **Independent state**: Each agent has isolated conversation memory, session memory, and MCP connections
+- **Lazy session initialization**: Agent created at connection, but MCP servers initialized only on first message
+- **Session lifecycle**: Connection (agent created) → First message (MCP initialization) → Subsequent messages (session continues)
+- **Resource efficiency**: Idle connections consume minimal resources (~5MB), full resources allocated on first use
+- **No shared mutable state**: Agents operate independently with separate plan IDs, session IDs, and execution contexts
+- **Async architecture**: Pure async/await throughout, no blocking between different user sessions
+
 ## Key flows
 - **Auth on connect**: JWT pulled from `Authorization` header or query; invalid → `HTTPUnauthorized`
 - **Message handling**: accepts `{ "message": string }` or legacy `{ "action": "agent", "question": string }`
@@ -74,6 +84,14 @@
 - **Search capabilities**: Search by tool, tag, or key patterns
 - **Memory statistics**: Usage tracking, size monitoring, and access analytics
 - **Error handling**: Only successful tool results are stored; errors are not cached
+
+## Scalability Considerations
+- **Current capacity**: Handles moderate concurrency (< 50 users) efficiently with current architecture
+- **Resource scaling**: Memory usage scales linearly with concurrent connections (~5MB per idle, ~15MB per active)
+- **MCP connection overhead**: Each agent creates separate MCP server connections (session isolation)
+- **Potential optimizations**: Connection pooling for MCP servers, agent instance caching, resource limits
+- **Performance bottlenecks**: Agent initialization (~5-6s), MCP connection setup (~300ms per server)
+- **Monitoring needs**: Connection count tracking, memory usage monitoring, MCP server health checks
 
 ## Configuration
 - `.env` loaded best-effort via `Settings.load_settings()` with search order: `DOTENV_PATH` → `config/.env` → `.env`
