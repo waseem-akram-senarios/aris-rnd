@@ -3,24 +3,27 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "intelycx-email-mcp-server"
+name = "intelycx-file-generator-mcp-server"
 version = "0.1.0"
-description = "Intelycx Email MCP Server for email communication"
+description = "Intelycx File Generator MCP Server for PDF generation using FastMCP"
 authors = [
     {name = "Intelycx", email = "dev@intelycx.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
+    "fastmcp>=2.11.0",
     "pydantic>=2.5.0",
     "aiohttp>=3.9.0",
-    "python-multipart>=0.0.6",
+    "starlette>=0.27.0",
+    "reportlab>=4.0.0",
+    "boto3>=1.34.0",
+    "httpx>=0.25.0",
+    "aiofiles>=23.0.0",
 ]
 
 [project.scripts]
-intelycx-email-mcp-server = "app.main:main"
+intelycx-file-generator-mcp-server = "app.server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

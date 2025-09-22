@@ -4,8 +4,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# Install curl for health checks
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -17,6 +19,10 @@ RUN mkdir -p /app/app
 
 # Install dependencies
 RUN pip install --upgrade pip && pip install -e .
+
+# Create non-root user for security
+RUN useradd -m -u 1000 mcpuser && chown -R mcpuser:mcpuser /app
+USER mcpuser
 
 # Expose port
 EXPOSE 8081

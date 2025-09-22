@@ -252,11 +252,14 @@ class MCPServerManager:
         # Tool routing logic - updated with new tools
         email_tools = ["send_email", "test_email_driver"]
         core_tools = ["intelycx_login", "get_machine", "get_machine_group", "get_production_summary", "get_fake_data"]
+        file_generator_tools = ["create_pdf"]
         
         if tool_name in email_tools:
             return "intelycx-email"
         elif tool_name in core_tools:
             return "intelycx-core"
+        elif tool_name in file_generator_tools:
+            return "intelycx-file-generator"
         else:
             # Default to core server for unknown tools
             self.logger.warning(f"Unknown tool {tool_name}, routing to intelycx-core")

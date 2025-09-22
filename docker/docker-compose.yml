@@ -18,6 +18,7 @@ services:
     depends_on:
       - aris-mcp-intelycx-core
       - aris-mcp-intelycx-email
+      - aris-mcp-intelycx-file-generator
     environment:
       - INTELYCX_CORE_MCP_URL=http://aris-mcp-intelycx-core:8080
       - INTELYCX_EMAIL_MCP_URL=http://aris-mcp-intelycx-email:8081
@@ -89,6 +90,40 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  aris-mcp-intelycx-file-generator:
+    build:
+      context: ../services/mcp-servers/intelycx-file-generator
+      dockerfile: Dockerfile
+    image: aris-mcp-intelycx-file-generator:dev
+    container_name: aris-mcp-intelycx-file-generator
+    ports:
+      - "8082:8080"
+    env_file:
+      - ../config/.env
+    volumes:
+      - ../services/mcp-servers/intelycx-file-generator/app:/app/app
+    environment:
+      - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+      - STORAGE_DRIVER=s3
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-iris-batch-001-data-975049910508}
+      - AWS_REGION=${AWS_REGION:-us-east-2}
+      - PORT=8080
+      - HOST=0.0.0.0
+    restart: unless-stopped
+    networks:
+      - mcp_internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     logging:
       driver: "json-file"
       options:

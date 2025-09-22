@@ -226,6 +226,14 @@ class WebSocketHandler:
                         agent.set_runtime_options({"model_id": model_id, "temperature": temperature})
                     except Exception:
                         pass
+                    
+                    # Set chat_id if available
+                    try:
+                        chat_id = payload.get("chat_id")
+                        if chat_id and hasattr(agent, 'set_chat_id'):
+                            agent.set_chat_id(chat_id)
+                    except Exception:
+                        pass
 
                     # Emit early chain-of-thought style update for better UX
                     outgoing_think = {

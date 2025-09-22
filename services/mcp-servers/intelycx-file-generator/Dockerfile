@@ -4,9 +4,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-# Install system dependencies
+# Install system dependencies for ReportLab and curl for health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    g++ \
+    libfreetype6-dev \
+    libjpeg-dev \
+    libpng-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -31,4 +35,4 @@ EXPOSE 8080
 # Health check moved to docker-compose.yml
 
 # Run the server
-CMD ["intelycx-core-mcp-server"]
+CMD ["intelycx-file-generator-mcp-server"]

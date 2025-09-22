@@ -5,6 +5,9 @@
     },
     "intelycx-email": {
       "url": "http://aris-mcp-intelycx-email:8081/mcp"
+    },
+    "intelycx-file-generator": {
+      "url": "http://aris-mcp-intelycx-file-generator:8080/mcp"
     }
   }
 }

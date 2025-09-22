@@ -31,6 +31,9 @@ class ManufacturingAgent(BaseAgent):
         self._intelycx_jwt_token: Optional[str] = None
         self._intelycx_user: Optional[str] = None
         
+        # Current chat ID for this session
+        self._chat_id: Optional[str] = None
+        
         # Initialize MCP server manager
         # Try multiple possible locations for the config file
         possible_paths = [
@@ -92,6 +95,9 @@ class ManufacturingAgent(BaseAgent):
         # Set progress callback on executioner
         if hasattr(self, '_progress_callback') and self._progress_callback:
             self._executioner.set_progress_callback(self._progress_callback)
+        # Set chat_id on executioner if we have one
+        if self._chat_id:
+            self._executioner.set_chat_id(self._chat_id)
     
     def set_plan_update_callback(self, callback: Optional[Callable[[ExecutionPlan], Awaitable[None]]]) -> None:
         """Set a callback function to send plan updates (legacy support)."""
@@ -99,6 +105,14 @@ class ManufacturingAgent(BaseAgent):
         # Also set it on the executioner if it exists
         if self._executioner:
             self._executioner.set_plan_update_callback(callback)
+    
+    def set_chat_id(self, chat_id: str) -> None:
+        """Set the current chat ID for this session."""
+        self._chat_id = chat_id
+        self._logger.info(f"Set chat_id: {chat_id}")
+        # Also set it on the executioner if it exists
+        if hasattr(self, '_executioner') and self._executioner:
+            self._executioner.set_chat_id(chat_id)
 
     async def _send_progress(self, message: str) -> None:
         """Send a progress update if callback is available."""
@@ -571,11 +585,13 @@ class ManufacturingAgent(BaseAgent):
                         required_servers.add("intelycx-email")
                     elif action.tool_name in ["get_machine", "get_machine_group", "get_production_summary", "get_fake_data"]:
                         required_servers.add("intelycx-core")
+                    elif action.tool_name in ["create_pdf"]:
+                        required_servers.add("intelycx-file-generator")
         
         # If no plan or no tool calls identified, initialize all servers (fallback)
         if not required_servers:
             self._logger.info("🔧 No specific servers identified from plan, initializing all servers")
-            required_servers = {"intelycx-core", "intelycx-email"}
+            required_servers = {"intelycx-core", "intelycx-email", "intelycx-file-generator"}
         
         self._logger.info(f"🎯 Initializing required servers: {required_servers}")
         

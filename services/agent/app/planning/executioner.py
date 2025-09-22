@@ -33,6 +33,9 @@ class AgentExecutioner:
         # Authentication state
         self._intelycx_jwt_token: Optional[str] = None
         self._intelycx_user: Optional[str] = None
+        
+        # Chat context
+        self._chat_id: Optional[str] = None
     
     def set_plan_update_callback(self, callback: Optional[Callable[[ExecutionPlan], Awaitable[None]]]) -> None:
         """Set callback for sending plan updates."""
@@ -41,6 +44,10 @@ class AgentExecutioner:
     def set_progress_callback(self, callback: Optional[Callable[[str], Awaitable[None]]]) -> None:
         """Set callback for sending progress updates."""
         self._progress_callback = callback
+    
+    def set_chat_id(self, chat_id: str) -> None:
+        """Set the current chat ID for this session."""
+        self._chat_id = chat_id
     
     async def _send_plan_update(self, plan: ExecutionPlan) -> None:
         """Send a plan update via plan manager or callback."""
@@ -200,6 +207,22 @@ class AgentExecutioner:
                 
                 # Let memory manager handle the result
                 return await self.memory.handle_tool_result(tool_name, arguments, result)
+        
+        # Handle file generator tools (inject chat_id)
+        elif tool_server == "intelycx-file-generator":
+            # Inject chat_id for file generator tools
+            if tool_name == "create_pdf" and self._chat_id:
+                arguments_with_chat_id = dict(arguments)
+                # Replace placeholder chat_id values or inject if missing
+                current_chat_id = arguments_with_chat_id.get("chat_id")
+                if (not current_chat_id or 
+                    current_chat_id in ["current_chat", "current_session", "fake_data_pdf"]):
+                    arguments_with_chat_id["chat_id"] = self._chat_id
+                    self.logger.info(f"🔧 Injected chat_id ({self._chat_id}) for tool: {tool_name}")
+                result = await self.mcp_manager.execute_tool(tool_name, arguments_with_chat_id)
+            else:
+                result = await self.mcp_manager.execute_tool(tool_name, arguments)
+            return await self.memory.handle_tool_result(tool_name, arguments, result)
         
         # For other tools (email, etc.)
         result = await self.mcp_manager.execute_tool(tool_name, arguments)
