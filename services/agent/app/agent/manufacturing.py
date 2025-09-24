@@ -234,6 +234,25 @@ class ManufacturingAgent(BaseAgent):
         # Use the enhanced converse method with tools
         await self._send_progress("Executing plan...")
         
+        # Execute the plan using the executioner (handles tool_call, analysis, response actions)
+        if execution_plan and self._executioner:
+            try:
+                await self._executioner.execute_plan(execution_plan)
+                self._logger.info(f"✅ Executioner completed plan {execution_plan.plan_id}")
+            except Exception as e:
+                self._logger.error(f"❌ Executioner failed: {str(e)}")
+                # Continue to LLM even if executioner fails
+        
+        # Mark analysis and response actions as in_progress before LLM call
+        if execution_plan:
+            for action in execution_plan.actions:
+                if action.type.value in ["analysis", "response"] and action.status == "starting":
+                    execution_plan.update_action_status(action.id, "in_progress")
+                    if self._plan_manager:
+                        await self._plan_manager.update_plan(execution_plan)
+                    icon = "🧠" if action.type.value == "analysis" else "💬"
+                    self._logger.info(f"{icon} Starting {action.type.value}: {action.name}")
+
         # Use LLM with enhanced tool executor that updates plan status
         text = await self._bedrock.converse(
             model_id=model_id,
@@ -244,13 +263,21 @@ class ManufacturingAgent(BaseAgent):
             temperature=temperature,
         )
 
-        # Mark plan as completed after LLM finishes
-        if self._plan_manager and execution_plan:
+        # Mark analysis and response actions as completed after LLM finishes
+        if execution_plan:
+            for action in execution_plan.actions:
+                if action.type.value in ["analysis", "response"] and action.status in ["starting", "in_progress"]:
+                    execution_plan.update_action_status(action.id, "completed")
+                    self._logger.info(f"✅ Completed {action.type.value}: {action.name}")
+            
+            # Update plan status after marking actions complete
             execution_plan.auto_update_plan_status()
             if execution_plan.status != "completed" and not execution_plan.has_failed_actions():
                 # If all actions are done but plan isn't marked completed, mark it now
                 execution_plan.update_plan_status("completed")
-            await self._plan_manager.update_plan(execution_plan)
+            
+            if self._plan_manager:
+                await self._plan_manager.update_plan(execution_plan)
             self._logger.info(f"📋 Final plan status: {execution_plan.status}")
 
         # Append assistant reply to memory
@@ -258,12 +285,47 @@ class ManufacturingAgent(BaseAgent):
         return AgentResponse(is_final=True, text=text or "", data={})
 
     def set_runtime_options(self, options: Dict[str, Any]) -> None:
-        self._model_id_override = options.get("model_id")
+        # Validate and map model IDs to supported Bedrock models
+        requested_model = options.get("model_id")
+        self._model_id_override = self._validate_and_map_model_id(requested_model)
+        
         temp = options.get("temperature")
         try:
             self._temperature_override = float(temp) if temp is not None else None
         except Exception:
             self._temperature_override = None
+    
+    def _validate_and_map_model_id(self, requested_model: Optional[str]) -> Optional[str]:
+        """Validate and map client model IDs to supported Bedrock models."""
+        if not requested_model:
+            return None
+        
+        # Mapping of common client model names to Bedrock model IDs
+        model_mapping = {
+            # OpenAI models → Claude equivalents
+            "gpt-4.1": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "gpt-4": "us.anthropic.claude-3-7-sonnet-20250219-v1:0", 
+            "gpt-4-turbo": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "gpt-3.5-turbo": "us.anthropic.claude-3-7-haiku-20250219-v1:0",
+            
+            # Claude models (pass through if valid)
+            "us.anthropic.claude-3-7-sonnet-20250219-v1:0": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "us.anthropic.claude-3-7-haiku-20250219-v1:0": "us.anthropic.claude-3-7-haiku-20250219-v1:0",
+            
+            # Fallback mapping
+            "claude-3-sonnet": "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "claude-3-haiku": "us.anthropic.claude-3-7-haiku-20250219-v1:0",
+        }
+        
+        mapped_model = model_mapping.get(requested_model)
+        if mapped_model:
+            if mapped_model != requested_model:
+                self._logger.info(f"🔄 Mapped model '{requested_model}' → '{mapped_model}'")
+            return mapped_model
+        else:
+            # Unknown model - log warning and use default
+            self._logger.warning(f"⚠️ Unknown model '{requested_model}', using default Claude Sonnet")
+            return "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
 
     async def process_document(self, bucket: str, key: str, message: Optional[str] = None) -> Dict[str, Any]:
         """Process a document from S3 and prepare it for context injection."""
@@ -326,7 +388,7 @@ class ManufacturingAgent(BaseAgent):
             async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
                 self.agent._logger.info(f"🔧 Executing tool: {tool_name}")
                 
-                # Find the action ID from the current plan and update status
+                # Find the action ID from the current plan
                 action_id = None
                 current_plan = None
                 
@@ -340,15 +402,18 @@ class ManufacturingAgent(BaseAgent):
                     action = current_plan.get_action_by_tool_name(tool_name)
                     if action:
                         action_id = action.id
-                        # Update action status via plan manager
-                        if self.agent._plan_manager:
-                            await self.agent._plan_manager.update_action_status(action_id, "starting")
-                        else:
-                            # Fallback: update directly
-                            current_plan.update_action_status(action_id, "starting")
                 
-                # Fallback to generated ID if not found in plan
-                if not action_id:
+                # Create plan context for centralized status updates
+                plan_context = None
+                if current_plan and action_id:
+                    plan_context = {
+                        "plan": current_plan,
+                        "action_id": action_id,
+                        "plan_manager": self.agent._plan_manager,
+                        "logger": self.agent._logger
+                    }
+                else:
+                    # Generate fallback ID for logging purposes
                     import uuid
                     action_id = str(uuid.uuid4())
                     self.agent._logger.warning(f"⚠️ Tool {tool_name} not found in current plan, using generated ID")
@@ -373,20 +438,7 @@ class ManufacturingAgent(BaseAgent):
                 else:
                     await self.agent._send_progress(f"Executing {tool_name}...")
                 
-                # Update action status to in_progress
-                if current_plan and action_id:
-                    if self.agent._plan_manager:
-                        await self.agent._plan_manager.update_action_status(action_id, "in_progress")
-                    else:
-                        current_plan.update_action_status(action_id, "in_progress")
-                
-                # Send legacy chain-of-thought update for backward compatibility
-                await self.agent._send_cot_update(ChainOfThoughtMessage(
-                    action_id=action_id,
-                    action_name=tool_name,
-                    status="in_progress",
-                    message=f"Executing {tool_name} with provided parameters..."
-                ))
+                # Note: Plan status updates are now handled centrally by MCP Manager
                 
                 # The memory manager will handle result storage automatically
                 
@@ -397,7 +449,7 @@ class ManufacturingAgent(BaseAgent):
                 if tool_server == "intelycx-core":
                     # Special handling for login tool - it generates JWT tokens, doesn't need one
                     if tool_name == "intelycx_login":
-                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments)
+                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments, plan_context)
                     else:
                         # All other intelycx-core tools require JWT authentication
                         if not self.agent._intelycx_jwt_token:
@@ -410,7 +462,7 @@ class ManufacturingAgent(BaseAgent):
                         arguments_with_token["jwt_token"] = self.agent._intelycx_jwt_token
                         self.agent._logger.info(f"🔑 Injected JWT token for tool: {tool_name}")
                         
-                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments_with_token)
+                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments_with_token, plan_context)
                     
                     # Handle successful login - store JWT token
                     if tool_name == "intelycx_login" and isinstance(result, dict) and result.get("success"):
@@ -432,14 +484,14 @@ class ManufacturingAgent(BaseAgent):
                                     auth_result = await self.agent._mcp_manager.execute_tool("intelycx_login", {
                                         "username": username,
                                         "password": password
-                                    })
+                                    }, plan_context)
                                     if auth_result.get("success"):
                                         self.agent._intelycx_jwt_token = auth_result.get("jwt_token")
                                         self.agent._logger.info("✅ Re-authentication successful, retrying tool call...")
                                         
                                         # Retry the original tool call with new token
                                         arguments_with_token["jwt_token"] = self.agent._intelycx_jwt_token
-                                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments_with_token)
+                                        result = await self.agent._mcp_manager.execute_tool(tool_name, arguments_with_token, plan_context)
                                     else:
                                         self.agent._intelycx_jwt_token = None
                                         self.agent._intelycx_user = None
@@ -483,16 +535,13 @@ class ManufacturingAgent(BaseAgent):
                 
                 # For all other tools (email, etc.), use normal execution
                 try:
-                    result = await self.agent._mcp_manager.execute_tool(tool_name, arguments)
+                    result = await self.agent._mcp_manager.execute_tool(tool_name, arguments, plan_context)
                     
-                    # Update plan status: completed or failed
+                    # Note: Plan status updates are now handled centrally by MCP Manager
+                    
+                    # Determine final status for legacy CoT update
                     has_error = isinstance(result, dict) and result.get("error") and result["error"] != ""
                     final_status = "failed" if has_error else "completed"
-                    if current_plan and action_id:
-                        if self.agent._plan_manager:
-                            await self.agent._plan_manager.update_action_status(action_id, final_status)
-                        else:
-                            current_plan.update_action_status(action_id, final_status)
                     
                     # Send legacy chain-of-thought update for backward compatibility
                     await self.agent._send_cot_update(ChainOfThoughtMessage(
@@ -507,12 +556,7 @@ class ManufacturingAgent(BaseAgent):
                     return await self.agent._memory.handle_tool_result(tool_name, arguments, result)
                     
                 except Exception as e:
-                    # Update plan status: failed
-                    if current_plan and action_id:
-                        if self.agent._plan_manager:
-                            await self.agent._plan_manager.update_action_status(action_id, "failed")
-                        else:
-                            current_plan.update_action_status(action_id, "failed")
+                    # Note: Plan status updates are now handled centrally by MCP Manager
                     
                     # Send legacy chain-of-thought update for backward compatibility
                     await self.agent._send_cot_update(ChainOfThoughtMessage(

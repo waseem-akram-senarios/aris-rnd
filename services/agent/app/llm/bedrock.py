@@ -27,15 +27,21 @@ class BedrockClient:
         if not tools or not tool_executor:
             self._logger.info(f"Bedrock.converse model_id={model_id} temp={temperature} msgs={len(messages)} (simple mode)")
             
-            resp = self._client.converse(
-                modelId=model_id,
-                messages=messages,
-                system=system or [],
-                inferenceConfig={"temperature": temperature},
-            )
-            self._logger.debug(f"Bedrock raw response keys: {list(resp.keys())}")
-            message = resp["output"]["message"]
-            return "\n".join([c.get("text", "") for c in message.get("content", [])])
+            try:
+                resp = self._client.converse(
+                    modelId=model_id,
+                    messages=messages,
+                    system=system or [],
+                    inferenceConfig={"temperature": temperature},
+                )
+                self._logger.debug(f"Bedrock raw response keys: {list(resp.keys())}")
+                message = resp["output"]["message"]
+                return "\n".join([c.get("text", "") for c in message.get("content", [])])
+            except Exception as e:
+                self._logger.error(f"❌ Bedrock API error with model {model_id}: {str(e)}")
+                if "ValidationException" in str(e) or "model" in str(e).lower():
+                    raise ValueError(f"Invalid model ID '{model_id}'. Check if the model is available in your region.")
+                raise
         
         # Tool-enabled flow
         self._logger.info(f"Bedrock.converse model_id={model_id} temp={temperature} msgs={len(messages)} (tools mode) - {len(tools)} tools available")
@@ -59,8 +65,14 @@ class BedrockClient:
             # Add tools configuration
             api_params["toolConfig"] = {"tools": tools}
             
-            # Make API call
-            response = self._client.converse(**api_params)
+            # Make API call with error handling
+            try:
+                response = self._client.converse(**api_params)
+            except Exception as e:
+                self._logger.error(f"❌ Bedrock API error with model {model_id}: {str(e)}")
+                if "ValidationException" in str(e) or "model" in str(e).lower():
+                    raise ValueError(f"Invalid model ID '{model_id}'. Check if the model is available in your region.")
+                raise
             
             message = response["output"]["message"]
             current_messages.append({"role": "assistant", "content": message["content"]})

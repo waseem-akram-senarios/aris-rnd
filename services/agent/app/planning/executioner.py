@@ -80,27 +80,29 @@ class AgentExecutioner:
             plan.update_plan_status("in_progress")
             await self._send_plan_update(plan)
             
-            # Execute only tool_call actions - let LLM handle analysis and response
+            # Execute only tool_call actions - analysis and response will be handled by LLM later
             for action in plan.actions:
                 if action.type.value == "tool_call" and action.tool_name:
                     await self._execute_tool_action(plan, action)
+                    
+                    # Auto-update plan status based on action results
+                    plan.auto_update_plan_status()
+                    await self._send_plan_update(plan)
+                    
+                    # Stop execution if plan failed
+                    if plan.status == "error":
+                        self.logger.error(f"❌ Plan execution failed: {plan.plan_id}")
+                        return plan
                 elif action.type.value == "analysis":
-                    # Mark analysis actions as completed (LLM will handle the actual analysis)
-                    plan.update_action_status(action.id, "completed")
+                    # Mark analysis actions as starting - LLM will handle the actual analysis
+                    plan.update_action_status(action.id, "starting")
                     await self._send_plan_update(plan)
+                    self.logger.info(f"🧠 Analysis action '{action.name}' marked as starting - will be completed by LLM")
                 elif action.type.value == "response":
-                    # Mark response actions as completed (LLM will handle the actual response)
-                    plan.update_action_status(action.id, "completed")
+                    # Mark response actions as starting - LLM will handle the actual response
+                    plan.update_action_status(action.id, "starting") 
                     await self._send_plan_update(plan)
-                
-                # Auto-update plan status based on action results
-                plan.auto_update_plan_status()
-                await self._send_plan_update(plan)
-                
-                # Stop execution if plan failed
-                if plan.status == "error":
-                    self.logger.error(f"❌ Plan execution failed: {plan.plan_id}")
-                    return plan
+                    self.logger.info(f"💬 Response action '{action.name}' marked as starting - will be completed by LLM")
             
             # Final status update
             final_status = plan.auto_update_plan_status()
@@ -119,30 +121,21 @@ class AgentExecutioner:
         """Execute a tool call action."""
         self.logger.info(f"🔧 Executing tool action: {action.tool_name}")
         
-        # Update status to starting
-        plan.update_action_status(action.id, "starting")
-        await self._send_plan_update(plan)
-        await self._send_progress(f"Starting {action.tool_name}...")
+        # Create plan context for MCP manager
+        plan_context = {
+            "plan": plan,
+            "action_id": action.id,
+            "plan_manager": self.plan_manager,
+            "logger": self.logger
+        }
         
         try:
-            # Update status to in_progress
-            plan.update_action_status(action.id, "in_progress")
-            await self._send_plan_update(plan)
-            
-            # Execute the tool
-            result = await self._execute_tool(action.tool_name, action.arguments or {})
-            
-            # Update status to completed
-            plan.update_action_status(action.id, "completed")
-            await self._send_plan_update(plan)
+            # Execute the tool with plan context (MCP manager will handle all status updates)
+            result = await self._execute_tool(action.tool_name, action.arguments or {}, plan_context)
             
             self.logger.info(f"✅ Completed tool action: {action.tool_name}")
             
         except Exception as e:
-            # Update status to failed
-            plan.update_action_status(action.id, "failed")
-            await self._send_plan_update(plan)
-            
             self.logger.error(f"❌ Tool action failed: {action.tool_name} - {str(e)}")
             raise
     
@@ -182,14 +175,14 @@ class AgentExecutioner:
         
         self.logger.info(f"✅ Completed response action: {action.name}")
     
-    async def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_tool(self, tool_name: str, arguments: Dict[str, Any], plan_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Execute a tool using the MCP manager."""
         # Handle authentication for intelycx-core tools
         tool_server = await self._get_tool_server(tool_name)
         
         if tool_server == "intelycx-core":
             if tool_name == "intelycx_login":
-                result = await self.mcp_manager.execute_tool(tool_name, arguments)
+                result = await self.mcp_manager.execute_tool(tool_name, arguments, plan_context)
                 # Store JWT token if login successful
                 if isinstance(result, dict) and result.get("success"):
                     self._intelycx_jwt_token = result.get("jwt_token")
@@ -203,7 +196,7 @@ class AgentExecutioner:
                 
                 arguments_with_token = arguments.copy()
                 arguments_with_token["jwt_token"] = self._intelycx_jwt_token
-                result = await self.mcp_manager.execute_tool(tool_name, arguments_with_token)
+                result = await self.mcp_manager.execute_tool(tool_name, arguments_with_token, plan_context)
                 
                 # Let memory manager handle the result
                 return await self.memory.handle_tool_result(tool_name, arguments, result)
@@ -219,13 +212,13 @@ class AgentExecutioner:
                     current_chat_id in ["current_chat", "current_session", "fake_data_pdf"]):
                     arguments_with_chat_id["chat_id"] = self._chat_id
                     self.logger.info(f"🔧 Injected chat_id ({self._chat_id}) for tool: {tool_name}")
-                result = await self.mcp_manager.execute_tool(tool_name, arguments_with_chat_id)
+                result = await self.mcp_manager.execute_tool(tool_name, arguments_with_chat_id, plan_context)
             else:
-                result = await self.mcp_manager.execute_tool(tool_name, arguments)
+                result = await self.mcp_manager.execute_tool(tool_name, arguments, plan_context)
             return await self.memory.handle_tool_result(tool_name, arguments, result)
         
         # For other tools (email, etc.)
-        result = await self.mcp_manager.execute_tool(tool_name, arguments)
+        result = await self.mcp_manager.execute_tool(tool_name, arguments, plan_context)
         return await self.memory.handle_tool_result(tool_name, arguments, result)
     
     async def _get_tool_server(self, tool_name: str) -> Optional[str]:

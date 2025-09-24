@@ -6,9 +6,13 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
 from fastmcp import Client
+
+if TYPE_CHECKING:
+    from ..planning.models import ExecutionPlan
+    from ..planning.observer import PlanManager
 
 logger = logging.getLogger(__name__)
 
@@ -153,8 +157,24 @@ class MCPServerManager:
                 }
         return status
     
-    async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a tool using FastMCP Client."""
+    async def execute_tool(
+        self, 
+        tool_name: str, 
+        arguments: Dict[str, Any], 
+        plan_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Execute a tool using FastMCP Client with optional plan status updates.
+        
+        Args:
+            tool_name: Name of the tool to execute
+            arguments: Tool arguments
+            plan_context: Optional dict containing:
+                - plan: ExecutionPlan object
+                - action_id: ID of the action being executed
+                - plan_manager: PlanManager instance for updates
+                - logger: Logger for status updates
+        """
         try:
             # Route tools to appropriate servers
             server_name = self._get_server_for_tool(tool_name)
@@ -167,10 +187,16 @@ class MCPServerManager:
             self.logger.info(f"🔧 FASTMCP TOOL CALL: {tool_name} -> {server_name}")
             self.logger.debug(f"📥 TOOL INPUT: {json.dumps(arguments, indent=2)}")
             
+            # Update plan status: starting
+            await self._update_plan_status(plan_context, "starting", f"Starting {tool_name}...")
+            
             # Use FastMCP client to call the tool with progress token support
             # Generate a progress token to receive progress updates
             import uuid
             progress_token = str(uuid.uuid4())
+            
+            # Update plan status: in_progress
+            await self._update_plan_status(plan_context, "in_progress", f"Executing {tool_name}...")
             
             # Note: FastMCP Client handles progress tokens automatically in newer versions
             # The progress updates will be logged by FastMCP internally
@@ -241,11 +267,47 @@ class MCPServerManager:
             output_size = len(json.dumps(tool_data, default=str))
             self.logger.debug(f"📤 TOOL OUTPUT: {output_size} characters")
             
+            # Update plan status: completed
+            await self._update_plan_status(plan_context, "completed", f"Completed {tool_name}")
+            
             return tool_data
                 
         except Exception as e:
             self.logger.error(f"Error executing tool {tool_name}: {str(e)}")
+            
+            # Update plan status: failed
+            await self._update_plan_status(plan_context, "failed", f"Failed {tool_name}: {str(e)}")
+            
             return {"error": f"Tool execution failed: {str(e)}"}
+    
+    async def _update_plan_status(
+        self, 
+        plan_context: Optional[Dict[str, Any]], 
+        status: str, 
+        message: str
+    ) -> None:
+        """Update plan action status if plan context is provided."""
+        if not plan_context:
+            return
+        
+        plan = plan_context.get("plan")
+        action_id = plan_context.get("action_id")
+        plan_manager = plan_context.get("plan_manager")
+        context_logger = plan_context.get("logger", self.logger)
+        
+        if plan and action_id:
+            # Update action status
+            plan.update_action_status(action_id, status)
+            
+            # Send update via plan manager if available
+            if plan_manager:
+                try:
+                    await plan_manager.update_plan(plan)
+                    context_logger.info(f"📋 Updated action {action_id} to {status}: {message}")
+                except Exception as e:
+                    context_logger.warning(f"Failed to send plan update: {e}")
+            else:
+                context_logger.info(f"📋 Updated action {action_id} to {status}: {message}")
     
     def _get_server_for_tool(self, tool_name: str) -> str:
         """Determine which MCP server should handle a specific tool."""
