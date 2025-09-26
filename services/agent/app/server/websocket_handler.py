@@ -42,10 +42,23 @@ class WebSocketHandler:
         plan_manager = PlanManager(logger)
         
         # WebSocket send function for the observer
+        def _truncate_message_for_log(message: dict) -> str:
+            """Truncate large message content for logging."""
+            msg_type = message.get("type", "unknown")
+            if msg_type in ["plan_create", "plan_update"]:
+                plan_id = message.get("data", {}).get("plan_id", "unknown")
+                status = message.get("data", {}).get("status", "unknown") 
+                action_count = len(message.get("data", {}).get("actions", []))
+                return f'{{"type": "{msg_type}", "plan_id": "{plan_id}", "status": "{status}", "actions": {action_count}}}'
+            elif len(json.dumps(message)) > 200:
+                return json.dumps(message)[:200] + "...(truncated)"
+            else:
+                return json.dumps(message)
+
         async def send_websocket_message(message: dict) -> None:
             try:
                 await ws.send_json(message)
-                logger.info("WSS OUT: %s", json.dumps(message))
+                logger.info("WSS OUT: %s", _truncate_message_for_log(message))
             except Exception as e:
                 logger.warning(f"Failed to send WebSocket message: {e}")
         
@@ -227,13 +240,27 @@ class WebSocketHandler:
                     except Exception:
                         pass
                     
-                    # Set chat_id if available
+                    # Set chat_id and user info if available
                     try:
                         chat_id = payload.get("chat_id")
                         if chat_id and hasattr(agent, 'set_chat_id'):
                             agent.set_chat_id(chat_id)
-                    except Exception:
-                        pass
+                            
+                            # Update chat info in database if user info is available
+                            user_id = payload.get("user_id")
+                            if user_id and hasattr(agent, 'update_chat_info'):
+                                await agent.update_chat_info(
+                                    user_id=user_id,
+                                    model_id=model_id,
+                                    metadata={
+                                        "rag_params": rag_params,
+                                        "guardrails_enabled": guardrails_enabled,
+                                        "deep_search": deep_search,
+                                        "web_search": web_search
+                                    }
+                                )
+                    except Exception as e:
+                        logger.warning(f"Failed to set chat info: {e}")
 
                     # Emit early chain-of-thought style update for better UX
                     outgoing_think = {

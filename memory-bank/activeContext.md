@@ -1,14 +1,19 @@
 # Active Context
 
 ## Current focus
+- ✅ **BREAKTHROUGH: Database-First Architecture** - Complete PostgreSQL integration with persistent storage
+- ✅ **BREAKTHROUGH: Email Attachments Working** - Full PDF creation and email attachment workflow operational
+- ✅ **Template Variable Resolution** - Complex template mapping system for inter-action data flow
+- ✅ **UnifiedPlanManager** - Centralized plan and action management with database-first operations
+- ✅ **Conservative Planning Rules** - Intelligent plan optimization to prevent over-engineering
 - ✅ **Complete FastMCP architecture** - Both intelycx-core and intelycx-email servers operational
-- ✅ **Working multi-tool pipeline** - Login → fake data → email chain functional
+- ✅ **Working multi-tool pipeline** - Login → fake data → format → PDF → email chain functional
 - ✅ **Volume-mounted development** - Live code reload for all MCP servers
 - ✅ **Fixed tool execution** - Resolved JWT token injection and routing issues
 - ✅ **Core libraries architecture** - Memory and file processing extracted to `app/core/`
 - ✅ **Enhanced document processing** with 12+ file types including JSON, XML, HTML, Markdown
 - ✅ **Modern MCP integration** using FastMCP client library for better performance
-- ✅ **Transparent memory management** - No longer exposed as tools; handled automatically
+- ✅ **Transparent memory management** - Database-backed session storage with automatic persistence
 - ✅ **Clean codebase structure** - Removed utils folder, proper separation of concerns
 - ✅ Dynamic system prompts based on tool availability to prevent hallucinations
 - ✅ Guardrails implemented and integrated in WebSocket flow; toggle via `rag_params.guardrails`
@@ -25,6 +30,18 @@
 - ✅ **ANALYZED: Concurrency & Session Management** - Confirmed true concurrent request handling with proper isolation
 
 ## Recent achievements
+- **🎯 BREAKTHROUGH: Database-First Architecture & Email Attachments** - Complete implementation of persistent storage and email workflow
+  - **PostgreSQL Integration**: Full database schema with chats, plans, actions, and session_memory tables
+  - **Database-First Rule**: Plans stored in database BEFORE execution; execution halts if storage fails
+  - **UnifiedPlanManager**: Centralized plan lifecycle management with database operations and WebSocket notifications
+  - **Template Variable System**: Complex template resolution for inter-action data flow ({{action_id.field_name}})
+  - **Email Attachments Working**: Complete PDF creation → email attachment workflow operational
+  - **Clean Attachment Filenames**: Proper filename extraction from S3 presigned URLs
+  - **Recursive Template Resolution**: Handles nested dictionaries and arrays for complex argument structures
+  - **Conservative Planning Rules**: Intelligent plan optimization preventing over-engineering (2-3 actions vs 4-5)
+  - **Data Formatting Guidelines**: Ensures human-readable PDF content instead of raw JSON dumps
+  - **Schema Validation**: All database column names and types properly aligned with SQLAlchemy models
+  - **Tool Result Persistence**: PDF files and email results stored and retrievable across sessions
 - **🎯 ANALYSIS: Concurrency & Session Management** - Comprehensive analysis of concurrent request handling
   - **Confirmed Concurrent Processing**: Live testing with 2 simultaneous users proved true concurrent execution
   - **Session Lifecycle Mapping**: Documented lazy initialization pattern (connection → first message → session active)

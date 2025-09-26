@@ -1,6 +1,11 @@
 # Progress
 
 ## What works ✅
+- **Database-First Architecture** - Complete PostgreSQL integration with persistent plan and action storage
+- **Email Attachments** - Full PDF creation and email attachment workflow with clean filenames
+- **Template Variable Resolution** - Complex inter-action data flow with {{action_id.field_name}} syntax
+- **UnifiedPlanManager** - Centralized plan lifecycle management with database operations and UI notifications
+- **Conservative Planning** - Intelligent plan optimization preventing over-engineering (2-3 actions vs 4-5)
 - **WebSocket server** with heartbeat and streaming responses
 - **Cognito JWT verification** with JWKS caching
 - **Guardrails** with Bedrock boolean check and heuristic fallback; allow-on-error
@@ -8,7 +13,7 @@
 - **Document processing** for 12+ file types (including JSON, XML, HTML, Markdown) with S3 integration and 4MB limits
 - **MCP integration** with FastMCP client library and HTTP-based servers
 - **Tool calling** with rich manufacturing data (machines, groups, production)
-- **Email service** integration for notifications and reports
+- **Email service** integration for notifications and reports with attachment support
 - **Dynamic system prompts** based on tool availability (prevents hallucinations)
 - **Comprehensive logging** for debugging tool usage and MCP communication
 - **Multi-container architecture** with proper networking and health checks
@@ -16,7 +21,7 @@
 - **CDK app scaffold** ready for extension
 - **JWT authentication** for Intelycx Core API with automatic token management and refresh
 - **Chain of thought messaging** with real-time progress updates during system operations
-- **Session memory management** with transparent storage, pluggable backends, and automatic tool integration
+- **Session memory management** with database-backed storage, pluggable backends, and automatic tool integration
 - **Well-organized planning module** with proper domain structure (models, planner, executioner, observers)
 - **True concurrent processing** - Multiple users can execute tasks simultaneously without blocking
 - **Per-connection state isolation** - Each WebSocket connection has independent agent instance and session data

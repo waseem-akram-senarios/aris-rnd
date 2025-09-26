@@ -7,6 +7,7 @@ from aiohttp import web
 
 from .websocket_handler import WebSocketHandler
 from ..config.settings import load_settings
+from ..database import init_database, close_database
 
 
 def create_app() -> web.Application:
@@ -18,6 +19,21 @@ def create_app() -> web.Application:
     async def healthcheck(_request: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
 
+    async def startup_handler(app):
+        """Initialize database connection on startup."""
+        logging.getLogger(__name__).info("🔗 Initializing database connection...")
+        await init_database()
+        logging.getLogger(__name__).info("✅ Database connection initialized")
+
+    async def cleanup_handler(app):
+        """Close database connection on shutdown."""
+        logging.getLogger(__name__).info("🔒 Closing database connection...")
+        await close_database()
+        logging.getLogger(__name__).info("✅ Database connection closed")
+
+    app.on_startup.append(startup_handler)
+    app.on_cleanup.append(cleanup_handler)
+    
     app.router.add_get("/health", healthcheck)
     app.router.add_get("/ws", handler.handle_connection)
 

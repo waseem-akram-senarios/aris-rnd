@@ -1,13 +1,16 @@
 # System Patterns
 
 ## Architecture
+- **Database-First Architecture**: PostgreSQL with `chats`, `plans`, `actions`, `session_memory` tables
+- **UnifiedPlanManager**: Centralized plan lifecycle management with database operations and WebSocket notifications
+- **Template Variable System**: Complex inter-action data flow using `{{action_id.field_name}}` syntax with recursive resolution
 - **WebSocket server**: `aiohttp` with `WebSocketResponse` and heartbeat pings
 - **Agent orchestration**: `AgentFactory` produces agents (default `manufacturing`)
 - **Security**: `CognitoAuthService` verifies JWT using AWS Cognito JWKS with caching
 - **Guardrails**: `GuardrailService` runs a fast Bedrock boolean relevance check with heuristic fallback; allow-on-error
 - **LLM access**: `BedrockClient.converse` wraps `bedrock-runtime`, supports tool calling, returns concatenated text content
 - **Core libraries**: Modular `app/core/` with reusable memory and file processing libraries
-- **Memory management**: `SessionMemoryManager` handles transparent session storage with pluggable backends
+- **Memory management**: `DatabaseSessionMemoryManager` handles persistent session storage with PostgreSQL backend
 - **File processing**: `FileProcessor` with comprehensive format support and S3 integration
 - **MCP integration**: `MCPServerManager` manages HTTP-based MCP servers with FastMCP client
 - **Tool calling**: Dynamic system prompts based on tool availability, comprehensive logging
@@ -75,15 +78,34 @@
 - **Version Management**: Tool versioning via meta field and semantic versioning practices
 - **Annotation System**: Tool behavior hints (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
 
-### Memory Management (`app/core/memory/`)
-- **SessionMemoryManager**: Centralized memory management with pluggable storage backends
+### Database-First Architecture (`app/database/`)
+- **PostgreSQL Integration**: Complete database schema with chats, plans, actions, and session_memory tables
+- **UnifiedPlanManager**: Single source of truth for all plan and action operations with database-first enforcement
+- **Database-First Rule**: Plans MUST be stored in database before execution; execution halts if storage fails
+- **Plan Lifecycle**: new → in_progress → completed/failed with database updates and UI notifications
+- **Action Tracking**: Complete execution history with timing, status, and result storage
+- **Schema Validation**: SQLAlchemy models perfectly aligned with database schema (column names, types, constraints)
+- **JSONB Storage**: Complex objects (arguments, results, metadata) stored as JSONB for efficient querying
+- **Full-Text Search**: GIN indexes on user queries for efficient plan search and retrieval
+- **Automatic Triggers**: updated_at columns with database triggers for audit trail
+
+### Template Variable System
+- **Inter-Action Data Flow**: Actions reference other action results using `{{action_id.field_name}}` syntax
+- **Recursive Resolution**: Handles nested dictionaries and arrays in action arguments
+- **Smart Mapping**: Fake template IDs mapped to real action IDs based on tool type and execution order
+- **File URL Priority**: Template variables with `file_url` specifically prioritize `create_pdf` actions
+- **Fallback Logic**: Multiple resolution strategies (direct mapping, tool-based, analysis-based, fallback)
+- **Debug Tracing**: Comprehensive logging of template resolution process for troubleshooting
+
+### Memory Management (`app/core/memory/` + `app/database/`)
+- **DatabaseSessionMemoryManager**: PostgreSQL-backed session storage with automatic persistence
 - **Automatic storage**: Tools with `result_variable_name` parameter automatically store results
 - **Metadata tracking**: Creation time, tool source, data type, size, and access information for each variable
-- **Storage backends**: InMemoryStorage (default) and FileStorage for persistence
-- **Internal API**: Memory not exposed as tools to LLM; handled transparently by agent
-- **Search capabilities**: Search by tool, tag, or key patterns
+- **Cross-session persistence**: Session data survives agent restarts and container recreation
+- **Search capabilities**: Search by tool, tag, or key patterns with database queries
 - **Memory statistics**: Usage tracking, size monitoring, and access analytics
 - **Error handling**: Only successful tool results are stored; errors are not cached
+- **Serialization**: Complex Python objects (dataclasses, enums) automatically serialized to JSONB
 
 ## Scalability Considerations
 - **Current capacity**: Handles moderate concurrency (< 50 users) efficiently with current architecture

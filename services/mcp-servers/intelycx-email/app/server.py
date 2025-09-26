@@ -257,7 +257,9 @@ async def send_email(
                             response.raise_for_status()
                             
                             # Extract filename from URL or use default
-                            filename = url.split('/')[-1] or f"attachment_{i+1}"
+                            # Handle S3 presigned URLs by removing query parameters
+                            url_path = url.split('/')[-1].split('?')[0] if '/' in url else url.split('?')[0]
+                            filename = url_path or f"attachment_{i+1}"
                             content_type = response.headers.get('content-type', 'application/octet-stream')
                             
                             attachment = EmailAttachment(

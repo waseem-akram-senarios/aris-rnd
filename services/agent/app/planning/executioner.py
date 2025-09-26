@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, Callable, Awaitable, TYPE_CHECKING
 
 from .models import ExecutionPlan, PlannedAction, ChainOfThoughtMessage, create_plan_update_websocket_message
 from ..mcp import MCPServerManager
-from ..core.memory import SessionMemoryManager
+from ..database.memory_manager import DatabaseSessionMemoryManager
 from ..core.llm_tools import LLMTools
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ class AgentExecutioner:
     def __init__(
         self, 
         mcp_manager: MCPServerManager, 
-        memory: SessionMemoryManager,
+        memory: DatabaseSessionMemoryManager,
         plan_manager: Optional['PlanManager'] = None,
         bedrock_client = None,
         logger: Optional[logging.Logger] = None
@@ -81,8 +81,10 @@ class AgentExecutioner:
         self.logger.info(f"🚀 Starting execution of plan {plan.plan_id}")
         
         try:
-            # Mark plan as in progress
+            # Mark plan as in progress in database
             plan.update_plan_status("in_progress")
+            if self.plan_manager and hasattr(self.plan_manager, 'update_plan_status'):
+                await self.plan_manager.update_plan_status(plan.plan_id, "in_progress")
             await self._send_plan_update(plan)
             
             # Execute actions in dependency order
@@ -130,13 +132,18 @@ class AgentExecutioner:
                 if not executed_in_iteration:
                     break
             
-            # Final status update
+            # Final status update in memory and database
             final_status = plan.auto_update_plan_status()
+            if self.plan_manager and hasattr(self.plan_manager, 'update_plan_status'):
+                await self.plan_manager.update_plan_status(plan.plan_id, final_status)
+            await self._send_plan_update(plan)
             self.logger.info(f"✅ Completed execution of plan {plan.plan_id} with status: {final_status}")
             
         except Exception as e:
             # Mark plan as error if execution fails
             plan.update_plan_status("error")
+            if self.plan_manager and hasattr(self.plan_manager, 'update_plan_status'):
+                await self.plan_manager.update_plan_status(plan.plan_id, "error")
             await self._send_plan_update(plan)
             self.logger.error(f"❌ Plan execution error: {plan.plan_id} - {str(e)}")
             raise
@@ -182,6 +189,8 @@ class AgentExecutioner:
         import re
         import json
         
+        self.logger.info(f"🔧 Template resolution starting for arguments: {json.dumps(arguments, indent=2)}")
+        
         resolved_args = {}
         
         for key, value in arguments.items():
@@ -191,7 +200,10 @@ class AgentExecutioner:
                 matches = re.findall(template_pattern, value)
                 
                 resolved_value = value
+                self.logger.info(f"🔧 Template resolution for '{key}': found {len(matches)} variables in '{value}'")
+                
                 for match in matches:
+                    self.logger.info(f"🔧 Processing template variable: {match}")
                     # Parse the template variable (e.g., "c3d4e5f6-a7b8-9012-cdef-123456789012.result")
                     parts = match.split('.')
                     if len(parts) >= 2:
@@ -218,17 +230,50 @@ class AgentExecutioner:
                                             self.logger.info(f"🔧 Mapped analysis template {action_ref} -> real action {action.id} (analysis)")
                                             break
                             
-                            # If still not found, try any completed action as fallback
+                            # If still not found, try to find the most relevant completed action
                             if not stored_result:
-                                for action in plan.actions:
-                                    if action.status == "completed" and action.type.value in ["tool_call", "analysis"]:
-                                        real_result_key = f"tool_result_{action.id}"
-                                        candidate_result = await self.memory.get(real_result_key)
-                                        if candidate_result:
-                                            stored_result = candidate_result
-                                            result_key = real_result_key
-                                            self.logger.info(f"🔧 Mapped template {action_ref} -> real action {action.id} ({action.type.value}) [fallback]")
-                                            break
+                                # For data-related templates, prioritize data-generating tools
+                                data_tools = ["create_pdf", "get_fake_data", "get_machine", "get_production_summary"]
+                                
+                                # For file URLs, prioritize create_pdf actions
+                                if "file_url" in field_path or "url" in field_path:
+                                    for action in plan.actions:
+                                        if (action.status == "completed" and 
+                                            action.type.value == "tool_call" and 
+                                            action.tool_name == "create_pdf"):
+                                            real_result_key = f"tool_result_{action.id}"
+                                            candidate_result = await self.memory.get(real_result_key)
+                                            if candidate_result:
+                                                stored_result = candidate_result
+                                                result_key = real_result_key
+                                                self.logger.info(f"🔧 Mapped file URL template {action_ref} -> PDF action {action.id}")
+                                                break
+                                
+                                # Then try other data-generating tools
+                                if not stored_result:
+                                    for action in plan.actions:
+                                        if (action.status == "completed" and 
+                                            action.type.value == "tool_call" and 
+                                            action.tool_name in data_tools):
+                                            real_result_key = f"tool_result_{action.id}"
+                                            candidate_result = await self.memory.get(real_result_key)
+                                            if candidate_result:
+                                                stored_result = candidate_result
+                                                result_key = real_result_key
+                                                self.logger.info(f"🔧 Mapped template {action_ref} -> real action {action.id} ({action.tool_name}) [data tool]")
+                                                break
+                                
+                                # If still not found, try any completed action as fallback
+                                if not stored_result:
+                                    for action in plan.actions:
+                                        if action.status == "completed" and action.type.value in ["tool_call", "analysis"]:
+                                            real_result_key = f"tool_result_{action.id}"
+                                            candidate_result = await self.memory.get(real_result_key)
+                                            if candidate_result:
+                                                stored_result = candidate_result
+                                                result_key = real_result_key
+                                                self.logger.info(f"🔧 Mapped template {action_ref} -> real action {action.id} ({action.type.value}) [fallback]")
+                                                break
                         
                         if stored_result:
                             # Navigate through the field path
@@ -255,6 +300,12 @@ class AgentExecutioner:
                                     replacement = stored_result["formatted_content"]
                                     resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
                                     self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> analysis formatted_content ({len(replacement)} chars)")
+                                # Special case: if looking for .result on data tools, serialize the entire result as JSON
+                                elif field_path == ["result"] and isinstance(stored_result, dict):
+                                    # For data tools like get_fake_data, serialize the entire result
+                                    replacement = json.dumps(stored_result, indent=2)
+                                    resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
+                                    self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> full data result ({len(replacement)} chars)")
                                 else:
                                     self.logger.warning(f"⚠️ Could not resolve template variable: {match}")
                                     self.logger.warning(f"⚠️ Available fields in result: {list(stored_result.keys()) if isinstance(stored_result, dict) else 'not a dict'}")
@@ -262,6 +313,72 @@ class AgentExecutioner:
                             self.logger.warning(f"⚠️ No stored result found for action: {action_ref}")
                 
                 resolved_args[key] = resolved_value
+            elif isinstance(value, dict):
+                # Recursively resolve nested dictionaries
+                resolved_args[key] = await self._resolve_template_arguments(value, plan)
+            elif isinstance(value, list):
+                # Recursively resolve lists
+                resolved_list = []
+                for item in value:
+                    if isinstance(item, str) and "{{" in item and "}}" in item:
+                        # Resolve template in list item
+                        template_pattern = r'\{\{([^}]+)\}\}'
+                        matches = re.findall(template_pattern, item)
+                        resolved_item = item
+                        
+                        for match in matches:
+                            self.logger.info(f"🔧 Processing list template variable: {match}")
+                            parts = match.split('.')
+                            if len(parts) >= 2:
+                                action_ref = parts[0]
+                                field_path = parts[1:]
+                                
+                                # Look for stored result by action ID
+                                result_key = f"tool_result_{action_ref}"
+                                stored_result = await self.memory.get(result_key)
+                                
+                                # If not found, try to find by tool type (prioritize create_pdf for file URLs)
+                                if not stored_result and "file_url" in field_path:
+                                    for action in plan.actions:
+                                        if (action.status == "completed" and 
+                                            action.type.value == "tool_call" and 
+                                            action.tool_name == "create_pdf"):
+                                            real_result_key = f"tool_result_{action.id}"
+                                            candidate_result = await self.memory.get(real_result_key)
+                                            if candidate_result:
+                                                stored_result = candidate_result
+                                                self.logger.info(f"🔧 Mapped list template {action_ref} -> PDF action {action.id}")
+                                                break
+                                
+                                if stored_result:
+                                    # Navigate through the field path
+                                    current_value = stored_result
+                                    for field in field_path:
+                                        if isinstance(current_value, dict) and field in current_value:
+                                            current_value = current_value[field]
+                                        else:
+                                            current_value = None
+                                            break
+                                    
+                                    if current_value is not None:
+                                        replacement = str(current_value)
+                                        resolved_item = resolved_item.replace(f"{{{{{match}}}}}", replacement)
+                                        self.logger.info(f"🔧 Resolved list template {{{{{match}}}}} -> {replacement}")
+                                    else:
+                                        # Special case: if looking for .result on data tools, serialize the entire result
+                                        if field_path == ["result"] and isinstance(stored_result, dict):
+                                            replacement = json.dumps(stored_result, indent=2)
+                                            resolved_item = resolved_item.replace(f"{{{{{match}}}}}", replacement)
+                                            self.logger.info(f"🔧 Resolved list template {{{{{match}}}}} -> full data result ({len(replacement)} chars)")
+                                        else:
+                                            self.logger.warning(f"⚠️ Could not resolve list template variable: {match}")
+                        
+                        resolved_list.append(resolved_item)
+                    elif isinstance(item, dict):
+                        resolved_list.append(await self._resolve_template_arguments(item, plan))
+                    else:
+                        resolved_list.append(item)
+                resolved_args[key] = resolved_list
             else:
                 resolved_args[key] = value
         
@@ -425,8 +542,15 @@ class AgentExecutioner:
             await self._send_plan_update(plan)
     
     async def _execute_tool(self, tool_name: str, arguments: Dict[str, Any], plan_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Execute a tool using the MCP manager."""
-        # Handle authentication for intelycx-core tools
+        """Execute a tool using either LLM tools or MCP manager."""
+        # Handle built-in LLM tools first
+        if tool_name in ["search_memory", "get_memory_item"]:
+            if tool_name == "search_memory":
+                return await self.llm_tools.search_memory(**arguments)
+            elif tool_name == "get_memory_item":
+                return await self.llm_tools.get_memory_item(**arguments)
+        
+        # Handle MCP tools
         tool_server = await self._get_tool_server(tool_name)
         
         if tool_server == "intelycx-core":
@@ -447,8 +571,8 @@ class AgentExecutioner:
                 arguments_with_token["jwt_token"] = self._intelycx_jwt_token
                 result = await self.mcp_manager.execute_tool(tool_name, arguments_with_token, plan_context)
                 
-                # Let memory manager handle the result
-                return await self.memory.handle_tool_result(tool_name, arguments, result)
+                # Result already stored in memory by executioner, just return it
+                return result
         
         # Handle file generator tools (inject chat_id)
         elif tool_server == "intelycx-file-generator":
@@ -468,12 +592,32 @@ class AgentExecutioner:
                 result = await self.mcp_manager.execute_tool(tool_name, arguments_with_chat_id, plan_context)
             else:
                 result = await self.mcp_manager.execute_tool(tool_name, arguments, plan_context)
-            return await self.memory.handle_tool_result(tool_name, arguments, result)
+            return result
         
         # For other tools (email, etc.)
         result = await self.mcp_manager.execute_tool(tool_name, arguments, plan_context)
-        return await self.memory.handle_tool_result(tool_name, arguments, result)
+        return result
     
+    async def _send_plan_update(self, plan: ExecutionPlan) -> None:
+        """Update plan in database and send WebSocket update."""
+        try:
+            # Update database first (single source of truth)
+            if self.plan_manager and hasattr(self.plan_manager, 'store_plan'):
+                await self.plan_manager.store_plan(plan)
+                self.logger.debug(f"✅ Updated plan {plan.plan_id} in database")
+            
+            # Update action statuses in database
+            if self.plan_manager and hasattr(self.plan_manager, 'update_action_status'):
+                for action in plan.actions:
+                    await self.plan_manager.update_action_status(plan.plan_id, action.id, action.status)
+            
+            # Send WebSocket update via callback (if available)
+            if self._plan_update_callback:
+                await self._plan_update_callback(plan)
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to send plan update: {e}")
+
     async def _get_tool_server(self, tool_name: str) -> Optional[str]:
         """Get the server that provides a specific tool."""
         try:

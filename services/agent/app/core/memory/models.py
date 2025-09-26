@@ -14,7 +14,7 @@ class MemoryMetadata:
     tool_name: Optional[str] = None
     data_type: Optional[str] = None
     size_bytes: int = 0
-    accessed_count: int = 0
+    access_count: int = 0
     last_accessed: Optional[datetime] = None
     tags: List[str] = field(default_factory=list)
     
@@ -25,7 +25,7 @@ class MemoryMetadata:
             "tool_name": self.tool_name,
             "data_type": self.data_type,
             "size_bytes": self.size_bytes,
-            "accessed_count": self.accessed_count,
+            "access_count": self.access_count,
             "last_accessed": self.last_accessed.isoformat() if self.last_accessed else None,
             "tags": self.tags
         }

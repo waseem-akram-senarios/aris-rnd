@@ -203,10 +203,8 @@ class MCPServerManager:
             result = await client.call_tool(tool_name, arguments)
             
             # FastMCP returns a ToolResult object, extract the data
-            self.logger.info(f"🔍 Raw result type: {type(result)}")
-            self.logger.info(f"🔍 Raw result hasattr data: {hasattr(result, 'data')}")
-            if hasattr(result, 'data'):
-                self.logger.info(f"🔍 result.data type: {type(result.data)}")
+            # Reduced debug logging - only log on errors
+            self.logger.debug(f"🔍 Raw result type: {type(result)}")
             
             tool_data = result.data if hasattr(result, 'data') else result
             
@@ -244,8 +242,7 @@ class MCPServerManager:
                 else:
                     return obj
             
-            self.logger.info(f"🔍 Tool result type: {type(tool_data)}")
-            self.logger.info(f"🔍 Tool result str(type): {str(type(tool_data))}")
+            self.logger.debug(f"🔍 Tool result type: {type(tool_data)}")
             
             # Apply recursive FastMCP object conversion
             original_type = type(tool_data)

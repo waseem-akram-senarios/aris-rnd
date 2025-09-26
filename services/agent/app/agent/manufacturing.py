@@ -3,7 +3,7 @@ from typing import Any, Dict, Optional, List, Callable, Awaitable
 from pathlib import Path
 from ..core.files import FileProcessor, get_document_content_from_s3
 from ..llm.bedrock import BedrockClient
-from ..core.memory import SessionMemoryManager
+from ..database import init_database, close_database, DatabasePlanManager, DatabaseSessionMemoryManager, UnifiedPlanManager
 from ..mcp import MCPServerManager
 from ..config.settings import load_settings
 from ..planning.planner import AgentPlanner
@@ -65,11 +65,9 @@ class ManufacturingAgent(BaseAgent):
         # Chain of thought callback for execution progress
         self._cot_callback: Optional[Callable[[ChainOfThoughtMessage], Awaitable[None]]] = None
         
-        # Initialize session memory manager
-        self._memory = SessionMemoryManager(
-            auto_store_results=True,
-            max_size_mb=50.0  # Reasonable limit for session memory
-        )
+        # Initialize database memory manager (will be set when chat_id is available)
+        self._memory = None  # Will be initialized in set_chat_id with actual chat_id
+        self._db_plan_manager = None  # Database plan manager
         
         # Initialize planner, executioner, and plan manager
         self._planner = AgentPlanner(self._bedrock, self._logger)
@@ -107,12 +105,68 @@ class ManufacturingAgent(BaseAgent):
             self._executioner.set_plan_update_callback(callback)
     
     def set_chat_id(self, chat_id: str) -> None:
-        """Set the current chat ID for this session."""
+        """Set the current chat ID for this session and initialize database managers."""
         self._chat_id = chat_id
         self._logger.info(f"Set chat_id: {chat_id}")
-        # Also set it on the executioner if it exists
-        if hasattr(self, '_executioner') and self._executioner:
+        
+        # Initialize database-backed memory manager and unified plan manager
+        self._memory = DatabaseSessionMemoryManager(chat_id)
+        self._unified_plan_manager = UnifiedPlanManager(chat_id)
+        self._logger.info(f"🗄️ Initialized database managers for chat {chat_id}")
+        
+        # Set WebSocket callback for plan notifications
+        if self._plan_manager:
+            self._unified_plan_manager.set_websocket_callback(self._send_websocket_plan_notification)
+        
+        # Reinitialize executioner with new memory manager and unified plan manager
+        if self._plan_manager:
+            self._executioner = AgentExecutioner(self._mcp_manager, self._memory, self._unified_plan_manager, self._bedrock, self._logger)
+            # Set callbacks and chat_id
+            if hasattr(self, '_progress_callback') and self._progress_callback:
+                self._executioner.set_progress_callback(self._progress_callback)
             self._executioner.set_chat_id(chat_id)
+            self._logger.info(f"🔧 Reinitialized executioner with database memory manager")
+        elif hasattr(self, '_executioner') and self._executioner:
+            # Fallback: just set chat_id if executioner already exists
+            self._executioner.set_chat_id(chat_id)
+    
+    async def update_chat_info(
+        self, 
+        user_id: str, 
+        model_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Update chat information in the database."""
+        # Store chat info in database
+        if self._memory:
+            await self._memory.update_chat_info(
+                user_id=user_id,
+                agent_type="manufacturing", 
+                model_id=model_id,
+                metadata=metadata
+            )
+    
+    async def _send_websocket_plan_notification(self, message_type: str, plan_data: Dict[str, Any]) -> None:
+        """Send plan notification via WebSocket callback."""
+        if self._plan_manager:
+            try:
+                # The WebSocket PlanManager expects ExecutionPlan objects, not dicts
+                # We need to get the ExecutionPlan from the unified plan manager
+                plan_id = plan_data.get("plan_id")
+                if plan_id and self._unified_plan_manager:
+                    execution_plan = await self._unified_plan_manager.get_plan(plan_id)
+                    if execution_plan:
+                        if message_type == "plan_create":
+                            await self._plan_manager.create_plan(execution_plan)
+                        elif message_type == "plan_update":
+                            await self._plan_manager.update_plan(execution_plan)
+                        self._logger.debug(f"📤 Sent {message_type} notification via WebSocket")
+                    else:
+                        self._logger.warning(f"Could not retrieve plan {plan_id} from database for WebSocket notification")
+                else:
+                    self._logger.warning(f"Missing plan_id or unified_plan_manager for {message_type} notification")
+            except Exception as e:
+                self._logger.warning(f"Failed to send {message_type} notification: {e}")
 
     async def _send_progress(self, message: str) -> None:
         """Send a progress update if callback is available."""
@@ -192,18 +246,35 @@ class ManufacturingAgent(BaseAgent):
                     chat_id=self._chat_id
                 )
                 
-                # Save the plan to session memory and notify observers
+                # Set current plan and notify UI FIRST (before database operations)
                 self._current_plan = execution_plan  # For backward compatibility
-                await self._memory.store("current_execution_plan", execution_plan, tool_name="planner")
                 
-                # Use plan manager to create plan (triggers observers automatically)
-                if self._plan_manager:
-                    await self._plan_manager.create_plan(execution_plan)
-                else:
-                    # Fallback to legacy callback
-                    await self._send_plan(execution_plan)
-                
-                self._logger.info(f"📋 Created execution plan with {len(execution_plan.actions)} actions")
+                # DATABASE-FIRST: Store execution plan in database BEFORE any UI notifications or execution
+                try:
+                    # CRITICAL: Store in database first - execution CANNOT proceed if this fails
+                    if self._unified_plan_manager:
+                        await self._unified_plan_manager.create_plan(execution_plan)
+                        self._logger.info(f"✅ Plan {execution_plan.plan_id} stored in database with {len(execution_plan.actions)} actions")
+                    else:
+                        raise Exception("UnifiedPlanManager not initialized - cannot proceed without database storage")
+                    
+                    # Store in memory for backward compatibility (non-critical)
+                    try:
+                        await self._memory.store("current_execution_plan", execution_plan, tool_name="planner")
+                    except Exception as e:
+                        self._logger.warning(f"⚠️ Failed to store execution plan in memory (non-critical): {e}")
+                    
+                    self._logger.info(f"📋 Created execution plan with {len(execution_plan.actions)} actions")
+                    
+                except Exception as e:
+                    self._logger.error(f"❌ CRITICAL: Failed to store execution plan in database: {e}")
+                    self._logger.error(f"❌ EXECUTION HALTED - Database storage is required")
+                    # Return error response immediately - DO NOT PROCEED
+                    return AgentResponse(
+                        is_final=True,
+                        text="I encountered a critical error while creating the execution plan. Please try again or contact support if the problem persists.",
+                        data={}
+                    )
                 
             except Exception as e:
                 self._logger.error(f"❌ Planning phase failed: {str(e)}")
@@ -621,7 +692,7 @@ class ManufacturingAgent(BaseAgent):
                     ))
                     
                     # Let memory manager handle the result
-                    return await self.agent._memory.handle_tool_result(tool_name, arguments, result)
+                    return await self.agent._memory.handle_tool_result("unknown_action", tool_name, result, tool_name)
                 
                 # For all other tools (email, etc.), use normal execution
                 try:
@@ -643,7 +714,7 @@ class ManufacturingAgent(BaseAgent):
                     ))
                     
                     # Let memory manager handle the result
-                    return await self.agent._memory.handle_tool_result(tool_name, arguments, result)
+                    return await self.agent._memory.handle_tool_result("unknown_action", tool_name, result, tool_name)
                     
                 except Exception as e:
                     # Note: Plan status updates are now handled centrally by MCP Manager
@@ -777,8 +848,16 @@ class ManufacturingAgent(BaseAgent):
                 
             # Handle file creation tools (PDF, Excel, Word, etc.)
             if "file_url" in result or "download_url" in result:
+                # Try multiple possible filename fields
+                filename = (
+                    result.get("file_name") or 
+                    result.get("filename") or 
+                    result.get("name") or 
+                    "document"
+                )
+                
                 file_info = {
-                    "name": result.get("file_name", "document"),
+                    "name": filename,
                     "url": result.get("file_url") or result.get("download_url", "")
                 }
                 files.append(file_info)
@@ -812,6 +891,59 @@ class ManufacturingAgent(BaseAgent):
         
         # Use FastMCP client to discover available tools dynamically
         tools = []
+        
+        # Add built-in memory tools first
+        memory_tools = [
+            {
+                "toolSpec": {
+                    "name": "search_memory",
+                    "description": "Search session memory for previous tool results, files, and data",
+                    "inputSchema": {
+                        "json": {
+                            "type": "object",
+                            "properties": {
+                                "search_type": {
+                                    "type": "string",
+                                    "enum": ["files", "tool_results", "all"],
+                                    "description": "Type of search to perform"
+                                },
+                                "tool_name": {
+                                    "type": "string",
+                                    "description": "Filter by specific tool name (optional)"
+                                },
+                                "tags": {
+                                    "type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Filter by tags (optional)"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                "toolSpec": {
+                    "name": "get_memory_item",
+                    "description": "Get a specific memory item by key",
+                    "inputSchema": {
+                        "json": {
+                            "type": "object",
+                            "properties": {
+                                "key": {
+                                    "type": "string",
+                                    "description": "Memory key to retrieve"
+                                }
+                            },
+                            "required": ["key"]
+                        }
+                    }
+                }
+            }
+        ]
+        
+        tools.extend(memory_tools)
+        self._logger.info(f"📋 Added {len(memory_tools)} built-in memory tools for planning")
+        
         try:
             discovered_tools = await self._mcp_manager.list_tools()
             for tool in discovered_tools:
@@ -828,7 +960,7 @@ class ManufacturingAgent(BaseAgent):
                 tools.append(bedrock_tool)
                 self._logger.info(f"📋 Planning tool discovered: {tool['name']} from {tool['server']}")
             
-            self._logger.info(f"📋 Discovered {len(tools)} tools for planning via FastMCP")
+            self._logger.info(f"📋 Discovered {len(discovered_tools)} MCP tools for planning via FastMCP")
             
         except Exception as e:
             self._logger.error(f"❌ Error discovering tools for planning: {str(e)}")

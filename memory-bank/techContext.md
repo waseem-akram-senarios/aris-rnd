@@ -6,6 +6,7 @@
 
 ## Dependencies (agent)
 - **Core**: aiohttp, python-dotenv, python-jose, requests, boto3
+- **Database**: asyncpg, sqlalchemy[asyncio], alembic (PostgreSQL integration)
 - **File processing**: pymupdf, python-docx, pandas, openpyxl, xlrd, python-pptx, striprtf
 - **MCP integration**: fastmcp>=2.11.0 (FastMCP client library)
 
@@ -18,9 +19,10 @@
 - aws-cdk-lib v2, constructs v10
 
 ## Services & SDKs
+- **PostgreSQL**: Database backend for persistent storage (chats, plans, actions, memory)
 - **AWS Cognito**: JWT validation via JWKS
 - **AWS Bedrock Runtime**: LLM interactions, tool calling, guardrails
-- **AWS S3**: Document storage and retrieval
+- **AWS S3**: Document storage and retrieval with presigned URL generation
 - **Docker**: Multi-container orchestration with internal networking
 
 ## Configuration

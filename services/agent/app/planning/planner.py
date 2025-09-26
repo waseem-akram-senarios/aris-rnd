@@ -107,28 +107,32 @@ CONVERSATION CONTEXT:
         if chat_id:
             chat_context = f"\nCURRENT CHAT SESSION ID: {chat_id}\n(Use this exact chat_id for any file generation tools like create_pdf)\n"
         
-        return f"""Analyze this user query and create a detailed execution plan using the available tools.
+        prompt = f"""Analyze this user query and create a detailed execution plan using the available tools.
 
 USER QUERY: "{user_query}"{chat_context}
 
 {context_section}AVAILABLE TOOLS:
 {chr(10).join(tool_descriptions)}
 
-Create a JSON execution plan with this structure:
-{{
+Create a JSON execution plan with this structure:"""
+        
+        prompt += """
+{
     "summary": "Brief description of what will be accomplished",
     "actions": [
-        {{
+        {
             "id": "unique-uuid-string",
             "type": "tool_call|analysis|response",
             "name": "Human-readable action name",
             "description": "What this action will accomplish",
             "tool_name": "exact_tool_name_if_tool_call",
-            "arguments": {{"param1": "value1"}} // if tool_call,
-            "depends_on": ["previous_action_uuid"] // if depends on other actions
-        }}
+            "arguments": {"param1": "value1", "attachment_urls": ["{{previous_action_id.file_url}}"]},
+            "depends_on": ["previous_action_uuid"]
+        }
     ]
-}}
+}"""
+        
+        prompt += """
 
 PLANNING GUIDELINES:
 1. Generate unique UUID-style strings for each action ID (e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
@@ -137,14 +141,37 @@ PLANNING GUIDELINES:
 4. For email requests, use send_email
 5. For fake data requests, use get_fake_data with data_type: "all" (valid options: "all", "production", "inventory", "alerts", "metrics", "energy")
 6. For file generation, always use the provided chat_id (never use placeholders like "fake-pdf-request")
-7. Include analysis actions for complex reasoning
-8. End with a response action to synthesize results
-9. Consider dependencies between actions - use the actual UUID of dependent actions
-10. Be specific with tool arguments based on the user query
-11. If the query is unclear, plan to ask for clarification
-12. Do not include time estimates or duration fields
+7. DATA FORMATTING: When creating PDFs with data from tools like get_fake_data, ALWAYS include an analysis action to format the raw data into readable content BEFORE creating the PDF:
+   - Get data → Analysis action (format data) → Create PDF with formatted content
+   - Never put raw JSON directly into PDF content
+8. Include analysis actions for complex reasoning
+9. End with a response action to synthesize results
+10. Consider dependencies between actions - use the actual UUID of dependent actions
+11. Be specific with tool arguments based on the user query
+12. If the query is unclear, plan to ask for clarification
+13. Do not include time estimates or duration fields
+14. TEMPLATE VARIABLES: When referencing results from previous actions, use DOUBLE-BRACE template syntax:
+    - For file URLs: "{{action_id.file_url}}" (e.g., "{{a1b2c3d4-e5f6-7890-abcd-ef1234567890.file_url}}")
+    - For analysis results: "{{action_id.result}}" 
+    - For any field: "{{action_id.field_name}}"
+    - CRITICAL: Always use DOUBLE braces {{ }} not single braces { }
+15. EMAIL ATTACHMENTS: Always use template variables for attachment URLs, never hardcode filenames
+    - Example: "attachment_urls": ["{{pdf_action_id.file_url}}"]
+
+CRITICAL: CONSERVATIVE PLANNING REQUIRED
+16. ONLY create PDFs when explicitly requested (e.g., "create a PDF", "put this in a file", "generate a document")
+17. For simple questions like "What is X?" or "Tell me about Y" or "Explain Z", use EXACTLY 2 actions:
+    - ONE analysis action to understand the query
+    - ONE response action to provide the answer
+18. Do NOT create multiple analysis actions for the same topic
+19. Do NOT assume the user wants documentation unless they specifically ask for it
+20. Do NOT create comprehensive multi-step plans for simple explanation requests
+21. MAXIMUM 2 actions for explanation/information requests
+22. When in doubt, choose the SIMPLEST approach (1 analysis + 1 response)
 
 Return ONLY the JSON plan, no other text."""
+        
+        return prompt
 
     def _parse_plan_response(
         self, 

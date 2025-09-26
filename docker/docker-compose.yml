@@ -16,6 +16,7 @@ services:
       - intelycx_net
       - mcp_internal
     depends_on:
+      - aris-postgres
       - aris-mcp-intelycx-core
       - aris-mcp-intelycx-email
       - aris-mcp-intelycx-file-generator
@@ -23,6 +24,9 @@ services:
       - INTELYCX_CORE_MCP_URL=http://aris-mcp-intelycx-core:8080
       - INTELYCX_EMAIL_MCP_URL=http://aris-mcp-intelycx-email:8081
       - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+      - DATABASE_URL=postgresql+asyncpg://aris:${POSTGRES_PASSWORD:-aris_dev_password_2024}@aris-postgres:5432/aris_agent
+      - DATABASE_POOL_SIZE=10
+      - DATABASE_MAX_OVERFLOW=20
     healthcheck:
       test: ["CMD", "curl", "-f", "-k", "https://localhost:443/health"]
       interval: 30s
@@ -130,6 +134,34 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  aris-postgres:
+    image: postgres:16-alpine
+    container_name: aris-postgres
+    environment:
+      POSTGRES_DB: aris_agent
+      POSTGRES_USER: aris
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aris_dev_password_2024}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=C --lc-ctype=C"
+    volumes:
+      - aris_postgres_data:/var/lib/postgresql/data
+      - ../database/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - mcp_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aris -d aris_agent"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   intelycx_net:
     external: true
@@ -137,5 +169,9 @@ networks:
   mcp_internal:
     driver: bridge
     internal: false  # Allow external access for development
+
+volumes:
+  aris_postgres_data:
+    driver: local
 
 
