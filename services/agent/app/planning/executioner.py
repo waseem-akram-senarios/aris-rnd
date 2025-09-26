@@ -337,18 +337,54 @@ class AgentExecutioner:
                                 result_key = f"tool_result_{action_ref}"
                                 stored_result = await self.memory.get(result_key)
                                 
-                                # If not found, try to find by tool type (prioritize create_pdf for file URLs)
+                                # If not found, try to find by tool type and maintain order mapping
                                 if not stored_result and "file_url" in field_path:
-                                    for action in plan.actions:
-                                        if (action.status == "completed" and 
-                                            action.type.value == "tool_call" and 
-                                            action.tool_name == "create_pdf"):
-                                            real_result_key = f"tool_result_{action.id}"
-                                            candidate_result = await self.memory.get(real_result_key)
-                                            if candidate_result:
-                                                stored_result = candidate_result
-                                                self.logger.info(f"🔧 Mapped list template {action_ref} -> PDF action {action.id}")
-                                                break
+                                    # Get all completed PDF actions in execution order
+                                    pdf_actions = [action for action in plan.actions 
+                                                 if (action.status == "completed" and 
+                                                     action.type.value == "tool_call" and 
+                                                     action.tool_name == "create_pdf")]
+                                    
+                                    # Get all template IDs that reference file_url in this argument list
+                                    # We need to maintain consistent mapping across all template variables
+                                    if not hasattr(self, '_template_mapping_cache'):
+                                        self._template_mapping_cache = {}
+                                    
+                                    # Create ordered mapping if not already cached
+                                    cache_key = f"pdf_mapping_{id(value)}"  # Use list object ID as cache key
+                                    if cache_key not in self._template_mapping_cache:
+                                        # Extract all template IDs from this list that reference file_url
+                                        template_ids = []
+                                        for item_val in value:
+                                            if isinstance(item_val, str) and "{{" in item_val and "}}" in item_val:
+                                                import re
+                                                template_pattern = r'\{\{([^}]+)\}\}'
+                                                matches = re.findall(template_pattern, item_val)
+                                                for match_val in matches:
+                                                    if ".file_url" in match_val:
+                                                        template_id = match_val.split('.')[0]
+                                                        if template_id not in template_ids:
+                                                            template_ids.append(template_id)
+                                        
+                                        # Create 1:1 mapping between template IDs and PDF actions in order
+                                        mapping = {}
+                                        for i, template_id in enumerate(template_ids):
+                                            if i < len(pdf_actions):
+                                                mapping[template_id] = pdf_actions[i]
+                                        self._template_mapping_cache[cache_key] = mapping
+                                        self.logger.info(f"🔧 Created template mapping cache: {list(mapping.keys())} -> {[a.id for a in mapping.values()]}")
+                                    
+                                    # Use the cached mapping to find the correct action
+                                    mapping = self._template_mapping_cache[cache_key]
+                                    if action_ref in mapping:
+                                        mapped_action = mapping[action_ref]
+                                        real_result_key = f"tool_result_{mapped_action.id}"
+                                        candidate_result = await self.memory.get(real_result_key)
+                                        if candidate_result:
+                                            stored_result = candidate_result
+                                            self.logger.info(f"🔧 Mapped list template {action_ref} -> PDF action {mapped_action.id} (ordered mapping)")
+                                    else:
+                                        self.logger.warning(f"🔧 No mapping found for template {action_ref} in cache {list(mapping.keys())}")
                                 
                                 if stored_result:
                                     # Navigate through the field path
