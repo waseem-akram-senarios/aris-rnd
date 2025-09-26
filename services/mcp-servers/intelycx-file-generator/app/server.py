@@ -2,9 +2,11 @@
 
 import os
 import logging
+import asyncio
 from typing import Any, Dict, Optional
 from io import BytesIO
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 from fastmcp import FastMCP, Context
 from pydantic import BaseModel, Field
@@ -129,7 +131,7 @@ def _generate_pdf(title: str, content: str, author: Optional[str] = None) -> byt
     return pdf_bytes
 
 
-def _upload_to_s3(file_content: bytes, file_path: str) -> Dict[str, Any]:
+async def _upload_to_s3(file_content: bytes, file_path: str) -> Dict[str, Any]:
     """Upload file to S3."""
     if not s3_client or not bucket_name:
         return {
@@ -147,17 +149,30 @@ def _upload_to_s3(file_content: bytes, file_path: str) -> Dict[str, Any]:
             ServerSideEncryption='AES256'
         )
         
-        # Construct file URL
-        file_url = f"s3://{bucket_name}/{file_path}"
-        file_size = len(file_content)
+        # Generate presigned download URL (expires in 1 hour) - run in executor to avoid blocking
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            signed_url = await loop.run_in_executor(
+                executor,
+                lambda: s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': bucket_name, 'Key': file_path},
+                    ExpiresIn=3600  # 1 hour
+                )
+            )
         
-        logger.info(f"✅ File uploaded: {file_url} ({file_size} bytes)")
+        file_size = len(file_content)
+        s3_path = f"s3://{bucket_name}/{file_path}"
+        
+        logger.info(f"✅ File uploaded: {s3_path} ({file_size} bytes)")
+        logger.info(f"🔗 Generated download URL (expires in 1 hour): {signed_url}")
         
         return {
             "success": True,
-            "file_url": file_url,
+            "file_url": signed_url,  # Now returns HTTPS download URL
             "file_path": file_path,
-            "file_size": file_size
+            "file_size": file_size,
+            "s3_path": s3_path  # Keep S3 path for reference
         }
         
     except Exception as e:
@@ -243,7 +258,7 @@ async def create_pdf(
         file_path = _construct_file_path(chat_id, filename)
         
         # Upload to S3
-        upload_result = _upload_to_s3(pdf_bytes, file_path)
+        upload_result = await _upload_to_s3(pdf_bytes, file_path)
         
         if upload_result["success"]:
             if ctx:

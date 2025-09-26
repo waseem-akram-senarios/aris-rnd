@@ -263,16 +263,16 @@ class WebSocketHandler:
                             logger.exception("Guardrail check failed (allow by default): %s", exc)
 
                     # Process message and send final response only (no streaming)
-                    text = (await agent.process_message(msg_text)).text
+                    agent_response = await agent.process_message(msg_text)
                     
                     final_msg = {
-                        "message": text,
-                        "data": {},
+                        "message": agent_response.text,
+                        "data": agent_response.data or {},
                         "type": "message",
                         "action": "close",
                     }
                     await ws.send_json(final_msg)
-                    logger.info("WSS OUT: %s", _truncate(json.dumps({**final_msg, "message": _truncate(text, 500)})))
+                    logger.info("WSS OUT: %s", _truncate(json.dumps({**final_msg, "message": _truncate(agent_response.text, 500)})))
                 elif msg.type == WSMsgType.ERROR:
                     logger.error("ws connection closed with exception %s", ws.exception())
                     break

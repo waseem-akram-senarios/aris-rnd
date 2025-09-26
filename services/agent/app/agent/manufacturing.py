@@ -91,7 +91,7 @@ class ManufacturingAgent(BaseAgent):
         """Set the plan manager for handling plan lifecycle."""
         self._plan_manager = plan_manager
         # Initialize executioner with plan manager
-        self._executioner = AgentExecutioner(self._mcp_manager, self._memory, plan_manager, self._logger)
+        self._executioner = AgentExecutioner(self._mcp_manager, self._memory, plan_manager, self._bedrock, self._logger)
         # Set progress callback on executioner
         if hasattr(self, '_progress_callback') and self._progress_callback:
             self._executioner.set_progress_callback(self._progress_callback)
@@ -188,7 +188,8 @@ class ManufacturingAgent(BaseAgent):
                 execution_plan = await self._planner.create_execution_plan(
                     user_query=enhanced_message,
                     available_tools=basic_tools,
-                    conversation_context=self._messages[-5:] if self._messages else None
+                    conversation_context=self._messages[-5:] if self._messages else None,
+                    chat_id=self._chat_id
                 )
                 
                 # Save the plan to session memory and notify observers
@@ -214,10 +215,14 @@ class ManufacturingAgent(BaseAgent):
             else:
                 execution_plan = self._current_plan
         
+        # Initialize tool_results variable
+        tool_results = []
+        
         # Now initialize only the MCP servers that are actually needed based on the plan
         tools = await self._initialize_required_servers_and_get_tools(execution_plan if 'execution_plan' in locals() else None)
         
         self._logger.info(f"🎯 TOTAL TOOLS AVAILABLE: {len(tools)}")
+        self._logger.info(f"🔍 DEBUG: About to create system prompt, tool_results length: {len(tool_results)}")
         
         # Create system prompt based on tool availability
         if tools:
@@ -227,21 +232,88 @@ class ManufacturingAgent(BaseAgent):
             else:
                 auth_status = " Manufacturing data access is currently unavailable due to authentication issues."
             
-            system_prompt = f"You are ARIS, a helpful manufacturing assistant with access to production data tools, email capabilities, and session memory management. You can query machine information, machine group details, production summaries, and send email notifications.{auth_status} ALWAYS use the available tools when users ask about machines, production lines, manufacturing metrics, or need to send emails/notifications. Never make up or guess information - only provide data from actual tool calls. You have session memory capabilities - when retrieving data, you can store it in variables using the 'result_variable_name' parameter for later reference. Use memory management tools to list, retrieve, or clear stored variables as needed. Maintain context across the conversation and remember user-provided details such as their name during this session. When documents are provided, analyze them and answer questions based on their content."
+            self._logger.info(f"🔍 DEBUG: Creating initial system prompt")
+            
+            # Add tool completion context if available
+            tool_completion_context = ""
+            if tool_results:
+                # Create detailed context about completed actions
+                completed_actions = []
+                for tr in tool_results:
+                    action_name = tr['action_name']
+                    result = tr['result']
+                    
+                    # Add specific details based on tool type
+                    if tr['tool_name'] == 'create_pdf' and isinstance(result, dict):
+                        file_url = result.get('file_url', '')
+                        file_name = result.get('file_name', 'document')
+                        completed_actions.append(f"✅ {action_name}: Created '{file_name}' (Download: {file_url})")
+                    elif tr['tool_name'] == 'get_fake_data' and isinstance(result, dict):
+                        data_count = len(str(result)) if result else 0
+                        completed_actions.append(f"✅ {action_name}: Retrieved {data_count} chars of manufacturing data")
+                    elif tr['tool_name'] == 'intelycx_login' and isinstance(result, dict):
+                        success = result.get('success', False)
+                        user = result.get('user', 'Unknown')
+                        completed_actions.append(f"✅ {action_name}: Authentication {'successful' if success else 'failed'} for {user}")
+                    else:
+                        completed_actions.append(f"✅ {action_name}: Completed successfully")
+                
+                tool_completion_context = f" EXECUTION RESULTS: I have completed these actions: {' | '.join(completed_actions)}. I should acknowledge these completed actions in my response and provide relevant details like download links. I should NOT call any tools again since they were already executed."
+            
+            # Add error context if plan has failures (will be set later)
+            plan_error_context = ""
+            
+            system_prompt = f"You are ARIS, a helpful manufacturing assistant with access to production data tools, email capabilities, and session memory management. You can query machine information, machine group details, production summaries, and send email notifications.{auth_status} ALWAYS use the available tools when users ask about machines, production lines, manufacturing metrics, or need to send emails/notifications. Never make up or guess information - only provide data from actual tool calls. You have session memory capabilities - when retrieving data, you can store it in variables using the 'result_variable_name' parameter for later reference. Use memory management tools to list, retrieve, or clear stored variables as needed. Maintain context across the conversation and remember user-provided details such as their name during this session. When documents are provided, analyze them and answer questions based on their content.{tool_completion_context}{plan_error_context}"
         else:
             system_prompt = "You are ARIS, a helpful manufacturing assistant. Currently, I don't have access to production data tools or email capabilities, so I cannot provide specific information about machines, machine groups, production metrics, or send notifications. Please let the user know that the tools are temporarily unavailable and suggest they try again later. Never make up or fabricate manufacturing data. Be honest about your limitations."
         
         # Use the enhanced converse method with tools
+        self._logger.info(f"🔍 DEBUG: About to send 'Executing plan...' progress message")
         await self._send_progress("Executing plan...")
+        self._logger.info(f"🔍 DEBUG: Sent 'Executing plan...' progress message")
         
         # Execute the plan using the executioner (handles tool_call, analysis, response actions)
         if execution_plan and self._executioner:
             try:
+                # Store original message count to identify new tool result messages
+                original_message_count = len(self._messages)
+                
                 await self._executioner.execute_plan(execution_plan)
                 self._logger.info(f"✅ Executioner completed plan {execution_plan.plan_id}")
+                
+                # Collect tool execution results from session memory
+                tool_results = await self._collect_tool_results_from_plan(execution_plan)
+                
+                # Debug: Log what we found
+                self._logger.info(f"🔍 Found {len(tool_results)} tool results in memory")
+                for tr in tool_results:
+                    self._logger.info(f"🔍 Tool result: {tr['tool_name']} -> {type(tr['result'])}")
+                
+                # Log tool results for debugging but don't inject into conversation
+                if tool_results:
+                    self._logger.info(f"📋 Found {len(tool_results)} completed tool executions")
+                    for tr in tool_results:
+                        self._logger.info(f"📋 Tool completed: {tr['tool_name']} -> {tr['action_name']}")
+                else:
+                    self._logger.warning("⚠️ No tool results found")
+                    
             except Exception as e:
                 self._logger.error(f"❌ Executioner failed: {str(e)}")
                 # Continue to LLM even if executioner fails
+            
+        # Always collect tool results, even if execution partially failed
+        if not tool_results and execution_plan:
+            tool_results = await self._collect_tool_results_from_plan(execution_plan)
+            self._logger.info(f"🔍 Collected {len(tool_results)} tool results after execution (including partial results)")
+            
+        # Update error context if plan failed
+        if execution_plan and execution_plan.has_failed_actions():
+            failed_actions = [a for a in execution_plan.actions if a.status == "failed"]
+            error_context = f" NOTE: Some planned actions failed: {[a.name for a in failed_actions]}. Address these failures in your response and suggest alternatives if possible."
+            # Update the system prompt with error context
+            if tools:
+                system_prompt = system_prompt.replace(plan_error_context, error_context)
+            self._logger.info(f"⚠️ Plan has {len(failed_actions)} failed actions, updated system prompt")
         
         # Mark analysis and response actions as in_progress before LLM call
         if execution_plan:
@@ -253,36 +325,54 @@ class ManufacturingAgent(BaseAgent):
                     icon = "🧠" if action.type.value == "analysis" else "💬"
                     self._logger.info(f"{icon} Starting {action.type.value}: {action.name}")
 
-        # Use LLM with enhanced tool executor that updates plan status
-        text = await self._bedrock.converse(
-            model_id=model_id,
-            messages=self._messages[-20:],
-            tools=tools,
-            tool_executor=self._create_tool_executor_with_cot(),
-            system=[{"text": system_prompt}],
-            temperature=temperature,
-        )
+        # Use the base system prompt (tool results are now in conversation history)
+        final_system_prompt = system_prompt
+        self._logger.info(f"🔍 Using system prompt length: {len(final_system_prompt)} chars")
 
-        # Mark analysis and response actions as completed after LLM finishes
+        # The executioner should have completed all actions including response generation
+        # Get the final response from the response action result
+        final_response_text = ""
+        
         if execution_plan:
+            # Find the response action and get its result
             for action in execution_plan.actions:
-                if action.type.value in ["analysis", "response"] and action.status in ["starting", "in_progress"]:
-                    execution_plan.update_action_status(action.id, "completed")
-                    self._logger.info(f"✅ Completed {action.type.value}: {action.name}")
+                if action.type.value == "response" and action.status == "completed":
+                    response_result_key = f"tool_result_{action.id}"
+                    response_result = await self._memory.get(response_result_key)
+                    if response_result and isinstance(response_result, dict):
+                        final_response_text = response_result.get("response_text", "")
+                        self._logger.info(f"📝 Retrieved response from executioner: {len(final_response_text)} chars")
+                        break
             
-            # Update plan status after marking actions complete
-            execution_plan.auto_update_plan_status()
-            if execution_plan.status != "completed" and not execution_plan.has_failed_actions():
-                # If all actions are done but plan isn't marked completed, mark it now
-                execution_plan.update_plan_status("completed")
-            
-            if self._plan_manager:
-                await self._plan_manager.update_plan(execution_plan)
             self._logger.info(f"📋 Final plan status: {execution_plan.status}")
 
+        # If no response was generated by the executioner, create a fallback
+        if not final_response_text:
+            if execution_plan and execution_plan.has_failed_actions():
+                failed_actions = [a.name for a in execution_plan.actions if a.status == "failed"]
+                final_response_text = f"I encountered some issues while processing your request. The following actions failed: {', '.join(failed_actions)}. Please try again or contact support if the problem persists."
+            else:
+                final_response_text = "I've completed processing your request. Please check the results above."
+            
+            self._logger.warning(f"⚠️ Using fallback response text: {len(final_response_text)} chars")
+
+        # Collect tool results for structured data response
+        if not tool_results and execution_plan:
+            tool_results = await self._collect_tool_results_from_plan(execution_plan)
+            self._logger.info(f"🔍 Collected {len(tool_results)} tool results for structured data")
+        
+        response_data = {}
+        if tool_results:
+            response_data = await self._create_structured_response_data(tool_results)
+            self._logger.info(f"🔍 Created structured response data with {len(response_data)} sections")
+            if "files" in response_data:
+                self._logger.info(f"🔍 Response includes {len(response_data['files'])} files")
+        else:
+            self._logger.warning("⚠️ No tool results available for structured response data")
+
         # Append assistant reply to memory
-        self._messages.append({"role": "assistant", "content": [{"text": text or ""}]})        
-        return AgentResponse(is_final=True, text=text or "", data={})
+        self._messages.append({"role": "assistant", "content": [{"text": final_response_text}]})        
+        return AgentResponse(is_final=True, text=final_response_text, data=response_data)
 
     def set_runtime_options(self, options: Dict[str, Any]) -> None:
         # Validate and map model IDs to supported Bedrock models
@@ -569,6 +659,136 @@ class ManufacturingAgent(BaseAgent):
                     raise
         
         return ToolExecutorWithCoT(self)
+    
+    async def _collect_tool_results_from_plan(self, execution_plan: ExecutionPlan) -> List[Dict[str, Any]]:
+        """Collect tool execution results from the session memory based on the execution plan."""
+        tool_results = []
+        
+        self._logger.info(f"🔍 Collecting tool results from plan with {len(execution_plan.actions)} actions")
+        
+        for action in execution_plan.actions:
+            self._logger.info(f"🔍 Checking action: {action.name} (type: {action.type.value}, status: {action.status}, tool: {action.tool_name})")
+            
+            if action.type.value == "tool_call" and action.tool_name and action.status == "completed":
+                # Look for stored results in memory using action ID or tool name
+                result_keys = [
+                    f"tool_result_{action.id}",
+                    f"tool_result_{action.tool_name}",
+                    action.tool_name,
+                    f"{action.tool_name}_result"
+                ]
+                
+                self._logger.info(f"🔍 Looking for tool result with keys: {result_keys}")
+                
+                for key in result_keys:
+                    result = await self._memory.get(key)
+                    if result:
+                        self._logger.info(f"✅ Found tool result for {action.tool_name} with key: {key}")
+                        tool_results.append({
+                            "action_id": action.id,
+                            "tool_name": action.tool_name,
+                            "action_name": action.name,
+                            "result": result
+                        })
+                        break
+                else:
+                    self._logger.warning(f"❌ No tool result found for {action.tool_name} (action: {action.id})")
+        
+        self._logger.info(f"🔍 Collected {len(tool_results)} total tool results")
+        return tool_results
+    
+    def _create_tool_results_summary(self, tool_results: List[Dict[str, Any]]) -> str:
+        """Create a summary of tool execution results for LLM context."""
+        if not tool_results:
+            return "No tool results available."
+        
+        summary_parts = []
+        for tool_result in tool_results:
+            self._logger.info(f"🔍 Processing tool result: {tool_result['tool_name']} -> {tool_result['result']}")
+            tool_name = tool_result["tool_name"]
+            action_name = tool_result["action_name"]
+            result = tool_result["result"]
+            
+            # Create comprehensive summary for all tool types
+            if isinstance(result, dict) and result.get("error"):
+                # Handle error results
+                error_msg = result.get("error", "Unknown error")
+                summary_parts.append(f"❌ {action_name}: Failed - {error_msg}")
+            elif isinstance(result, dict):
+                # Handle successful results with structured data
+                success_info = []
+                
+                # Common result fields to extract
+                if "file_url" in result:
+                    file_name = result.get("file_name", "file")
+                    file_url = result.get("file_url", "")
+                    success_info.append(f"File '{file_name}' created. Download: {file_url}")
+                
+                if "message" in result:
+                    success_info.append(f"Message: {result['message']}")
+                
+                if "data" in result:
+                    data = result["data"]
+                    if isinstance(data, dict):
+                        # Extract key information from data
+                        if "count" in data:
+                            success_info.append(f"Retrieved {data['count']} items")
+                        elif "machines" in data:
+                            success_info.append(f"Found {len(data['machines'])} machines")
+                        elif "production" in data:
+                            success_info.append("Production data retrieved")
+                    elif isinstance(data, list):
+                        success_info.append(f"Retrieved {len(data)} items")
+                
+                if "success" in result and result["success"]:
+                    if tool_name == "send_email":
+                        success_info.append("Email sent successfully")
+                    elif tool_name == "intelycx_login":
+                        user = result.get("user", "user")
+                        success_info.append(f"Authenticated as {user}")
+                
+                # Generic success message if no specific info found
+                if not success_info:
+                    if "success" in result and result["success"]:
+                        success_info.append("Operation completed successfully")
+                    else:
+                        success_info.append("Operation completed")
+                
+                summary_parts.append(f"✅ {action_name}: {' | '.join(success_info)}")
+            else:
+                # Handle simple/string results
+                summary_parts.append(f"✅ {action_name}: {str(result)[:100]}...")
+        
+        return " | ".join(summary_parts)
+    
+    async def _create_structured_response_data(self, tool_results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Create structured response data for UI consumption based on tool results."""
+        response_data = {}
+        
+        # Extract files from tool results (matching the expected UI format)
+        files = []
+        
+        for tool_result in tool_results:
+            tool_name = tool_result["tool_name"]
+            result = tool_result["result"]
+            
+            if not isinstance(result, dict):
+                continue
+                
+            # Handle file creation tools (PDF, Excel, Word, etc.)
+            if "file_url" in result or "download_url" in result:
+                file_info = {
+                    "name": result.get("file_name", "document"),
+                    "url": result.get("file_url") or result.get("download_url", "")
+                }
+                files.append(file_info)
+                self._logger.info(f"🔍 Added file to response data: {file_info['name']} -> {file_info['url']}")
+        
+        # Only add files section if we have files
+        if files:
+            response_data["files"] = files
+            
+        return response_data
     
     async def _get_tool_server(self, tool_name: str) -> Optional[str]:
         """Dynamically determine which server provides a specific tool."""

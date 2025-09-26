@@ -17,10 +17,11 @@ class AgentPlanner:
         self.logger = logger or logging.getLogger(__name__)
         
     async def create_execution_plan(
-        self, 
-        user_query: str, 
+        self,
+        user_query: str,
         available_tools: List[Dict[str, Any]],
-        conversation_context: Optional[List[Dict[str, Any]]] = None
+        conversation_context: Optional[List[Dict[str, Any]]] = None,
+        chat_id: Optional[str] = None
     ) -> ExecutionPlan:
         """
         Analyze user query and create an execution plan.
@@ -36,7 +37,7 @@ class AgentPlanner:
         plan_id = str(uuid.uuid4())
         
         # Create planning prompt
-        planning_prompt = self._create_planning_prompt(user_query, available_tools, conversation_context)
+        planning_prompt = self._create_planning_prompt(user_query, available_tools, conversation_context, chat_id)
         
         # Use LLM to analyze query and create plan
         self.logger.info("🧠 Creating execution plan for user query...")
@@ -67,7 +68,8 @@ class AgentPlanner:
         self, 
         user_query: str, 
         available_tools: List[Dict[str, Any]],
-        conversation_context: Optional[List[Dict[str, Any]]] = None
+        conversation_context: Optional[List[Dict[str, Any]]] = None,
+        chat_id: Optional[str] = None
     ) -> str:
         """Create a prompt for the planning LLM call."""
         
@@ -100,9 +102,14 @@ CONVERSATION CONTEXT:
 
 """
         
+        # Add chat ID context for file generation tools
+        chat_context = ""
+        if chat_id:
+            chat_context = f"\nCURRENT CHAT SESSION ID: {chat_id}\n(Use this exact chat_id for any file generation tools like create_pdf)\n"
+        
         return f"""Analyze this user query and create a detailed execution plan using the available tools.
 
-USER QUERY: "{user_query}"
+USER QUERY: "{user_query}"{chat_context}
 
 {context_section}AVAILABLE TOOLS:
 {chr(10).join(tool_descriptions)}
@@ -128,12 +135,14 @@ PLANNING GUIDELINES:
 2. Only use tools that are actually available in the list above
 3. For manufacturing queries, typically use get_machine, get_machine_group, or get_production_summary
 4. For email requests, use send_email
-5. Include analysis actions for complex reasoning
-6. End with a response action to synthesize results
-7. Consider dependencies between actions - use the actual UUID of dependent actions
-8. Be specific with tool arguments based on the user query
-9. If the query is unclear, plan to ask for clarification
-10. Do not include time estimates or duration fields
+5. For fake data requests, use get_fake_data with data_type: "all" (valid options: "all", "production", "inventory", "alerts", "metrics", "energy")
+6. For file generation, always use the provided chat_id (never use placeholders like "fake-pdf-request")
+7. Include analysis actions for complex reasoning
+8. End with a response action to synthesize results
+9. Consider dependencies between actions - use the actual UUID of dependent actions
+10. Be specific with tool arguments based on the user query
+11. If the query is unclear, plan to ask for clarification
+12. Do not include time estimates or duration fields
 
 Return ONLY the JSON plan, no other text."""
 
