@@ -152,7 +152,8 @@ class UnifiedPlanManager:
             async with db_manager.get_session() as session:
                 # Update plan status and timing
                 update_values = {
-                    'status': status
+                    'status': status,
+                    'updated_at': datetime.utcnow()
                 }
                 
                 if status == 'in_progress':
