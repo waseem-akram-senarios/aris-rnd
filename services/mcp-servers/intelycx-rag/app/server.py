@@ -75,8 +75,17 @@ async def get_services():
 @mcp.tool(
     name="ingest_document",
     description="Ingest a document from S3 into the knowledge base with semantic chunking and vector indexing",
-    tags={"rag", "documents", "ingestion", "knowledge-base"},
-    meta={"version": "1.0", "category": "document_management", "author": "intelycx"},
+    tags={"rag", "documents", "ingestion", "knowledge-base", "capability:document_ingestion", "domain:manufacturing", "requires_auth:false"},
+    meta={
+        "version": "1.0", 
+        "category": "document_management", 
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "document_ingestion",
+        "domain": "manufacturing",
+        "requires_auth": False,
+        "priority": 2
+    },
     annotations={
         "title": "Document Ingestion",
         "readOnlyHint": False,
@@ -219,8 +228,17 @@ async def ingest_document(
 @mcp.tool(
     name="search_knowledge_base",
     description="Search the knowledge base using semantic similarity and hybrid search techniques",
-    tags={"rag", "search", "knowledge-base", "semantic"},
-    meta={"version": "1.0", "category": "search", "author": "intelycx"},
+    tags={"rag", "search", "knowledge-base", "semantic", "capability:knowledge_search", "domain:manufacturing", "requires_auth:false"},
+    meta={
+        "version": "1.0", 
+        "category": "search", 
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "knowledge_search",
+        "domain": "manufacturing",
+        "requires_auth": False,
+        "priority": 2
+    },
     annotations={
         "title": "Knowledge Base Search",
         "readOnlyHint": True,

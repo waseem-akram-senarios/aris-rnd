@@ -29,7 +29,7 @@ class AgentExecutioner:
         self.logger = logger or logging.getLogger(__name__)
         
         # Initialize LLM tools if bedrock client is provided
-        self.llm_tools = LLMTools(bedrock_client, memory, logger) if bedrock_client else None
+        self.llm_tools = LLMTools(bedrock_client, memory, mcp_manager, logger) if bedrock_client else None
         
         # Callbacks (for backward compatibility)
         self._plan_update_callback: Optional[Callable[[ExecutionPlan], Awaitable[None]]] = None

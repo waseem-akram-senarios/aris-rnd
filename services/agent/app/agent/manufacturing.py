@@ -992,26 +992,27 @@ class ManufacturingAgent(BaseAgent):
         return tools
 
     async def _initialize_required_servers_and_get_tools(self, execution_plan: Optional[ExecutionPlan] = None) -> List[Dict[str, Any]]:
-        """Initialize only the MCP servers needed based on the execution plan."""
+        """Initialize only the MCP servers needed based on the execution plan using dynamic discovery."""
         required_servers = set()
         
-        # Analyze the execution plan to determine which servers are needed
+        # Dynamically determine required servers based on the execution plan
         if execution_plan:
+            tool_names = []
             for action in execution_plan.actions:
                 if action.tool_name:
-                    if action.tool_name in ["send_email"]:
-                        required_servers.add("intelycx-email")
-                    elif action.tool_name in ["get_machine", "get_machine_group", "get_production_summary", "get_fake_data"]:
-                        required_servers.add("intelycx-core")
-                    elif action.tool_name in ["create_pdf"]:
-                        required_servers.add("intelycx-file-generator")
-                    elif action.tool_name in ["ingest_document", "search_knowledge_base", "get_document_status", "list_documents", "delete_document"]:
-                        required_servers.add("intelycx-rag")
+                    tool_names.append(action.tool_name)
+            
+            if tool_names:
+                # Use dynamic discovery to find required servers
+                discovered_servers = await self._mcp_manager.get_required_servers_for_tools(tool_names)
+                required_servers.update(discovered_servers)
+                self._logger.info(f"🔍 Dynamically discovered servers for tools {tool_names}: {discovered_servers}")
         
-        # If no plan or no tool calls identified, initialize all servers (fallback)
+        # If no plan or no tool calls identified, initialize all configured servers (fallback)
         if not required_servers:
-            self._logger.info("🔧 No specific servers identified from plan, initializing all servers")
-            required_servers = {"intelycx-core", "intelycx-email", "intelycx-file-generator", "intelycx-rag"}
+            self._logger.info("🔧 No specific servers identified from plan, initializing all configured servers")
+            # Get all configured servers instead of hardcoded list
+            required_servers = set(self._mcp_manager.servers.keys())
         
         self._logger.info(f"🎯 Initializing required servers: {required_servers}")
         

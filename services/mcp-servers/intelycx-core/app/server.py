@@ -96,8 +96,8 @@ async def health_check(request: Request) -> JSONResponse:
 @mcp.tool(
     name="intelycx_login",
     description="Authenticate with Intelycx Core API and obtain JWT token for subsequent API calls",
-    tags={"authentication", "core", "security"},
-    meta={"version": "2.0", "category": "authentication", "author": "intelycx"},
+    tags={"authentication", "core", "security", "capability:authentication", "domain:manufacturing", "provides_auth:true"},
+    meta={"version": "2.0", "category": "authentication", "author": "intelycx", "server_type": "core", "capability": "authentication", "domain": "manufacturing", "provides_auth": True, "priority": 1},
     annotations={
         "title": "Intelycx Core Authentication",
         "readOnlyHint": False,
@@ -264,8 +264,8 @@ async def intelycx_login(
 @mcp.tool(
     name="get_fake_data",
     description="Generate comprehensive fake manufacturing data for testing and development with JWT authentication",
-    tags={"manufacturing", "data", "testing", "development"},
-    meta={"version": "2.0", "category": "data_access", "author": "intelycx"},
+    tags={"manufacturing", "data", "testing", "development", "capability:manufacturing_data", "domain:manufacturing", "requires_auth:true"},
+    meta={"version": "2.0", "category": "data_access", "author": "intelycx", "server_type": "core", "capability": "manufacturing_data", "domain": "manufacturing", "requires_auth": True, "priority": 1},
     annotations={
         "title": "Manufacturing Data Generator",
         "readOnlyHint": True,

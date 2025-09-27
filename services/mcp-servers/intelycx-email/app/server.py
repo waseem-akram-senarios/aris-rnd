@@ -95,8 +95,8 @@ async def health_check(request: Request) -> JSONResponse:
 @mcp.tool(
     name="send_email",
     description="Send emails with flexible recipient support, rich formatting, and comprehensive delivery tracking",
-    tags={"email", "communication", "notification", "messaging"},
-    meta={"version": "2.0", "category": "communication", "author": "intelycx"},
+    tags={"email", "communication", "notification", "messaging", "capability:communication", "domain:general", "requires_auth:false"},
+    meta={"version": "2.0", "category": "communication", "author": "intelycx", "server_type": "email", "capability": "communication", "domain": "general", "requires_auth": False, "priority": 2},
     annotations={
         "title": "Email Sender",
         "readOnlyHint": False,

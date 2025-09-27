@@ -13,9 +13,10 @@ from ..llm.bedrock import BedrockClient
 class LLMTools:
     """Built-in LLM tools for agent execution."""
     
-    def __init__(self, bedrock_client: BedrockClient, memory_manager, logger: Optional[logging.Logger] = None):
+    def __init__(self, bedrock_client: BedrockClient, memory_manager, mcp_manager=None, logger: Optional[logging.Logger] = None):
         self.bedrock = bedrock_client
         self.memory = memory_manager
+        self.mcp_manager = mcp_manager
         self.logger = logger or logging.getLogger(__name__)
     
     async def format_data_for_pdf(self, **kwargs) -> Dict[str, Any]:
@@ -390,7 +391,7 @@ Return ONLY the response message text."""
     
     async def list_mcp_tools(self, **kwargs) -> Dict[str, Any]:
         """
-        List all available Model Context Protocol (MCP) tools and their descriptions.
+        List all available Model Context Protocol (MCP) tools and their descriptions dynamically.
         
         Args:
             include_descriptions: Include detailed descriptions for each tool
@@ -402,124 +403,96 @@ Return ONLY the response message text."""
         include_descriptions = kwargs.get("include_descriptions", True)
         filter_by_server = kwargs.get("filter_by_server")
         
-        self.logger.info(f"🔧 Listing MCP tools: descriptions={include_descriptions}, server_filter={filter_by_server}")
+        self.logger.info(f"🔧 Listing MCP tools dynamically: descriptions={include_descriptions}, server_filter={filter_by_server}")
         
         try:
-            # Get the MCP manager from the agent (we need to access it through the parent)
-            # This is a bit of a hack, but we need access to the MCP manager
-            # In a real implementation, we'd pass it as a parameter
+            if not self.mcp_manager:
+                self.logger.warning("🔄 MCP manager not available for dynamic tool listing")
+                return {
+                    "success": False,
+                    "error": "MCP manager not available for dynamic discovery",
+                    "total_tools": 0,
+                    "tools": [],
+                    "tools_by_server": {},
+                    "server_count": 0
+                }
             
-            # For now, return a static list based on what we know is available
-            # TODO: Make this dynamic by accessing the actual MCP manager
+            # Use dynamic discovery from MCP manager
+            discovery_result = await self.mcp_manager.get_dynamic_tool_list(server_filter=filter_by_server)
             
-            tools_by_server = {
-                "intelycx-core": [
-                    {
-                        "name": "intelycx_login",
-                        "description": "Authenticate with Intelycx Core API and obtain JWT token for subsequent API calls"
-                    },
-                    {
-                        "name": "get_fake_data", 
-                        "description": "Generate comprehensive fake manufacturing data for testing and development with JWT authentication"
-                    }
-                ],
-                "intelycx-email": [
-                    {
-                        "name": "send_email",
-                        "description": "Send emails with flexible recipient support, rich formatting, and comprehensive delivery tracking"
-                    }
-                ],
-                "intelycx-file-generator": [
-                    {
-                        "name": "create_pdf",
-                        "description": "Create PDF documents from structured data with professional formatting"
-                    }
-                ],
-                "intelycx-rag": [
-                    {
-                        "name": "ingest_document",
-                        "description": "Ingest a document from S3 into the knowledge base with semantic chunking and vector indexing"
-                    },
-                    {
-                        "name": "search_knowledge_base",
-                        "description": "Search the knowledge base using semantic similarity and hybrid search techniques"
-                    },
-                    {
-                        "name": "get_document_status",
-                        "description": "Get the processing status of a document in the knowledge base"
-                    },
-                    {
-                        "name": "list_documents",
-                        "description": "List documents in the knowledge base with optional filtering"
-                    },
-                    {
-                        "name": "delete_document",
-                        "description": "Delete a document from the knowledge base"
-                    }
-                ],
-                "built-in": [
-                    {
-                        "name": "search_memory",
-                        "description": "Search session memory for previous tool results, files, and data"
-                    },
-                    {
-                        "name": "get_memory_item",
-                        "description": "Get a specific memory item by key"
-                    },
-                    {
-                        "name": "list_mcp_tools",
-                        "description": "List all available Model Context Protocol (MCP) tools and their descriptions"
-                    }
-                ]
+            # Add built-in tools
+            built_in_tools = [
+                {
+                    "name": "search_memory",
+                    "description": "Search session memory for previous tool results, files, and data",
+                    "server": "built-in",
+                    "capability": "memory_management",
+                    "domain": "general"
+                },
+                {
+                    "name": "get_memory_item", 
+                    "description": "Get a specific memory item by key",
+                    "server": "built-in",
+                    "capability": "memory_management",
+                    "domain": "general"
+                },
+                {
+                    "name": "list_mcp_tools",
+                    "description": "List all available Model Context Protocol (MCP) tools and their descriptions",
+                    "server": "built-in",
+                    "capability": "introspection",
+                    "domain": "general"
+                }
+            ]
+            
+            # Merge built-in tools with discovered tools
+            all_tools = discovery_result["all_tools"] + built_in_tools
+            tools_by_server = discovery_result["tools_by_server"].copy()
+            tools_by_server["built-in"] = {
+                "name": "built-in",
+                "description": "Built-in agent capabilities",
+                "capabilities": ["memory_management", "introspection"],
+                "domains": ["general"],
+                "tools": built_in_tools
             }
             
-            # Apply server filter if specified
-            if filter_by_server:
-                if filter_by_server in tools_by_server:
-                    tools_by_server = {filter_by_server: tools_by_server[filter_by_server]}
-                else:
-                    tools_by_server = {}
-            
-            # Build response
-            all_tools = []
-            tools_by_category = {}
-            
-            for server_name, tools in tools_by_server.items():
-                tools_by_category[server_name] = []
-                for tool in tools:
-                    tool_info = {
-                        "name": tool["name"],
-                        "server": server_name
-                    }
-                    if include_descriptions:
-                        tool_info["description"] = tool["description"]
-                    
-                    all_tools.append(tool_info)
-                    tools_by_category[server_name].append(tool_info)
-            
-            # Create detailed summary
+            # Create detailed summary with metadata
             summary_parts = [f"Total MCP Tools Available: {len(all_tools)}"]
-            for server_name, tools in tools_by_category.items():
-                summary_parts.append(f"\n{server_name.upper()} ({len(tools)} tools):")
+            
+            for server_name, server_info in tools_by_server.items():
+                tools = server_info["tools"]
+                capabilities = set(t.get("capability") for t in tools if t.get("capability"))
+                domains = set(t.get("domain") for t in tools if t.get("domain"))
+                
+                server_line = f"\n{server_name.upper()} ({len(tools)} tools)"
+                if capabilities:
+                    server_line += f" - Capabilities: {', '.join(capabilities)}"
+                if domains:
+                    server_line += f" - Domains: {', '.join(domains)}"
+                summary_parts.append(server_line)
+                
                 for tool in tools:
                     if include_descriptions:
-                        summary_parts.append(f"  • {tool['name']}: {tool['description']}")
+                        desc = tool.get("description", "No description")
+                        capability = tool.get("capability", "unknown")
+                        summary_parts.append(f"  • {tool['name']} [{capability}]: {desc}")
                     else:
                         summary_parts.append(f"  • {tool['name']}")
             
             detailed_summary = "\n".join(summary_parts)
             
-            self.logger.info(f"✅ Listed {len(all_tools)} MCP tools across {len(tools_by_category)} servers")
+            self.logger.info(f"✅ Dynamically listed {len(all_tools)} MCP tools across {len(tools_by_server)} servers")
             
             return {
                 "success": True,
                 "total_tools": len(all_tools),
                 "tools": all_tools,
-                "tools_by_server": tools_by_category,
-                "server_count": len(tools_by_category),
-                "summary": f"Found {len(all_tools)} MCP tools across {len(tools_by_category)} servers",
+                "tools_by_server": tools_by_server,
+                "server_count": len(tools_by_server),
+                "summary": f"Found {len(all_tools)} MCP tools across {len(tools_by_server)} servers",
                 "detailed_summary": detailed_summary,
-                "includes_descriptions": include_descriptions
+                "includes_descriptions": include_descriptions,
+                "discovery_method": "dynamic_metadata_driven"
             }
             
         except Exception as e:

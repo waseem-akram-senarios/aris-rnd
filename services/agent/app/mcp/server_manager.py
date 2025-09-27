@@ -37,6 +37,11 @@ class MCPServerManager:
         self.connections: Dict[str, Any] = {}
         self.logger = logger
         
+        # Dynamic discovery state
+        self.tool_to_server_cache: Dict[str, str] = {}
+        self.server_tools_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self.discovery_timestamp: Optional[float] = None
+        
         # Load configuration
         self._load_config()
     
@@ -50,7 +55,7 @@ class MCPServerManager:
                 mcp_servers = config.get("mcpServers", {})
                 for server_name, server_config in mcp_servers.items():
                     if "url" in server_config:
-                        # HTTP-based server
+                        # HTTP-based server (simple configuration)
                         self.servers[server_name] = MCPServerConfig(
                             name=server_name,
                             command="",
@@ -60,6 +65,7 @@ class MCPServerManager:
                         # Process-based server (not supported yet)
                         self.logger.warning(f"Process-based server {server_name} not yet supported with FastMCP")
                         continue
+                
                 
                 self.logger.info(f"Loaded {len(self.servers)} MCP server configurations")
             else:
@@ -306,23 +312,20 @@ class MCPServerManager:
             else:
                 context_logger.info(f"📋 Updated action {action_id} to {status}: {message}")
     
-    def _get_server_for_tool(self, tool_name: str) -> str:
-        """Determine which MCP server should handle a specific tool."""
-        # Tool routing logic - updated with new tools
-        email_tools = ["send_email", "test_email_driver"]
-        core_tools = ["intelycx_login", "get_machine", "get_machine_group", "get_production_summary", "get_fake_data"]
-        file_generator_tools = ["create_pdf"]
+    async def get_tool_server(self, tool_name: str) -> Optional[str]:
+        """Dynamically determine which MCP server should handle a specific tool."""
+        # Use dynamic discovery instead of hardcoded mappings
+        tool_mapping = await self.discover_tool_server_mapping()
         
-        if tool_name in email_tools:
-            return "intelycx-email"
-        elif tool_name in core_tools:
-            return "intelycx-core"
-        elif tool_name in file_generator_tools:
-            return "intelycx-file-generator"
-        else:
-            # Default to core server for unknown tools
-            self.logger.warning(f"Unknown tool {tool_name}, routing to intelycx-core")
-            return "intelycx-core"
+        if tool_name in tool_mapping:
+            return tool_mapping[tool_name]
+        
+        # If not found in discovery, tool doesn't exist or server is down
+        self.logger.info(f"🔍 Tool {tool_name} not found in current discovery - server may be down")
+        
+        # No server found for this tool
+        self.logger.warning(f"❌ Unknown tool {tool_name} - no server provides this tool")
+        return None
     
     async def list_tools(self, server_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """List available tools from servers using FastMCP."""
@@ -365,3 +368,192 @@ class MCPServerManager:
             }
         except Exception as e:
             return {"error": f"Error getting server info: {str(e)}"}
+    
+    # Dynamic Discovery Methods
+    
+    async def discover_tool_server_mapping(self, force_refresh: bool = False) -> Dict[str, str]:
+        """Dynamically discover which server provides which tool."""
+        import time
+        
+        # Check cache validity (default 5 minutes)
+        cache_duration = 300  # 5 minutes
+        current_time = time.time()
+        
+        if (not force_refresh and 
+            self.discovery_timestamp and 
+            (current_time - self.discovery_timestamp) < cache_duration and
+            self.tool_to_server_cache):
+            self.logger.debug("Using cached tool-to-server mapping")
+            return self.tool_to_server_cache
+        
+        self.logger.info("🔍 Discovering tool-to-server mappings dynamically...")
+        tool_to_server = {}
+        server_tools = {}
+        
+        # Discover from connected servers
+        for server_name in self.connections.keys():
+            try:
+                if server_name not in self.clients:
+                    continue
+                    
+                client = self.clients[server_name]
+                tools = await client.list_tools()
+                
+                server_tools[server_name] = []
+                for tool in tools:
+                    tool_name = tool.name
+                    tool_to_server[tool_name] = server_name
+                    
+                    # Extract metadata from tool tags and meta
+                    tool_meta = getattr(tool, 'meta', {}) or {}
+                    tool_tags = getattr(tool, 'tags', set()) or set()
+                    
+                    # Parse capability and domain from tags
+                    capability = tool_meta.get('capability')
+                    domain = tool_meta.get('domain')
+                    requires_auth = tool_meta.get('requires_auth', False)
+                    
+                    # Also check tags for capability:xxx format
+                    if not capability:
+                        for tag in tool_tags:
+                            if tag.startswith('capability:'):
+                                capability = tag.split(':', 1)[1]
+                                break
+                    
+                    if not domain:
+                        for tag in tool_tags:
+                            if tag.startswith('domain:'):
+                                domain = tag.split(':', 1)[1]
+                                break
+                    
+                    server_tools[server_name].append({
+                        "name": tool_name,
+                        "description": tool.description,
+                        "inputSchema": tool.inputSchema,
+                        "capability": capability,
+                        "domain": domain,
+                        "requires_auth": requires_auth,
+                        "tags": list(tool_tags) if tool_tags else [],
+                        "meta": tool_meta
+                    })
+                
+                self.logger.info(f"📋 Discovered {len(server_tools[server_name])} tools from {server_name}")
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to discover tools from {server_name}: {e}")
+                
+                # Log the failure but continue - no fallback needed with metadata-driven approach
+                self.logger.warning(f"Server {server_name} discovery failed, skipping")
+        
+        # Update cache
+        self.tool_to_server_cache = tool_to_server
+        self.server_tools_cache = server_tools
+        self.discovery_timestamp = current_time
+        
+        total_tools = len(tool_to_server)
+        total_servers = len([s for s in server_tools.values() if s])
+        self.logger.info(f"✅ Discovery complete: {total_tools} tools across {total_servers} servers")
+        
+        # Log discovery details
+        for server_name, tools in server_tools.items():
+            if tools:
+                tool_names = [t["name"] for t in tools]
+                capabilities = set(t.get("capability") for t in tools if t.get("capability"))
+                self.logger.info(f"📋 {server_name}: {tool_names} (capabilities: {list(capabilities)})")
+        
+        return tool_to_server
+    
+    async def get_servers_for_capability(self, capability: str) -> List[str]:
+        """Get servers that provide a specific capability based on tool metadata."""
+        await self.discover_tool_server_mapping()  # Ensure cache is fresh
+        servers = set()
+        
+        for server_name, tools in self.server_tools_cache.items():
+            for tool in tools:
+                if tool.get("capability") == capability:
+                    servers.add(server_name)
+                    break
+        
+        return list(servers)
+    
+    async def get_servers_for_domain(self, domain: str) -> List[str]:
+        """Get servers that operate in a specific domain based on tool metadata."""
+        await self.discover_tool_server_mapping()  # Ensure cache is fresh
+        servers = set()
+        
+        for server_name, tools in self.server_tools_cache.items():
+            for tool in tools:
+                if tool.get("domain") == domain:
+                    servers.add(server_name)
+                    break
+        
+        return list(servers)
+    
+    async def get_tools_by_capability(self, capability: str) -> List[Dict[str, Any]]:
+        """Get all tools that provide a specific capability."""
+        await self.discover_tool_server_mapping()  # Ensure cache is fresh
+        matching_tools = []
+        
+        for server_name, tools in self.server_tools_cache.items():
+            for tool in tools:
+                if tool.get("capability") == capability:
+                    matching_tools.append(tool)
+        
+        return matching_tools
+    
+    async def get_auth_providers(self) -> List[str]:
+        """Get servers that provide authentication."""
+        return await self.get_servers_for_capability("authentication")
+    
+    async def get_required_servers_for_tools(self, tool_names: List[str]) -> List[str]:
+        """Dynamically determine which servers are needed for a list of tools."""
+        tool_mapping = await self.discover_tool_server_mapping()
+        required_servers = set()
+        
+        for tool_name in tool_names:
+            if tool_name in tool_mapping:
+                required_servers.add(tool_mapping[tool_name])
+            else:
+                self.logger.warning(f"Unknown tool {tool_name} - cannot determine required server")
+        
+        return list(required_servers)
+    
+    async def get_dynamic_tool_list(self, server_filter: Optional[str] = None) -> Dict[str, Any]:
+        """Get a comprehensive, dynamic tool list organized by server."""
+        await self.discover_tool_server_mapping()  # Refresh cache
+        
+        tools_by_server = {}
+        all_tools = []
+        
+        for server_name, tools in self.server_tools_cache.items():
+            if server_filter and server_name != server_filter:
+                continue
+                
+            server_config = self.servers.get(server_name)
+            server_info = {
+                "name": server_name,
+                "description": server_config.description if server_config else "No description",
+                "capabilities": server_config.capabilities if server_config else [],
+                "domains": server_config.domains if server_config else [],
+                "tools": []
+            }
+            
+            for tool in tools:
+                tool_info = {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "server": server_name
+                }
+                server_info["tools"].append(tool_info)
+                all_tools.append(tool_info)
+            
+            if server_info["tools"]:  # Only include servers with tools
+                tools_by_server[server_name] = server_info
+        
+        return {
+            "tools_by_server": tools_by_server,
+            "all_tools": all_tools,
+            "total_tools": len(all_tools),
+            "server_count": len(tools_by_server),
+            "discovery_timestamp": self.discovery_timestamp
+        }
