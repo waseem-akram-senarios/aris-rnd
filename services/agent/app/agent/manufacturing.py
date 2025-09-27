@@ -334,7 +334,7 @@ class ManufacturingAgent(BaseAgent):
             # Add error context if plan has failures (will be set later)
             plan_error_context = ""
             
-            system_prompt = f"You are ARIS, a helpful manufacturing assistant with access to production data tools, email capabilities, and session memory management. You can query machine information, machine group details, production summaries, and send email notifications.{auth_status} ALWAYS use the available tools when users ask about machines, production lines, manufacturing metrics, or need to send emails/notifications. Never make up or guess information - only provide data from actual tool calls. You have session memory capabilities - when retrieving data, you can store it in variables using the 'result_variable_name' parameter for later reference. Use memory management tools to list, retrieve, or clear stored variables as needed. Maintain context across the conversation and remember user-provided details such as their name during this session. When documents are provided, analyze them and answer questions based on their content.{tool_completion_context}{plan_error_context}"
+            system_prompt = f"You are ARIS, a helpful manufacturing assistant with access to production data tools, email capabilities, document processing, knowledge base search, and session memory management. You can query machine information, machine group details, production summaries, send email notifications, ingest documents into a knowledge base, and search for relevant information.{auth_status} ALWAYS use the available tools when users ask about machines, production lines, manufacturing metrics, or need to send emails/notifications. Never make up or guess information - only provide data from actual tool calls. You have session memory capabilities - when retrieving data, you can store it in variables using the 'result_variable_name' parameter for later reference. Use memory management tools to list, retrieve, or clear stored variables as needed. Maintain context across the conversation and remember user-provided details such as their name during this session. When documents are provided, analyze them and answer questions based on their content. IMPORTANT: When users ask about 'MCP tools', they are referring to Model Context Protocol tools (the function tools you can call), NOT Manufacturing Control Platform. Use the list_mcp_tools function to show available tools.{tool_completion_context}{plan_error_context}"
         else:
             system_prompt = "You are ARIS, a helpful manufacturing assistant. Currently, I don't have access to production data tools or email capabilities, so I cannot provide specific information about machines, machine groups, production metrics, or send notifications. Please let the user know that the tools are temporarily unavailable and suggest they try again later. Never make up or fabricate manufacturing data. Be honest about your limitations."
         
@@ -938,6 +938,28 @@ class ManufacturingAgent(BaseAgent):
                         }
                     }
                 }
+            },
+            {
+                "toolSpec": {
+                    "name": "list_mcp_tools",
+                    "description": "List all available Model Context Protocol (MCP) tools and their descriptions",
+                    "inputSchema": {
+                        "json": {
+                            "type": "object",
+                            "properties": {
+                                "include_descriptions": {
+                                    "type": "boolean",
+                                    "description": "Include detailed descriptions for each tool",
+                                    "default": True
+                                },
+                                "filter_by_server": {
+                                    "type": "string",
+                                    "description": "Filter tools by MCP server name (optional)"
+                                }
+                            }
+                        }
+                    }
+                }
             }
         ]
         
@@ -983,11 +1005,13 @@ class ManufacturingAgent(BaseAgent):
                         required_servers.add("intelycx-core")
                     elif action.tool_name in ["create_pdf"]:
                         required_servers.add("intelycx-file-generator")
+                    elif action.tool_name in ["ingest_document", "search_knowledge_base", "get_document_status", "list_documents", "delete_document"]:
+                        required_servers.add("intelycx-rag")
         
         # If no plan or no tool calls identified, initialize all servers (fallback)
         if not required_servers:
             self._logger.info("🔧 No specific servers identified from plan, initializing all servers")
-            required_servers = {"intelycx-core", "intelycx-email", "intelycx-file-generator"}
+            required_servers = {"intelycx-core", "intelycx-email", "intelycx-file-generator", "intelycx-rag"}
         
         self._logger.info(f"🎯 Initializing required servers: {required_servers}")
         

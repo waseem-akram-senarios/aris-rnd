@@ -20,6 +20,7 @@ services:
       - aris-mcp-intelycx-core
       - aris-mcp-intelycx-email
       - aris-mcp-intelycx-file-generator
+      - aris-mcp-intelycx-rag
     environment:
       - INTELYCX_CORE_MCP_URL=http://aris-mcp-intelycx-core:8080
       - INTELYCX_EMAIL_MCP_URL=http://aris-mcp-intelycx-email:8081
@@ -124,6 +125,44 @@ services:
       - mcp_internal
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  aris-mcp-intelycx-rag:
+    build:
+      context: ../services/mcp-servers/intelycx-rag
+      dockerfile: Dockerfile
+    image: aris-mcp-intelycx-rag:dev
+    container_name: aris-mcp-intelycx-rag
+    ports:
+      - "8083:8082"
+    env_file:
+      - ../config/.env
+    volumes:
+      - ../services/mcp-servers/intelycx-rag/app:/app/app
+    environment:
+      - MCP_API_KEY=${MCP_API_KEY:-mcp-dev-key-12345}
+      - DATABASE_URL=postgresql+asyncpg://aris:${POSTGRES_PASSWORD:-aris_dev_password_2024}@aris-postgres:5432/aris_agent
+      - OPENSEARCH_ENDPOINT=${OPENSEARCH_ENDPOINT:-https://localhost:9200}
+      - S3_DOCUMENT_BUCKET=${S3_DOCUMENT_BUCKET:-iris-batch-001-data-975049910508}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-amazon.titan-embed-text-v2:0}
+      - EMBEDDING_DIMENSIONS=${EMBEDDING_DIMENSIONS:-1536}
+      - AWS_REGION=${AWS_REGION:-us-east-2}
+      - BEDROCK_REGION=${BEDROCK_REGION:-us-east-2}
+    restart: unless-stopped
+    networks:
+      - mcp_internal
+    depends_on:
+      - aris-postgres
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
       interval: 30s
       timeout: 10s
       retries: 3

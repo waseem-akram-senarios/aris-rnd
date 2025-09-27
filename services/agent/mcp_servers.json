@@ -8,6 +8,9 @@
     },
     "intelycx-file-generator": {
       "url": "http://aris-mcp-intelycx-file-generator:8080/mcp"
+    },
+    "intelycx-rag": {
+      "url": "http://aris-mcp-intelycx-rag:8082/mcp"
     }
   }
 }

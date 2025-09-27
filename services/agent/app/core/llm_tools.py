@@ -161,6 +161,15 @@ Return ONLY the formatted content that should go into the PDF document."""
                     results_parts.append("Retrieved manufacturing data successfully")
                 elif tool_name == "intelycx_login" and success:
                     results_parts.append("Authentication completed")
+                elif tool_name == "list_mcp_tools" and success:
+                    # Handle MCP tools listing with detailed summary
+                    detailed_summary = result_data.get("detailed_summary", "")
+                    total_tools = result_data.get("total_tools", 0)
+                    server_count = result_data.get("server_count", 0)
+                    if detailed_summary:
+                        results_parts.append(f"MCP Tools Retrieved ({total_tools} tools across {server_count} servers):\n\n{detailed_summary}")
+                    else:
+                        results_parts.append(f"Retrieved {total_tools} MCP tools across {server_count} servers")
             
             if results_parts:
                 results_summary = f"Results:\n" + "\n".join([f"- {result}" for result in results_parts])
@@ -378,3 +387,141 @@ Return ONLY the response message text."""
         except Exception as e:
             self.logger.error(f"❌ Memory retrieval failed: {str(e)}")
             return {"error": f"Memory retrieval failed: {str(e)}"}
+    
+    async def list_mcp_tools(self, **kwargs) -> Dict[str, Any]:
+        """
+        List all available Model Context Protocol (MCP) tools and their descriptions.
+        
+        Args:
+            include_descriptions: Include detailed descriptions for each tool
+            filter_by_server: Filter tools by MCP server name (optional)
+            
+        Returns:
+            Dict containing all available MCP tools with descriptions
+        """
+        include_descriptions = kwargs.get("include_descriptions", True)
+        filter_by_server = kwargs.get("filter_by_server")
+        
+        self.logger.info(f"🔧 Listing MCP tools: descriptions={include_descriptions}, server_filter={filter_by_server}")
+        
+        try:
+            # Get the MCP manager from the agent (we need to access it through the parent)
+            # This is a bit of a hack, but we need access to the MCP manager
+            # In a real implementation, we'd pass it as a parameter
+            
+            # For now, return a static list based on what we know is available
+            # TODO: Make this dynamic by accessing the actual MCP manager
+            
+            tools_by_server = {
+                "intelycx-core": [
+                    {
+                        "name": "intelycx_login",
+                        "description": "Authenticate with Intelycx Core API and obtain JWT token for subsequent API calls"
+                    },
+                    {
+                        "name": "get_fake_data", 
+                        "description": "Generate comprehensive fake manufacturing data for testing and development with JWT authentication"
+                    }
+                ],
+                "intelycx-email": [
+                    {
+                        "name": "send_email",
+                        "description": "Send emails with flexible recipient support, rich formatting, and comprehensive delivery tracking"
+                    }
+                ],
+                "intelycx-file-generator": [
+                    {
+                        "name": "create_pdf",
+                        "description": "Create PDF documents from structured data with professional formatting"
+                    }
+                ],
+                "intelycx-rag": [
+                    {
+                        "name": "ingest_document",
+                        "description": "Ingest a document from S3 into the knowledge base with semantic chunking and vector indexing"
+                    },
+                    {
+                        "name": "search_knowledge_base",
+                        "description": "Search the knowledge base using semantic similarity and hybrid search techniques"
+                    },
+                    {
+                        "name": "get_document_status",
+                        "description": "Get the processing status of a document in the knowledge base"
+                    },
+                    {
+                        "name": "list_documents",
+                        "description": "List documents in the knowledge base with optional filtering"
+                    },
+                    {
+                        "name": "delete_document",
+                        "description": "Delete a document from the knowledge base"
+                    }
+                ],
+                "built-in": [
+                    {
+                        "name": "search_memory",
+                        "description": "Search session memory for previous tool results, files, and data"
+                    },
+                    {
+                        "name": "get_memory_item",
+                        "description": "Get a specific memory item by key"
+                    },
+                    {
+                        "name": "list_mcp_tools",
+                        "description": "List all available Model Context Protocol (MCP) tools and their descriptions"
+                    }
+                ]
+            }
+            
+            # Apply server filter if specified
+            if filter_by_server:
+                if filter_by_server in tools_by_server:
+                    tools_by_server = {filter_by_server: tools_by_server[filter_by_server]}
+                else:
+                    tools_by_server = {}
+            
+            # Build response
+            all_tools = []
+            tools_by_category = {}
+            
+            for server_name, tools in tools_by_server.items():
+                tools_by_category[server_name] = []
+                for tool in tools:
+                    tool_info = {
+                        "name": tool["name"],
+                        "server": server_name
+                    }
+                    if include_descriptions:
+                        tool_info["description"] = tool["description"]
+                    
+                    all_tools.append(tool_info)
+                    tools_by_category[server_name].append(tool_info)
+            
+            # Create detailed summary
+            summary_parts = [f"Total MCP Tools Available: {len(all_tools)}"]
+            for server_name, tools in tools_by_category.items():
+                summary_parts.append(f"\n{server_name.upper()} ({len(tools)} tools):")
+                for tool in tools:
+                    if include_descriptions:
+                        summary_parts.append(f"  • {tool['name']}: {tool['description']}")
+                    else:
+                        summary_parts.append(f"  • {tool['name']}")
+            
+            detailed_summary = "\n".join(summary_parts)
+            
+            self.logger.info(f"✅ Listed {len(all_tools)} MCP tools across {len(tools_by_category)} servers")
+            
+            return {
+                "success": True,
+                "total_tools": len(all_tools),
+                "tools": all_tools,
+                "tools_by_server": tools_by_category,
+                "server_count": len(tools_by_category),
+                "summary": f"Found {len(all_tools)} MCP tools across {len(tools_by_category)} servers",
+                "detailed_summary": detailed_summary,
+                "includes_descriptions": include_descriptions
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ MCP tools listing failed: {str(e)}")
+            return {"error": f"MCP tools listing failed: {str(e)}"}

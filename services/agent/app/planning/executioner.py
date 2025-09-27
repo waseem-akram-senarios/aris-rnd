@@ -167,7 +167,15 @@ class AgentExecutioner:
         }
         
         try:
-            # Execute the tool with plan context (MCP manager will handle all status updates)
+            # Update status to starting
+            plan.update_action_status(action.id, "starting")
+            await self._send_plan_update(plan)
+            
+            # Update status to in_progress
+            plan.update_action_status(action.id, "in_progress")
+            await self._send_plan_update(plan)
+            
+            # Execute the tool
             result = await self._execute_tool(action.tool_name, resolved_arguments, plan_context)
             
             # Store tool result in memory for LLM access
@@ -178,10 +186,20 @@ class AgentExecutioner:
                 tags=["executioner_result", "tool_result"]
             )
             
-            self.logger.info(f"✅ Completed tool action: {action.tool_name}")
+            # Update status to completed (important for built-in tools)
+            if isinstance(result, dict) and result.get("error"):
+                plan.update_action_status(action.id, "failed")
+                self.logger.error(f"❌ Tool action failed: {action.tool_name} - {result['error']}")
+            else:
+                plan.update_action_status(action.id, "completed")
+                self.logger.info(f"✅ Completed tool action: {action.tool_name}")
+            
+            await self._send_plan_update(plan)
             
         except Exception as e:
             self.logger.error(f"❌ Tool action failed: {action.tool_name} - {str(e)}")
+            plan.update_action_status(action.id, "failed")
+            await self._send_plan_update(plan)
             raise
     
     async def _resolve_template_arguments(self, arguments: Dict[str, Any], plan: ExecutionPlan) -> Dict[str, Any]:
@@ -580,11 +598,13 @@ class AgentExecutioner:
     async def _execute_tool(self, tool_name: str, arguments: Dict[str, Any], plan_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Execute a tool using either LLM tools or MCP manager."""
         # Handle built-in LLM tools first
-        if tool_name in ["search_memory", "get_memory_item"]:
+        if tool_name in ["search_memory", "get_memory_item", "list_mcp_tools"]:
             if tool_name == "search_memory":
                 return await self.llm_tools.search_memory(**arguments)
             elif tool_name == "get_memory_item":
                 return await self.llm_tools.get_memory_item(**arguments)
+            elif tool_name == "list_mcp_tools":
+                return await self.llm_tools.list_mcp_tools(**arguments)
         
         # Handle MCP tools
         tool_server = await self._get_tool_server(tool_name)
