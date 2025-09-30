@@ -481,31 +481,32 @@ class AgentExecutioner:
             plan.update_action_status(action.id, "in_progress")
             await self._send_plan_update(plan)
             
-            # Determine what type of analysis this is based on action name/description
-            if "format" in action.name.lower() and "pdf" in action.name.lower():
-                # This is a data formatting action
-                # Find the data source from dependencies
-                data_source_key = None
-                if action.depends_on:
-                    for dep_id in action.depends_on:
-                        # Look for stored result from dependency
-                        data_source_key = f"tool_result_{dep_id}"
-                        break
-                
-                if data_source_key:
-                    result = await self.llm_tools.format_data_for_pdf(
-                        data_source_key=data_source_key,
-                        format_type="manufacturing_report",
-                        title="Manufacturing Data Report"
-                    )
-                else:
-                    result = {"error": "No data source found for formatting"}
-            elif "fake content" in action.name.lower() or "generate" in action.name.lower():
-                # This is a fake content generation action
-                result = await self._generate_fake_content_for_pdf(action.name)
-            else:
-                # Generic analysis - use a simple completion
-                result = {"success": True, "analysis_result": f"Analysis completed for: {action.name}"}
+            # Use LLM to perform the analysis dynamically based on action name/description
+            analysis_prompt = f"""You are performing this analysis task: "{action.name}"
+
+Description: {action.description or 'No description provided'}
+
+Please perform this analysis and provide a comprehensive result. The result should be:
+1. Direct and actionable
+2. Well-formatted and professional
+3. Substantial enough to be useful
+4. Ready to be used in subsequent actions if needed
+
+Return ONLY the analysis result content, no explanations or meta-commentary."""
+
+            analysis_result = await self.llm_tools.bedrock.converse(
+                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                messages=[{"role": "user", "content": [{"text": analysis_prompt}]}],
+                temperature=0.7,
+                system=[{"text": "You are an expert analyst. Perform thorough analysis and provide detailed, professional results."}]
+            )
+            
+            result = {
+                "success": True,
+                "analysis_result": analysis_result,
+                "action_name": action.name,
+                "word_count": len(analysis_result.split())
+            }
             
             # Store analysis result in memory
             await self.memory.store(
@@ -515,13 +516,9 @@ class AgentExecutioner:
                 tags=["analysis_result", "llm_tool"]
             )
             
-            # Mark as completed or failed
-            if isinstance(result, dict) and result.get("error"):
-                plan.update_action_status(action.id, "failed")
-                self.logger.error(f"❌ Analysis failed: {action.name} - {result['error']}")
-            else:
-                plan.update_action_status(action.id, "completed")
-                self.logger.info(f"✅ Completed analysis action: {action.name}")
+            # Mark as completed
+            plan.update_action_status(action.id, "completed")
+            self.logger.info(f"✅ Completed analysis action: {action.name}")
             
             await self._send_plan_update(plan)
             
@@ -529,43 +526,6 @@ class AgentExecutioner:
             self.logger.error(f"❌ Analysis action failed: {action.name} - {str(e)}")
             plan.update_action_status(action.id, "failed")
             await self._send_plan_update(plan)
-    
-    async def _generate_fake_content_for_pdf(self, action_name: str) -> Dict[str, Any]:
-        """Generate fake content for PDF documents."""
-        try:
-            # Use LLM to generate realistic fake content
-            content_prompt = f"""Generate realistic fake content for a PDF document based on the action: "{action_name}".
-
-Create content that includes:
-1. A professional title and introduction
-2. Sample data, metrics, or information that would be relevant
-3. Proper formatting with sections and subsections
-4. Realistic numbers, dates, and details
-5. Professional language appropriate for business documents
-
-The content should be substantial (at least 200-300 words) and look like real business data.
-Return ONLY the content text, no explanations or formatting instructions."""
-
-            content = await self.llm_tools.bedrock.converse(
-                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-                messages=[{"role": "user", "content": [{"text": content_prompt}]}],
-                temperature=0.7,
-                system=[{"text": "You are a professional content generator. Create realistic, well-formatted business content."}]
-            )
-            
-            return {
-                "success": True,
-                "analysis_result": content,
-                "content_type": "fake_content",
-                "word_count": len(content.split())
-            }
-            
-        except Exception as e:
-            self.logger.error(f"❌ Failed to generate fake content: {str(e)}")
-            return {
-                "error": f"Failed to generate fake content: {str(e)}",
-                "analysis_result": "Error generating content"
-            }
     
     async def _execute_response_action(self, plan: ExecutionPlan, action: PlannedAction) -> None:
         """Execute a response action using built-in LLM tools."""
