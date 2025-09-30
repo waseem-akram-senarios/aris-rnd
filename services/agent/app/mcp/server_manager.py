@@ -312,6 +312,15 @@ class MCPServerManager:
             else:
                 context_logger.info(f"📋 Updated action {action_id} to {status}: {message}")
     
+    def _get_server_for_tool(self, tool_name: str) -> str:
+        """Get server for tool using cached mapping (synchronous version for execute_tool)."""
+        if tool_name in self.tool_to_server_cache:
+            return self.tool_to_server_cache[tool_name]
+        
+        # If not in cache, this is an error - discovery should have been called first
+        self.logger.error(f"❌ Tool {tool_name} not found in tool-to-server cache")
+        raise ValueError(f"Tool {tool_name} not found in server mapping")
+
     async def get_tool_server(self, tool_name: str) -> Optional[str]:
         """Dynamically determine which MCP server should handle a specific tool."""
         # Use dynamic discovery instead of hardcoded mappings

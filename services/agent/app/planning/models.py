@@ -32,7 +32,7 @@ class ExecutionPlan:
     user_query: str
     summary: str
     actions: List[PlannedAction]
-    status: str = "new"  # new, in_progress, error, aborted, completed
+    status: str = "new"  # new, in_progress, failed, cancelled, completed
     
     def update_action_status(self, action_id: str, status: str) -> bool:
         """Update the status of a specific action."""
@@ -71,7 +71,7 @@ class ExecutionPlan:
     def auto_update_plan_status(self) -> str:
         """Automatically update plan status based on action statuses."""
         if self.has_failed_actions():
-            self.status = "error"
+            self.status = "failed"  # Changed from "error" to "failed" to match DB constraint
         elif self.is_completed():
             self.status = "completed"
         elif any(action.status in ["starting", "in_progress"] for action in self.actions):

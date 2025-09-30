@@ -227,7 +227,7 @@ class ManufacturingAgent(BaseAgent):
             if self._current_plan.status in ["new", "in_progress"]:
                 self._logger.info(f"⏳ Plan {self._current_plan.plan_id} is still active (status: {self._current_plan.status})")
                 should_create_new_plan = False
-            elif self._current_plan.status in ["completed", "error", "aborted"]:
+            elif self._current_plan.status in ["completed", "failed", "cancelled"]:
                 self._logger.info(f"✅ Previous plan {self._current_plan.plan_id} finished (status: {self._current_plan.status}), creating new plan")
                 should_create_new_plan = True
         

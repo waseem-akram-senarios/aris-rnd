@@ -110,7 +110,7 @@ class AgentExecutioner:
                         executed_in_iteration = True
                         
                         # Stop execution if plan failed
-                        if plan.status == "error":
+                        if plan.status == "failed":
                             self.logger.error(f"❌ Plan execution failed: {plan.plan_id}")
                             return plan
                             
@@ -141,9 +141,9 @@ class AgentExecutioner:
             
         except Exception as e:
             # Mark plan as error if execution fails
-            plan.update_plan_status("error")
+            plan.update_plan_status("failed")
             if self.plan_manager and hasattr(self.plan_manager, 'update_plan_status'):
-                await self.plan_manager.update_plan_status(plan.plan_id, "error")
+                await self.plan_manager.update_plan_status(plan.plan_id, "failed")
             await self._send_plan_update(plan)
             self.logger.error(f"❌ Plan execution error: {plan.plan_id} - {str(e)}")
             raise

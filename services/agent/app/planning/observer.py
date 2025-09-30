@@ -97,4 +97,4 @@ class PlanManager:
             return True
         
         # Create new plan if current one is finished
-        return self._current_plan.status in ["completed", "error", "aborted"]
+        return self._current_plan.status in ["completed", "failed", "cancelled"]
