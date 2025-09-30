@@ -8,6 +8,7 @@ data formatting and response generation as part of plan execution.
 import logging
 from typing import Dict, Any, Optional
 from ..llm.bedrock import BedrockClient
+from .formatters import get_formatter
 
 
 class LLMTools:
@@ -115,62 +116,25 @@ Return ONLY the formatted content that should go into the PDF document."""
         
         if tool_results:
             results_parts = []
+            formatter = get_formatter()
+            
             for result in tool_results:
                 tool_name = result.get("tool_name", "unknown")
-                success = result.get("success", True)
                 result_data = result.get("result", result)
                 
-                if tool_name == "create_pdf" and success:
-                    file_url = result_data.get("file_url", "")
-                    file_name = result_data.get("file_name", result_data.get("filename", "document"))
-                    if file_url:
-                        results_parts.append(f"Created PDF: {file_name} (Download: {file_url})")
-                        extracted_file_info = {"name": file_name, "url": file_url}
-                    else:
-                        results_parts.append(f"Created PDF: {file_name}")
-                elif tool_name == "search_memory" and success:
-                    # Check if this search found files
-                    files = result_data.get("files", [])
-                    if files:
-                        file_info = files[0]  # Get the first file
-                        file_name = file_info.get("name", "document")
-                        file_url = file_info.get("url", "")
-                        if file_url:
-                            results_parts.append(f"Found file: {file_name} (Download: {file_url})")
-                            extracted_file_info = {"name": file_name, "url": file_url}
-                        else:
-                            results_parts.append(f"Found file: {file_name}")
-                    else:
-                        # Check if we found items with file URLs
-                        items = result_data.get("items", [])
-                        for item in items:
-                            if isinstance(item.get("value"), dict):
-                                file_url = item["value"].get("file_url")
-                                file_name = (
-                                    item["value"].get("file_name") or 
-                                    item["value"].get("filename") or 
-                                    item["value"].get("name") or 
-                                    "document"
-                                )
-                                if file_url:
-                                    results_parts.append(f"Found file: {file_name} (Download: {file_url})")
-                                    extracted_file_info = {"name": file_name, "url": file_url}
-                                    break
-                        else:
-                            results_parts.append("Searched memory for files")
-                elif tool_name == "get_fake_data" and success:
-                    results_parts.append("Retrieved manufacturing data successfully")
-                elif tool_name == "intelycx_login" and success:
-                    results_parts.append("Authentication completed")
-                elif tool_name == "list_mcp_tools" and success:
-                    # Handle MCP tools listing with detailed summary
-                    detailed_summary = result_data.get("detailed_summary", "")
-                    total_tools = result_data.get("total_tools", 0)
-                    server_count = result_data.get("server_count", 0)
-                    if detailed_summary:
-                        results_parts.append(f"MCP Tools Retrieved ({total_tools} tools across {server_count} servers):\n\n{detailed_summary}")
-                    else:
-                        results_parts.append(f"Retrieved {total_tools} MCP tools across {server_count} servers")
+                # Use the smart formatter to format the result
+                formatter_result = formatter.format_tool_result(
+                    tool_name=tool_name,
+                    result_data=result_data,
+                    tool_metadata=None  # Could be enhanced to pass tool metadata
+                )
+                
+                # Add the formatted text to results
+                results_parts.append(formatter_result.formatted_text)
+                
+                # Extract file info if present
+                if formatter_result.extracted_files and not extracted_file_info:
+                    extracted_file_info = formatter_result.extracted_files[0]
             
             if results_parts:
                 results_summary = f"Results:\n" + "\n".join([f"- {result}" for result in results_parts])

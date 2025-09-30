@@ -740,30 +740,37 @@ class ManufacturingAgent(BaseAgent):
         for action in execution_plan.actions:
             self._logger.info(f"🔍 Checking action: {action.name} (type: {action.type.value}, status: {action.status}, tool: {action.tool_name})")
             
-            if action.type.value == "tool_call" and action.tool_name and action.status == "completed":
+            # Collect results from both tool_call and analysis actions
+            if action.status == "completed" and action.type.value in ["tool_call", "analysis"]:
                 # Look for stored results in memory using action ID or tool name
-                result_keys = [
-                    f"tool_result_{action.id}",
-                    f"tool_result_{action.tool_name}",
-                    action.tool_name,
-                    f"{action.tool_name}_result"
-                ]
+                if action.type.value == "tool_call" and action.tool_name:
+                    result_keys = [
+                        f"tool_result_{action.id}",
+                        f"tool_result_{action.tool_name}",
+                        action.tool_name,
+                        f"{action.tool_name}_result"
+                    ]
+                    tool_name_for_result = action.tool_name
+                else:
+                    # Analysis action - only look by action ID
+                    result_keys = [f"tool_result_{action.id}"]
+                    tool_name_for_result = "llm_analysis"
                 
-                self._logger.info(f"🔍 Looking for tool result with keys: {result_keys}")
+                self._logger.info(f"🔍 Looking for result with keys: {result_keys}")
                 
                 for key in result_keys:
                     result = await self._memory.get(key)
                     if result:
-                        self._logger.info(f"✅ Found tool result for {action.tool_name} with key: {key}")
+                        self._logger.info(f"✅ Found result for {action.name} with key: {key}")
                         tool_results.append({
                             "action_id": action.id,
-                            "tool_name": action.tool_name,
+                            "tool_name": tool_name_for_result,
                             "action_name": action.name,
                             "result": result
                         })
                         break
                 else:
-                    self._logger.warning(f"❌ No tool result found for {action.tool_name} (action: {action.id})")
+                    self._logger.warning(f"❌ No result found for {action.name} (action: {action.id})")
         
         self._logger.info(f"🔍 Collected {len(tool_results)} total tool results")
         return tool_results

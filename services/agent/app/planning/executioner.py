@@ -1,7 +1,7 @@
 """Agent executioner for executing planned actions."""
 
 import logging
-from typing import Dict, Any, Optional, Callable, Awaitable, TYPE_CHECKING
+from typing import Dict, Any, Optional, Callable, Awaitable, TYPE_CHECKING, List
 
 from .models import ExecutionPlan, PlannedAction, ChainOfThoughtMessage, create_plan_update_websocket_message
 from ..mcp import MCPServerManager
@@ -178,12 +178,15 @@ class AgentExecutioner:
             # Execute the tool
             result = await self._execute_tool(action.tool_name, resolved_arguments, plan_context)
             
+            # Generate semantic tags based on tool type and result content
+            semantic_tags = self._generate_semantic_tags(action.tool_name, result, resolved_arguments)
+            
             # Store tool result in memory for LLM access
             await self.memory.store(
                 key=f"tool_result_{action.id}",
                 value=result,
                 tool_name=action.tool_name,
-                tags=["executioner_result", "tool_result"]
+                tags=semantic_tags
             )
             
             # Update status to completed (important for built-in tools)
@@ -292,6 +295,33 @@ class AgentExecutioner:
                                                 result_key = real_result_key
                                                 self.logger.info(f"🔧 Mapped template {action_ref} -> real action {action.id} ({action.type.value}) [fallback]")
                                                 break
+                                
+                                # Final fallback: search chat memory across all plans
+                                if not stored_result:
+                                    self.logger.info(f"🔍 Template not found in current plan, searching chat memory...")
+                                    # Determine what we're looking for based on field path
+                                    if "file_url" in field_path or "url" in field_path:
+                                        # Looking for file results
+                                        file_keys = await self.memory.search_by_tool("create_pdf")
+                                        if file_keys:
+                                            # Get the most recent file result
+                                            for file_key in reversed(file_keys):
+                                                candidate_result = await self.memory.get(file_key)
+                                                if candidate_result and isinstance(candidate_result, dict) and "file_url" in candidate_result:
+                                                    stored_result = candidate_result
+                                                    result_key = file_key
+                                                    self.logger.info(f"🔧 Found file in chat memory: {file_key} -> {candidate_result.get('filename', 'unknown')}")
+                                                    break
+                                    else:
+                                        # Looking for general data - try to find any tool result
+                                        all_keys = await self.memory.list_keys()
+                                        for key in reversed([k for k in all_keys if k.startswith("tool_result_")]):
+                                            candidate_result = await self.memory.get(key)
+                                            if candidate_result:
+                                                stored_result = candidate_result
+                                                result_key = key
+                                                self.logger.info(f"🔧 Found data in chat memory: {key}")
+                                                break
                         
                         if stored_result:
                             # Navigate through the field path
@@ -313,17 +343,69 @@ class AgentExecutioner:
                                 resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
                                 self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> {len(replacement)} chars")
                             else:
-                                # Special case: if looking for .result and this is an analysis action, try formatted_content
-                                if field_path == ["result"] and isinstance(stored_result, dict) and "formatted_content" in stored_result:
-                                    replacement = stored_result["formatted_content"]
-                                    resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
-                                    self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> analysis formatted_content ({len(replacement)} chars)")
-                                # Special case: if looking for .result on data tools, serialize the entire result as JSON
-                                elif field_path == ["result"] and isinstance(stored_result, dict):
-                                    # For data tools like get_fake_data, serialize the entire result
-                                    replacement = json.dumps(stored_result, indent=2)
-                                    resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
-                                    self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> full data result ({len(replacement)} chars)")
+                                # Special case: if looking for .result and this is an analysis action, try formatted_content or analysis_result
+                                if field_path == ["result"] and isinstance(stored_result, dict):
+                                    if "formatted_content" in stored_result:
+                                        replacement = stored_result["formatted_content"]
+                                        resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
+                                        self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> analysis formatted_content ({len(replacement)} chars)")
+                                    elif "analysis_result" in stored_result:
+                                        # Analysis action - use the analysis_result field
+                                        replacement = stored_result["analysis_result"]
+                                        resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
+                                        self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> analysis_result ({len(replacement)} chars)")
+                                    elif "response_text" in stored_result:
+                                        # Response action - use the response_text field
+                                        replacement = stored_result["response_text"]
+                                        resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
+                                        self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> response_text ({len(replacement)} chars)")
+                                    elif "items" in stored_result and isinstance(stored_result.get("items"), list):
+                                        # search_memory result - extract the most relevant item's value
+                                        items = stored_result["items"]
+                                        if items:
+                                            # Find the most relevant item (prefer list_mcp_tools or response_text)
+                                            best_item = None
+                                            for item in items:
+                                                item_value = item.get("value", {})
+                                                # Prefer items with actual tool data over responses
+                                                if isinstance(item_value, dict) and "tools" in item_value:
+                                                    best_item = item_value
+                                                    break
+                                                elif isinstance(item_value, dict) and "response_text" in item_value:
+                                                    best_item = item_value
+                                            
+                                            if not best_item and items:
+                                                # Fallback: use first item's value
+                                                best_item = items[0].get("value", {})
+                                            
+                                            # Extract the best field from the item
+                                            if best_item:
+                                                if "response_text" in best_item:
+                                                    replacement = best_item["response_text"]
+                                                    self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> search result response_text ({len(replacement)} chars)")
+                                                elif "detailed_summary" in best_item:
+                                                    replacement = best_item["detailed_summary"]
+                                                    self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> search result detailed_summary ({len(replacement)} chars)")
+                                                else:
+                                                    replacement = json.dumps(best_item, indent=2)
+                                                    self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> search result item ({len(replacement)} chars)")
+                                                
+                                                resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
+                                            else:
+                                                # Empty search results
+                                                replacement = json.dumps(stored_result, indent=2)
+                                                resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
+                                                self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> empty search results")
+                                        else:
+                                            # Empty items list
+                                            replacement = "No data found"
+                                            resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
+                                            self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> no items in search")
+                                    else:
+                                        # For data tools like get_fake_data, serialize the entire result as JSON
+                                        replacement = json.dumps(stored_result, indent=2)
+                                        resolved_value = resolved_value.replace(f"{{{{{match}}}}}", replacement)
+                                        self.logger.info(f"🔧 Resolved template {{{{ {match} }}}} -> full data result ({len(replacement)} chars)")
                                 else:
                                     self.logger.warning(f"⚠️ Could not resolve template variable: {match}")
                                     self.logger.warning(f"⚠️ Available fields in result: {list(stored_result.keys()) if isinstance(stored_result, dict) else 'not a dict'}")
@@ -355,54 +437,69 @@ class AgentExecutioner:
                                 result_key = f"tool_result_{action_ref}"
                                 stored_result = await self.memory.get(result_key)
                                 
-                                # If not found, try to find by tool type and maintain order mapping
+                                # If not found in current plan, search chat memory for file URLs
                                 if not stored_result and "file_url" in field_path:
-                                    # Get all completed PDF actions in execution order
+                                    # First, try to find in current plan's completed PDF actions
                                     pdf_actions = [action for action in plan.actions 
                                                  if (action.status == "completed" and 
                                                      action.type.value == "tool_call" and 
                                                      action.tool_name == "create_pdf")]
                                     
-                                    # Get all template IDs that reference file_url in this argument list
-                                    # We need to maintain consistent mapping across all template variables
-                                    if not hasattr(self, '_template_mapping_cache'):
-                                        self._template_mapping_cache = {}
-                                    
-                                    # Create ordered mapping if not already cached
-                                    cache_key = f"pdf_mapping_{id(value)}"  # Use list object ID as cache key
-                                    if cache_key not in self._template_mapping_cache:
-                                        # Extract all template IDs from this list that reference file_url
-                                        template_ids = []
-                                        for item_val in value:
-                                            if isinstance(item_val, str) and "{{" in item_val and "}}" in item_val:
-                                                import re
-                                                template_pattern = r'\{\{([^}]+)\}\}'
-                                                matches = re.findall(template_pattern, item_val)
-                                                for match_val in matches:
-                                                    if ".file_url" in match_val:
-                                                        template_id = match_val.split('.')[0]
-                                                        if template_id not in template_ids:
-                                                            template_ids.append(template_id)
+                                    if pdf_actions:
+                                        # Get all template IDs that reference file_url in this argument list
+                                        # We need to maintain consistent mapping across all template variables
+                                        if not hasattr(self, '_template_mapping_cache'):
+                                            self._template_mapping_cache = {}
                                         
-                                        # Create 1:1 mapping between template IDs and PDF actions in order
-                                        mapping = {}
-                                        for i, template_id in enumerate(template_ids):
-                                            if i < len(pdf_actions):
-                                                mapping[template_id] = pdf_actions[i]
-                                        self._template_mapping_cache[cache_key] = mapping
-                                        self.logger.info(f"🔧 Created template mapping cache: {list(mapping.keys())} -> {[a.id for a in mapping.values()]}")
+                                        # Create ordered mapping if not already cached
+                                        cache_key = f"pdf_mapping_{id(value)}"  # Use list object ID as cache key
+                                        if cache_key not in self._template_mapping_cache:
+                                            # Extract all template IDs from this list that reference file_url
+                                            template_ids = []
+                                            for item_val in value:
+                                                if isinstance(item_val, str) and "{{" in item_val and "}}" in item_val:
+                                                    import re
+                                                    template_pattern = r'\{\{([^}]+)\}\}'
+                                                    matches = re.findall(template_pattern, item_val)
+                                                    for match_val in matches:
+                                                        if ".file_url" in match_val:
+                                                            template_id = match_val.split('.')[0]
+                                                            if template_id not in template_ids:
+                                                                template_ids.append(template_id)
+                                            
+                                            # Create 1:1 mapping between template IDs and PDF actions in order
+                                            mapping = {}
+                                            for i, template_id in enumerate(template_ids):
+                                                if i < len(pdf_actions):
+                                                    mapping[template_id] = pdf_actions[i]
+                                            self._template_mapping_cache[cache_key] = mapping
+                                            self.logger.info(f"🔧 Created template mapping cache: {list(mapping.keys())} -> {[a.id for a in mapping.values()]}")
+                                        
+                                        # Use the cached mapping to find the correct action
+                                        mapping = self._template_mapping_cache[cache_key]
+                                        if action_ref in mapping:
+                                            mapped_action = mapping[action_ref]
+                                            real_result_key = f"tool_result_{mapped_action.id}"
+                                            candidate_result = await self.memory.get(real_result_key)
+                                            if candidate_result:
+                                                stored_result = candidate_result
+                                                self.logger.info(f"🔧 Mapped list template {action_ref} -> PDF action {mapped_action.id} (ordered mapping)")
+                                        else:
+                                            self.logger.warning(f"🔧 No mapping found for template {action_ref} in current plan")
                                     
-                                    # Use the cached mapping to find the correct action
-                                    mapping = self._template_mapping_cache[cache_key]
-                                    if action_ref in mapping:
-                                        mapped_action = mapping[action_ref]
-                                        real_result_key = f"tool_result_{mapped_action.id}"
-                                        candidate_result = await self.memory.get(real_result_key)
-                                        if candidate_result:
-                                            stored_result = candidate_result
-                                            self.logger.info(f"🔧 Mapped list template {action_ref} -> PDF action {mapped_action.id} (ordered mapping)")
-                                    else:
-                                        self.logger.warning(f"🔧 No mapping found for template {action_ref} in cache {list(mapping.keys())}")
+                                    # If still not found, search chat memory for file results
+                                    if not stored_result:
+                                        self.logger.info(f"🔍 Template not found in current plan, searching chat memory for files...")
+                                        # Search for file results in chat memory (across all plans)
+                                        file_keys = await self.memory.search_by_tool("create_pdf")
+                                        if file_keys:
+                                            # Get the most recent file result
+                                            for file_key in reversed(file_keys):  # Most recent first
+                                                candidate_result = await self.memory.get(file_key)
+                                                if candidate_result and isinstance(candidate_result, dict) and "file_url" in candidate_result:
+                                                    stored_result = candidate_result
+                                                    self.logger.info(f"🔧 Found file in chat memory: {file_key} -> {candidate_result.get('filename', 'unknown')}")
+                                                    break
                                 
                                 if stored_result:
                                     # Navigate through the field path
@@ -437,6 +534,85 @@ class AgentExecutioner:
                 resolved_args[key] = value
         
         return resolved_args
+    
+    def _generate_semantic_tags(
+        self, 
+        tool_name: str, 
+        result: Dict[str, Any],
+        arguments: Dict[str, Any]
+    ) -> List[str]:
+        """Generate semantic tags based on tool type and result content."""
+        tags = ["executioner_result", "tool_result"]
+        
+        # Add tool-specific tags
+        if tool_name == "create_pdf":
+            tags.extend(["pdf", "file", "document"])
+            # Extract semantic tags from filename and title
+            if isinstance(arguments, dict):
+                filename = arguments.get("filename", "")
+                title = arguments.get("title", "")
+                
+                # Extract keywords from filename
+                if filename:
+                    # Remove extension and split by underscores/hyphens
+                    name_parts = filename.replace(".pdf", "").replace("_", " ").replace("-", " ").lower().split()
+                    tags.extend([part for part in name_parts if len(part) > 3])
+                
+                # Extract keywords from title
+                if title:
+                    title_parts = title.lower().split()
+                    # Add significant words (>3 chars, not common words)
+                    common_words = {"the", "and", "for", "with", "from", "this", "that", "have", "has"}
+                    tags.extend([part for part in title_parts if len(part) > 3 and part not in common_words])
+        
+        elif tool_name == "get_fake_data":
+            tags.extend(["manufacturing", "data", "fake_data", "production", "metrics"])
+            if isinstance(result, dict):
+                # Add tags for data sections present
+                if result.get("facility"):
+                    tags.append("facility")
+                if result.get("production_lines"):
+                    tags.append("production_lines")
+                if result.get("inventory"):
+                    tags.append("inventory")
+                if result.get("alerts"):
+                    tags.append("alerts")
+        
+        elif tool_name == "send_email":
+            tags.extend(["email", "communication", "sent"])
+            if isinstance(arguments, dict):
+                # Add recipient-related tags
+                if arguments.get("to"):
+                    tags.append("outbound")
+                # Add subject keywords
+                subject = arguments.get("subject", "")
+                if subject:
+                    subject_parts = subject.lower().split()
+                    common_words = {"the", "and", "for", "with", "from", "this", "that"}
+                    tags.extend([part for part in subject_parts if len(part) > 3 and part not in common_words])
+        
+        elif tool_name == "intelycx_login":
+            tags.extend(["authentication", "login", "jwt", "auth"])
+        
+        elif tool_name == "search_memory":
+            tags.extend(["memory", "search"])
+        
+        elif tool_name == "search_knowledge_base":
+            tags.extend(["knowledge_base", "search", "rag", "documents"])
+        
+        elif tool_name == "ingest_document":
+            tags.extend(["knowledge_base", "document", "ingestion", "rag"])
+        
+        # Add success/failure tag
+        if isinstance(result, dict):
+            if result.get("error"):
+                tags.append("failed")
+            elif result.get("success"):
+                tags.append("successful")
+        
+        # Remove duplicates and limit to reasonable size
+        unique_tags = list(dict.fromkeys(tags))  # Preserve order, remove duplicates
+        return unique_tags[:20]  # Limit to 20 tags
     
     def _are_dependencies_satisfied(self, plan: ExecutionPlan, action: PlannedAction) -> bool:
         """Check if all dependencies for an action are satisfied."""

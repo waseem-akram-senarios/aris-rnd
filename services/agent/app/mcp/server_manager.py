@@ -25,6 +25,9 @@ class MCPServerConfig:
     args: Optional[List[str]] = None
     env: Optional[Dict[str, str]] = None
     url: Optional[str] = None  # For HTTP-based servers
+    description: Optional[str] = None  # Server description
+    capabilities: Optional[List[str]] = None  # Server capabilities
+    domains: Optional[List[str]] = None  # Server domains
 
 
 class MCPServerManager:

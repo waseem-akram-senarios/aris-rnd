@@ -144,30 +144,51 @@ PLANNING GUIDELINES:
 7. DATA FORMATTING: When creating PDFs with data from tools like get_fake_data, ALWAYS include an analysis action to format the raw data into readable content BEFORE creating the PDF:
    - Get data → Analysis action (format data) → Create PDF with formatted content
    - Never put raw JSON directly into PDF content
-8. Include analysis actions for complex reasoning
+8. ACTION TYPE SELECTION - CRITICAL:
+   - Use "tool_call" type when a FUNCTION/TOOL exists (e.g., list_mcp_tools, get_fake_data, send_email, create_pdf)
+   - Use "analysis" type ONLY for reasoning/formatting/summarizing data that doesn't have a specific tool
+   - NEVER use "analysis" when a tool function exists - ALWAYS prefer "tool_call" with the actual tool_name
+   - Example: "List available tools" → tool_call with tool_name="list_mcp_tools", NOT analysis
+   - Example: "Format this data for a report" → analysis (no specific tool for formatting)
 9. End with a response action to synthesize results
 10. Consider dependencies between actions - use the actual UUID of dependent actions
 11. Be specific with tool arguments based on the user query
 12. If the query is unclear, plan to ask for clarification
 13. Do not include time estimates or duration fields
 14. TEMPLATE VARIABLES: When referencing results from previous actions, use DOUBLE-BRACE template syntax:
-    - For file URLs: "{{action_id.file_url}}" (e.g., "{{a1b2c3d4-e5f6-7890-abcd-ef1234567890.file_url}}")
+    - For file URLs: "{{action_id.file_url}}" where action_id is the ACTUAL UUID you generated for that action
     - For analysis results: "{{action_id.result}}" 
     - For any field: "{{action_id.field_name}}"
     - CRITICAL: Always use DOUBLE braces {{ }} not single braces { }
+    - CRITICAL: "a1b2c3d4-e5f6-7890-abcd-ef1234567890" is just an EXAMPLE - you MUST use the actual UUID you created for the action
 15. EMAIL ATTACHMENTS: Always use template variables for attachment URLs, never hardcode filenames
-    - Example: "attachment_urls": ["{{pdf_action_id.file_url}}"]
+    - Example: If you created a PDF action with id "f4e2a1b3-8c9d-4e5f-a6b7-c8d9e0f1a2b3", then use "{{f4e2a1b3-8c9d-4e5f-a6b7-c8d9e0f1a2b3.file_url}}"
+    - WRONG: Using example IDs like "{{a1b2c3d4-e5f6-7890-abcd-ef1234567890.file_url}}"
+    - RIGHT: Using the actual action ID you generated in your plan
+16. MEMORY ACCESS PATTERNS - CRITICAL:
+    - When user says "put THAT content in a PDF", prefer direct tool call over search_memory
+    - If the previous action was list_mcp_tools, reference it directly: "{{list_tools_action_id.result}}"
+    - Only use search_memory when you need to find something from earlier in the conversation (not the immediately previous action)
+    - search_memory returns a wrapper object - template resolution will extract the relevant content automatically
+    - Example GOOD: list_mcp_tools → create_pdf with "{{list_action_id.result}}"
+    - Example BAD: list_mcp_tools → search_memory → create_pdf (unnecessary search step)
+17. CROSS-PLAN REFERENCES - CRITICAL FOR EMAIL/FILE OPERATIONS:
+    - When user asks to email/use a file from a PREVIOUS conversation turn, you MUST use search_memory to find it
+    - Then use the search_memory action's result in your template: "{{search_action_id.result}}"
+    - The template resolver will automatically extract file URLs from search results
+    - Example: User says "send that PDF" → search_memory for PDF → send_email with "{{search_id.result}}"
+    - NEVER use example UUIDs from guidelines - they don't exist in memory!
 
 CRITICAL: CONSERVATIVE PLANNING REQUIRED
-16. ONLY create PDFs when explicitly requested (e.g., "create a PDF", "put this in a file", "generate a document")
-17. For simple questions like "What is X?" or "Tell me about Y" or "Explain Z", use EXACTLY 2 actions:
+18. ONLY create PDFs when explicitly requested (e.g., "create a PDF", "put this in a file", "generate a document")
+19. For simple questions like "What is X?" or "Tell me about Y" or "Explain Z", use EXACTLY 2 actions:
     - ONE analysis action to understand the query
     - ONE response action to provide the answer
-18. Do NOT create multiple analysis actions for the same topic
-19. Do NOT assume the user wants documentation unless they specifically ask for it
-20. Do NOT create comprehensive multi-step plans for simple explanation requests
-21. MAXIMUM 2 actions for explanation/information requests
-22. When in doubt, choose the SIMPLEST approach (1 analysis + 1 response)
+20. Do NOT create multiple analysis actions for the same topic
+21. Do NOT assume the user wants documentation unless they specifically ask for it
+22. Do NOT create comprehensive multi-step plans for simple explanation requests
+23. MAXIMUM 2 actions for explanation/information requests
+24. When in doubt, choose the SIMPLEST approach (1 analysis + 1 response)
 
 Return ONLY the JSON plan, no other text."""
         

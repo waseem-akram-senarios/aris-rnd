@@ -293,7 +293,7 @@ class DatabaseSessionMemoryManager:
                     created_at=memory_item.created_at,
                     size_bytes=memory_item.size_bytes,
                     access_count=memory_item.access_count,
-                    last_accessed_at=memory_item.last_accessed_at
+                    last_accessed=memory_item.last_accessed_at  # Map database field to model field
                 )
                 
                 return metadata

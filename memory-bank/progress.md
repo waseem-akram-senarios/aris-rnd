@@ -41,6 +41,65 @@
 - **Concurrency improvements** (connection limits, rate limiting, resource monitoring for high-scale deployments)
 
 ## Recent achievements 🎉
+- **🐛 CRITICAL: Fixed Planner Using Example UUIDs** - Enhanced planning guidelines to prevent using example IDs in templates
+  - **Problem**: When emailing a PDF from a previous turn, the planner used example UUID `a1b2c3d4-e5f6-7890-abcd-ef1234567890` from guidelines instead of actual action IDs
+  - **Result**: Email sent successfully but attachment URL was literal template string, not resolved URL
+  - **Root Cause**: Guidelines showed example UUIDs without emphasizing they're just examples, not actual IDs to use
+  - **Solution**: Enhanced guidelines #14, #15, and added new guideline #17:
+    - Explicit warning that example UUIDs are EXAMPLES only
+    - Clear instructions to use actual action IDs generated in the plan
+    - New guideline #17 for cross-plan references: use search_memory → reference search action ID
+    - Examples showing RIGHT vs WRONG approaches
+  - **Impact**: Planner will now correctly reference actual action IDs, enabling proper file attachments in emails
+- **🔧 MAJOR: Smart Template Resolution for search_memory** - Template resolver now intelligently extracts content from search results
+  - **Problem**: When using `search_memory` → `create_pdf`, the PDF contained raw JSON wrapper instead of actual content
+  - **Root Cause**: Template resolution dumped entire search_memory response (with `items`, `files`, metadata) into PDF
+  - **Solution**: Enhanced template resolver to intelligently extract meaningful content from search results:
+    - Detects `search_memory` results by checking for `items` array
+    - Prioritizes items with `tools` data (from `list_mcp_tools`)
+    - Falls back to `response_text` or `detailed_summary` fields
+    - Extracts the most relevant content automatically
+  - **Planning Guideline**: Added guideline #16 to discourage unnecessary `search_memory` when referencing immediately previous actions
+  - **Impact**: PDFs and emails now contain clean, formatted content instead of raw JSON wrappers
+- **🐛 CRITICAL: Fixed Planner Action Type Selection** - Planner now correctly uses tool_call vs analysis actions
+  - **Bug**: When asked to "list available tools", planner created an `analysis` action and hallucinated OpenAI tools (DALL·E, Code Interpreter) instead of calling `list_mcp_tools`
+  - **Root Cause**: Planning guidelines were vague - only said "Include analysis actions for complex reasoning" without specifying when to use tool_call vs analysis
+  - **Solution**: Enhanced guideline #8 with explicit ACTION TYPE SELECTION rules:
+    - Use "tool_call" when a FUNCTION/TOOL exists (list_mcp_tools, get_fake_data, send_email, etc.)
+    - Use "analysis" ONLY for reasoning/formatting that doesn't have a specific tool
+    - NEVER use "analysis" when a tool function exists
+    - Added concrete examples for clarity
+  - **Impact**: Planner will now correctly call actual tools instead of hallucinating results
+- **🎯 MAJOR: Intelligent Semantic Tagging** - Tool results now automatically tagged with rich, searchable metadata
+  - **Keyword Extraction**: PDF files tagged with keywords from filename and title (e.g., "manufacturing_tools_overview.pdf" → `["manufacturing", "tools", "overview"]`)
+  - **Content-Based Tags**: Manufacturing data tagged with data sections present (facility, production_lines, inventory, alerts)
+  - **Email Subject Keywords**: Email results tagged with significant words from subject line
+  - **Tool-Specific Tags**: Each tool type gets domain-specific tags (pdf/file/document, manufacturing/data, email/communication, auth/jwt)
+  - **Success/Failure Tags**: Automatic `successful` or `failed` tags based on result status
+  - **Searchability**: Files now findable by semantic tags, not just tool name
+  - **Extensible**: Easy to add new tool-specific tagging logic
+- **🎯 CRITICAL: Analysis Results Now Included in Responses** - Fixed missing analysis action results in final responses
+  - **Bug Fix**: Analysis action results were being stored but never collected for final response formatting
+  - **Root Cause**: `_collect_tool_results_from_plan` only checked `tool_call` actions, skipped `analysis` actions
+  - **Solution**: Enhanced collection logic to include both `tool_call` and `analysis` type actions
+  - **Impact**: Song verses, explanations, and other LLM-generated content now properly included in responses
+  - **Tool Name Mapping**: Analysis actions now tagged as `llm_analysis` for consistent formatting
+- **🎯 MAJOR: Cross-Plan Memory & Template Resolution** - Agents can now access data across multiple plans in the same chat
+  - **Cross-Plan File References**: Template variables can reference files created in previous plans via chat memory search
+  - **Intelligent Memory Fallback**: When templates can't be resolved in current plan, automatically searches entire chat history
+  - **Chat-Scoped Persistence**: All tool results stored in chat memory, accessible across conversation lifecycle
+  - **Smart Search Strategy**: Prioritizes file URLs for `create_pdf` results, general data for other tools
+  - **Analysis Result Extraction**: Template resolution now correctly extracts `analysis_result` field for clean PDF content
+  - **Metadata Field Mapping**: Fixed `last_accessed` vs `last_accessed_at` mismatch between model and database
+  - **Enhanced Logging**: Comprehensive tracing showing current plan → chat memory search flow
+- **🎯 MAJOR: Smart Pattern-Based Result Formatters** - Eliminated all hardcoded tool-specific formatting logic
+  - **Zero Hardcoding**: Removed 70+ lines of hardcoded if/elif checks for tool names (create_pdf, get_fake_data, intelycx_login, search_memory, list_mcp_tools)
+  - **Pattern Matching**: 5 intelligent pattern formatters automatically detect result types (files, data collections, structured objects, success/error, generic)
+  - **Extensible Architecture**: New MCP tools work automatically without code changes
+  - **Priority-Ordered Processing**: Formatters run in sequence until one matches the result pattern
+  - **Future-Proof Design**: Metadata-ready architecture for future enhancements and custom formatters
+  - **Improved Maintainability**: Single source of truth in `app/core/formatters.py` for all result formatting
+  - **Backward Compatible**: All existing tools work identically, just through smarter logic
 - **🎯 CRITICAL: Docker Network & FastMCP Serialization Resolution** - Fixed major production blocking issues
   - **Network Connectivity Fix**: Resolved DNS resolution failures by connecting ARIS containers to `intelycx_intelycx_default` network
   - **Docker Compose Update**: Permanent fix to use correct external network name for container communication

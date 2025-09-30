@@ -78,6 +78,15 @@
 - **Version Management**: Tool versioning via meta field and semantic versioning practices
 - **Annotation System**: Tool behavior hints (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
 
+### Smart Result Formatters (`app/core/formatters.py`)
+- **Pattern-Based Formatting**: Eliminates hardcoded tool-specific logic using intelligent pattern matching
+- **5 Pattern Formatters**: File results, data collections, structured objects, success/error responses, generic fallback
+- **Zero Hardcoding**: New MCP tools work automatically without code changes
+- **Priority-Ordered**: Formatters run in sequence until one matches the result pattern
+- **Extensible**: Easy to add new pattern formatters for custom result types
+- **File Extraction**: Automatically detects and extracts file download information
+- **Metadata-Ready**: Architecture supports future metadata-driven formatting enhancements
+
 ### Database-First Architecture (`app/database/`)
 - **PostgreSQL Integration**: Complete database schema with chats, plans, actions, and session_memory tables
 - **UnifiedPlanManager**: Single source of truth for all plan and action operations with database-first enforcement
@@ -94,7 +103,9 @@
 - **Recursive Resolution**: Handles nested dictionaries and arrays in action arguments
 - **Smart Mapping**: Fake template IDs mapped to real action IDs based on tool type and execution order
 - **File URL Priority**: Template variables with `file_url` specifically prioritize `create_pdf` actions
-- **Fallback Logic**: Multiple resolution strategies (direct mapping, tool-based, analysis-based, fallback)
+- **Cross-Plan Memory Search**: When templates can't be resolved in current plan, automatically searches chat memory across all plans
+- **Chat-Scoped Memory**: All tool results persisted in chat memory, accessible across multiple plans in the same conversation
+- **Intelligent Fallback**: Resolution strategies: direct ID → current plan mapping → chat memory search → most recent file/data
 - **Debug Tracing**: Comprehensive logging of template resolution process for troubleshooting
 
 ### Memory Management (`app/core/memory/` + `app/database/`)
@@ -103,6 +114,11 @@
 - **Metadata tracking**: Creation time, tool source, data type, size, and access information for each variable
 - **Cross-session persistence**: Session data survives agent restarts and container recreation
 - **Search capabilities**: Search by tool, tag, or key patterns with database queries
+- **Semantic Tagging**: Intelligent tag generation based on tool type, result content, and arguments
+  - File tools: Extract keywords from filename and title (e.g., `["pdf", "file", "manufacturing", "tools", "overview"]`)
+  - Data tools: Add data section tags (e.g., `["manufacturing", "data", "facility", "production_lines"]`)
+  - Email tools: Extract keywords from subject and recipients
+  - Generic: All results tagged with `["executioner_result", "tool_result", "successful/failed"]`
 - **Memory statistics**: Usage tracking, size monitoring, and access analytics
 - **Error handling**: Only successful tool results are stored; errors are not cached
 - **Serialization**: Complex Python objects (dataclasses, enums) automatically serialized to JSONB
