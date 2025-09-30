@@ -500,6 +500,9 @@ class AgentExecutioner:
                     )
                 else:
                     result = {"error": "No data source found for formatting"}
+            elif "fake content" in action.name.lower() or "generate" in action.name.lower():
+                # This is a fake content generation action
+                result = await self._generate_fake_content_for_pdf(action.name)
             else:
                 # Generic analysis - use a simple completion
                 result = {"success": True, "analysis_result": f"Analysis completed for: {action.name}"}
@@ -526,6 +529,43 @@ class AgentExecutioner:
             self.logger.error(f"❌ Analysis action failed: {action.name} - {str(e)}")
             plan.update_action_status(action.id, "failed")
             await self._send_plan_update(plan)
+    
+    async def _generate_fake_content_for_pdf(self, action_name: str) -> Dict[str, Any]:
+        """Generate fake content for PDF documents."""
+        try:
+            # Use LLM to generate realistic fake content
+            content_prompt = f"""Generate realistic fake content for a PDF document based on the action: "{action_name}".
+
+Create content that includes:
+1. A professional title and introduction
+2. Sample data, metrics, or information that would be relevant
+3. Proper formatting with sections and subsections
+4. Realistic numbers, dates, and details
+5. Professional language appropriate for business documents
+
+The content should be substantial (at least 200-300 words) and look like real business data.
+Return ONLY the content text, no explanations or formatting instructions."""
+
+            content = await self.llm_tools.bedrock.converse(
+                model_id="us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+                messages=[{"role": "user", "content": [{"text": content_prompt}]}],
+                temperature=0.7,
+                system=[{"text": "You are a professional content generator. Create realistic, well-formatted business content."}]
+            )
+            
+            return {
+                "success": True,
+                "analysis_result": content,
+                "content_type": "fake_content",
+                "word_count": len(content.split())
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to generate fake content: {str(e)}")
+            return {
+                "error": f"Failed to generate fake content: {str(e)}",
+                "analysis_result": "Error generating content"
+            }
     
     async def _execute_response_action(self, plan: ExecutionPlan, action: PlannedAction) -> None:
         """Execute a response action using built-in LLM tools."""
