@@ -18,8 +18,16 @@ dependencies = [
     "starlette>=0.27.0",
     "boto3>=1.35.0",
     "botocore>=1.35.0",
+    # Vector store implementations
     "opensearch-py>=2.4.2",
     "requests-aws4auth>=1.2.3",
+    "asyncpg>=0.29.0",  # PostgreSQL with pgvector
+    "qdrant-client>=1.7.0",  # Qdrant vector database
+    # Embedding providers (Bedrock is via boto3)
+    "openai>=1.12.0",  # OpenAI embeddings (optional)
+    "sentence-transformers>=2.2.0",  # Local embeddings (optional)
+    "torch>=2.0.0",  # Required for sentence-transformers
+    # Additional dependencies
     "httpx>=0.25.0",
 ]
 

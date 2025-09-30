@@ -142,6 +142,43 @@
 - **Docker compose**: Multi-container setup with internal networking, health checks, dependency management
 - **Development**: Live code reload for agent, `docker compose` (not `docker-compose`) preferred
 
+## RAG Architecture Patterns (Phase 1 Complete)
+
+### Vector Store Abstraction (`services/mcp-servers/intelycx-rag/app/vector_stores/`)
+- **Unified Interface**: `VectorStore` base class with CRUD operations for embeddings
+- **Multi-Backend Support**: OpenSearch (k-NN), PGVector (PostgreSQL extension), Qdrant (modern vector DB)
+- **Factory Pattern**: `VectorStoreFactory` for config-driven backend selection
+- **Batch Operations**: Optimized bulk indexing with configurable batch sizes
+- **Distance Metrics**: Cosine, Euclidean, Dot Product support across all backends
+- **Index Management**: Create, exists checks, health monitoring, cleanup operations
+
+### Embedding Service Abstraction (`services/mcp-servers/intelycx-rag/app/embeddings/`)
+- **Provider Abstraction**: `EmbeddingService` base class with batch processing
+- **Bedrock Integration**: Titan v1/v2 (1536/1024 dim), Cohere Embed, retry logic
+- **OpenAI Integration**: text-embedding-3-small/large with efficient batch API (2048 inputs)
+- **Local Embeddings**: sentence-transformers for zero API cost (CPU/GPU support)
+- **Cost Optimization**: Economy/Standard/Premium profiles with model recommendations
+- **Factory Pattern**: `EmbeddingServiceFactory` with profile-based configs
+- **Error Handling**: Graceful degradation, zero-vector fallback, comprehensive logging
+
+### Chunking Strategies (`services/mcp-servers/intelycx-rag/app/chunking/`)
+- **Strategy Pattern**: `ChunkingStrategy` base class with unified interface
+- **Semantic Chunking**: Respects sentence/paragraph boundaries, preserves code blocks, markdown-aware
+- **Fixed-Size Chunking**: Fast, predictable chunks with word-boundary awareness
+- **Recursive Chunking**: LangChain-style hierarchical splitting with multiple separators
+- **Intelligent Overlap**: Context preservation between chunks, configurable overlap size
+- **Factory Pattern**: `ChunkerFactory` with profile-based recommendations
+- **Metadata Tracking**: Character positions, word counts, strategy info in chunk metadata
+
+### RAG Pipeline Architecture (Phase 2 - Planned)
+- **Document Processor**: ECS Task 1 → S3 download → text extraction → chunking → S3 staging → SQS
+- **Vector Indexer**: ECS Task 2 → SQS poll → batch embedding → vector store indexing → status update
+- **Status Tracking**: Configurable storage (DynamoDB default, PostgreSQL option)
+- **Trigger System**: Lambda Function URL for ingestion requests
+- **Scalability**: Fargate Spot for indexer (70% cost savings), independent scaling, batch optimization
+- **Configuration**: YAML-based unified config for all RAG components
+
 ## Infra (CDK)
 - `infra/app.py` instantiates `AgentStack` with context `env` (default `dev`)
 - `infra/stacks/agent_stack.py` is a placeholder to be extended with ECS service, ALB, and secrets
+- **RAG Infrastructure** (Planned): Separate CDK stack for ECS services, SQS queues, DynamoDB, networking

@@ -1,6 +1,12 @@
 # Progress
 
 ## What works ✅
+- **RAG Foundation (Phase 1 Complete)** - Production-ready abstraction layers for document ingestion
+  - Vector stores: OpenSearch, PGVector, Qdrant with unified interface
+  - Embeddings: Bedrock (Titan/Cohere), OpenAI, Local (sentence-transformers)
+  - Chunking: Semantic, Fixed-size, Recursive strategies with intelligent overlap
+  - Factory patterns for config-driven selection across all layers
+  - Cost-aware profiles (economy/standard/premium) for embedding and chunking
 - **Database-First Architecture** - Complete PostgreSQL integration with persistent plan and action storage
 - **Email Attachments** - Full PDF creation and email attachment workflow with clean filenames
 - **Template Variable Resolution** - Complex inter-action data flow with {{action_id.field_name}} syntax
@@ -29,18 +35,38 @@
 
 ## What's left 🚧
 
-- **Old agent tool migration** (manufacturing data, analytics, search, reports using core libraries)
-- **Production-grade infra** resources in CDK (ECS, ALB, networking, secrets)
-- **Real API integrations** (Intelycx Core authentication implemented, need actual API endpoints)
-- **Tests and CI** (linters, type checks, unit/integration tests for core libraries)
-- **Configurable default** for guardrails
-- **Advanced MCP authentication** (JWT tokens, mTLS for production)
-- **Observability** (structured logs, metrics, tracing, MCP server monitoring)
-- **Error recovery** and retry logic for MCP server failures
-- **Performance optimization** (caching, connection pooling, memory backend optimization)
-- **Concurrency improvements** (connection limits, rate limiting, resource monitoring for high-scale deployments)
+- **RAG Phase 2: Services & Infrastructure** (Next sprint)
+  - Storage abstraction for document status (DynamoDB + PostgreSQL option)
+  - Configuration system (YAML-based) for all RAG components
+  - Document Processor ECS service (chunking pipeline)
+  - Vector Indexer ECS service (embedding + indexing pipeline)
+  - Ingestion trigger Lambda with Function URL
+  - CDK infrastructure for ECS, SQS, DynamoDB
+  - LocalStack docker-compose for local development
+  - RAG MCP server integration (ingest, status, search tools)
+- **Agent Evolution**
+  - Old agent tool migration (manufacturing data, analytics, search, reports using core libraries)
+  - Real API integrations (Intelycx Core authentication implemented, need actual API endpoints)
+  - Tests and CI (linters, type checks, unit/integration tests for core libraries)
+  - Configurable default for guardrails
+- **Production Infrastructure**
+  - Production-grade CDK resources (ECS, ALB, networking, secrets)
+  - Advanced MCP authentication (JWT tokens, mTLS for production)
+  - Observability (structured logs, metrics, tracing, MCP server monitoring)
+  - Error recovery and retry logic for MCP server failures
+  - Performance optimization (caching, connection pooling, memory backend optimization)
+  - Concurrency improvements (connection limits, rate limiting, resource monitoring for high-scale deployments)
 
 ## Recent achievements 🎉
+- **🚀 PHASE 1: RAG Foundation Architecture** - Complete abstraction layers for scalable document ingestion (Sept 30, 2025)
+  - **Vector Store Layer**: OpenSearch (k-NN, HNSW), PGVector (separate DB, IVF/HNSW), Qdrant (quantization, high-perf)
+  - **Embedding Layer**: Bedrock (Titan v1/v2, Cohere), OpenAI (batch API), Local (sentence-transformers, zero cost)
+  - **Chunking Layer**: Semantic (sentence/paragraph boundaries), Fixed (fast/predictable), Recursive (hierarchical)
+  - **Architecture**: ECS + SQS async pipeline, configurable storage, multi-backend from day 1, budget-conscious
+  - **Dependencies**: opensearch-py, asyncpg, qdrant-client, openai, sentence-transformers, torch
+  - **Factory Patterns**: Config-driven selection, cost-aware profiles (economy/standard/premium)
+
+
 - **🐛 CRITICAL: Fixed Planner Using Example UUIDs** - Enhanced planning guidelines to prevent using example IDs in templates
   - **Problem**: When emailing a PDF from a previous turn, the planner used example UUID `a1b2c3d4-e5f6-7890-abcd-ef1234567890` from guidelines instead of actual action IDs
   - **Result**: Email sent successfully but attachment URL was literal template string, not resolved URL

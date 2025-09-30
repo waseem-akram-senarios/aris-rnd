@@ -1,6 +1,10 @@
 # Active Context
 
 ## Current focus
+- ✅ **PHASE 1 COMPLETE: RAG Foundation Architecture** - Production-ready abstraction layers for document ingestion
+- ✅ **Vector Store Abstraction** - Multi-backend support (OpenSearch, PGVector, Qdrant) with unified interface
+- ✅ **Embedding Service Abstraction** - Configurable providers (Bedrock, OpenAI, Local) with cost-aware profiles
+- ✅ **Semantic Chunking** - Three strategies (semantic, fixed, recursive) with intelligent overlap
 - ✅ **BREAKTHROUGH: Database-First Architecture** - Complete PostgreSQL integration with persistent storage
 - ✅ **BREAKTHROUGH: Email Attachments Working** - Full PDF creation and email attachment workflow operational
 - ✅ **Template Variable Resolution** - Complex template mapping system for inter-action data flow
@@ -30,6 +34,30 @@
 - ✅ **ANALYZED: Concurrency & Session Management** - Confirmed true concurrent request handling with proper isolation
 
 ## Recent achievements
+- **🎯 PHASE 1: RAG Foundation Architecture** - Complete abstraction layers for scalable document ingestion
+  - **Vector Store Abstraction** (`services/mcp-servers/intelycx-rag/app/vector_stores/`):
+    - `OpenSearchVectorStore`: k-NN plugin, AWS IAM auth, HNSW indexing, batch operations
+    - `PGVectorStore`: PostgreSQL with pgvector extension, separate DB, IVFFlat/HNSW indexes
+    - `QdrantVectorStore`: Modern vector DB, quantization support, high-performance search
+    - `VectorStoreFactory`: Config-driven selection, unified interface for all backends
+  - **Embedding Service Abstraction** (`services/mcp-servers/intelycx-rag/app/embeddings/`):
+    - `BedrockEmbeddingService`: Titan v1/v2, Cohere Embed, retry logic, batch processing
+    - `OpenAIEmbeddingService`: text-embedding-3-small/large, efficient batch API (2048 inputs)
+    - `LocalEmbeddingService`: sentence-transformers, zero API cost, CPU/GPU support
+    - `EmbeddingServiceFactory`: Cost-aware profiles (economy/standard/premium)
+  - **Chunking Strategies** (`services/mcp-servers/intelycx-rag/app/chunking/`):
+    - `SemanticChunker`: Respects sentences/paragraphs/headers, preserves code blocks, intelligent overlap
+    - `FixedSizeChunker`: Fast, predictable, word-boundary aware
+    - `RecursiveChunker`: LangChain-style hierarchical splitting with multiple separators
+    - `ChunkerFactory`: Strategy pattern with profile-based configs
+  - **Architecture Decisions**:
+    - ECS + SQS pipeline for scalable async ingestion (100s of MB documents)
+    - Configurable storage (DynamoDB default, PostgreSQL option) for status tracking
+    - Multi-backend from day 1 (OpenSearch → PGVector → Qdrant priority)
+    - Budget-conscious design: Fargate Spot, batch optimization, local embeddings option
+  - **Dependencies Updated**: opensearch-py, asyncpg, qdrant-client, openai, sentence-transformers, torch
+
+
 - **🎯 BREAKTHROUGH: Database-First Architecture & Email Attachments** - Complete implementation of persistent storage and email workflow
   - **PostgreSQL Integration**: Full database schema with chats, plans, actions, and session_memory tables
   - **Database-First Rule**: Plans stored in database BEFORE execution; execution halts if storage fails
@@ -92,12 +120,22 @@
 - Authentication strategy for MCP servers in production (currently using simple API keys)
 
 ## Next steps (proposed)
-- **Migrate additional tools** from old agent implementation using core libraries
-- **Add unit tests** for core libraries (memory management, file processing, MCP servers)
-- **Implement real API endpoints** beyond fake data (machine details, production summaries)
-- Add config-level guardrails default and server-side override rules
-- Flesh out `AgentStack` with ECS/ALB and secret wiring; add CI/CD pipeline
-- Complete real API integrations (Intelycx Core API authentication now implemented)
-- Implement more sophisticated MCP server authentication (JWT, mTLS)
-- Add observability and monitoring for MCP server health and performance
-- **Performance optimization** for core libraries (caching, connection pooling)
+- **PHASE 2: RAG Services & Infrastructure** (In Progress)
+  - Storage abstraction for document status (DynamoDB + PostgreSQL option)
+  - Configuration system (YAML-based) for vector stores, embeddings, chunking
+  - Document Processor ECS service (S3 → chunks → S3 staging)
+  - Vector Indexer ECS service (chunks → embeddings → vector store)
+  - Ingestion trigger Lambda (Function URL API)
+  - CDK infrastructure stack (ECS, SQS, DynamoDB, networking)
+  - LocalStack docker-compose for local development
+  - Update RAG MCP server tools (ingest_document, get_document_status, search)
+- **Agent Evolution**
+  - Migrate additional tools from old agent implementation using core libraries
+  - Add unit tests for core libraries (memory management, file processing, MCP servers)
+  - Implement real API endpoints beyond fake data (machine details, production summaries)
+  - Add config-level guardrails default and server-side override rules
+- **Infrastructure & Production**
+  - Flesh out `AgentStack` with ECS/ALB and secret wiring; add CI/CD pipeline
+  - Implement more sophisticated MCP server authentication (JWT, mTLS)
+  - Add observability and monitoring for MCP server health and performance
+  - Performance optimization for core libraries (caching, connection pooling)
