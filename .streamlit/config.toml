@@ -1,0 +1,7 @@
+[server]
+# Disable file watcher to avoid inotify limit issues
+fileWatcherType = "none"
+
+[runner]
+# Fast reruns
+fastReruns = true

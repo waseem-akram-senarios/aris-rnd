@@ -1,0 +1,9 @@
+Host server-aris
+    HostName 18.210.22.221
+    User ec2-user
+    Port 22
+    IdentityFile /home/senarios/Desktop/aris/ec2_wah_pk.pem
+    StrictHostKeyChecking no
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+

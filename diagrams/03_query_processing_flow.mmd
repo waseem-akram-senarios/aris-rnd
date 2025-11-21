@@ -1,0 +1,40 @@
+sequenceDiagram
+    participant User
+    participant UI as Streamlit UI
+    participant RAG as RAGSystem
+    participant FAISS as FAISS Vector Store
+    participant Tokenizer as TokenTextSplitter
+    participant LLM as LLM API
+    participant Metrics as MetricsCollector
+    
+    User->>UI: Ask Question
+    UI->>RAG: query_with_rag(question, k=6)
+    
+    Note over RAG: Step 1: Retrieve Chunks
+    RAG->>FAISS: as_retriever(search_type="mmr", k=6)
+    FAISS-->>RAG: List[Document chunks]
+    
+    Note over RAG: Step 2: Build Context & Count Tokens
+    RAG->>RAG: Build context from chunks
+    RAG->>Tokenizer: count_tokens(question + context)
+    Tokenizer-->>RAG: context_tokens
+    
+    Note over RAG: Step 3: Generate Answer
+    RAG->>LLM: API Call (question + context)
+    LLM-->>RAG: answer, response_tokens
+    
+    Note over RAG: Step 4: Calculate Total Tokens
+    RAG->>RAG: total_tokens = context_tokens + response_tokens
+    
+    Note over RAG: Step 5: Record Metrics
+    RAG->>Metrics: record_query(context_tokens, response_tokens, total_tokens)
+    
+    RAG-->>UI: Result with token counts
+    UI->>User: Display Answer + Token Info
+    
+    Note over UI: Shows:<br/>Context tokens<br/>Response tokens<br/>Total tokens
+
+
+
+
+

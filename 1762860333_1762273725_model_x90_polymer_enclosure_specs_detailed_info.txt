@@ -1,0 +1,627 @@
+======================================================================
+DETAILED DOCUMENT INFORMATION EXTRACTION
+======================================================================
+Document: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+Parser: pymupdf
+Chunks: 2
+Tokens: 748
+======================================================================
+
+
+======================================================================
+CATEGORY: Document Overview
+======================================================================
+
+Q1: What is the complete title and purpose of this document?
+----------------------------------------------------------------------
+Answer:
+The complete title and purpose of this document is "Product Specification for Model X-90 High-Density Polymer Enclosure" which specifies the materials, dimensions, and tolerances required for the manufacture of the protective casing intended for the Series 3 control board.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+  [2]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+
+======================================================================
+
+Q2: What is the document version, revision, or date?
+----------------------------------------------------------------------
+Answer:
+The document version, revision, or date is not provided in the context.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+  [2]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+
+======================================================================
+
+Q3: Who is the intended audience or application for this document?
+----------------------------------------------------------------------
+Answer:
+The intended audience or application for this document is likely manufacturers or engineers involved in the design, production, and quality assurance of the Model X-90 High-Density Polymer Enclosure.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+  [2]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+
+======================================================================
+
+
+======================================================================
+CATEGORY: Materials & Components
+======================================================================
+
+Q1: List all materials specified with their exact specifications, grades, and standards
+----------------------------------------------------------------------
+Answer:
+Materials specified with their exact specifications, grades, and standards in the provided context are:
+
+1. Main Body (Housing)
+   - Material: Polycarbonate (PC)
+   - Specification: $\text{UL94-VO}$ Rated, $\text{UV}$-Stabilized
+   - Color: $\text{RAL 7035}$ (Light Grey)
+
+2. Gasket (Seal)
+   - Material: Silicone Rubber
+   - Specification: $\text{Shore Hardness A 50} \pm 5$
+
+3. Fasteners
+   - Material: Stainless Steel
+   - Specification: $\text{ASTM A240, Type 304}$
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q2: What are all component parts and their materials?
+----------------------------------------------------------------------
+Answer:
+The component parts and their materials for the Model X-90 High-Density Polymer Enclosure are as follows:
+1. Main Body (Housing): Polycarbonate (PC) with $\text{UL94-VO}$ rating and $\text{UV}$-stabilized, color $\text{RAL 7035}$ (Light Grey).
+2. Gasket (Seal): Silicone Rubber with $\text{Shore Hardness A 50} \pm 5$.
+3. Fasteners: Stainless Steel $\text{ASTM A240, Type 304}$.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+  [2]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+
+======================================================================
+
+Q3: What are the material properties and certifications required?
+----------------------------------------------------------------------
+Answer:
+The material properties and certifications required for the Model X-90 Enclosure are as follows:
+1. Main Body (Housing): Polycarbonate (PC) material that is $\text{UL94-VO}$ rated and UV-stabilized. The color should be RAL 7035 (Light Grey).
+2. Gasket (Seal): Silicone Rubber with a Shore Hardness A of 50 $\pm$ 5, meeting $\text{IP65}$ rating standards.
+3. Fasteners: Stainless Steel material meeting ASTM A240, Type 304 standards.
+
+Certifications: $\text{UL94-VO}$ rating for the Polycarbonate material.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+
+======================================================================
+CATEGORY: Dimensions & Tolerances
+======================================================================
+
+Q1: Provide all dimensions with their exact values and tolerances
+----------------------------------------------------------------------
+Answer:
+The dimensions provided in the context are:
+- Overall Dimensions: $150.00 \text{mm} \times 100.00 \text{mm} \times 45.00 \text{mm}$ (Length $\times$ Width $\times$ Height).
+- Wall Thickness: $2.50 \text{mm}$ nominal.
+
+The tolerances mentioned in the context are:
+- Tolerance for overall dimensions: $\pm 0.30 \text{mm}$.
+- Tolerance for wall thickness: $+0.20 \text{mm}/ -0.05 \text{mm}$.
+- Position Tolerance for mounting holes: $\pm 0.10 \text{mm}$ relative to the center axis.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q2: What are the wall thicknesses, clearances, and spacing requirements?
+----------------------------------------------------------------------
+Answer:
+The wall thickness specified for the enclosure is $2.50 \text{mm}$ nominal with a tolerance of $+0.20 \text{mm}/ -0.05 \text{mm}$. Mounting Holes (Internal) require $\text{M3}$ threaded inserts in four corner posts with a position tolerance of $\pm 0.10 \text{mm}$ relative to the center axis. However, specific clearances and spacing requirements are not provided in the context.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+  [2]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+
+======================================================================
+
+Q3: What are the mounting hole specifications and positions?
+----------------------------------------------------------------------
+Answer:
+The mounting hole specifications are internal M3 threaded inserts required in four corner posts. The position tolerance for the mounting holes is $\pm 0.10 \text{mm}$ relative to the center axis.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+
+======================================================================
+CATEGORY: Manufacturing & Processes
+======================================================================
+
+Q1: What is the complete manufacturing process?
+----------------------------------------------------------------------
+Answer:
+The complete manufacturing process includes injection molding of the Main Body (Housing) with adequate draft angles to prevent part damage during ejection, minimal flash limited to $\le 0.10 \text{mm}$ at the parting line, and applying an external surface finish of $\text{MT-11010}$ (Medium Texture) to minimize visible scratches.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q2: What are all finishing requirements and surface specifications?
+----------------------------------------------------------------------
+Answer:
+The finishing requirements and surface specifications for the Model X-90 High-Density Polymer Enclosure are as follows:
+
+Finishing Requirements:
+- Minimal flash is acceptable, limited to $\le 0.10 \text{mm}$ at the parting line.
+- External surface finish should be $\text{MT-11010}$ (Medium Texture) to minimize visible scratches.
+- Interior surface may have a standard $\text{SPI A-3}$ finish.
+
+Surface Specifications:
+- External surface finish: $\text{MT-11010}$ (Medium Texture)
+- Interior surface finish: Standard $\text{SPI A-3}$ finish
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q3: What are the post-molding operations and assembly steps?
+----------------------------------------------------------------------
+Answer:
+The post-molding operations and assembly steps are not explicitly mentioned in the provided context.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+
+======================================================================
+CATEGORY: Quality & Testing
+======================================================================
+
+Q1: What are all quality assurance procedures?
+----------------------------------------------------------------------
+Answer:
+The quality assurance procedures mentioned in the context are:
+
+1. Dimensional verification on the first article (FAIR) and for every 500 units thereafter.
+2. Water ingress test on a sample of 5% of each batch to confirm the IP65 rating is met.
+3. Visual inspection for warpage and sinks on all finished units.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q2: What testing requirements and acceptance criteria are specified?
+----------------------------------------------------------------------
+Answer:
+Testing requirements and acceptance criteria specified include:
+1. Dimensional verification on the first article (FAIR) and for every 500 units thereafter.
+2. Water ingress test on a sample of 5% of each batch to confirm the IP65 rating is met.
+3. Visual inspection for warpage and sinks on all finished units.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q3: What inspection requirements and sampling plans are defined?
+----------------------------------------------------------------------
+Answer:
+The inspection requirements and sampling plans defined are as follows:
+1. Dimensional verification must be performed on the first article (FAIR) and for every 500 units thereafter.
+2. A sample of 5% of each batch must undergo a water ingress test to confirm the IP65 rating is met.
+3. All finished units must be visually inspected for warpage and sinks.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+
+======================================================================
+CATEGORY: Performance & Environmental
+======================================================================
+
+Q1: What are all environmental specifications (temperature, humidity, etc.)?
+----------------------------------------------------------------------
+Answer:
+The environmental specifications provided in the context are the operating temperature range for the enclosure, which is from $0^\circ \text{C}$ to $50^\circ \text{C}$. However, specific details on humidity or other environmental factors are not mentioned in the context provided.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+  [2]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+
+======================================================================
+
+Q2: What are the performance requirements and ratings?
+----------------------------------------------------------------------
+Answer:
+The performance requirements and ratings for the Model X-90 High-Density Polymer Enclosure include:
+1. Reliable ingress protection rating of IP65.
+2. Structural integrity maintenance under standard operating conditions ranging from 0°C to 50°C.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q3: What are the operating conditions and limitations?
+----------------------------------------------------------------------
+Answer:
+The operating conditions and limitations for the Model X-90 High-Density Polymer Enclosure are defined as maintaining structural integrity under standard operating conditions ranging from $0^\circ \text{C}$ to $50^\circ \text{C}$.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+  [2]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+
+======================================================================
+
+
+======================================================================
+CATEGORY: Design & Features
+======================================================================
+
+Q1: What are all design features and technical specifications?
+----------------------------------------------------------------------
+Answer:
+The design features and technical specifications of the Model X-90 High-Density Polymer Enclosure include:
+- Main body material: Polycarbonate (PC) $\text{UL94-VO}$ rated, UV-stabilized, color: RAL 7035 (Light Grey)
+- Gasket material: Silicone Rubber, Shore Hardness A 50 ± 5, must meet $\text{IP65}$ rating standards
+- Fasteners: Stainless Steel $\text{ASTM A240, Type 304}$
+- Overall dimensions: $150.00 \text{mm} \times 100.00 \text{mm} \times 45.00 \text{mm}$ (Length $\times$ Width $\times$ Height) with tolerances of $\pm 0.30 \text{mm}$
+- Wall Thickness: $2.50 \text{mm}$ nominal with a tolerance of $+0.20 \text{mm}/ -0.05 \text{mm}$
+- Mounting Holes: $\text{M3}$ threaded inserts required in four corner posts with a position tolerance of $\pm 0.10 \text{mm}$
+- Molding process: Injection molding with draft angles $\ge 1.5^\circ$ and limited flash of $\le 0.10 \text{mm}$ at the parting line
+- Surface Finish: External surface finish $\text{MT-11010}$ (Medium Texture), interior surface finish $\text{SPI A-3}$
+- Post-Molding Requirements: Installation of four brass heat-set inserts ($\text{M3} \times 5 \text{mm}$ length) and ensuring cleanliness of the gasket channel
+- Quality Assurance and Inspection: Dimensional verification, leak test for $\text{IP65}$ rating confirmation, visual inspection for warpage and sinks.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+  [2]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+
+======================================================================
+
+Q2: What are the assembly requirements and procedures?
+----------------------------------------------------------------------
+Answer:
+The assembly requirements and procedures mentioned in the provided context are as follows:
+1. Threaded Inserts: Four brass heat-set inserts ($\text{M3} \times 5 \text{mm}$ length) must be installed into the lid attachment posts.
+2. Gasket Channel: The channel designed for the Silicone Gasket must be clean and free of debris to ensure a proper seal.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q3: What are the interface requirements and compatibility specifications?
+----------------------------------------------------------------------
+Answer:
+The provided context does not contain specific information about interface requirements and compatibility specifications.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+
+======================================================================
+CATEGORY: Standards & Compliance
+======================================================================
+
+Q1: What standards, certifications, or regulations are referenced?
+----------------------------------------------------------------------
+Answer:
+The standards, certifications, or regulations referenced in the provided context are:
+1. $\text{UL94-VO}$ Rated for Polycarbonate (PC) material.
+2. $\text{IP65}$ rating for the ingress protection of the enclosure.
+3. $\text{ASTM A240, Type 304}$ for the Stainless Steel fasteners.
+4. $\text{SPI A-3}$ finish for the interior surface of the enclosure.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q2: What compliance requirements are specified?
+----------------------------------------------------------------------
+Answer:
+The compliance requirements specified include the material specifications, dimensional tolerances, molding requirements, surface finish, post-molding requirements, quality assurance and inspection criteria, and the need to meet the IP65 rating standards for the Model X-90 High-Density Polymer Enclosure.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+Q3: What are the marking, labeling, or documentation requirements?
+----------------------------------------------------------------------
+Answer:
+The provided context does not include specific information about marking, labeling, or documentation requirements for the Model X-90 Enclosure.
+
+Sources: 1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf
+
+Relevant Context:
+  [1]  acceptable, limited to $\le 0.10 \text{mm}$ at the parting
+line.
+4.2. Surface Finish
+The external surface finish shall be $\text{MT-11010}$ (Medium Texture) to minimize
+visible scratches. The interio...
+  [2] --- Page 1 ---
+Product: Model X-90 High-Density Polymer Enclosure
+1. General Overview
+This document specifies the materials, dimensions, and tolerances required for the
+manufacture of the Model X-90 E...
+
+======================================================================
+
+
+======================================================================
+DOCUMENT STATISTICS
+======================================================================
+Total Documents: 1
+Total Chunks: 2
+Total Tokens: 748
+Estimated Embedding Cost: $0.000015
+======================================================================
