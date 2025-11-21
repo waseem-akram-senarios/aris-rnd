@@ -25,4 +25,14 @@ Thumbs.db
 *.pem
 *.key
 
+# Server and security files
+connect_server.sh
+ssh_config
+*_server*.sh
+*server*.sh
+*.pem
+ec2_*.pem
+*_pk.pem
+*_private_key*
+
 
