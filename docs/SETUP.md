@@ -50,7 +50,8 @@ This will install:
 - Streamlit (web UI)
 - OpenAI SDK
 - LangChain and related packages
-- FAISS (vector database)
+- FAISS (local vector database)
+- OpenSearch (cloud vector database, optional)
 - PyMuPDF (PDF parser)
 - Docling (advanced PDF parser)
 - TikToken (tokenization)
@@ -75,6 +76,11 @@ CEREBRAS_API_KEY=your_cerebras_key_here
 AWS_ACCESS_KEY_ID=your_aws_key
 AWS_SECRET_ACCESS_KEY=your_aws_secret
 AWS_REGION=us-east-1
+
+# Optional: For OpenSearch vector store (if using OpenSearch instead of FAISS)
+AWS_OPENSEARCH_ACCESS_KEY_ID=your_opensearch_access_key
+AWS_OPENSEARCH_SECRET_ACCESS_KEY=your_opensearch_secret_key
+AWS_OPENSEARCH_REGION=us-east-2
 ```
 
 ### 5. Verify Installation
@@ -85,7 +91,31 @@ python3 -c "from rag_system import RAGSystem; print('✅ RAG System OK')"
 python3 -c "from parsers.parser_factory import ParserFactory; print('✅ Parsers OK')"
 ```
 
-### 6. Run the Application
+### 6. Configure Vector Store (Optional)
+
+The system supports two vector store options:
+
+**FAISS (Default - Local Storage)**
+- No additional configuration needed
+- Data stored locally in `vectorstore/` directory
+- Fast and suitable for most use cases
+- No cloud dependencies
+
+**OpenSearch (Cloud Storage)**
+- Requires AWS OpenSearch domain
+- Add credentials to `.env`:
+  ```env
+  AWS_OPENSEARCH_ACCESS_KEY_ID=your_key
+  AWS_OPENSEARCH_SECRET_ACCESS_KEY=your_secret
+  AWS_OPENSEARCH_REGION=us-east-2
+  ```
+- Select OpenSearch domain in UI
+- Scalable for large datasets
+- Data stored in AWS cloud
+
+You can select the vector store in the Streamlit UI sidebar.
+
+### 7. Run the Application
 
 **Option A: Using the run script**
 ```bash
@@ -137,6 +167,17 @@ The application will open in your browser at `http://localhost:8501`
 
 **Problem:** Textract parser not available
 - **Solution:** This is optional. Install boto3 and configure AWS credentials if needed.
+
+### Vector Store Issues
+
+**Problem:** OpenSearch connection fails
+- **Solution:** Check your OpenSearch credentials in `.env` file
+- Verify the domain name is correct
+- Ensure your AWS credentials have OpenSearch permissions
+- Try using FAISS instead for local storage
+
+**Problem:** Switching vector stores loses data
+- **Solution:** This is expected behavior. Each vector store maintains separate data. Reprocess documents when switching stores.
 
 ## Development Workflow
 

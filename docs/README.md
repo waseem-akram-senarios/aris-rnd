@@ -5,6 +5,7 @@ ARIS R&D is a comprehensive RAG (Retrieval-Augmented Generation) system for docu
 
 ## Features
 - **Multiple Document Parsers**: PyMuPDF, Docling, AWS Textract with intelligent fallback
+- **Dual Vector Stores**: Choose between FAISS (local) or OpenSearch (cloud) for storing embeddings
 - **Token Tracking**: Real-time token counting and cost estimation
 - **Progress Feedback**: Enhanced progress tracking for chunking and embedding operations
 - **Metrics Dashboard**: Comprehensive R&D analytics and performance metrics

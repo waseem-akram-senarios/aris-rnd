@@ -42,7 +42,7 @@ class TokenTextSplitter:
     
     def count_tokens(self, text: str) -> int:
         """
-        Count tokens in text.
+        Count tokens in text using the same encoding as split_text.
         
         Args:
             text: Text to count tokens for
@@ -57,7 +57,9 @@ class TokenTextSplitter:
         if not text.strip():
             return 0
         try:
-            return len(self.encoding.encode(text))
+            # Use the exact same encoding method as split_text for consistency
+            encoded = self.encoding.encode(text)
+            return len(encoded)
         except Exception:
             # Fallback: estimate based on character count (rough approximation)
             return len(text) // 4
@@ -129,20 +131,73 @@ class TokenTextSplitter:
                             # Re-encode to get actual end index
                             try:
                                 chunk_tokens = self.encoding.encode(chunk_text)
-                                end_idx = start_idx + len(chunk_tokens)
-                                # Ensure end_idx doesn't exceed token bounds
-                                if end_idx > len(tokens):
-                                    end_idx = len(tokens)
+                                new_end_idx = start_idx + len(chunk_tokens)
+                                # CRITICAL: Ensure chunk never exceeds chunk_size
+                                max_end_idx = start_idx + self.chunk_size
+                                end_idx = min(new_end_idx, max_end_idx, len(tokens))
+                                
+                                # If we exceeded the limit, truncate to exact limit
+                                if end_idx > start_idx + self.chunk_size:
+                                    end_idx = start_idx + self.chunk_size
+                                
+                                # Re-encode to ensure we don't exceed limit
+                                chunk_tokens = tokens[start_idx:end_idx]
+                                chunk_text = self.encoding.decode(chunk_tokens)
+                                
+                                # Final verification: re-encode and check
+                                final_tokens = self.encoding.encode(chunk_text)
+                                if len(final_tokens) > self.chunk_size:
+                                    # If still too large, truncate more aggressively
+                                    chunk_tokens = tokens[start_idx:start_idx + self.chunk_size]
+                                    chunk_text = self.encoding.decode(chunk_tokens)
+                                    end_idx = start_idx + self.chunk_size
                             except Exception:
-                                # If encoding fails, use original chunk
+                                # If encoding fails, use original chunk with strict limit
                                 end_idx = min(start_idx + self.chunk_size, len(tokens))
+                                chunk_tokens = tokens[start_idx:end_idx]
+                                chunk_text = self.encoding.decode(chunk_tokens)
                 except (IndexError, ValueError, Exception) as e:
                     # If anything goes wrong with sentence boundary detection, use original chunk
                     # This is a safety fallback
                     pass
             
-            # Only add non-empty chunks
+            # Final verification: ensure chunk doesn't exceed limit (CRITICAL CHECK)
+            try:
+                final_encoded = self.encoding.encode(chunk_text)
+                final_token_count = len(final_encoded)
+                
+                if final_token_count > self.chunk_size:
+                    # Force truncate to exact limit
+                    final_encoded = final_encoded[:self.chunk_size]
+                    chunk_text = self.encoding.decode(final_encoded)
+                    end_idx = start_idx + self.chunk_size
+                    
+                    # Verify one more time after truncation
+                    verify_encoded = self.encoding.encode(chunk_text)
+                    if len(verify_encoded) > self.chunk_size:
+                        # Last resort: take exact token slice from original
+                        chunk_tokens = tokens[start_idx:start_idx + self.chunk_size]
+                        chunk_text = self.encoding.decode(chunk_tokens)
+                        end_idx = start_idx + self.chunk_size
+            except Exception:
+                # If encoding fails, use safe truncation
+                chunk_tokens = tokens[start_idx:min(start_idx + self.chunk_size, len(tokens))]
+                chunk_text = self.encoding.decode(chunk_tokens)
+                end_idx = start_idx + len(chunk_tokens)
+            
+            # Only add non-empty chunks (with final safety check)
             if chunk_text.strip():
+                # Final safety check before adding to chunks list
+                try:
+                    safety_check = len(self.encoding.encode(chunk_text))
+                    if safety_check > self.chunk_size:
+                        # Force truncate one more time
+                        encoded = self.encoding.encode(chunk_text)
+                        encoded = encoded[:self.chunk_size]
+                        chunk_text = self.encoding.decode(encoded)
+                except Exception:
+                    pass  # If check fails, proceed with chunk as-is
+                
                 chunks.append(chunk_text)
             
             # Move start index with overlap
@@ -210,11 +265,27 @@ class TokenTextSplitter:
                 chunk_metadata = {}
             
             for chunk_idx, chunk_text in enumerate(text_chunks):
-                # Count tokens in chunk
+                # Count tokens in chunk (use actual encoding for accuracy)
                 try:
-                    token_count = self.count_tokens(chunk_text)
+                    # Use the same encoding method as split_text for consistency
+                    token_count = len(self.encoding.encode(chunk_text))
+                    # Verify it doesn't exceed chunk_size (safety check)
+                    if token_count > self.chunk_size:
+                        # This shouldn't happen, but if it does, log and truncate
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Chunk token count ({token_count}) exceeds chunk_size ({self.chunk_size}). Truncating.")
+                        # Re-encode and truncate
+                        encoded = self.encoding.encode(chunk_text)
+                        if len(encoded) > self.chunk_size:
+                            encoded = encoded[:self.chunk_size]
+                            chunk_text = self.encoding.decode(encoded)
+                            token_count = len(encoded)
                 except Exception:
-                    token_count = 0
+                    # Fallback to count_tokens method
+                    token_count = self.count_tokens(chunk_text)
+                    if token_count > self.chunk_size:
+                        token_count = self.chunk_size  # Cap at chunk_size
                 
                 # Create new document with metadata
                 chunk_metadata_copy = chunk_metadata.copy()

@@ -7,13 +7,13 @@ import logging
 from typing import List, Dict, Optional, Callable
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS
 try:
     from langchain.docstore.document import Document
 except ImportError:
     from langchain_core.documents import Document
 import requests
 from utils.tokenizer import TokenTextSplitter
+from vectorstores.vector_store_factory import VectorStoreFactory
 
 load_dotenv()
 
@@ -21,7 +21,12 @@ class RAGSystem:
     def __init__(self, use_cerebras=False, metrics_collector=None, 
                  embedding_model="text-embedding-3-small",
                  openai_model="gpt-3.5-turbo",
-                 cerebras_model="llama3.1-8b"):
+                 cerebras_model="llama3.1-8b",
+                 vector_store_type="faiss",
+                 opensearch_domain=None,
+                 opensearch_index=None,
+                 chunk_size=384,
+                 chunk_overlap=75):
         self.use_cerebras = use_cerebras
         
         # Store model selections
@@ -29,16 +34,25 @@ class RAGSystem:
         self.openai_model = openai_model
         self.cerebras_model = cerebras_model
         
+        # Vector store configuration
+        self.vector_store_type = vector_store_type.lower()
+        self.opensearch_domain = opensearch_domain
+        self.opensearch_index = opensearch_index
+        
+        # Chunking configuration
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+        
         # Use selected embedding model
         self.embeddings = OpenAIEmbeddings(
             openai_api_key=os.getenv('OPENAI_API_KEY'),
             model=embedding_model
         )
         self.vectorstore = None
-        # Use token-aware text splitter with smaller chunks for better accuracy
+        # Use token-aware text splitter with configurable chunking
         self.text_splitter = TokenTextSplitter(
-            chunk_size=384,  # Smaller chunks for more precise retrieval (was 512)
-            chunk_overlap=75,  # Increased overlap for better context continuity (was 50)
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
             model_name=embedding_model
         )
         
@@ -139,24 +153,39 @@ class RAGSystem:
             progress_callback('embedding', 0.6)
         
         # Create or update vector store incrementally
-        logger.info(f"Creating/updating vector store with {len(valid_chunks)} chunks...")
+        logger.info(f"Creating/updating {self.vector_store_type.upper()} vector store with {len(valid_chunks)} chunks...")
         try:
             if self.vectorstore is None:
                 # Validate chunks before creating vectorstore
                 if len(valid_chunks) == 0:
                     raise ValueError("Cannot create vectorstore: no valid chunks")
-                logger.info(f"Creating new FAISS vectorstore with {len(valid_chunks)} chunks (this may take a few minutes for large documents)...")
-                self.vectorstore = FAISS.from_documents(valid_chunks, self.embeddings)
-                logger.info("Vectorstore created successfully")
+                
+                # Create vector store using factory
+                logger.info(f"Creating new {self.vector_store_type.upper()} vectorstore with {len(valid_chunks)} chunks (this may take a few minutes for large documents)...")
+                self.vectorstore = VectorStoreFactory.create_vector_store(
+                    store_type=self.vector_store_type,
+                    embeddings=self.embeddings,
+                    opensearch_domain=self.opensearch_domain,
+                    opensearch_index=self.opensearch_index
+                )
+                self.vectorstore.from_documents(valid_chunks)
+                logger.info(f"{self.vector_store_type.upper()} vectorstore created successfully")
             else:
                 # Add to existing vector store (incremental update)
                 if len(valid_chunks) > 0:
-                    logger.info(f"Adding {len(valid_chunks)} chunks to existing vectorstore (this may take a few minutes for large documents)...")
+                    logger.info(f"Adding {len(valid_chunks)} chunks to existing {self.vector_store_type.upper()} vectorstore (this may take a few minutes for large documents)...")
                     self.vectorstore.add_documents(valid_chunks)
-                    logger.info("Chunks added to vectorstore successfully")
+                    logger.info(f"Chunks added to {self.vector_store_type.upper()} vectorstore successfully")
         except Exception as e:
             logger.error(f"Vectorstore creation/update failed: {str(e)}")
-            raise ValueError(f"Failed to create/update vectorstore: {str(e)}. This may be due to empty chunks or embedding issues.")
+            error_msg = str(e)
+            if "OpenSearch" in error_msg or "opensearch" in error_msg.lower():
+                raise ValueError(
+                    f"Failed to create/update OpenSearch vectorstore: {error_msg}. "
+                    f"Please check your OpenSearch credentials and domain configuration. "
+                    f"You may want to use FAISS instead for local storage."
+                )
+            raise ValueError(f"Failed to create/update vectorstore: {error_msg}. This may be due to empty chunks or embedding issues.")
         
         if progress_callback:
             progress_callback('embedding', 0.9)
@@ -510,32 +539,58 @@ Answer:"""
             return error_msg, self.count_tokens(error_msg)
     
     def save_vectorstore(self, path: str = "vectorstore"):
-        """Save vector store to disk"""
+        """Save vector store to disk (FAISS only) or cloud (OpenSearch)"""
         if self.vectorstore:
-            self.vectorstore.save_local(path)
-            # Also save document index
-            import pickle
-            index_path = os.path.join(path, "document_index.pkl")
-            with open(index_path, 'wb') as f:
-                pickle.dump({
-                    'document_index': self.document_index,
-                    'total_tokens': self.total_tokens
-                }, f)
+            if self.vector_store_type == "faiss":
+                self.vectorstore.save_local(path)
+                # Also save document index
+                import pickle
+                index_path = os.path.join(path, "document_index.pkl")
+                with open(index_path, 'wb') as f:
+                    pickle.dump({
+                        'document_index': self.document_index,
+                        'total_tokens': self.total_tokens
+                    }, f)
+            else:
+                # OpenSearch stores data in cloud, no local save needed
+                logger = logging.getLogger(__name__)
+                logger.info("OpenSearch stores data in the cloud. No local save needed.")
     
     def load_vectorstore(self, path: str = "vectorstore"):
-        """Load vector store from disk"""
-        if os.path.exists(path):
-            self.vectorstore = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
-            # Also load document index
-            import pickle
-            index_path = os.path.join(path, "document_index.pkl")
-            if os.path.exists(index_path):
-                with open(index_path, 'rb') as f:
-                    data = pickle.load(f)
-                    self.document_index = data.get('document_index', {})
-                    self.total_tokens = data.get('total_tokens', 0)
-            return True
-        return False
+        """Load vector store from disk (FAISS) or cloud (OpenSearch)"""
+        if self.vector_store_type == "faiss":
+            if os.path.exists(path):
+                self.vectorstore = VectorStoreFactory.load_vector_store(
+                    store_type="faiss",
+                    embeddings=self.embeddings,
+                    path=path
+                )
+                # Also load document index
+                import pickle
+                index_path = os.path.join(path, "document_index.pkl")
+                if os.path.exists(index_path):
+                    with open(index_path, 'rb') as f:
+                        data = pickle.load(f)
+                        self.document_index = data.get('document_index', {})
+                        self.total_tokens = data.get('total_tokens', 0)
+                return True
+            return False
+        else:
+            # OpenSearch loads from cloud index automatically
+            logger = logging.getLogger(__name__)
+            logger.info("OpenSearch loads data from the cloud index automatically.")
+            try:
+                self.vectorstore = VectorStoreFactory.load_vector_store(
+                    store_type="opensearch",
+                    embeddings=self.embeddings,
+                    path=self.opensearch_index or "aris-rag-index",
+                    opensearch_domain=self.opensearch_domain,
+                    opensearch_index=self.opensearch_index
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Failed to load OpenSearch vectorstore: {str(e)}")
+                return False
     
     def get_stats(self) -> Dict:
         """Get statistics about the RAG system."""
@@ -566,12 +621,31 @@ Answer:"""
                 'avg_tokens_per_chunk': 0,
                 'min_tokens_per_chunk': 0,
                 'max_tokens_per_chunk': 0,
-                'total_chunks': 0
+                'total_chunks': 0,
+                'configured_chunk_size': self.chunk_size,
+                'configured_chunk_overlap': self.chunk_overlap
             }
         
-        # Try to get chunk token counts from metrics collector first
-        if self.metrics_collector and hasattr(self.metrics_collector, 'processing_metrics'):
-            chunk_token_counts = []
+        # Try to get actual chunk token counts from vectorstore first (most accurate)
+        chunk_token_counts = []
+        try:
+            # Access the underlying documents from vectorstore
+            if hasattr(self.vectorstore, 'docstore') and hasattr(self.vectorstore.docstore, '_dict'):
+                all_docs = self.vectorstore.docstore._dict
+                for doc_id, doc in all_docs.items():
+                    if hasattr(doc, 'page_content'):
+                        # Always recalculate from actual content for accuracy
+                        # This ensures we get the real token count, not potentially stale metadata
+                        token_count = self.count_tokens(doc.page_content)
+                        chunk_token_counts.append(token_count)
+                    elif hasattr(doc, 'metadata') and 'token_count' in doc.metadata:
+                        # Fallback to metadata if page_content not available
+                        chunk_token_counts.append(doc.metadata['token_count'])
+        except Exception:
+            pass
+        
+        # Fallback: Try to get from metrics collector
+        if not chunk_token_counts and self.metrics_collector and hasattr(self.metrics_collector, 'processing_metrics'):
             for metric in self.metrics_collector.processing_metrics:
                 if metric.success and metric.chunks_created > 0:
                     # Estimate tokens per chunk (total tokens / chunks)
@@ -579,29 +653,43 @@ Answer:"""
                     # Add tokens for each chunk (approximate)
                     for _ in range(metric.chunks_created):
                         chunk_token_counts.append(int(tokens_per_chunk))
-            
-            if chunk_token_counts:
-                return {
-                    'chunk_token_counts': chunk_token_counts,
-                    'avg_tokens_per_chunk': sum(chunk_token_counts) / len(chunk_token_counts) if chunk_token_counts else 0,
-                    'min_tokens_per_chunk': min(chunk_token_counts) if chunk_token_counts else 0,
-                    'max_tokens_per_chunk': max(chunk_token_counts) if chunk_token_counts else 0,
-                    'total_chunks': len(chunk_token_counts)
-                }
         
-        # Fallback: try to get from vectorstore directly
+        if chunk_token_counts:
+            return {
+                'chunk_token_counts': chunk_token_counts,
+                'avg_tokens_per_chunk': sum(chunk_token_counts) / len(chunk_token_counts) if chunk_token_counts else 0,
+                'min_tokens_per_chunk': min(chunk_token_counts) if chunk_token_counts else 0,
+                'max_tokens_per_chunk': max(chunk_token_counts) if chunk_token_counts else 0,
+                'total_chunks': len(chunk_token_counts),
+                'configured_chunk_size': self.chunk_size,
+                'configured_chunk_overlap': self.chunk_overlap
+            }
+        
+        # If we got actual counts from vectorstore, return them
+        if chunk_token_counts:
+            return {
+                'chunk_token_counts': chunk_token_counts,
+                'avg_tokens_per_chunk': sum(chunk_token_counts) / len(chunk_token_counts) if chunk_token_counts else 0,
+                'min_tokens_per_chunk': min(chunk_token_counts) if chunk_token_counts else 0,
+                'max_tokens_per_chunk': max(chunk_token_counts) if chunk_token_counts else 0,
+                'total_chunks': len(chunk_token_counts),
+                'configured_chunk_size': self.chunk_size,
+                'configured_chunk_overlap': self.chunk_overlap
+            }
+        
+        # Fallback: try to get from vectorstore directly (if not already done)
         try:
             # Access the underlying documents
             if hasattr(self.vectorstore, 'docstore') and hasattr(self.vectorstore.docstore, '_dict'):
                 all_docs = self.vectorstore.docstore._dict
                 chunk_token_counts = []
                 
-                # Extract token counts from document metadata
+                # Extract token counts from document metadata or count from content
                 for doc_id, doc in all_docs.items():
                     if hasattr(doc, 'metadata') and 'token_count' in doc.metadata:
                         chunk_token_counts.append(doc.metadata['token_count'])
                     elif hasattr(doc, 'page_content'):
-                        # Fallback: count tokens from content
+                        # Count tokens from actual content
                         token_count = self.count_tokens(doc.page_content)
                         chunk_token_counts.append(token_count)
                 
@@ -611,7 +699,9 @@ Answer:"""
                         'avg_tokens_per_chunk': sum(chunk_token_counts) / len(chunk_token_counts) if chunk_token_counts else 0,
                         'min_tokens_per_chunk': min(chunk_token_counts) if chunk_token_counts else 0,
                         'max_tokens_per_chunk': max(chunk_token_counts) if chunk_token_counts else 0,
-                        'total_chunks': len(chunk_token_counts)
+                        'total_chunks': len(chunk_token_counts),
+                        'configured_chunk_size': self.chunk_size,
+                        'configured_chunk_overlap': self.chunk_overlap
                     }
         except Exception:
             pass
@@ -627,7 +717,9 @@ Answer:"""
                 'avg_tokens_per_chunk': avg_tokens,
                 'min_tokens_per_chunk': int(avg_tokens * 0.8),  # Estimate
                 'max_tokens_per_chunk': int(avg_tokens * 1.2),  # Estimate
-                'total_chunks': total_chunks
+                'total_chunks': total_chunks,
+                'configured_chunk_size': self.chunk_size,
+                'configured_chunk_overlap': self.chunk_overlap
             }
         
         # Return empty stats if nothing works
@@ -636,6 +728,8 @@ Answer:"""
             'avg_tokens_per_chunk': 0,
             'min_tokens_per_chunk': 0,
             'max_tokens_per_chunk': 0,
-            'total_chunks': 0
+            'total_chunks': 0,
+            'configured_chunk_size': self.chunk_size,
+            'configured_chunk_overlap': self.chunk_overlap
         }
 

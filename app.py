@@ -12,6 +12,7 @@ from rag_system import RAGSystem
 from ingestion.document_processor import DocumentProcessor
 from parsers.parser_factory import ParserFactory
 from metrics.metrics_collector import MetricsCollector
+from utils.chunking_strategies import get_all_strategies, get_chunking_params, validate_custom_params
 
 load_dotenv()
 
@@ -37,28 +38,49 @@ if 'metrics_collector' not in st.session_state:
     st.session_state.metrics_collector = MetricsCollector()
 
 def process_uploaded_files(uploaded_files, use_cerebras, parser_preference, 
-                          embedding_model, openai_model, cerebras_model):
+                          embedding_model, openai_model, cerebras_model,
+                          vector_store_type, opensearch_domain, opensearch_index,
+                          chunk_size, chunk_overlap):
     """Process uploaded files with real-time progress tracking"""
     if not uploaded_files:
         return False
     
     # Initialize or update RAG system
-    # Recreate if API, models, or embedding model changed
+    # Recreate if API, models, embedding model, vector store, or chunking changed
     needs_reinit = (
         st.session_state.rag_system is None or
         (hasattr(st.session_state.rag_system, 'use_cerebras') and st.session_state.rag_system.use_cerebras != use_cerebras) or
         (hasattr(st.session_state.rag_system, 'embedding_model') and st.session_state.rag_system.embedding_model != embedding_model) or
         (hasattr(st.session_state.rag_system, 'openai_model') and st.session_state.rag_system.openai_model != openai_model) or
-        (hasattr(st.session_state.rag_system, 'cerebras_model') and st.session_state.rag_system.cerebras_model != cerebras_model)
+        (hasattr(st.session_state.rag_system, 'cerebras_model') and st.session_state.rag_system.cerebras_model != cerebras_model) or
+        (hasattr(st.session_state.rag_system, 'vector_store_type') and st.session_state.rag_system.vector_store_type != vector_store_type.lower()) or
+        (hasattr(st.session_state.rag_system, 'opensearch_domain') and st.session_state.rag_system.opensearch_domain != opensearch_domain) or
+        (hasattr(st.session_state.rag_system, 'chunk_size') and st.session_state.rag_system.chunk_size != chunk_size) or
+        (hasattr(st.session_state.rag_system, 'chunk_overlap') and st.session_state.rag_system.chunk_overlap != chunk_overlap)
     )
     
     if needs_reinit:
+        # Warn if switching vector stores and data exists
+        if (st.session_state.rag_system is not None and 
+            hasattr(st.session_state.rag_system, 'vector_store_type') and
+            st.session_state.rag_system.vector_store_type != vector_store_type.lower() and
+            st.session_state.rag_system.vectorstore is not None):
+            st.warning(
+                f"⚠️ Switching vector store from {st.session_state.rag_system.vector_store_type.upper()} to {vector_store_type.upper()}. "
+                f"Data in the previous store will not be accessible. You may need to reprocess documents."
+            )
+        
         st.session_state.rag_system = RAGSystem(
             use_cerebras=use_cerebras,
             metrics_collector=st.session_state.metrics_collector,
             embedding_model=embedding_model,
             openai_model=openai_model,
-            cerebras_model=cerebras_model
+            cerebras_model=cerebras_model,
+            vector_store_type=vector_store_type,
+            opensearch_domain=opensearch_domain,
+            opensearch_index=opensearch_index,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap
         )
     
     # Initialize or update document processor
@@ -247,6 +269,115 @@ with st.sidebar:
     )
     parser_preference = None if parser_choice == "Auto (Recommended)" else parser_choice.lower()
     
+    # Chunking Strategy selection
+    st.divider()
+    st.header("✂️ Chunking Strategy")
+    
+    chunking_strategies = get_all_strategies()
+    strategy_options = ["Precise", "Balanced", "Comprehensive", "Custom"]
+    
+    chunking_strategy = st.selectbox(
+        "Choose Chunking Strategy:",
+        strategy_options,
+        index=1,  # Default to "Balanced"
+        help="Select how documents should be split into chunks. "
+             "Precise: Small chunks for exact matches. "
+             "Balanced: Medium chunks (recommended). "
+             "Comprehensive: Large chunks with more context. "
+             "Custom: Set your own chunk size and overlap."
+    )
+    
+    chunk_size = 384
+    chunk_overlap = 75
+    
+    if chunking_strategy == "Custom":
+        st.subheader("Custom Chunking Parameters")
+        chunk_size = st.number_input(
+            "Chunk Size (tokens):",
+            min_value=1,
+            value=384,
+            step=1,
+            help="Maximum number of tokens per chunk. Set any value you want. Smaller = more precise, Larger = more context."
+        )
+        chunk_overlap = st.number_input(
+            "Chunk Overlap (tokens):",
+            min_value=0,
+            value=75,
+            step=1,
+            help="Number of tokens to overlap between chunks. Can be any value (even >= chunk_size). Helps maintain context continuity."
+        )
+        
+        # Warn about unusual configurations but don't block
+        if chunk_overlap >= chunk_size:
+            st.warning(
+                f"⚠️ **Warning:** Overlap ({chunk_overlap}) is >= chunk size ({chunk_size}). "
+                f"This may cause excessive overlap. Consider reducing overlap to < {chunk_size}."
+            )
+        elif chunk_size < 50:
+            st.warning(
+                f"⚠️ **Warning:** Very small chunk size ({chunk_size} tokens). "
+                f"Chunks smaller than 50 tokens may lose context. Consider using at least 50-100 tokens."
+            )
+        elif chunk_size > 5000:
+            st.warning(
+                f"⚠️ **Warning:** Very large chunk size ({chunk_size} tokens). "
+                f"Chunks larger than 5000 tokens may impact retrieval precision and embedding quality."
+            )
+    else:
+        # Get parameters from preset
+        strategy_key = chunking_strategy.lower()
+        chunk_size, chunk_overlap = get_chunking_params(strategy_key)
+        
+        # Show strategy info
+        strategy_info = chunking_strategies[strategy_key]
+        with st.expander(f"ℹ️ {strategy_info['name']} Strategy Details", expanded=False):
+            st.write(f"**Chunk Size:** {strategy_info['chunk_size']} tokens")
+            st.write(f"**Overlap:** {strategy_info['chunk_overlap']} tokens")
+            st.write(f"**Description:** {strategy_info['description']}")
+            st.write(f"**Use Case:** {strategy_info['use_case']}")
+    
+    # Vector Store selection
+    st.divider()
+    st.header("💾 Vector Store Settings")
+    vector_store_choice = st.radio(
+        "Choose Vector Store:",
+        ["FAISS", "OpenSearch"],
+        help="FAISS: Local storage, fast, no cloud required. "
+             "OpenSearch: Cloud storage, scalable, requires AWS OpenSearch domain."
+    )
+    
+    opensearch_domain = None
+    opensearch_index = None
+    
+    if vector_store_choice == "OpenSearch":
+        opensearch_domains = [
+            "intelycx-os-dev",
+            "intelycx",
+            "intelycx-os-demo",
+            "intelycx-os-qa",
+            "intelycx-os-common"
+        ]
+        opensearch_domain = st.selectbox(
+            "OpenSearch Domain:",
+            opensearch_domains,
+            index=0,  # Default to intelycx-os-dev
+            help="Select the OpenSearch domain to use for storing embeddings"
+        )
+        opensearch_index = st.text_input(
+            "OpenSearch Index Name:",
+            value="aris-rag-index",
+            help="Name of the OpenSearch index (will be created if it doesn't exist)"
+        )
+        
+        # Check if credentials are available
+        import os
+        from dotenv import load_dotenv
+        load_dotenv()
+        if not os.getenv('AWS_OPENSEARCH_ACCESS_KEY_ID') or not os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY'):
+            st.error("⚠️ OpenSearch credentials not found in .env file. Please add AWS_OPENSEARCH_ACCESS_KEY_ID and AWS_OPENSEARCH_SECRET_ACCESS_KEY")
+    else:
+        st.info("💡 FAISS stores data locally in the 'vectorstore/' directory")
+    
     st.divider()
     
     # Document upload
@@ -260,8 +391,13 @@ with st.sidebar:
     
     if st.button("Process Documents", type="primary"):
         if uploaded_files:
-            process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
-                                 embedding_model, openai_model, cerebras_model)
+            # Process documents (warnings shown above, but allow any values)
+            process_uploaded_files(
+                uploaded_files, use_cerebras, parser_preference,
+                embedding_model, openai_model, cerebras_model,
+                vector_store_choice.lower(), opensearch_domain, opensearch_index,
+                chunk_size, chunk_overlap
+            )
         else:
             st.warning("Please upload at least one document")
     
@@ -279,7 +415,7 @@ with st.sidebar:
         
         # Model Information
         st.subheader("🤖 Current Models")
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
             st.info(f"**Embedding:**\n{st.session_state.rag_system.embedding_model}")
         with col2:
@@ -290,6 +426,17 @@ with st.sidebar:
         with col3:
             api_name = "Cerebras" if st.session_state.rag_system.use_cerebras else "OpenAI"
             st.info(f"**API:**\n{api_name}")
+        with col4:
+            vector_store_type = getattr(st.session_state.rag_system, 'vector_store_type', 'faiss')
+            store_display = vector_store_type.upper()
+            if vector_store_type == "opensearch":
+                domain = getattr(st.session_state.rag_system, 'opensearch_domain', 'N/A')
+                store_display += f"\n({domain})"
+            st.info(f"**Vector Store:**\n{store_display}")
+        with col5:
+            chunk_size = getattr(st.session_state.rag_system, 'chunk_size', 384)
+            chunk_overlap = getattr(st.session_state.rag_system, 'chunk_overlap', 75)
+            st.info(f"**Chunking:**\n{chunk_size} tokens\n({chunk_overlap} overlap)")
         
         # Basic Stats
         st.subheader("📈 Overview")
@@ -412,13 +559,37 @@ with st.sidebar:
             chunk_stats = st.session_state.rag_system.get_chunk_token_stats()
             
             if chunk_stats['total_chunks'] > 0:
-                col1, col2, col3, col4 = st.columns(4)
+                # Show configured vs actual chunk sizes
+                configured_size = chunk_stats.get('configured_chunk_size', 384)
+                configured_overlap = chunk_stats.get('configured_chunk_overlap', 75)
+                actual_avg = chunk_stats['avg_tokens_per_chunk']
+                actual_max = chunk_stats['max_tokens_per_chunk']
+                
+                # Calculate utilization percentage
+                utilization = (actual_avg / configured_size * 100) if configured_size > 0 else 0
+                
+                st.info(
+                    f"📋 **Chunking Settings:** Maximum chunk size = {configured_size} tokens "
+                    f"(overlap: {configured_overlap}) | "
+                    f"**Actual Results:** Average = {actual_avg:.1f} tokens/chunk "
+                    f"({utilization:.1f}% of max), Max = {actual_max} tokens"
+                )
+                
+                if utilization < 50:
+                    st.warning(
+                        f"💡 **Note:** Your chunks are using only {utilization:.1f}% of the configured maximum size. "
+                        f"This is normal - chunks are sized based on sentence boundaries and document structure. "
+                        f"The configured size ({configured_size}) is a maximum limit, not a target."
+                )
+                
+                col1, col2, col3, col4, col5 = st.columns(5)
                 with col1:
                     st.metric("Total Chunks", f"{chunk_stats['total_chunks']:,}")
                 with col2:
                     st.metric(
                         "Avg Tokens/Chunk",
-                        f"{chunk_stats['avg_tokens_per_chunk']:.1f}"
+                        f"{chunk_stats['avg_tokens_per_chunk']:.1f}",
+                        help="Actual average tokens per chunk (may be less than configured max)"
                     )
                 with col3:
                     st.metric(
@@ -430,9 +601,15 @@ with st.sidebar:
                         "Max Tokens/Chunk",
                         f"{int(chunk_stats['max_tokens_per_chunk'])}"
                     )
+                with col5:
+                    st.metric(
+                        "Config Max Size",
+                        f"{configured_size}",
+                        help="Configured maximum chunk size"
+                    )
                 
                 # Token distribution histogram
-                if chunk_stats['chunk_token_counts']:
+                if chunk_stats.get('chunk_token_counts'):
                     # Create histogram data
                     token_counts = chunk_stats['chunk_token_counts']
                     df_tokens = pd.DataFrame({'Tokens per Chunk': token_counts})
@@ -449,14 +626,17 @@ with st.sidebar:
                         st.write(f"**25th Percentile:** {np.percentile(token_counts, 25):.1f} tokens")
                         st.write(f"**75th Percentile:** {np.percentile(token_counts, 75):.1f} tokens")
                         
-                        # Show token count ranges
-                        ranges = {
-                            '0-100': sum(1 for t in token_counts if 0 <= t <= 100),
-                            '101-200': sum(1 for t in token_counts if 101 <= t <= 200),
-                            '201-300': sum(1 for t in token_counts if 201 <= t <= 300),
-                            '301-384': sum(1 for t in token_counts if 301 <= t <= 384),
-                            '385+': sum(1 for t in token_counts if t > 384)
-                        }
+                        # Show token count ranges (dynamic based on configured chunk size)
+                        configured_max = chunk_stats.get('configured_chunk_size', 384)
+                        range_size = max(100, configured_max // 5)  # 5 ranges
+                        ranges = {}
+                        for i in range(5):
+                            start = i * range_size
+                            end = (i + 1) * range_size
+                            if i == 4:
+                                ranges[f'{start}+'] = sum(1 for t in token_counts if t >= start)
+                            else:
+                                ranges[f'{start}-{end}'] = sum(1 for t in token_counts if start <= t < end)
                         st.write("**Token Count Ranges:**")
                         range_df = pd.DataFrame(list(ranges.items()), columns=['Range', 'Count'])
                         st.dataframe(range_df, width='stretch')
