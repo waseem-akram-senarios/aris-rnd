@@ -11,6 +11,7 @@ from ..security.cognito import CognitoAuthService
 from ..security.guardrails import GuardrailService, get_guardrail_message
 from ..planning import ExecutionPlan, ChainOfThoughtMessage, create_planning_websocket_message, create_plan_update_websocket_message
 from ..planning import PlanManager, WebSocketPlanObserver
+from ..version import add_version_to_message
 
 
 logger = logging.getLogger(__name__)
@@ -57,8 +58,9 @@ class WebSocketHandler:
 
         async def send_websocket_message(message: dict) -> None:
             try:
-                await ws.send_json(message)
-                logger.info("WSS OUT: %s", _truncate_message_for_log(message))
+                message_with_version = add_version_to_message(message)
+                await ws.send_json(message_with_version)
+                logger.info("WSS OUT: %s", _truncate_message_for_log(message_with_version))
             except Exception as e:
                 logger.warning(f"Failed to send WebSocket message: {e}")
         
@@ -68,10 +70,10 @@ class WebSocketHandler:
         
         # Set up progress callback for chain of thought messages (legacy)
         async def send_progress(message: str) -> None:
-            progress_msg = {
+            progress_msg = add_version_to_message({
                 "message": message,
                 "type": "chain_of_thought",
-            }
+            })
             try:
                 await ws.send_json(progress_msg)
                 logger.info("WSS OUT: %s", json.dumps(progress_msg))
@@ -111,7 +113,8 @@ class WebSocketHandler:
             try:
                 while not stop_event.is_set():
                     try:
-                        await ws.send_json({"type": "ping"})
+                        ping_msg = add_version_to_message({"type": "ping"})
+                        await ws.send_json(ping_msg)
                     except Exception:
                         break
                     await asyncio.sleep(5)
@@ -129,7 +132,8 @@ class WebSocketHandler:
                     try:
                         payload = json.loads(msg.data)
                     except json.JSONDecodeError:
-                        await ws.send_json({"type": "error", "message": "invalid_json"})
+                        error_msg = add_version_to_message({"type": "error", "message": "invalid_json"})
+                        await ws.send_json(error_msg)
                         continue
 
                     # Log incoming message (sanitized/truncated)
@@ -157,7 +161,7 @@ class WebSocketHandler:
                             )  # type: ignore[attr-defined]
                             
                             # Send document processing notification
-                            outgoing_doc = {
+                            outgoing_doc = add_version_to_message({
                                 "type": "doc", 
                                 "data": {
                                     "document": {
@@ -167,11 +171,11 @@ class WebSocketHandler:
                                         "metadata": doc_resp["document"].get("metadata", {})
                                     }
                                 }
-                            }
+                            })
                             await ws.send_json(outgoing_doc)
                             logger.info("WSS OUT: %s", _truncate(json.dumps(outgoing_doc)))
                         except Exception as exc:
-                            err = {"type": "error", "message": f"doc_processing_failed: {exc}"}
+                            err = add_version_to_message({"type": "error", "message": f"doc_processing_failed: {exc}"})
                             await ws.send_json(err)
                             logger.info("WSS OUT: %s", _truncate(json.dumps(err)))
 
@@ -263,10 +267,10 @@ class WebSocketHandler:
                         logger.warning(f"Failed to set chat info: {e}")
 
                     # Emit early chain-of-thought style update for better UX
-                    outgoing_think = {
+                    outgoing_think = add_version_to_message({
                         "message": "Thinking...",
                         "type": "chain_of_thought",
-                    }
+                    })
                     await ws.send_json(outgoing_think)
                     logger.info("WSS OUT: %s", json.dumps(outgoing_think))
 
@@ -282,7 +286,7 @@ class WebSocketHandler:
                             is_rel = self.guardrails.is_relevant(msg_text or "", recent_history)
                             if not is_rel:
                                 gr_msg = get_guardrail_message()
-                                final_msg = {"message": gr_msg["text"], "data": gr_msg.get("data", {}), "type": "message", "action": "close"}
+                                final_msg = add_version_to_message({"message": gr_msg["text"], "data": gr_msg.get("data", {}), "type": "message", "action": "close"})
                                 await ws.send_json(final_msg)
                                 logger.info("WSS OUT: %s", _truncate(json.dumps(final_msg)))
                                 continue
@@ -292,12 +296,12 @@ class WebSocketHandler:
                     # Process message and send final response only (no streaming)
                     agent_response = await agent.process_message(msg_text)
                     
-                    final_msg = {
+                    final_msg = add_version_to_message({
                         "message": agent_response.text,
                         "data": agent_response.data or {},
                         "type": "message",
                         "action": "close",
-                    }
+                    })
                     await ws.send_json(final_msg)
                     logger.info("WSS OUT: %s", _truncate(json.dumps({**final_msg, "message": _truncate(agent_response.text, 500)})))
                 elif msg.type == WSMsgType.ERROR:

@@ -4,6 +4,8 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from enum import Enum
 
+from ..version import add_version_to_message
+
 
 class ActionType(str, Enum):
     """Types of actions the agent can plan to execute."""
@@ -92,7 +94,7 @@ class ChainOfThoughtMessage:
 
 def create_planning_websocket_message(plan: ExecutionPlan) -> Dict[str, Any]:
     """Create a WebSocket message for the execution plan."""
-    return {
+    message = {
         "type": "plan_create",
         "data": {
             "plan_id": plan.plan_id,
@@ -115,11 +117,12 @@ def create_planning_websocket_message(plan: ExecutionPlan) -> Dict[str, Any]:
 
         }
     }
+    return add_version_to_message(message)
 
 
 def create_plan_update_websocket_message(plan: ExecutionPlan) -> Dict[str, Any]:
     """Create a WebSocket message for plan execution updates with full plan structure."""
-    return {
+    message = {
         "type": "plan_update",
         "data": {
             "plan_id": plan.plan_id,
@@ -142,3 +145,4 @@ def create_plan_update_websocket_message(plan: ExecutionPlan) -> Dict[str, Any]:
 
         }
     }
+    return add_version_to_message(message)

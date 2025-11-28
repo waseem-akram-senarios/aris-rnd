@@ -18,7 +18,7 @@ class IntelycxCoreClient:
         Args:
             base_url: Base URL for the Intelycx Core API
         """
-        self.base_url = base_url or os.environ.get("INTELYCX_CORE_BASE_URL", "http://intelycx-api-1:8000")
+        self.base_url = base_url or os.environ.get("INTELYCX_CORE_BASE_URL", "http://intelycx-api-1:8002")
         self.username = os.environ.get("INTELYCX_CORE_USERNAME")
         self.password = os.environ.get("INTELYCX_CORE_PASSWORD")
         
@@ -119,19 +119,45 @@ class IntelycxCoreClient:
                         "details": error_details
                     }
                     
-        except httpx.TimeoutException:
-            error_msg = f"Login request timed out to {login_url}"
-            logger.error(error_msg)
+        except httpx.TimeoutException as e:
+            error_msg = f"Login request timed out to {login_url}: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            logger.exception("Timeout exception details:")
             return {
                 "success": False,
-                "error": error_msg
+                "error": error_msg,
+                "error_type": "timeout"
+            }
+        except httpx.ConnectError as e:
+            error_msg = f"Connection error to {login_url}: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            logger.exception("Connection error details:")
+            return {
+                "success": False,
+                "error": error_msg,
+                "error_type": "connection_error",
+                "base_url": self.base_url,
+                "login_url": login_url
+            }
+        except httpx.HTTPError as e:
+            error_msg = f"HTTP error during login to {login_url}: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            logger.exception("HTTP error details:")
+            return {
+                "success": False,
+                "error": error_msg,
+                "error_type": "http_error"
             }
         except Exception as e:
-            error_msg = f"Login request failed: {str(e)}"
-            logger.error(error_msg)
+            error_msg = f"Login request failed to {login_url}: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            logger.exception("Exception details:")
             return {
                 "success": False,
-                "error": error_msg
+                "error": error_msg,
+                "error_type": type(e).__name__,
+                "base_url": self.base_url,
+                "login_url": login_url
             }
     
     def is_token_valid(self) -> bool:
