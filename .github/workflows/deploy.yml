@@ -1,0 +1,152 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Manual trigger from GitHub UI
+
+env:
+  SERVER_IP: ${{ secrets.SERVER_IP }}
+  SERVER_USER: ${{ secrets.SERVER_USER }}
+  SERVER_DIR: ${{ secrets.SERVER_DIR }}
+
+jobs:
+  deploy:
+    name: Deploy to EC2 Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1
+    
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_PEM_KEY }}" > ~/.ssh/deploy_key.pem
+        chmod 600 ~/.ssh/deploy_key.pem
+        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+    
+    - name: Deploy to server
+      run: |
+        ssh -i ~/.ssh/deploy_key.pem \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'DEPLOY_SCRIPT'
+        set -e
+        
+        cd /opt/aris-rag
+        
+        echo "🔄 Step 1: Pulling latest code from Git..."
+        # Backup .env file (not in git)
+        if [ -f ".env" ]; then
+          BACKUP_NAME=".env.backup.$(date +%s)"
+          cp .env "$BACKUP_NAME"
+          echo "   ✅ .env backed up"
+        fi
+        
+        # Pull code from Git
+        if [ -d ".git" ]; then
+          echo "   Updating existing repository..."
+          git fetch origin main
+          git reset --hard origin/main
+          git clean -fd
+          echo "   ✅ Code updated"
+        else
+          echo "   ⚠️  Not a git repository, initializing..."
+          cd /opt
+          sudo rm -rf aris-rag
+          sudo git clone https://github.com/waseem-intelycx/aris-rnd.git aris-rag
+          sudo chown -R ec2-user:ec2-user aris-rag
+          cd aris-rag
+          git checkout main
+          echo "   ✅ Repository cloned"
+        fi
+        
+        # Restore .env file from backup
+        if [ -f ".env.backup."* ]; then
+          LATEST_BACKUP=$(ls -t .env.backup.* | head -1)
+          cp "$LATEST_BACKUP" .env
+          echo "   ✅ .env restored from backup"
+        elif [ ! -f ".env" ]; then
+          echo "   ⚠️  .env file not found - create manually if needed"
+        fi
+        
+        echo ""
+        echo "🐳 Step 2: Building Docker image..."
+        # Stop and remove old container
+        sudo docker stop aris-rag-app 2>/dev/null || true
+        sudo docker rm aris-rag-app 2>/dev/null || true
+        
+        # Build new image
+        sudo docker build -t aris-rag:latest . || {
+          echo "   ❌ Docker build failed"
+          exit 1
+        }
+        echo "   ✅ Image built successfully"
+        
+        echo ""
+        echo "🚀 Step 3: Starting container..."
+        # Start new container with resource limits
+        sudo docker run -d \
+          --name aris-rag-app \
+          --restart unless-stopped \
+          -p 80:8501 \
+          --cpus="7" \
+          --memory="12g" \
+          --memory-reservation="8g" \
+          -v $(pwd)/vectorstore:/app/vectorstore \
+          -v $(pwd)/data:/app/data \
+          -v $(pwd)/.env:/app/.env:ro \
+          --env-file .env \
+          --health-cmd="python -c 'import requests; requests.get(\"http://localhost:8501/_stcore/health\")'" \
+          --health-interval=30s \
+          --health-timeout=10s \
+          --health-retries=3 \
+          --health-start-period=40s \
+          aris-rag:latest || {
+          echo "   ❌ Container start failed"
+          exit 1
+        }
+        echo "   ✅ Container started"
+        
+        echo ""
+        echo "⏳ Step 4: Waiting for health check..."
+        sleep 15
+        
+        echo ""
+        echo "🏥 Step 5: Verifying deployment..."
+        HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/ || echo "000")
+        
+        if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+          echo "   ✅ Deployment successful! HTTP $HTTP_CODE"
+          echo "   🌐 Application is live"
+        else
+          echo "   ⚠️  Deployment completed but HTTP status: $HTTP_CODE"
+          echo "   Checking container logs..."
+          sudo docker logs --tail 30 aris-rag-app
+          exit 1
+        fi
+        DEPLOY_SCRIPT
+    
+    - name: Deployment success
+      if: success()
+      run: |
+        echo "╔════════════════════════════════════════╗"
+        echo "║  ✅ Deployment Successful!             ║"
+        echo "╚════════════════════════════════════════╝"
+        echo ""
+        echo "🌐 Application URL: http://${{ secrets.SERVER_IP }}/"
+    
+    - name: Deployment failed
+      if: failure()
+      run: |
+        echo "╔════════════════════════════════════════╗"
+        echo "║  ❌ Deployment Failed                   ║"
+        echo "╚════════════════════════════════════════╝"
+        echo ""
+        echo "Check the logs above for details."
+
