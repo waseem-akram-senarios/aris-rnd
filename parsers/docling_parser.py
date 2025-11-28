@@ -74,23 +74,72 @@ class DoclingParser(BaseParser):
             # Docling can take 5-10 minutes for large PDFs
             def run_docling_conversion():
                 """Run Docling conversion in thread."""
-                logger.info("Docling: Initializing DocumentConverter...")
-                converter = self.DocumentConverter()
-                logger.info("Docling: Starting document conversion (this may take 5-10 minutes)...")
-                result = converter.convert(actual_path, raises_on_error=False)
-                logger.info("Docling: Conversion completed, accessing document...")
-                doc = result.document
-                return doc
+                try:
+                    logger.info("Docling: Initializing DocumentConverter...")
+                    converter = self.DocumentConverter()
+                    logger.info("Docling: Starting document conversion (this may take 5-10 minutes)...")
+                    logger.info(f"Docling: Converting file: {os.path.basename(actual_path)}")
+                    result = converter.convert(actual_path, raises_on_error=False)
+                    logger.info("Docling: Conversion completed, accessing document...")
+                    doc = result.document
+                    logger.info(f"Docling: Document accessed successfully, pages: {len(doc.pages) if hasattr(doc, 'pages') else 'unknown'}")
+                    return doc
+                except Exception as e:
+                    logger.error(f"Docling: Error in conversion thread: {str(e)}")
+                    raise
             
-            # Use ThreadPoolExecutor with a very long timeout (15 minutes) for Docling
-            # Docling processes all pages which can take a long time
-            timeout_seconds = 900  # 15 minutes timeout
+            # Use ThreadPoolExecutor with a very long timeout (20 minutes) for Docling
+            # Docling processes all pages which can take a long time, especially for scanned PDFs with OCR
+            timeout_seconds = 1200  # 20 minutes timeout (increased for OCR processing)
             try:
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(run_docling_conversion)
                     logger.info(f"Docling: Processing in background thread (timeout: {timeout_seconds}s)...")
-                    doc = future.result(timeout=timeout_seconds)
-                    logger.info("Docling: Document conversion successful")
+                    logger.info(f"Docling: This may take 5-20 minutes for scanned PDFs with OCR...")
+                    
+                    # Wait for result with periodic progress logging
+                    import time as time_module
+                    import threading
+                    
+                    start_time = time_module.time()
+                    progress_logging_active = threading.Event()
+                    progress_logging_active.set()
+                    
+                    def log_progress():
+                        """Log progress every minute while processing."""
+                        check_interval = 60  # Log every minute
+                        last_log_time = start_time
+                        while progress_logging_active.is_set():
+                            time_module.sleep(check_interval)
+                            if not progress_logging_active.is_set():
+                                break
+                            elapsed = time_module.time() - start_time
+                            if elapsed >= timeout_seconds:
+                                break
+                            minutes = int(elapsed // 60)
+                            seconds = int(elapsed % 60)
+                            logger.info(f"Docling: Still processing... ({minutes}m {seconds}s elapsed, max {timeout_seconds//60}m)")
+                            last_log_time = elapsed
+                    
+                    # Start progress logging thread
+                    progress_thread = threading.Thread(target=log_progress, daemon=True)
+                    progress_thread.start()
+                    
+                    try:
+                        # Wait for result with timeout
+                        logger.info(f"Docling: Waiting for conversion result (max {timeout_seconds//60} minutes)...")
+                        doc = future.result(timeout=timeout_seconds)
+                        progress_logging_active.clear()
+                        logger.info("Docling: Document conversion successful - result received")
+                        if doc is None:
+                            raise ValueError("Docling conversion returned None - conversion may have failed")
+                        logger.info(f"Docling: Document object received, type: {type(doc)}")
+                    except Exception as e:
+                        progress_logging_active.clear()
+                        logger.error(f"Docling: Error waiting for result: {str(e)}")
+                        raise
+                    finally:
+                        progress_logging_active.clear()
             except FutureTimeoutError:
                 logger.error(f"Docling: Conversion timed out after {timeout_seconds} seconds")
                 raise ValueError(
@@ -104,8 +153,23 @@ class DoclingParser(BaseParser):
             
             # Export to markdown (as shown in quickstart)
             logger.info("Docling: Exporting document to markdown...")
-            text = doc.export_to_markdown()
-            logger.info(f"Docling: Markdown export completed ({len(text):,} characters)")
+            try:
+                text = doc.export_to_markdown()
+                logger.info(f"Docling: Markdown export completed ({len(text):,} characters)")
+            except Exception as e:
+                logger.error(f"Docling: Error exporting to markdown: {str(e)}")
+                # Try alternative export methods
+                text = None
+                if hasattr(doc, 'export_to_text'):
+                    try:
+                        logger.info("Docling: Trying export_to_text as fallback...")
+                        text = doc.export_to_text()
+                        logger.info(f"Docling: Text export completed ({len(text) if text else 0:,} characters)")
+                    except Exception as e2:
+                        logger.error(f"Docling: Error exporting to text: {str(e2)}")
+                
+                if not text or not text.strip():
+                    raise ValueError(f"Docling: Could not export document text. Markdown export failed: {str(e)}")
             
             # Validate text extraction - try alternative methods if markdown is empty
             if not text or not text.strip():

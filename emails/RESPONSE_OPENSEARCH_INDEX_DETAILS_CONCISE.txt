@@ -1,0 +1,68 @@
+Subject: Re: OpenSearch Permissions Request - Index Details
+
+Hi,
+
+Thank you for your response. Here are the details about the indices we need:
+
+## Purpose
+RAG (Retrieval-Augmented Generation) system for document question-answering:
+- Processes documents (PDFs, Word, etc.)
+- Splits into chunks and generates vector embeddings
+- Stores in OpenSearch for semantic search
+- Enables accurate Q&A using document context
+
+## Index Requirements
+
+**Index Name:** `aris-rag-index` (or any name you prefer)
+
+**Index Structure:**
+- Vector embeddings (1536 dimensions from OpenAI)
+- Document chunks (text segments)
+- Metadata (source, timestamps, etc.)
+
+**Data Volume:** ~12-50 MB for 100 documents
+
+## Options
+
+**Option 1:** We create the index (needs `indices:admin/create` permission)  
+**Option 2:** You create the index (we only need write/read/search permissions)  
+**Option 3:** Use existing index if it supports vector search
+
+## Current Status
+
+✅ **Working:**
+- AWS API access (list/describe domains)
+- HTTP API connection
+
+❌ **Blocking:**
+- `cluster:monitor/main` - Cannot authenticate (blocks everything)
+- `indices:admin/get` - Cannot check/list indices
+- `indices:data/write/index` - Cannot write documents
+- `indices:data/read/search` - Cannot search documents
+
+**Root Cause:** IAM user shows `backend_roles=[]` - not mapped to any OpenSearch role.
+
+## Required Permissions
+
+1. `cluster:monitor/main` (CRITICAL - blocks all operations)
+2. `indices:admin/get` (check if index exists)
+3. `indices:admin/create` (if we create index) OR you create it for us
+4. `indices:data/write/index` (write documents)
+5. `indices:data/read/search` (search documents)
+
+## My Details
+
+- **IAM User:** WaseemOS
+- **IAM ARN:** arn:aws:iam::975049910508:user/WaseemOS
+- **Domain:** intelycx-os-dev
+- **Region:** us-east-2
+
+## Test Results
+
+I've attached a test script output showing exactly which permissions work and which don't. This will help identify what needs to be granted.
+
+Please let me know which option you prefer, and I can provide the exact index mapping configuration if needed.
+
+Thanks,
+Waseem
+

@@ -134,11 +134,38 @@ class ParserFactory:
         """Parse PDF with fallback chain."""
         from .pdf_type_detector import detect_pdf_type, is_image_heavy_pdf
         
-        # If specific parser requested, use it
+        # If specific parser requested, use it WITHOUT fallback
         if preferred_parser and preferred_parser.lower() != 'auto':
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"ParserFactory: Explicit parser requested: {preferred_parser}")
+            
             parser = cls.get_parser(file_path, preferred_parser)
             if parser:
-                return parser.parse(file_path, file_content)
+                logger.info(f"ParserFactory: Using {preferred_parser} parser (no fallback)")
+                try:
+                    result = parser.parse(file_path, file_content)
+                    # Verify the result actually used the requested parser
+                    if hasattr(result, 'parser_used') and result.parser_used.lower() != preferred_parser.lower():
+                        logger.warning(f"ParserFactory: Requested {preferred_parser} but got {result.parser_used}")
+                    return result
+                except Exception as e:
+                    # If explicitly selected parser fails, raise error instead of falling back
+                    error_msg = str(e)
+                    logger.error(f"ParserFactory: {preferred_parser} parser failed: {error_msg}")
+                    if "timed out" in error_msg.lower() or "timeout" in error_msg.lower():
+                        raise ValueError(
+                            f"{preferred_parser.capitalize()} parser timed out: {error_msg}. "
+                            f"Please try again or use a different parser."
+                        )
+                    else:
+                        raise ValueError(
+                            f"{preferred_parser.capitalize()} parser failed: {error_msg}. "
+                            f"Please try again or use a different parser."
+                        )
+            else:
+                logger.error(f"ParserFactory: Parser '{preferred_parser}' is not available")
+                raise ValueError(f"Parser '{preferred_parser}' is not available")
         
         # Detect PDF type
         pdf_type = detect_pdf_type(file_path, file_content)
@@ -166,9 +193,9 @@ class ParserFactory:
         except Exception as e:
             print(f"PyMuPDF parser failed: {e}")
         
-        # Try Docling if PyMuPDF results are poor (for structured documents)
-        # Docling is good for complex layouts, tables, and structured content
-        if best_result and (best_result.extraction_percentage < 0.5 or best_result.confidence < 0.7):
+        # Try Docling if PyMuPDF results are poor (for structured documents and scanned PDFs)
+        # Docling is good for complex layouts, tables, structured content, and has OCR for scanned PDFs
+        if best_result and (best_result.extraction_percentage < 0.5 or best_result.confidence < 0.7 or is_image_heavy):
             try:
                 from .docling_parser import DoclingParser
                 parser = DoclingParser()

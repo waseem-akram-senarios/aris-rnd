@@ -1,0 +1,63 @@
+===================================================================
+  SERVER STATUS REPORT
+===================================================================
+
+Report Generated: و 15:11:54 PKT ت 28 نومبر 2025
+Server IP: 35.175.133.235
+Application URL: http://35.175.133.235/
+
+===================================================================
+  OVERALL STATUS: ✅ OPERATIONAL
+===================================================================
+
+TEST RESULTS:
+-------------
+Network Connectivity (Ping): ❌ FAILED
+HTTP Application:            ✅ WORKING
+SSH Access:                   ✅ WORKING
+Container Status:             ✅ RUNNING
+
+===================================================================
+  DETAILED INFORMATION
+===================================================================
+
+Application URL:
+  http://35.175.133.235/
+
+Test Instructions:
+  1. Open the URL in your web browser
+  2. You should see the ARIS RAG application interface
+  3. If you see an error or timeout, the server is down
+
+Quick Test Commands:
+  - Test HTTP: curl -I http://35.175.133.235/
+  - Test Ping: ping -c 3 35.175.133.235
+
+===================================================================
+  STATUS EXPLANATION
+===================================================================
+
+✅ OPERATIONAL:
+   - Application is accessible and working
+   - You can use the application normally
+
+⚠️  PARTIALLY WORKING:
+   - Server is running but application may have issues
+   - Check container status or contact administrator
+
+❌ NOT WORKING:
+   - Server is down or unreachable
+   - Instance may be stopped
+   - Contact administrator to start the instance
+
+===================================================================
+  CONTACT INFORMATION
+===================================================================
+
+If you encounter issues:
+  1. Check this status report
+  2. Try accessing: http://35.175.133.235/
+  3. Contact the system administrator
+
+===================================================================
+Report Generated: و 15:11:54 PKT ت 28 نومبر 2025

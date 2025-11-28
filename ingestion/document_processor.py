@@ -93,15 +93,19 @@ class DocumentProcessor:
             try:
                 # Log parser selection
                 parser_name = parser_preference or "auto"
-                logger.info(f"Processing {doc_name} with parser: {parser_name}")
+                logger.info(f"DocumentProcessor: Processing {doc_name} with parser: {parser_name}")
+                if parser_preference:
+                    logger.info(f"DocumentProcessor: Explicit parser selected: {parser_preference} (will NOT fall back)")
                 
                 # Special handling for Docling - show progress updates
                 if parser_preference and parser_preference.lower() == 'docling':
                     if progress_callback:
                         progress_callback('parsing', 0.3)
                         # Update status to show Docling is processing
-                        logger.info(f"Docling: Processing {doc_name} (this may take 5-10 minutes)...")
+                        logger.info(f"Docling: Processing {doc_name} (this may take 5-15 minutes)...")
                 
+                # Parse document (this will block for Docling, but that's expected)
+                logger.info(f"DocumentProcessor: Calling parser with preference: {parser_preference}")
                 parsed_doc = ParserFactory.parse_with_fallback(
                     file_path,
                     file_content,
@@ -111,10 +115,14 @@ class DocumentProcessor:
                 # Log successful parsing
                 if parsed_doc:
                     logger.info(
-                        f"Parser '{parsed_doc.parser_used}' completed: "
+                        f"DocumentProcessor: Parser '{parsed_doc.parser_used}' completed successfully: "
                         f"{parsed_doc.pages} pages, {len(parsed_doc.text):,} chars, "
                         f"{parsed_doc.extraction_percentage*100:.1f}% extraction"
                     )
+                    logger.info(f"DocumentProcessor: Text preview (first 200 chars): {parsed_doc.text[:200] if parsed_doc.text else 'EMPTY'}...")
+                else:
+                    logger.error("DocumentProcessor: Parser returned None!")
+                    raise ValueError("Parser returned None - document could not be parsed")
             except IndexError as e:
                 logger.error(f"Parser error (list index out of range): {str(e)}")
                 raise ValueError(f"Parser error (list index out of range): {str(e)}. The PDF may be corrupted or in an unsupported format.")
@@ -137,18 +145,47 @@ class DocumentProcessor:
             if not doc_text or not doc_text.strip():
                 # Check if this is an image-based PDF
                 if parsed_doc.images_detected or parsed_doc.extraction_percentage < 0.1:
-                    raise ValueError(
+                    # Check if a specific parser was requested
+                    requested_parser = parser_preference.lower() if parser_preference else None
+                    actual_parser = parsed_doc.parser_used.lower() if hasattr(parsed_doc, 'parser_used') else 'unknown'
+                    
+                    # If a specific parser was requested but a different one was used, that's an error
+                    if requested_parser and requested_parser != 'auto' and actual_parser != requested_parser:
+                        logger.error(f"DocumentProcessor: ERROR - Requested {requested_parser} but got {actual_parser}")
+                        raise ValueError(
+                            f"Parser selection error: You selected '{parser_preference}' but '{parsed_doc.parser_used}' was used instead. "
+                            f"This should not happen. Please report this issue."
+                        )
+                    
+                    # Suggest Docling first (has OCR capabilities), then Textract
+                    suggestions = []
+                    if actual_parser != 'docling':
+                        suggestions.append("1. Use Docling parser (has OCR capabilities for scanned PDFs) - Select 'Docling' in parser settings")
+                    if actual_parser != 'textract':
+                        suggestions.append("2. Use Textract parser (requires AWS credentials) - Select 'Textract' in parser settings")
+                    suggestions.append("3. Use OCR software to convert the PDF to text first")
+                    
+                    error_msg = (
                         f"Document appears to be image-based (scanned PDF). "
                         f"No text could be extracted.\n"
                         f"Parser used: {parsed_doc.parser_used}\n"
+                    )
+                    
+                    if requested_parser and requested_parser != 'auto':
+                        error_msg += f"Parser requested: {parser_preference}\n"
+                    
+                    error_msg += (
                         f"Extraction: {parsed_doc.extraction_percentage * 100:.1f}%\n"
                         f"Pages: {parsed_doc.pages}\n"
                         f"Images detected: {parsed_doc.images_detected}\n\n"
                         f"Solutions:\n"
-                        f"1. Use Textract parser (requires AWS credentials) - Select 'Textract' in parser settings\n"
-                        f"2. Use OCR software to convert the PDF to text first\n"
-                        f"3. Ensure AWS credentials are configured if using Textract"
+                        + "\n".join(suggestions)
                     )
+                    
+                    if actual_parser != 'textract':
+                        error_msg += "\n4. Ensure AWS credentials are configured if using Textract"
+                    
+                    raise ValueError(error_msg)
                 else:
                     raise ValueError(
                         f"No text could be extracted from the document. "

@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # Streamlit Application
+  aris-rag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aris-rag-app
+    # Don't expose port directly - only accessible via nginx
+    expose:
+      - "8501"
+    environment:
+      # OpenAI API (required)
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Cerebras API (optional)
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      # AWS Credentials (optional, for Textract)
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      # OpenSearch Credentials (optional)
+      - AWS_OPENSEARCH_ACCESS_KEY_ID=${AWS_OPENSEARCH_ACCESS_KEY_ID:-}
+      - AWS_OPENSEARCH_SECRET_ACCESS_KEY=${AWS_OPENSEARCH_SECRET_ACCESS_KEY:-}
+      - AWS_OPENSEARCH_REGION=${AWS_OPENSEARCH_REGION:-us-east-2}
+    volumes:
+      # Persist vectorstore data
+      - ./vectorstore:/app/vectorstore
+      # Mount data directory for documents
+      - ./data:/app/data
+      # Mount .env file if it exists (read-only)
+      - ./.env:/app/.env:ro
+    restart: unless-stopped
+    networks:
+      - aris-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '7'  # Use 7 of 8 CPUs (leave 1 for system)
+          memory: 12G  # Use 12GB of 14GB (leave 2GB for system)
+        reservations:
+          cpus: '4'  # Reserve 4 CPUs for guaranteed performance
+          memory: 8G  # Reserve 8GB for guaranteed availability
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: aris-rag-nginx
+    ports:
+      - "80:80"
+      # Port 443 commented out - only using HTTP on port 80
+      # - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - aris-rag
+    restart: unless-stopped
+    networks:
+      - aris-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  aris-network:
+    driver: bridge
+
