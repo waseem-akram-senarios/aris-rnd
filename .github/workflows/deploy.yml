@@ -30,8 +30,45 @@ jobs:
         chmod 600 ~/.ssh/deploy_key.pem
         ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
     
+    - name: Setup rsync
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq rsync
+    
     - name: Deploy to server
       run: |
+        # Step 1: Sync code using rsync (no Git auth needed)
+        echo "🔄 Step 1: Syncing code to server (rsync)..."
+        rsync -avz --delete \
+          --exclude='.git' \
+          --exclude='venv' \
+          --exclude='__pycache__' \
+          --exclude='*.pyc' \
+          --exclude='.pytest_cache' \
+          --exclude='*.log' \
+          --exclude='vectorstore' \
+          --exclude='data' \
+          --exclude='samples' \
+          --exclude='tests' \
+          --exclude='.env' \
+          --exclude='*.pem' \
+          --exclude='*.key' \
+          --exclude='.vscode' \
+          --exclude='.idea' \
+          --exclude='*.swp' \
+          --exclude='*.swo' \
+          --exclude='.DS_Store' \
+          --exclude='Thumbs.db' \
+          --exclude='emails' \
+          --exclude='diagrams' \
+          --exclude='docs' \
+          --exclude='*.md' \
+          -e "ssh -i ~/.ssh/deploy_key.pem -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+          ./ \
+          ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.SERVER_DIR }}/
+        echo "   ✅ Code synced"
+        
+        # Step 2: Deploy on server
         ssh -i ~/.ssh/deploy_key.pem \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
@@ -40,43 +77,16 @@ jobs:
         
         cd /opt/aris-rag
         
-        echo "🔄 Step 1: Pulling latest code from Git..."
-        # Backup .env file (not in git)
-        if [ -f ".env" ]; then
-          BACKUP_NAME=".env.backup.$(date +%s)"
-          cp .env "$BACKUP_NAME"
-          echo "   ✅ .env backed up"
-        fi
-        
-        # Pull code from Git
-        if [ -d ".git" ]; then
-          echo "   Updating existing repository..."
-          git fetch origin main
-          git reset --hard origin/main
-          git clean -fd
-          echo "   ✅ Code updated"
-        else
-          echo "   ⚠️  Not a git repository, initializing..."
-          cd /opt
-          sudo rm -rf aris-rag
-          sudo git clone https://github.com/waseem-intelycx/aris-rnd.git aris-rag
-          sudo chown -R ec2-user:ec2-user aris-rag
-          cd aris-rag
-          git checkout main
-          echo "   ✅ Repository cloned"
-        fi
-        
-        # Restore .env file from backup
-        if [ -f ".env.backup."* ]; then
-          LATEST_BACKUP=$(ls -t .env.backup.* | head -1)
-          cp "$LATEST_BACKUP" .env
-          echo "   ✅ .env restored from backup"
-        elif [ ! -f ".env" ]; then
+        echo ""
+        echo "🔐 Step 2: Ensuring .env file exists..."
+        if [ ! -f ".env" ]; then
           echo "   ⚠️  .env file not found - create manually if needed"
+        else
+          echo "   ✅ .env file exists"
         fi
         
         echo ""
-        echo "🐳 Step 2: Building Docker image..."
+        echo "🐳 Step 3: Building Docker image..."
         # Stop and remove old container
         sudo docker stop aris-rag-app 2>/dev/null || true
         sudo docker rm aris-rag-app 2>/dev/null || true
@@ -89,7 +99,7 @@ jobs:
         echo "   ✅ Image built successfully"
         
         echo ""
-        echo "🚀 Step 3: Starting container..."
+        echo "🚀 Step 4: Starting container..."
         # Start new container with resource limits
         sudo docker run -d \
           --name aris-rag-app \
@@ -114,11 +124,11 @@ jobs:
         echo "   ✅ Container started"
         
         echo ""
-        echo "⏳ Step 4: Waiting for health check..."
+        echo "⏳ Step 5: Waiting for health check..."
         sleep 15
         
         echo ""
-        echo "🏥 Step 5: Verifying deployment..."
+        echo "🏥 Step 6: Verifying deployment..."
         HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/ || echo "000")
         
         if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
@@ -130,7 +140,7 @@ jobs:
           sudo docker logs --tail 30 aris-rag-app
           exit 1
         fi
-        DEPLOY_SCRIPT
+DEPLOY_SCRIPT
     
     - name: Deployment success
       if: success()

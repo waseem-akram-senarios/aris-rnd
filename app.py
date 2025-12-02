@@ -112,26 +112,94 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                def progress_callback(status, progress):
+                # Store last detailed status message from parser
+                detailed_status = st.empty()
+                
+                # Track processing start time and last update time for frequent updates
+                import time
+                processing_start_time = time.time()
+                last_update_time = time.time()
+                last_progress = 0.0
+                
+                def progress_callback(status, progress, **kwargs):
+                    nonlocal last_update_time, last_progress
+                    detailed_message = kwargs.get('detailed_message', None)
+                    current_time = time.time()
+                    
+                    # Update progress bar immediately
                     progress_bar.progress(progress)
-                    status_messages = {
-                        'parsing': '🔍 Parsing document...',
-                        'chunking': f'✂️ Chunking text... ({int(progress*100)}%)',
-                        'embedding': f'🧮 Creating embeddings... ({int(progress*100)}%)',
-                        'complete': '✅ Complete!',
-                        'failed': '❌ Failed',
-                        'processing': '⏳ Processing...'
-                    }
-                    message = status_messages.get(status, f'Processing... ({int(progress*100)}%)')
-                    # Add special message for Docling
-                    if parser_preference and parser_preference.lower() == 'docling' and status == 'parsing':
-                        message = '🔍 Docling parsing (5-10 min, processing all pages)...'
-                    # Add more detailed messages for chunking/embedding
-                    elif status == 'chunking':
-                        message = f'✂️ Chunking text... ({int(progress*100)}%) - This may take a few minutes for large documents'
-                    elif status == 'embedding':
-                        message = f'🧮 Creating embeddings... ({int(progress*100)}%) - This may take a few minutes for large documents'
-                    status_text.text(message)
+                    
+                    # Force update every 0.5 seconds or if progress changed significantly
+                    progress_changed = abs(progress - last_progress) > 0.01
+                    time_since_last_update = current_time - last_update_time
+                    total_elapsed_time = current_time - processing_start_time
+                    
+                    if progress_changed or time_since_last_update >= 0.5:
+                        last_update_time = current_time
+                        last_progress = progress
+                        
+                        # Build status message with more details
+                        progress_percent = int(progress * 100)
+                        elapsed_seconds = int(total_elapsed_time)
+                        
+                        status_messages = {
+                            'parsing': f'🔍 Parsing document... ({progress_percent}%)',
+                            'chunking': f'✂️ Chunking text... ({progress_percent}%)',
+                            'embedding': f'🧮 Creating embeddings... ({progress_percent}%)',
+                            'complete': '✅ Complete!',
+                            'failed': '❌ Failed',
+                            'processing': f'⏳ Processing... ({progress_percent}%)'
+                        }
+                        message = status_messages.get(status, f'Processing... ({progress_percent}%)')
+                        
+                        # Add special message for Docling with time estimate
+                        if parser_preference and parser_preference.lower() == 'docling' and status == 'parsing':
+                            if elapsed_seconds > 0:
+                                minutes = elapsed_seconds // 60
+                                seconds = elapsed_seconds % 60
+                                time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+                                message = f'🔍 Docling parsing... ({progress_percent}%) - Processing all pages (elapsed: {time_str}, estimated: 5-10 min)'
+                            else:
+                                message = f'🔍 Docling parsing... ({progress_percent}%) - Processing all pages (estimated: 5-10 min)'
+                        # Add special message for PyMuPDF
+                        elif parser_preference and parser_preference.lower() == 'pymupdf' and status == 'parsing':
+                            if elapsed_seconds > 0:
+                                minutes = elapsed_seconds // 60
+                                seconds = elapsed_seconds % 60
+                                time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+                                message = f'🔍 PyMuPDF parsing... ({progress_percent}%) - (elapsed: {time_str})'
+                            else:
+                                message = f'🔍 PyMuPDF parsing... ({progress_percent}%)'
+                        # Add more detailed messages for chunking/embedding
+                        elif status == 'chunking':
+                            if elapsed_seconds > 0:
+                                minutes = elapsed_seconds // 60
+                                seconds = elapsed_seconds % 60
+                                time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+                                message = f'✂️ Chunking text... ({progress_percent}%) - Splitting into chunks (elapsed: {time_str})'
+                            else:
+                                message = f'✂️ Chunking text... ({progress_percent}%) - Splitting into chunks'
+                        elif status == 'embedding':
+                            if elapsed_seconds > 0:
+                                minutes = elapsed_seconds // 60
+                                seconds = elapsed_seconds % 60
+                                time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
+                                message = f'🧮 Creating embeddings... ({progress_percent}%) - Generating vector embeddings (elapsed: {time_str})'
+                            else:
+                                message = f'🧮 Creating embeddings... ({progress_percent}%) - Generating vector embeddings'
+                        
+                        status_text.text(message)
+                        
+                        # Show detailed status from parser if available
+                        if detailed_message:
+                            detailed_status.info(f"📊 {detailed_message}")
+                        elif status == 'parsing' and parser_preference and parser_preference.lower() == 'pymupdf':
+                            # Clear detailed status when not parsing
+                            detailed_status.empty()
+                    
+                    # Always update detailed message if provided (even if time hasn't elapsed)
+                    if detailed_message:
+                        detailed_status.info(f"📊 {detailed_message}")
                 
                 # Process document
                 result = st.session_state.document_processor.process_document(
@@ -261,13 +329,13 @@ with st.sidebar:
     st.header("🔧 Parser Settings")
     parser_choice = st.selectbox(
         "Choose Parser:",
-        ["Auto (Recommended)", "PyMuPDF", "Docling", "Textract"],
-        help="Auto will try parsers in order: PyMuPDF → Docling → Textract. "
+        ["Docling", "PyMuPDF", "Textract"],
+        index=0,  # Default to Docling
+        help="Docling extracts the most content (processes all pages) but takes 5-10 minutes (recommended). "
              "PyMuPDF is fast for text-based PDFs. "
-             "Docling extracts the most content (processes all pages) but takes 5-10 minutes. "
              "Textract requires AWS credentials and is best for scanned PDFs."
     )
-    parser_preference = None if parser_choice == "Auto (Recommended)" else parser_choice.lower()
+    parser_preference = parser_choice.lower()
     
     # Chunking Strategy selection
     st.divider()
@@ -350,17 +418,24 @@ with st.sidebar:
     opensearch_index = None
     
     if vector_store_choice == "OpenSearch":
+        # Get default domain from environment or use the working domain
+        default_domain = os.getenv('AWS_OPENSEARCH_DOMAIN', 'intelycx-waseem-os')
         opensearch_domains = [
+            "intelycx-waseem-os",  # Default working domain
             "intelycx-os-dev",
             "intelycx",
             "intelycx-os-demo",
             "intelycx-os-qa",
             "intelycx-os-common"
         ]
+        # Find index of default domain, or use 0 if not found
+        default_index = 0
+        if default_domain in opensearch_domains:
+            default_index = opensearch_domains.index(default_domain)
         opensearch_domain = st.selectbox(
             "OpenSearch Domain:",
             opensearch_domains,
-            index=0,  # Default to intelycx-os-dev
+            index=default_index,
             help="Select the OpenSearch domain to use for storing embeddings"
         )
         opensearch_index = st.text_input(
@@ -776,7 +851,7 @@ else:
         st.markdown("""
         ### Steps:
         1. **Choose API**: Select OpenAI or Cerebras in the sidebar
-        2. **Choose Parser**: Select parser (Auto recommended for best results)
+        2. **Choose Parser**: Select parser (PyMuPDF recommended for speed)
         3. **Upload Documents**: Click "Browse files" and select your PDF, TXT, or DOCX files
         4. **Process**: Click "Process Documents" button
         5. **Ask Questions**: Once processed, type your questions in the chat input
@@ -787,7 +862,6 @@ else:
         - Word documents (.docx, .doc)
         
         ### Parser Options:
-        - **Auto**: Automatically selects best parser (PyMuPDF → Docling → Textract)
         - **PyMuPDF**: Fast parser for text-based PDFs (recommended for speed)
         - **Docling**: Extracts the most content, processes all pages automatically. Takes 5-10 minutes but extracts more text than PyMuPDF
         - **Textract**: AWS OCR for scanned/image PDFs (requires AWS credentials)

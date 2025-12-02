@@ -47,11 +47,14 @@ class VectorStoreFactory:
             return FAISSVectorStore(embeddings)
         elif store_type.lower() == "opensearch":
             if not opensearch_domain and not opensearch_endpoint:
-                raise ValueError("OpenSearch domain or endpoint is required when using OpenSearch vector store")
+                # Try to get from environment variable
+                opensearch_domain = os.getenv('AWS_OPENSEARCH_DOMAIN')
+                if not opensearch_domain and not opensearch_endpoint:
+                    raise ValueError("OpenSearch domain or endpoint is required when using OpenSearch vector store. Set AWS_OPENSEARCH_DOMAIN in .env or pass opensearch_domain parameter.")
             from .opensearch_store import OpenSearchVectorStore
             return OpenSearchVectorStore(
                 embeddings=embeddings,
-                domain=opensearch_domain or "intelycx-os-dev",
+                domain=opensearch_domain or os.getenv('AWS_OPENSEARCH_DOMAIN', 'intelycx-waseem-os'),
                 index_name=opensearch_index or "aris-rag-index",
                 endpoint=opensearch_endpoint
             )

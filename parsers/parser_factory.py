@@ -96,7 +96,8 @@ class ParserFactory:
     
     @classmethod
     def parse_with_fallback(cls, file_path: str, file_content: Optional[bytes] = None, 
-                           preferred_parser: Optional[str] = None) -> ParsedDocument:
+                           preferred_parser: Optional[str] = None,
+                           progress_callback: Optional[callable] = None) -> ParsedDocument:
         """
         Parse a document using fallback chain.
         
@@ -120,17 +121,24 @@ class ParserFactory:
         ext = ext.lstrip('.')
         
         if ext == 'pdf':
-            return cls._parse_pdf_with_fallback(file_path, file_content, preferred_parser)
+            return cls._parse_pdf_with_fallback(file_path, file_content, preferred_parser, progress_callback)
         else:
             # For non-PDF files, use single parser
             parser = cls.get_parser(file_path, preferred_parser)
             if parser is None:
                 raise ValueError(f"No parser available for file type: {ext}")
-            return parser.parse(file_path, file_content)
+            # Try to pass progress_callback if parser supports it
+            import inspect
+            sig = inspect.signature(parser.parse)
+            if 'progress_callback' in sig.parameters:
+                return parser.parse(file_path, file_content, progress_callback=progress_callback)
+            else:
+                return parser.parse(file_path, file_content)
     
     @classmethod
     def _parse_pdf_with_fallback(cls, file_path: str, file_content: Optional[bytes] = None,
-                                preferred_parser: Optional[str] = None) -> ParsedDocument:
+                                preferred_parser: Optional[str] = None,
+                                progress_callback: Optional[callable] = None) -> ParsedDocument:
         """Parse PDF with fallback chain."""
         from .pdf_type_detector import detect_pdf_type, is_image_heavy_pdf
         
@@ -144,7 +152,13 @@ class ParserFactory:
             if parser:
                 logger.info(f"ParserFactory: Using {preferred_parser} parser (no fallback)")
                 try:
-                    result = parser.parse(file_path, file_content)
+                    # Try to pass progress_callback if parser supports it
+                    import inspect
+                    sig = inspect.signature(parser.parse)
+                    if 'progress_callback' in sig.parameters:
+                        result = parser.parse(file_path, file_content, progress_callback=progress_callback)
+                    else:
+                        result = parser.parse(file_path, file_content)
                     # Verify the result actually used the requested parser
                     if hasattr(result, 'parser_used') and result.parser_used.lower() != preferred_parser.lower():
                         logger.warning(f"ParserFactory: Requested {preferred_parser} but got {result.parser_used}")
@@ -179,7 +193,11 @@ class ParserFactory:
         try:
             from .pymupdf_parser import PyMuPDFParser
             parser = PyMuPDFParser()
-            result = parser.parse(file_path, file_content)
+            # PyMuPDF supports progress_callback
+            if progress_callback:
+                result = parser.parse(file_path, file_content, progress_callback=progress_callback)
+            else:
+                result = parser.parse(file_path, file_content)
             pymupdf_result = result  # Always keep PyMuPDF result as fallback
             
             # Check if result is good enough

@@ -139,9 +139,10 @@ class OpenSearchVectorStore:
             
             # Try each auth method
             last_error = None
+            last_error_str = None
             for auth_name, auth, conn_class in auth_methods:
                 try:
-                    logger.info(f"Trying {auth_name} authentication...")
+                    logger.info(f"Trying {auth_name} authentication with endpoint: {self.endpoint}, domain: {self.domain}, index: {self.index_name}")
                     
                     kwargs = {
                         'opensearch_url': self.endpoint,
@@ -151,7 +152,8 @@ class OpenSearchVectorStore:
                         'use_ssl': True,
                         'verify_certs': True,
                         'ssl_assert_hostname': False,
-                        'ssl_show_warn': False
+                        'ssl_show_warn': False,
+                        'engine': 'lucene'  # Use lucene engine for OpenSearch 3.0+ (nmslib is deprecated)
                     }
                     
                     if conn_class:
@@ -163,22 +165,34 @@ class OpenSearchVectorStore:
                     try:
                         # This will fail if auth doesn't work
                         test_client = self.vectorstore.client
-                        test_client.info()
-                        logger.info(f"✅ OpenSearch vector store initialized with {auth_name} (index: {self.index_name})")
+                        cluster_info = test_client.info()
+                        logger.info(f"✅ OpenSearch vector store initialized with {auth_name} (index: {self.index_name}, cluster: {cluster_info.get('cluster_name', 'Unknown')})")
                         return
                     except Exception as test_e:
-                        logger.warning(f"{auth_name} connection test failed: {str(test_e)[:100]}")
+                        error_str = str(test_e)
+                        last_error = test_e
+                        last_error_str = error_str
+                        logger.warning(f"{auth_name} connection test failed: {error_str[:200]}")
+                        # Clear the vectorstore if test failed
+                        self.vectorstore = None
                         continue
                         
                 except Exception as e:
+                    import traceback
+                    error_str = str(e)
+                    error_trace = traceback.format_exc()
                     last_error = e
-                    logger.warning(f"{auth_name} failed: {str(e)[:100]}")
+                    last_error_str = f"{error_str}\n{traceback.format_exc()[:500]}"
+                    logger.warning(f"{auth_name} initialization failed: {error_str[:200]}")
+                    logger.debug(f"Full traceback: {error_trace[:500]}")
                     continue
             
             # If all methods failed
+            error_details = last_error_str or (str(last_error) if last_error else "Unknown error - no exceptions were caught")
             raise ValueError(
                 f"Failed to initialize OpenSearch with any authentication method. "
-                f"Last error: {str(last_error)}. "
+                f"Endpoint: {self.endpoint}, Domain: {self.domain}, Index: {self.index_name}. "
+                f"Last error: {error_details[:500]}. "
                 f"Please check your credentials and OpenSearch domain configuration."
             )
             

@@ -107,7 +107,7 @@ class RAGSystem:
         # Split documents into chunks using token-aware splitter
         logger.info(f"Starting chunking for {len(documents)} document(s), total text length: {sum(len(doc.page_content) for doc in documents):,} chars")
         if progress_callback:
-            progress_callback('chunking', 0.1)
+            progress_callback('chunking', 0.1, detailed_message="Starting chunking process...")
         
         try:
             chunks = self.text_splitter.split_documents(documents)
@@ -121,11 +121,12 @@ class RAGSystem:
             raise ValueError("No chunks created from documents. The documents may be empty or too small.")
         
         if progress_callback:
-            progress_callback('chunking', 0.3)
+            progress_callback('chunking', 0.3, detailed_message=f"Chunking completed: {len(chunks)} chunks created")
         
         # Filter out invalid chunks
         valid_chunks = []
-        for chunk in chunks:
+        total_chunks = len(chunks)
+        for idx, chunk in enumerate(chunks):
             if chunk is None:
                 continue
             if not hasattr(chunk, 'page_content'):
@@ -133,6 +134,11 @@ class RAGSystem:
             if not chunk.page_content or not chunk.page_content.strip():
                 continue
             valid_chunks.append(chunk)
+            
+            # Update progress every 10 chunks or at the end
+            if progress_callback and (idx % 10 == 0 or idx == total_chunks - 1):
+                progress = 0.3 + (idx / total_chunks) * 0.2  # 0.3 to 0.5
+                progress_callback('chunking', progress, detailed_message=f"Validating chunks... {idx + 1}/{total_chunks} processed")
         
         if not valid_chunks:
             raise ValueError("No valid chunks created. All chunks are empty or invalid.")
@@ -140,7 +146,7 @@ class RAGSystem:
         logger.info(f"Valid chunks: {len(valid_chunks)}/{len(chunks)}")
         
         if progress_callback:
-            progress_callback('chunking', 0.5)
+            progress_callback('chunking', 0.5, detailed_message=f"Chunking complete: {len(valid_chunks)} valid chunks ready for embedding")
         
         # Track tokens
         for chunk in valid_chunks:
@@ -162,19 +168,115 @@ class RAGSystem:
                 
                 # Create vector store using factory
                 logger.info(f"Creating new {self.vector_store_type.upper()} vectorstore with {len(valid_chunks)} chunks (this may take a few minutes for large documents)...")
+                if progress_callback:
+                    progress_callback('embedding', 0.65)
+                
                 self.vectorstore = VectorStoreFactory.create_vector_store(
                     store_type=self.vector_store_type,
                     embeddings=self.embeddings,
                     opensearch_domain=self.opensearch_domain,
                     opensearch_index=self.opensearch_index
                 )
-                self.vectorstore.from_documents(valid_chunks)
+                
+                # Process in batches for large documents to show progress
+                # Use smaller batches (50) for better progress visibility
+                batch_size = 50  # Process 50 chunks at a time for better progress updates
+                total_batches = (len(valid_chunks) + batch_size - 1) // batch_size
+                
+                if len(valid_chunks) > batch_size:
+                    logger.info(f"Processing {len(valid_chunks)} chunks in {total_batches} batches of {batch_size} (this may take several minutes)...")
+                    # Process first batch to create vectorstore
+                    first_batch = valid_chunks[:batch_size]
+                    logger.info(f"Processing batch 1/{total_batches} ({len(first_batch)} chunks) - creating embeddings...")
+                    if progress_callback:
+                        progress_callback('embedding', 0.65, detailed_message=f"Initializing vector store... Batch 1/{total_batches} ({len(first_batch)} chunks)")
+                    
+                    import time
+                    batch_start = time.time()
+                    self.vectorstore.from_documents(first_batch)
+                    batch_time = time.time() - batch_start
+                    logger.info(f"Batch 1/{total_batches} completed in {batch_time:.1f}s ({len(first_batch)} chunks embedded)")
+                    
+                    if progress_callback:
+                        progress_callback('embedding', 0.7, detailed_message=f"Batch 1/{total_batches} complete ({len(first_batch)} chunks embedded in {batch_time:.1f}s)")
+                    
+                    # Process remaining batches
+                    for batch_num in range(1, total_batches):
+                        start_idx = batch_num * batch_size
+                        end_idx = min(start_idx + batch_size, len(valid_chunks))
+                        batch = valid_chunks[start_idx:end_idx]
+                        
+                        if batch:
+                            logger.info(f"Processing batch {batch_num + 1}/{total_batches} ({len(batch)} chunks) - creating embeddings...")
+                            if progress_callback:
+                                # Update progress: 0.7 to 0.9 based on batches
+                                batch_progress = 0.7 + ((batch_num + 1) / total_batches) * 0.2
+                                progress_callback('embedding', batch_progress, detailed_message=f"Processing batch {batch_num + 1}/{total_batches} ({len(batch)} chunks)... This may take a few minutes")
+                            
+                            batch_start = time.time()
+                            self.vectorstore.add_documents(batch)
+                            batch_time = time.time() - batch_start
+                            logger.info(f"Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s ({len(batch)} chunks embedded)")
+                            
+                            if progress_callback:
+                                # Update progress: 0.7 to 0.9 based on batches
+                                batch_progress = 0.7 + ((batch_num + 1) / total_batches) * 0.2
+                                progress_callback('embedding', batch_progress, detailed_message=f"Batch {batch_num + 1}/{total_batches} complete ({len(batch)} chunks embedded in {batch_time:.1f}s)")
+                else:
+                    # Small document - process all at once
+                    logger.info(f"Processing {len(valid_chunks)} chunks - creating embeddings (this may take a minute)...")
+                    if progress_callback:
+                        progress_callback('embedding', 0.7, detailed_message=f"Creating embeddings for {len(valid_chunks)} chunks... This may take a minute")
+                    import time
+                    embed_start = time.time()
+                    self.vectorstore.from_documents(valid_chunks)
+                    embed_time = time.time() - embed_start
+                    logger.info(f"Embedding completed in {embed_time:.1f}s ({len(valid_chunks)} chunks)")
+                    if progress_callback:
+                        progress_callback('embedding', 0.85, detailed_message=f"Embeddings complete! {len(valid_chunks)} chunks embedded in {embed_time:.1f}s")
+                
                 logger.info(f"{self.vector_store_type.upper()} vectorstore created successfully")
             else:
                 # Add to existing vector store (incremental update)
                 if len(valid_chunks) > 0:
                     logger.info(f"Adding {len(valid_chunks)} chunks to existing {self.vector_store_type.upper()} vectorstore (this may take a few minutes for large documents)...")
-                    self.vectorstore.add_documents(valid_chunks)
+                    
+                    # Process in batches for large documents
+                    batch_size = 50  # Use smaller batches for better progress visibility
+                    total_batches = (len(valid_chunks) + batch_size - 1) // batch_size
+                    
+                    if len(valid_chunks) > batch_size:
+                        logger.info(f"Processing {len(valid_chunks)} chunks in {total_batches} batches of {batch_size} (this may take several minutes)...")
+                        for batch_num in range(total_batches):
+                            start_idx = batch_num * batch_size
+                            end_idx = min(start_idx + batch_size, len(valid_chunks))
+                            batch = valid_chunks[start_idx:end_idx]
+                            
+                            if batch:
+                                logger.info(f"Processing batch {batch_num + 1}/{total_batches} ({len(batch)} chunks) - creating embeddings...")
+                                import time
+                                batch_start = time.time()
+                                self.vectorstore.add_documents(batch)
+                                batch_time = time.time() - batch_start
+                                logger.info(f"Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s ({len(batch)} chunks embedded)")
+                                
+                                if progress_callback:
+                                    # Update progress: 0.6 to 0.9 based on batches
+                                    batch_progress = 0.6 + ((batch_num + 1) / total_batches) * 0.3
+                                    progress_callback('embedding', batch_progress)
+                    else:
+                        # Small update - process all at once
+                        logger.info(f"Processing {len(valid_chunks)} chunks - creating embeddings (this may take a minute)...")
+                        if progress_callback:
+                            progress_callback('embedding', 0.7)
+                        import time
+                        embed_start = time.time()
+                        self.vectorstore.add_documents(valid_chunks)
+                        embed_time = time.time() - embed_start
+                        logger.info(f"Embedding completed in {embed_time:.1f}s ({len(valid_chunks)} chunks)")
+                        if progress_callback:
+                            progress_callback('embedding', 0.85)
+                    
                     logger.info(f"Chunks added to {self.vector_store_type.upper()} vectorstore successfully")
         except Exception as e:
             logger.error(f"Vectorstore creation/update failed: {str(e)}")

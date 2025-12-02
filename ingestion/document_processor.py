@@ -106,10 +106,26 @@ class DocumentProcessor:
                 
                 # Parse document (this will block for Docling, but that's expected)
                 logger.info(f"DocumentProcessor: Calling parser with preference: {parser_preference}")
+                
+                # Create a wrapper callback that provides parser-specific progress updates
+                def parser_progress_callback(status_msg, progress):
+                    if progress_callback:
+                        # Map parser progress (0.0-1.0) to parsing phase (0.25-0.45)
+                        # Parsing phase is 25% to 45% of total progress
+                        mapped_progress = 0.25 + (progress * 0.20)  # 0.25 to 0.45
+                        # Pass detailed message to progress callback
+                        import inspect
+                        sig = inspect.signature(progress_callback)
+                        if len(sig.parameters) > 2:  # Check if callback accepts kwargs
+                            progress_callback('parsing', mapped_progress, detailed_message=status_msg)
+                        else:
+                            progress_callback('parsing', mapped_progress)
+                
                 parsed_doc = ParserFactory.parse_with_fallback(
                     file_path,
                     file_content,
-                    preferred_parser=parser_preference
+                    preferred_parser=parser_preference,
+                    progress_callback=parser_progress_callback if progress_callback else None
                 )
                 
                 # Log successful parsing
@@ -204,7 +220,7 @@ class DocumentProcessor:
                     doc_text = str(doc_text)
                 
                 # Create a wrapper callback that maps internal progress to our progress range
-                def chunking_progress_callback(status, progress):
+                def chunking_progress_callback(status, progress, **kwargs):
                     if progress_callback:
                         # Map internal progress (0.0-1.0) to our range (0.5-0.95)
                         # chunking: 0.5-0.7, embedding: 0.7-0.95
@@ -214,7 +230,13 @@ class DocumentProcessor:
                             mapped_progress = 0.7 + (progress * 0.25)  # 0.7 to 0.95
                         else:
                             mapped_progress = 0.5 + (progress * 0.45)  # 0.5 to 0.95
-                        progress_callback(status, mapped_progress)
+                        
+                        # Forward detailed_message if provided
+                        detailed_message = kwargs.get('detailed_message', None)
+                        if detailed_message:
+                            progress_callback(status, mapped_progress, detailed_message=detailed_message)
+                        else:
+                            progress_callback(status, mapped_progress)
                 
                 logger.info(f"Starting chunking and embedding for {doc_name} ({len(doc_text):,} characters)...")
                 stats = self.rag_system.add_documents_incremental(

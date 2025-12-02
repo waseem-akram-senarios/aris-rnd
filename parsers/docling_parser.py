@@ -148,8 +148,24 @@ class DoclingParser(BaseParser):
                     f"Try using PyMuPDF parser for faster processing."
                 )
             except Exception as e:
-                logger.error(f"Docling: Conversion failed: {str(e)}")
-                raise
+                import traceback
+                error_details = traceback.format_exc()
+                error_str = str(e) if str(e) else type(e).__name__
+                if not error_str or error_str.strip() == "":
+                    error_str = f"Unknown error ({type(e).__name__})"
+                
+                logger.error(f"Docling: Conversion failed: {error_str}")
+                logger.error(f"Docling: Full traceback:\n{error_details}")
+                
+                # Create user-friendly error message
+                if "not valid" in error_str.lower():
+                    error_msg = f"Docling cannot process this PDF - the file format is not valid. Error: {error_str}. Try using PyMuPDF parser instead."
+                elif "timeout" in error_str.lower():
+                    error_msg = f"Docling conversion timed out. The PDF may be very large or complex. Error: {error_str}. Try using PyMuPDF parser for faster processing."
+                else:
+                    error_msg = f"Docling conversion failed: {error_str}. The PDF may be corrupted or in an unsupported format. Try using PyMuPDF parser instead."
+                
+                raise ValueError(error_msg)
             
             # Export to markdown (as shown in quickstart)
             logger.info("Docling: Exporting document to markdown...")
@@ -271,10 +287,35 @@ class DoclingParser(BaseParser):
             )
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            
+            # Get error message - handle empty messages
+            error_str = str(e) if str(e) else type(e).__name__
+            if not error_str or error_str.strip() == "":
+                error_str = f"Unknown error ({type(e).__name__})"
+            
+            # Log full error details
+            logger.error(f"Docling: Failed to parse PDF: {error_str}")
+            logger.error(f"Docling: Full traceback:\n{error_details}")
+            
             # Clean up temp file on error
             if temp_file and os.path.exists(temp_file.name):
                 try:
                     os.unlink(temp_file.name)
                 except:
                     pass
-            raise ValueError(f"Failed to parse PDF with Docling: {str(e)}")
+            
+            # Create user-friendly error message
+            if "not valid" in error_str.lower() or "cannot process" in error_str.lower():
+                error_msg = f"Docling cannot process this PDF. The file may be corrupted, encrypted, or in an unsupported format. Error: {error_str}. Try using PyMuPDF parser instead."
+            elif "timeout" in error_str.lower() or "timed out" in error_str.lower():
+                error_msg = f"Docling parsing timed out. The PDF may be very large or complex. Error: {error_str}. Try using PyMuPDF parser for faster processing."
+            elif "too large" in error_str.lower():
+                error_msg = f"PDF is too large for Docling to process. Error: {error_str}. Try using PyMuPDF or Textract parser instead."
+            elif "memory" in error_str.lower() or "out of memory" in error_str.lower():
+                error_msg = f"Docling ran out of memory processing this PDF. The document may be too large. Error: {error_str}. Try using PyMuPDF parser instead."
+            else:
+                error_msg = f"Failed to parse PDF with Docling: {error_str}. The PDF may be corrupted, encrypted, or in an unsupported format. Try using PyMuPDF parser for better compatibility."
+            
+            raise ValueError(error_msg)
