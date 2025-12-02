@@ -2,7 +2,7 @@
 Token-aware text splitter using TikToken.
 """
 import tiktoken
-from typing import List, Optional
+from typing import List, Optional, Callable
 try:
     from langchain.docstore.document import Document
 except ImportError:
@@ -221,12 +221,13 @@ class TokenTextSplitter:
         
         return chunks
     
-    def split_documents(self, documents: List[Document]) -> List[Document]:
+    def split_documents(self, documents: List[Document], progress_callback: Optional[Callable] = None) -> List[Document]:
         """
         Split documents into chunks based on token count.
         
         Args:
             documents: List of Document objects to split
+            progress_callback: Optional callback function(status, progress, **kwargs) for progress updates
         
         Returns:
             List of Document chunks with token count metadata
@@ -236,7 +237,13 @@ class TokenTextSplitter:
         if not documents:
             return all_chunks
         
+        total_docs = len(documents)
         for doc_idx, doc in enumerate(documents):
+            # Update progress for each document
+            if progress_callback and total_docs > 0:
+                doc_progress = doc_idx / total_docs  # 0.0 to 1.0
+                progress_callback('chunking', 0.1 + (doc_progress * 0.2), 
+                                detailed_message=f"Splitting document {doc_idx + 1}/{total_docs} into chunks...")
             # Validate document
             if doc is None:
                 continue
@@ -250,7 +257,22 @@ class TokenTextSplitter:
             
             # Split text
             try:
+                # Estimate text length for progress
+                text_length = len(page_content) if page_content else 0
+                if progress_callback:
+                    if text_length > 100000:  # Large document
+                        progress_callback('chunking', 0.1 + ((doc_idx + 0.3) / total_docs) * 0.2,
+                                        detailed_message=f"Processing large document {doc_idx + 1}/{total_docs} ({text_length:,} chars)...")
+                    else:
+                        progress_callback('chunking', 0.1 + ((doc_idx + 0.5) / total_docs) * 0.2,
+                                        detailed_message=f"Splitting document {doc_idx + 1}/{total_docs} into chunks...")
+                
                 text_chunks = self.split_text(page_content)
+                
+                # Update progress after splitting
+                if progress_callback:
+                    progress_callback('chunking', 0.1 + ((doc_idx + 1) / total_docs) * 0.2,
+                                    detailed_message=f"Document {doc_idx + 1}/{total_docs} split into {len(text_chunks)} chunks")
             except Exception as e:
                 # If splitting fails, create a single chunk with the original text
                 text_chunks = [page_content] if page_content else []

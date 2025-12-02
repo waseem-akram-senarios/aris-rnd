@@ -4,6 +4,7 @@ RAG System for document processing and querying
 import os
 import time
 import logging
+import traceback
 from typing import List, Dict, Optional, Callable
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
@@ -80,6 +81,7 @@ class RAGSystem:
             return 0
         
         # Create Document objects
+        # IMPORTANT: Convert all text to plain strings BEFORE threading to avoid PyMuPDF NoSessionContext errors
         documents = []
         for i, text in enumerate(texts):
             # Safely get metadata - handle case where metadatas list is shorter than texts
@@ -89,10 +91,38 @@ class RAGSystem:
                 metadata = {}
             
             # Ensure text is a string and not None
+            # Convert to string BEFORE threading to avoid PyMuPDF NoSessionContext errors
             if text is None:
                 text = ""
-            if not isinstance(text, str):
-                text = str(text)
+            elif not isinstance(text, str):
+                try:
+                    # Try to convert to string - this might fail with NoSessionContext if text is a PyMuPDF object
+                    text = str(text)
+                except Exception as e:
+                    error_str = str(e) if str(e) else type(e).__name__
+                    if "NoSessionContext" in error_str or "NoSessionContext" in type(e).__name__:
+                        logger.warning(f"Text conversion failed with NoSessionContext. Attempting safe extraction...")
+                        # Try to get text content safely without accessing PyMuPDF internals
+                        try:
+                            # If it's a ParsedDocument or similar, try to get text attribute
+                            if hasattr(text, 'text'):
+                                text = str(text.text) if text.text else ""
+                            elif hasattr(text, 'page_content'):
+                                text = str(text.page_content) if text.page_content else ""
+                            else:
+                                # Last resort: try repr and extract if possible
+                                text = repr(text)
+                                # If repr contains quotes, try to extract the content
+                                if text.startswith("'") and text.endswith("'"):
+                                    text = text[1:-1]
+                                elif text.startswith('"') and text.endswith('"'):
+                                    text = text[1:-1]
+                        except Exception as e2:
+                            logger.error(f"Failed to safely extract text: {str(e2)}")
+                            text = ""  # Fallback to empty string
+                    else:
+                        # Re-raise if it's not a NoSessionContext error
+                        raise
             
             # Skip empty documents
             if not text.strip():
@@ -105,16 +135,67 @@ class RAGSystem:
             return 0
         
         # Split documents into chunks using token-aware splitter
-        logger.info(f"Starting chunking for {len(documents)} document(s), total text length: {sum(len(doc.page_content) for doc in documents):,} chars")
+        # IMPORTANT: Extract all text content BEFORE threading to avoid PyMuPDF NoSessionContext errors
+        total_text_length = sum(len(doc.page_content) if hasattr(doc, 'page_content') and isinstance(doc.page_content, str) else 0 for doc in documents)
+        logger.info(f"Starting chunking for {len(documents)} document(s), total text length: {total_text_length:,} chars")
         if progress_callback:
             progress_callback('chunking', 0.1, detailed_message="Starting chunking process...")
         
+        # Ensure all document text is extracted as plain strings before chunking
+        # This prevents downstream components from interacting with parser-specific objects
+        safe_documents = []
+        for doc in documents:
+            try:
+                # Extract text content as plain string
+                text_content = doc.page_content if hasattr(doc, 'page_content') else ""
+                if not isinstance(text_content, str):
+                    text_content = str(text_content)
+                
+                # Create a new Document with plain string content
+                safe_doc = Document(page_content=text_content, metadata=doc.metadata if hasattr(doc, 'metadata') else {})
+                safe_documents.append(safe_doc)
+            except Exception as e:
+                error_str = str(e) if str(e) else type(e).__name__
+                if "NoSessionContext" in error_str:
+                    logger.warning(f"Skipping document due to NoSessionContext error during text extraction: {error_str}")
+                    continue
+                else:
+                    # For other errors, try to continue with empty text
+                    safe_doc = Document(page_content="", metadata=doc.metadata if hasattr(doc, 'metadata') else {})
+                    safe_documents.append(safe_doc)
+        
+        if not safe_documents:
+            raise ValueError("No valid documents to chunk after text extraction. This may be due to parser session context issues.")
+        
+        # Perform chunking synchronously (avoids Streamlit NoSessionContext errors)
+        def splitter_progress_callback(status, progress, **kwargs):
+            if progress_callback:
+                progress_callback(status, progress, **kwargs)
+        
         try:
-            chunks = self.text_splitter.split_documents(documents)
-            logger.info(f"Chunking completed: {len(chunks)} chunks created")
+            chunks = self.text_splitter.split_documents(
+                safe_documents,
+                progress_callback=splitter_progress_callback
+            )
+            if chunks is None:
+                chunks = []
         except Exception as e:
-            logger.error(f"Chunking failed: {str(e)}")
-            raise ValueError(f"Failed to split documents into chunks: {str(e)}")
+            error_details = traceback.format_exc()
+            error_msg = str(e) if str(e) else type(e).__name__
+            if not error_msg or error_msg.strip() == "":
+                error_msg = f"Unknown error ({type(e).__name__})"
+            if "NoSessionContext" in error_msg:
+                error_msg = (
+                    "Streamlit session context was lost while updating progress. "
+                    "This typically happens when attempting to update the UI from a background thread. "
+                    "Please retry the operation."
+                )
+            logger.error(f"Chunking failed: {error_msg}\n{error_details}")
+            raise ValueError(f"Failed to split documents into chunks: {error_msg}")
+        
+        logger.info(f"Chunking completed: {len(chunks)} chunks created")
+        
+        logger.info(f"Chunking completed: {len(chunks)} chunks created")
         
         # Validate chunks
         if not chunks:
