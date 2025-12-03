@@ -3,6 +3,7 @@ RAG System for document processing and querying
 """
 import os
 import time
+import math
 import logging
 import traceback
 from typing import List, Dict, Optional, Callable
@@ -167,13 +168,73 @@ class RAGSystem:
         if not safe_documents:
             raise ValueError("No valid documents to chunk after text extraction. This may be due to parser session context issues.")
         
+        # Adaptive chunking: upscale chunk size for very large documents when user selected small chunks
+        splitter_to_use = self.text_splitter
+        adaptive_chunk_size = None
+        adaptive_chunk_overlap = None
+        estimated_tokens = 0
+        try:
+            estimated_tokens = sum(self.count_tokens(doc.page_content) for doc in safe_documents)
+        except Exception:
+            # Fallback estimate using character count
+            estimated_tokens = total_text_length // 4
+        
+        estimated_chunks = math.ceil(estimated_tokens / max(self.chunk_size, 1))
+        logger.info(
+            f"Chunking configuration: requested chunk_size={self.chunk_size}, "
+            f"overlap={self.chunk_overlap}, estimated tokens≈{estimated_tokens:,}, "
+            f"estimated chunks≈{estimated_chunks}"
+        )
+        
+        MAX_CHUNKS_BEFORE_ADAPT = 200
+        MIN_ADAPTIVE_CHUNK_SIZE = 512
+        MAX_ADAPTIVE_CHUNK_SIZE = 1536
+        
+        if (
+            estimated_chunks > MAX_CHUNKS_BEFORE_ADAPT
+            and self.chunk_size <= MIN_ADAPTIVE_CHUNK_SIZE
+        ):
+            target_chunk_size = math.ceil(estimated_tokens / MAX_CHUNKS_BEFORE_ADAPT)
+            adaptive_chunk_size = min(
+                max(target_chunk_size, MIN_ADAPTIVE_CHUNK_SIZE, self.chunk_size),
+                MAX_ADAPTIVE_CHUNK_SIZE
+            )
+            
+            if adaptive_chunk_size > self.chunk_size:
+                overlap_ratio = self.chunk_overlap / max(self.chunk_size, 1)
+                adaptive_chunk_overlap = int(adaptive_chunk_size * overlap_ratio)
+                adaptive_chunk_overlap = min(adaptive_chunk_overlap, adaptive_chunk_size // 2)
+                
+                splitter_to_use = TokenTextSplitter(
+                    chunk_size=adaptive_chunk_size,
+                    chunk_overlap=adaptive_chunk_overlap,
+                    model_name=self.embedding_model
+                )
+                
+                logger.info(
+                    f"Adaptive chunking enabled for large document: "
+                    f"chunk_size {self.chunk_size} -> {adaptive_chunk_size}, "
+                    f"overlap {self.chunk_overlap} -> {adaptive_chunk_overlap}, "
+                    f"document tokens≈{estimated_tokens:,}"
+                )
+                if progress_callback:
+                    progress_callback(
+                        'chunking',
+                        0.12,
+                        detailed_message=(
+                            f"Large document detected (~{estimated_tokens:,} tokens). "
+                            f"Auto-adjusted chunk size to {adaptive_chunk_size} tokens "
+                            f"for better performance."
+                        )
+                    )
+        
         # Perform chunking synchronously (avoids Streamlit NoSessionContext errors)
         def splitter_progress_callback(status, progress, **kwargs):
             if progress_callback:
                 progress_callback(status, progress, **kwargs)
         
         try:
-            chunks = self.text_splitter.split_documents(
+            chunks = splitter_to_use.split_documents(
                 safe_documents,
                 progress_callback=splitter_progress_callback
             )
@@ -193,16 +254,26 @@ class RAGSystem:
             logger.error(f"Chunking failed: {error_msg}\n{error_details}")
             raise ValueError(f"Failed to split documents into chunks: {error_msg}")
         
-        logger.info(f"Chunking completed: {len(chunks)} chunks created")
-        
-        logger.info(f"Chunking completed: {len(chunks)} chunks created")
+        chunk_size_used = adaptive_chunk_size or self.chunk_size
+        overlap_used = adaptive_chunk_overlap if adaptive_chunk_overlap is not None else self.chunk_overlap
+        logger.info(
+            f"Chunking completed: {len(chunks)} chunks created "
+            f"(effective chunk_size={chunk_size_used}, overlap={overlap_used})"
+        )
         
         # Validate chunks
         if not chunks:
             raise ValueError("No chunks created from documents. The documents may be empty or too small.")
         
         if progress_callback:
-            progress_callback('chunking', 0.3, detailed_message=f"Chunking completed: {len(chunks)} chunks created")
+            progress_callback(
+                'chunking',
+                0.3,
+                detailed_message=(
+                    f"Chunking completed: {len(chunks)} chunks created "
+                    f"(effective chunk size ≈ {chunk_size_used} tokens)"
+                )
+            )
         
         # Filter out invalid chunks
         valid_chunks = []
@@ -227,7 +298,14 @@ class RAGSystem:
         logger.info(f"Valid chunks: {len(valid_chunks)}/{len(chunks)}")
         
         if progress_callback:
-            progress_callback('chunking', 0.5, detailed_message=f"Chunking complete: {len(valid_chunks)} valid chunks ready for embedding")
+            progress_callback(
+                'chunking',
+                0.5,
+                detailed_message=(
+                    f"Chunking complete: {len(valid_chunks)} valid chunks ready for embedding "
+                    f"(chunk size ≈ {chunk_size_used} tokens)"
+                )
+            )
         
         # Track tokens
         for chunk in valid_chunks:
@@ -513,15 +591,34 @@ class RAGSystem:
             # Fallback for older versions
             relevant_docs = retriever.get_relevant_documents(question)
         
-        # Build context with metadata for better accuracy
+        # Build context with metadata for better accuracy and collect citations
         context_parts = []
+        citations = []  # Store citation information for each source
+        
         for i, doc in enumerate(relevant_docs, 1):
-            # Add source and page info if available
+            # Extract citation metadata
             source = doc.metadata.get('source', 'Unknown')
-            page = doc.metadata.get('source_page', doc.metadata.get('page', ''))
-            page_info = f" (Page {page})" if page else ""
+            page = doc.metadata.get('source_page', doc.metadata.get('page', None))
+            chunk_text = doc.page_content
+            start_char = doc.metadata.get('start_char', None)
+            end_char = doc.metadata.get('end_char', None)
             
-            context_parts.append(f"[Source {i}: {source}{page_info}]\n{doc.page_content}")
+            # Build citation entry
+            citation = {
+                'id': i,
+                'source': source,
+                'page': page,
+                'snippet': chunk_text[:200] + "..." if len(chunk_text) > 200 else chunk_text,
+                'full_text': chunk_text,
+                'start_char': start_char,
+                'end_char': end_char,
+                'chunk_index': doc.metadata.get('chunk_index', None)
+            }
+            citations.append(citation)
+            
+            # Add source and page info to context
+            page_info = f" (Page {page})" if page else ""
+            context_parts.append(f"[Source {i}: {source}{page_info}]\n{chunk_text}")
         
         context = "\n\n---\n\n".join(context_parts)
         
@@ -556,6 +653,7 @@ class RAGSystem:
             "answer": answer,
             "sources": list(set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs])),
             "context_chunks": [doc.page_content[:300] + "..." for doc in relevant_docs],
+            "citations": citations,  # Detailed citation information with page numbers and snippets
             "num_chunks_used": len(relevant_docs),
             "response_time": response_time,
             "context_tokens": context_tokens,

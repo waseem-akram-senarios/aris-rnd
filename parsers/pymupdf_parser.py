@@ -84,11 +84,12 @@ class PyMuPDFParser(BaseParser):
                         extraction_percentage=0.0
                     )
                 
-                # Extract text from all pages
+                # Extract text from all pages with page-level metadata
                 text_parts = []
                 pages_with_text = 0
                 total_images = 0
                 images_detected = False
+                page_blocks = []  # Store page-level text blocks with metadata
                 
                 # Get total pages before processing
                 total_pages = len(doc)
@@ -122,10 +123,50 @@ class PyMuPDFParser(BaseParser):
                     try:
                         page = doc[page_num]
                         
-                        # Extract text with per-page timeout (30 seconds per page)
+                        # Extract text blocks with bounding boxes for citation support
                         try:
+                            # Get text blocks with positions
+                            text_dict = page.get_text("dict")
                             page_text = page.get_text()
+                            
                             if page_text.strip():
+                                # Store page-level blocks with metadata
+                                page_blocks_data = {
+                                    'page': page_num + 1,
+                                    'text': page_text,
+                                    'blocks': []
+                                }
+                                
+                                # Extract text blocks with bounding boxes
+                                if 'blocks' in text_dict:
+                                    for block in text_dict['blocks']:
+                                        if 'lines' in block:
+                                            block_text_parts = []
+                                            block_bbox = None
+                                            for line in block['lines']:
+                                                if 'spans' in line:
+                                                    line_text_parts = []
+                                                    for span in line['spans']:
+                                                        if 'text' in span:
+                                                            line_text_parts.append(span['text'])
+                                                        if 'bbox' in span and block_bbox is None:
+                                                            block_bbox = span['bbox']
+                                                    if line_text_parts:
+                                                        block_text_parts.append(' '.join(line_text_parts))
+                                                
+                                                # Use line bbox if block bbox not available
+                                                if 'bbox' in line and block_bbox is None:
+                                                    block_bbox = line['bbox']
+                                            
+                                            if block_text_parts:
+                                                block_text = ' '.join(block_text_parts)
+                                                page_blocks_data['blocks'].append({
+                                                    'text': block_text,
+                                                    'bbox': block_bbox,
+                                                    'page': page_num + 1
+                                                })
+                                
+                                page_blocks.append(page_blocks_data)
                                 text_parts.append(f"--- Page {page_num + 1} ---\n{page_text}")
                                 pages_with_text += 1
                         except Exception as e:
@@ -138,6 +179,22 @@ class PyMuPDFParser(BaseParser):
                             if image_list:
                                 total_images += len(image_list)
                                 images_detected = True
+                                # Store image metadata for citation
+                                for img_idx, img_info in enumerate(image_list):
+                                    try:
+                                        # Get image bounding box if available
+                                        img_rects = page.get_image_rects(img_info[7])  # xref number
+                                        if img_rects:
+                                            for rect in img_rects:
+                                                page_blocks.append({
+                                                    'page': page_num + 1,
+                                                    'type': 'image',
+                                                    'image_index': img_idx,
+                                                    'bbox': [rect.x0, rect.y0, rect.x1, rect.y1],
+                                                    'xref': img_info[7]
+                                                })
+                                    except Exception:
+                                        pass  # Skip if image metadata extraction fails
                         except Exception as e:
                             logger.warning(f"PyMuPDF: Failed to get images from page {page_num + 1}: {str(e)[:100]}")
                             # Continue with next page
@@ -173,13 +230,14 @@ class PyMuPDFParser(BaseParser):
                 else:
                     confidence = 0.4
                 
-                # Metadata
+                # Metadata with page-level blocks for citation support
                 metadata = {
                     "source": file_path,
                     "pages": total_pages,
                     "images_count": total_images,
                     "pages_with_text": pages_with_text,
-                    "file_size": file_size
+                    "file_size": file_size,
+                    "page_blocks": page_blocks  # Store page-level text blocks with bboxes
                 }
                 
                 return ParsedDocument(

@@ -132,3 +132,5 @@ print(f'Success: {result.pages} pages, {len(result.text)} chars')
 - Detailed messages help users understand what's happening
 
 
+
+

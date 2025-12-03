@@ -255,6 +255,11 @@ class TokenTextSplitter:
             if not isinstance(page_content, str):
                 page_content = str(page_content)
             
+            # Extract page_blocks metadata for citation support
+            page_blocks = None
+            if hasattr(doc, 'metadata') and isinstance(doc.metadata, dict):
+                page_blocks = doc.metadata.get('page_blocks', None)
+            
             # Split text
             try:
                 # Estimate text length for progress
@@ -286,6 +291,8 @@ class TokenTextSplitter:
             except Exception:
                 chunk_metadata = {}
             
+            # Track character positions in original text for citation support
+            text_start_pos = 0
             for chunk_idx, chunk_text in enumerate(text_chunks):
                 # Count tokens in chunk (use actual encoding for accuracy)
                 try:
@@ -309,18 +316,70 @@ class TokenTextSplitter:
                     if token_count > self.chunk_size:
                         token_count = self.chunk_size  # Cap at chunk_size
                 
+                # Calculate character offsets for citation support
+                chunk_start_char = text_start_pos
+                chunk_end_char = text_start_pos + len(chunk_text)
+                text_start_pos = chunk_end_char  # Update for next chunk (accounting for overlap)
+                
+                # Determine page number for this chunk
+                chunk_page = None
+                if page_blocks:
+                    # Find which page this chunk belongs to based on character position
+                    # Account for "--- Page X ---" markers in the text
+                    cumulative_pos = 0
+                    for page_block in page_blocks:
+                        page_text = page_block.get('text', '')
+                        page_num = page_block.get('page', None)
+                        if page_text and page_num:
+                            # Account for page marker in original text (if present)
+                            page_marker = f"--- Page {page_num} ---\n"
+                            page_start = cumulative_pos
+                            # Page end includes marker if text has markers
+                            page_end = cumulative_pos + len(page_text)
+                            
+                            # Check if chunk starts within this page
+                            if chunk_start_char >= page_start and chunk_start_char < page_end:
+                                chunk_page = page_num
+                                break
+                            # Also check if chunk overlaps with this page
+                            elif chunk_start_char < page_end and chunk_end_char > page_start:
+                                chunk_page = page_num
+                                break
+                            
+                            cumulative_pos = page_end
+                
+                # If page not found from page_blocks, try to extract from text markers
+                if chunk_page is None:
+                    import re
+                    # Look for "--- Page X ---" markers in chunk
+                    page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                    if page_match:
+                        chunk_page = int(page_match.group(1))
+                
                 # Create new document with metadata
                 chunk_metadata_copy = chunk_metadata.copy()
                 chunk_metadata_copy.update({
                     'chunk_index': chunk_idx,
                     'total_chunks': len(text_chunks),
                     'source_chunk': doc_idx,
-                    'token_count': token_count
+                    'token_count': token_count,
+                    'start_char': chunk_start_char,  # Character offset in original document
+                    'end_char': chunk_end_char  # Character offset in original document
                 })
                 
-                # Add source page if available
-                if 'page' in chunk_metadata_copy:
+                # Add page number for citation support
+                if chunk_page:
+                    chunk_metadata_copy['page'] = chunk_page
+                    chunk_metadata_copy['source_page'] = chunk_page
+                elif 'page' in chunk_metadata_copy:
                     chunk_metadata_copy['source_page'] = chunk_metadata_copy['page']
+                
+                # Preserve page_blocks metadata if available (for citation support)
+                if 'page_blocks' in chunk_metadata_copy:
+                    # Keep page_blocks reference for citation lookup
+                    pass  # Already in metadata
+                elif page_blocks:
+                    chunk_metadata_copy['page_blocks'] = page_blocks
                 
                 try:
                     chunk_doc = Document(

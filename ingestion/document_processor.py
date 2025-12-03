@@ -239,15 +239,24 @@ class DocumentProcessor:
                             progress_callback(status, mapped_progress)
                 
                 logger.info(f"Starting chunking and embedding for {doc_name} ({len(doc_text):,} characters)...")
+                
+                # Build metadata with page_blocks for citation support
+                doc_metadata = {
+                    'source': doc_name,
+                    'parser_used': getattr(parsed_doc, 'parser_used', 'unknown'),
+                    'pages': getattr(parsed_doc, 'pages', 0),
+                    'images_detected': getattr(parsed_doc, 'images_detected', False),
+                    'extraction_percentage': getattr(parsed_doc, 'extraction_percentage', 0.0)
+                }
+                
+                # Preserve page_blocks metadata if available (for citation support)
+                if hasattr(parsed_doc, 'metadata') and isinstance(parsed_doc.metadata, dict):
+                    if 'page_blocks' in parsed_doc.metadata:
+                        doc_metadata['page_blocks'] = parsed_doc.metadata['page_blocks']
+                
                 stats = self.rag_system.add_documents_incremental(
                     texts=[doc_text],
-                    metadatas=[{
-                        'source': doc_name,
-                        'parser_used': getattr(parsed_doc, 'parser_used', 'unknown'),
-                        'pages': getattr(parsed_doc, 'pages', 0),
-                        'images_detected': getattr(parsed_doc, 'images_detected', False),
-                        'extraction_percentage': getattr(parsed_doc, 'extraction_percentage', 0.0)
-                    }],
+                    metadatas=[doc_metadata],
                     progress_callback=chunking_progress_callback
                 )
                 logger.info(f"Chunking and embedding completed: {stats['chunks_created']} chunks, {stats['tokens_added']:,} tokens")

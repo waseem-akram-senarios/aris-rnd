@@ -812,9 +812,32 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                 result = st.session_state.rag_system.query_with_rag(question, k=6, use_mmr=True)
                 answer = result["answer"]
                 sources = result.get("sources", [])
+                citations = result.get("citations", [])
                 num_chunks = result.get("num_chunks_used", 0)
                 
-                st.write(answer)
+                # Display answer with inline citation markers
+                if citations:
+                    # Add citation markers to answer (simple approach: append citations at end)
+                    # In a more sophisticated implementation, we could parse the answer and insert markers
+                    answer_with_citations = answer
+                    
+                    # Display answer
+                    st.markdown(answer_with_citations)
+                    
+                    # Show citation markers below answer
+                    citation_refs = []
+                    for citation in citations:
+                        source_name = citation.get('source', 'Unknown')
+                        page = citation.get('page')
+                        if page:
+                            citation_refs.append(f"[{citation['id']}] {source_name}, Page {page}")
+                        else:
+                            citation_refs.append(f"[{citation['id']}] {source_name}")
+                    
+                    if citation_refs:
+                        st.caption("**References:** " + " | ".join(citation_refs))
+                else:
+                    st.write(answer)
                 
                 # Show accuracy metrics and token counts
                 if num_chunks > 0:
@@ -827,8 +850,32 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                         f"🔢 Tokens: {context_tokens:,} (context) + {response_tokens:,} (response) = {total_tokens:,} total"
                     )
                 
-                # Show sources
-                if sources:
+                # Show detailed sources with citations
+                if citations:
+                    with st.expander("📎 Sources & Citations", expanded=False):
+                        for citation in citations:
+                            source_name = citation.get('source', 'Unknown')
+                            page = citation.get('page')
+                            snippet = citation.get('snippet', '')
+                            
+                            # Display citation with page number
+                            citation_header = f"**[{citation['id']}] {source_name}**"
+                            if page:
+                                citation_header += f" - Page {page}"
+                            st.markdown(citation_header)
+                            
+                            # Show snippet
+                            if snippet:
+                                st.text_area(
+                                    f"Snippet from citation [{citation['id']}]",
+                                    snippet,
+                                    height=100,
+                                    key=f"citation_{citation['id']}_{len(st.session_state.chat_history)}",
+                                    label_visibility="collapsed"
+                                )
+                            st.divider()
+                elif sources:
+                    # Fallback to simple source list if citations not available
                     with st.expander("📎 Sources"):
                         for source in sources:
                             st.write(f"- {source}")

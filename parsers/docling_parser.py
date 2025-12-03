@@ -169,9 +169,41 @@ class DoclingParser(BaseParser):
             
             # Export to markdown (as shown in quickstart)
             logger.info("Docling: Exporting document to markdown...")
+            page_blocks = []  # Store page-level blocks for citation support
+            
             try:
                 text = doc.export_to_markdown()
                 logger.info(f"Docling: Markdown export completed ({len(text):,} characters)")
+                
+                # Extract page-level structure if available
+                if hasattr(doc, 'pages'):
+                    pages_dict = doc.pages
+                    if isinstance(pages_dict, dict):
+                        for page_num, page_content in pages_dict.items():
+                            try:
+                                page_idx = int(page_num) if isinstance(page_num, (int, str)) and str(page_num).isdigit() else None
+                                if page_idx is not None:
+                                    page_text = str(page_content) if hasattr(page_content, '__str__') else ""
+                                    if page_text:
+                                        page_blocks.append({
+                                            'page': page_idx,
+                                            'text': page_text,
+                                            'blocks': [{'text': page_text, 'page': page_idx}]  # Simplified for Docling
+                                        })
+                            except Exception:
+                                pass
+                    elif isinstance(pages_dict, list):
+                        for page_idx, page_content in enumerate(pages_dict, 1):
+                            try:
+                                page_text = str(page_content) if hasattr(page_content, '__str__') else ""
+                                if page_text:
+                                    page_blocks.append({
+                                        'page': page_idx,
+                                        'text': page_text,
+                                        'blocks': [{'text': page_text, 'page': page_idx}]
+                                    })
+                            except Exception:
+                                pass
             except Exception as e:
                 logger.error(f"Docling: Error exporting to markdown: {str(e)}")
                 # Try alternative export methods
@@ -273,7 +305,8 @@ class DoclingParser(BaseParser):
                 "pages": pages,
                 "text_length": text_length,
                 "word_count": word_count,
-                "file_size": len(file_content) if file_content else os.path.getsize(file_path)
+                "file_size": len(file_content) if file_content else os.path.getsize(file_path),
+                "page_blocks": page_blocks  # Store page-level blocks for citation support
             }
             
             return ParsedDocument(
