@@ -596,23 +596,91 @@ class RAGSystem:
         citations = []  # Store citation information for each source
         
         for i, doc in enumerate(relevant_docs, 1):
+            import re
+            
             # Extract citation metadata
             source = doc.metadata.get('source', 'Unknown')
-            page = doc.metadata.get('source_page', doc.metadata.get('page', None))
             chunk_text = doc.page_content
+            
+            # Try multiple ways to get page number
+            page = doc.metadata.get('source_page', doc.metadata.get('page', None))
+            
+            # If page not in metadata, try to extract from text markers
+            if page is None:
+                # Look for "--- Page X ---" markers in chunk text
+                page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                if page_match:
+                    page = int(page_match.group(1))
+                else:
+                    # Try other patterns
+                    page_match = re.search(r'Page\s+(\d+)', chunk_text, re.IGNORECASE)
+                    if page_match:
+                        page = int(page_match.group(1))
+            
             start_char = doc.metadata.get('start_char', None)
             end_char = doc.metadata.get('end_char', None)
             
-            # Build citation entry
+            # Check for image references in metadata
+            image_ref = None
+            image_info = None
+            page_blocks = doc.metadata.get('page_blocks', [])
+            
+            # Check if this chunk is associated with an image
+            if page_blocks:
+                for block in page_blocks:
+                    if isinstance(block, dict) and block.get('type') == 'image':
+                        if page and block.get('page') == page:
+                            image_ref = {
+                                'page': block.get('page'),
+                                'image_index': block.get('image_index'),
+                                'bbox': block.get('bbox'),
+                                'xref': block.get('xref')
+                            }
+                            image_info = f"Image {block.get('image_index', '?')} on Page {page}"
+                            break
+            
+            # Also check if chunk metadata has image reference
+            if not image_ref:
+                if doc.metadata.get('has_image') or doc.metadata.get('image_index') is not None:
+                    image_ref = {
+                        'page': page,
+                        'image_index': doc.metadata.get('image_index'),
+                        'bbox': doc.metadata.get('image_bbox')
+                    }
+                    image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference"
+            
+            # Create snippet - show more context (up to 500 chars for better display)
+            snippet = chunk_text[:500] + "..." if len(chunk_text) > 500 else chunk_text
+            # Clean snippet - remove page markers for cleaner display
+            snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', snippet).strip()
+            if not snippet_clean:
+                snippet_clean = snippet  # Fallback to original if cleaning removes everything
+            
+            # Build source location description (certification field)
+            source_location_parts = []
+            if page:
+                source_location_parts.append(f"Page {page}")
+            if image_ref:
+                source_location_parts.append(f"Image {image_ref.get('image_index', '?')}")
+            elif doc.metadata.get('images_detected'):
+                source_location_parts.append("Image-based content")
+            
+            source_location = " | ".join(source_location_parts) if source_location_parts else "Text content"
+            
+            # Build citation entry with enhanced metadata
             citation = {
                 'id': i,
                 'source': source,
                 'page': page,
-                'snippet': chunk_text[:200] + "..." if len(chunk_text) > 200 else chunk_text,
+                'snippet': snippet_clean,
                 'full_text': chunk_text,
                 'start_char': start_char,
                 'end_char': end_char,
-                'chunk_index': doc.metadata.get('chunk_index', None)
+                'chunk_index': doc.metadata.get('chunk_index', None),
+                'image_ref': image_ref,  # Image reference if available
+                'image_info': image_info,  # Human-readable image info
+                'source_location': source_location,  # Certification field: exact location
+                'content_type': 'image' if image_ref else 'text'  # Type of content
             }
             citations.append(citation)
             
@@ -652,7 +720,7 @@ class RAGSystem:
         return {
             "answer": answer,
             "sources": list(set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs])),
-            "context_chunks": [doc.page_content[:300] + "..." for doc in relevant_docs],
+            "context_chunks": [doc.page_content for doc in relevant_docs],  # Full chunk text for citation display
             "citations": citations,  # Detailed citation information with page numbers and snippets
             "num_chunks_used": len(relevant_docs),
             "response_time": response_time,

@@ -30,6 +30,8 @@ if 'documents_processed' not in st.session_state:
     st.session_state.documents_processed = False
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
+if 'citations_history' not in st.session_state:
+    st.session_state.citations_history = []  # Store citations for each query
 if 'processing_results' not in st.session_state:
     st.session_state.processing_results = []
 if 'document_processor' not in st.session_state:
@@ -772,11 +774,60 @@ with st.sidebar:
     else:
         st.info("⏳ No documents processed yet. Upload and process documents to see metrics.")
     
+    # Persistent Citations Section
+    st.divider()
+    st.header("📎 Latest Citations")
+    
+    if st.session_state.citations_history and len(st.session_state.citations_history) > 0:
+        # Show the most recent citations
+        latest = st.session_state.citations_history[-1]
+        citations = latest.get('citations', [])
+        
+        if citations and len(citations) > 0:
+            st.info(f"**{len(citations)} citation(s) from last query:**")
+            st.caption(f"Q: {latest.get('question', 'N/A')[:50]}...")
+            
+            # Show citations in sidebar (compact view)
+            for citation in citations[:5]:  # Show first 5 citations
+                citation_id = citation.get('id', '?')
+                source_name = citation.get('source', 'Unknown')
+                page = citation.get('page')
+                source_location = citation.get('source_location', '')
+                
+                with st.expander(f"[{citation_id}] {source_name.split('/')[-1][:30]}...", expanded=False):
+                    if page:
+                        st.success(f"📍 Page {page}")
+                    if source_location:
+                        st.caption(f"Location: {source_location}")
+                    
+                    snippet = citation.get('snippet', citation.get('full_text', ''))
+                    if snippet:
+                        st.text_area(
+                            "Source text:",
+                            snippet[:200] + "..." if len(snippet) > 200 else snippet,
+                            height=80,
+                            key=f"sidebar_citation_{citation_id}_{len(st.session_state.citations_history)}",
+                            label_visibility="collapsed"
+                        )
+            
+            if len(citations) > 5:
+                st.caption(f"... and {len(citations) - 5} more citations")
+            
+            # Button to clear citations
+            if st.button("🗑️ Clear Citations", use_container_width=True, key="clear_citations"):
+                st.session_state.citations_history = []
+                st.rerun()
+        else:
+            st.info("No citations available for the last query.")
+    else:
+        st.info("👆 Ask a question to see citations here.")
+    
     # Clear button
     if st.button("Clear All", type="secondary"):
         st.session_state.rag_system = None
         st.session_state.documents_processed = False
         st.session_state.chat_history = []
+        st.session_state.citations_history = []
         st.session_state.processing_results = []
         st.session_state.document_processor = None
         st.session_state.metrics_collector.clear()
@@ -786,14 +837,75 @@ with st.sidebar:
 if st.session_state.documents_processed and st.session_state.rag_system:
     st.header("💬 Ask Questions")
     
-    # Display chat history
-    for i, (question, answer, sources) in enumerate(st.session_state.chat_history):
+    # Display chat history with enhanced citations
+    for i, history_item in enumerate(st.session_state.chat_history):
+        # Handle both old format (tuple) and new format (dict with citations)
+        if isinstance(history_item, tuple):
+            question, answer, sources = history_item
+            citations = None
+        else:
+            question = history_item.get('question', '')
+            answer = history_item.get('answer', '')
+            sources = history_item.get('sources', [])
+            citations = history_item.get('citations', None)
+        
         with st.chat_message("user"):
             st.write(question)
         
         with st.chat_message("assistant"):
             st.write(answer)
-            if sources:
+            
+            # Show enhanced citations if available
+            if citations and len(citations) > 0:
+                # Show citation references
+                citation_refs = []
+                for citation in citations:
+                    citation_id = citation.get('id', '?')
+                    source_name = citation.get('source', 'Unknown')
+                    page = citation.get('page')
+                    if page:
+                        citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
+                    else:
+                        citation_refs.append(f"[{citation_id}] {source_name}")
+                
+                if citation_refs:
+                    st.caption("**📎 References:** " + " | ".join(citation_refs))
+                
+                # Show detailed citations
+                with st.expander("📎 Sources & Citations", expanded=False):
+                    for citation in citations:
+                        citation_id = citation.get('id', '?')
+                        source_name = citation.get('source', 'Unknown')
+                        page = citation.get('page')
+                        snippet = citation.get('snippet', citation.get('full_text', ''))
+                        source_location = citation.get('source_location', f"Page {page}" if page else "Text content")
+                        
+                        # Display citation header
+                        citation_header = f"**[{citation_id}] {source_name}**"
+                        if page:
+                            citation_header += f" - **Page {page}**"
+                            st.success(f"📍 **Source Location:** {source_location}")
+                        else:
+                            st.info(f"📍 **Source Location:** {source_location}")
+                        
+                        st.markdown(citation_header)
+                        
+                        # Show snippet
+                        if snippet and snippet.strip():
+                            import re
+                            snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', snippet).strip()
+                            if not snippet_clean:
+                                snippet_clean = snippet
+                            st.text_area(
+                                f"Source text from citation [{citation_id}]:",
+                                snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
+                                height=100,
+                                key=f"history_citation_{i}_{citation_id}",
+                                label_visibility="visible"
+                            )
+                        st.divider()
+            elif sources:
+                # Fallback to simple display if no citations
                 with st.expander("📎 Sources"):
                     for source in sources:
                         st.write(f"- {source}")
@@ -814,30 +926,82 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                 sources = result.get("sources", [])
                 citations = result.get("citations", [])
                 num_chunks = result.get("num_chunks_used", 0)
+                context_chunks = result.get("context_chunks", [])
                 
-                # Display answer with inline citation markers
-                if citations:
-                    # Add citation markers to answer (simple approach: append citations at end)
-                    # In a more sophisticated implementation, we could parse the answer and insert markers
-                    answer_with_citations = answer
-                    
-                    # Display answer
-                    st.markdown(answer_with_citations)
-                    
+                # Ensure citations exist - create from sources if missing
+                # Also try to extract from context_chunks if available
+                if (not citations or len(citations) == 0) and sources:
+                    # Try to create citations from context_chunks if available
+                    if "context_chunks" in result and len(result["context_chunks"]) > 0:
+                        citations = []
+                        import re
+                        for idx, chunk_text in enumerate(result["context_chunks"], 1):
+                            # Try to extract page number from chunk text
+                            page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                            page = int(page_match.group(1)) if page_match else None
+                            
+                            # Find matching source
+                            source = sources[0] if sources else 'Unknown'
+                            if len(sources) > idx - 1:
+                                source = sources[idx - 1]
+                            
+                            # Clean snippet
+                            snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
+                            if not snippet_clean:
+                                snippet_clean = chunk_text
+                            
+                            # Determine content type
+                            content_type = 'text'
+                            if 'image' in chunk_text.lower() or 'ocr' in chunk_text.lower():
+                                content_type = 'image'
+                            
+                            # Build source location
+                            source_location = f"Page {page}" if page else "Text content"
+                            
+                            citations.append({
+                                'id': idx,
+                                'source': source,
+                                'page': page,
+                                'snippet': snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
+                                'full_text': chunk_text,
+                                'source_location': source_location,
+                                'content_type': content_type
+                            })
+                    else:
+                        # Create basic citations from sources
+                        citations = []
+                        for idx, source in enumerate(sources, 1):
+                            citations.append({
+                                'id': idx,
+                                'source': source,
+                                'page': None,
+                                'snippet': 'Source information available - expand to see details',
+                                'full_text': '',
+                                'source_location': 'Text content',
+                                'content_type': 'text'
+                            })
+                
+                # Display answer
+                st.markdown(answer)
+                
+                # Always show citations if they exist, regardless of answer content
+                if citations and len(citations) > 0:
                     # Show citation markers below answer
                     citation_refs = []
-                    for citation in citations:
+                    for idx, citation in enumerate(citations, 1):
+                        citation_id = citation.get('id', idx)
                         source_name = citation.get('source', 'Unknown')
                         page = citation.get('page')
                         if page:
-                            citation_refs.append(f"[{citation['id']}] {source_name}, Page {page}")
+                            citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
                         else:
-                            citation_refs.append(f"[{citation['id']}] {source_name}")
+                            citation_refs.append(f"[{citation_id}] {source_name}")
                     
                     if citation_refs:
-                        st.caption("**References:** " + " | ".join(citation_refs))
-                else:
-                    st.write(answer)
+                        st.caption("**📎 References:** " + " | ".join(citation_refs))
+                elif sources and len(sources) > 0:
+                    # Fallback: show sources even if citations not available
+                    st.caption(f"**📎 Sources:** {', '.join(sources)}")
                 
                 # Show accuracy metrics and token counts
                 if num_chunks > 0:
@@ -850,44 +1014,249 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                         f"🔢 Tokens: {context_tokens:,} (context) + {response_tokens:,} (response) = {total_tokens:,} total"
                     )
                 
-                # Show detailed sources with citations
-                if citations:
-                    with st.expander("📎 Sources & Citations", expanded=False):
-                        for citation in citations:
-                            source_name = citation.get('source', 'Unknown')
-                            page = citation.get('page')
-                            snippet = citation.get('snippet', '')
+                # Show detailed sources with citations - ALWAYS show if we have sources or context_chunks
+                if sources and len(sources) > 0:
+                    # Always show citations panel, expanded by default
+                    st.markdown("---")
+                    st.subheader("📎 Sources & Citations")
+                    
+                    # Use citations if available, otherwise use context_chunks
+                    items_to_display = []
+                    if citations and len(citations) > 0:
+                        items_to_display = citations
+                        st.info(f"**{len(citations)} source(s) were used to generate this answer:**")
+                    elif context_chunks and len(context_chunks) > 0:
+                        # Create citation-like objects from context_chunks with enhanced metadata
+                        # Create citation-like objects from context_chunks
+                        items_to_display = []
+                        for idx, chunk_text in enumerate(context_chunks, 1):
+                            import re
+                            page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                            page = int(page_match.group(1)) if page_match else None
                             
-                            # Display citation with page number
-                            citation_header = f"**[{citation['id']}] {source_name}**"
-                            if page:
-                                citation_header += f" - Page {page}"
-                            st.markdown(citation_header)
+                            source = sources[0] if sources else 'Unknown'
+                            if len(sources) > idx - 1:
+                                source = sources[idx - 1]
                             
-                            # Show snippet
-                            if snippet:
-                                st.text_area(
-                                    f"Snippet from citation [{citation['id']}]",
-                                    snippet,
-                                    height=100,
-                                    key=f"citation_{citation['id']}_{len(st.session_state.chat_history)}",
-                                    label_visibility="collapsed"
-                                )
-                            st.divider()
-                elif sources:
-                    # Fallback to simple source list if citations not available
-                    with st.expander("📎 Sources"):
-                        for source in sources:
-                            st.write(f"- {source}")
+                            # Extract more metadata from chunk text
+                            snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
+                            if not snippet_clean:
+                                snippet_clean = chunk_text
+                            
+                            # Try to determine content type
+                            content_type = 'text'
+                            if 'image' in chunk_text.lower() or 'ocr' in chunk_text.lower():
+                                content_type = 'image'
+                            
+                            items_to_display.append({
+                                'id': idx,
+                                'source': source,
+                                'page': page,
+                                'snippet': snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
+                                'full_text': chunk_text,
+                                'source_location': f"Page {page}" if page else "Text content",
+                                'content_type': content_type
+                            })
+                        st.info(f"**{len(items_to_display)} source(s) were used to generate this answer:**")
+                    
+                    for idx, item in enumerate(items_to_display, 1):
+                        citation_id = item.get('id', idx)
+                        source_name = item.get('source', 'Unknown')
+                        page = item.get('page')
+                        snippet = item.get('snippet', item.get('full_text', ''))
+                        source_location = item.get('source_location', 'Text content')
+                        image_ref = item.get('image_ref')
+                        image_info = item.get('image_info')
+                        content_type = item.get('content_type', 'text')
                         
-                        # Show context chunks with more detail
-                        if "context_chunks" in result:
-                            with st.expander("🔍 Context Chunks Used"):
-                                for i, chunk in enumerate(result["context_chunks"], 1):
-                                    st.text_area(f"Chunk {i} (used in answer)", chunk, height=120, key=f"chunk_{i}_{len(st.session_state.chat_history)}")
+                        # Clean snippet - remove page markers for cleaner display
+                        import re
+                        snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', snippet).strip()
+                        if not snippet_clean:
+                            snippet_clean = snippet
+                        
+                        # Display citation with page number and source location
+                        with st.container():
+                            # Main citation header with source location (certification)
+                            citation_header = f"**[{citation_id}] {source_name}**"
+                            
+                            # Show source location prominently (certification field)
+                            if source_location:
+                                if image_ref:
+                                    st.success(f"📍 **Source Location:** {source_location} | 📷 **Image Reference:** {image_info}")
+                                elif page:
+                                    st.success(f"📍 **Source Location:** {source_location}")
+                                else:
+                                    st.info(f"📍 **Source Location:** {source_location}")
+                            
+                            # Display citation header
+                            if page:
+                                citation_header += f" - **Page {page}**"
+                                if image_ref:
+                                    citation_header += f" | 📷 **Image {image_ref.get('image_index', '?')}**"
+                                st.markdown(f"### {citation_header}")
+                            else:
+                                citation_header += " - Page number not available"
+                                st.warning(citation_header)
+                            
+                            # Show content type badge
+                            if content_type == 'image':
+                                st.markdown("**📷 Image Content**")
+                            else:
+                                st.markdown("**📄 Text Content**")
+                            
+                            # Show snippet with more context (up to 500 chars)
+                            if snippet_clean and snippet_clean.strip():
+                                display_snippet = snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean
+                                label = f"📄 Source text from citation [{citation_id}]:" if content_type == 'text' else f"📷 Image content/OCR text from citation [{citation_id}]:"
+                                st.text_area(
+                                    label,
+                                    display_snippet,
+                                    height=150,
+                                    key=f"citation_{citation_id}_{len(st.session_state.chat_history)}_{idx}",
+                                    label_visibility="visible"
+                                )
+                            else:
+                                st.caption("No snippet available")
+                            
+                            # Show image reference details if available
+                            if image_ref:
+                                image_details = []
+                                if image_ref.get('bbox'):
+                                    bbox = image_ref['bbox']
+                                    image_details.append(f"Position: ({bbox[0]:.1f}, {bbox[1]:.1f}) to ({bbox[2]:.1f}, {bbox[3]:.1f})")
+                                if image_ref.get('xref'):
+                                    image_details.append(f"XRef: {image_ref['xref']}")
+                                if image_details:
+                                    st.caption("🖼️ " + " | ".join(image_details))
+                            
+                            # Show additional metadata if available
+                            metadata_info = []
+                            if item.get('chunk_index') is not None:
+                                metadata_info.append(f"Chunk: {item.get('chunk_index')}")
+                            if item.get('start_char') is not None:
+                                metadata_info.append(f"Text Position: {item.get('start_char')}-{item.get('end_char')}")
+                            if metadata_info:
+                                st.caption(" | ".join(metadata_info))
+                            
+                            if idx < len(items_to_display):
+                                st.divider()
+                elif sources:
+                    # Fallback: Show sources with extracted page numbers from context chunks
+                    st.markdown("---")
+                    st.subheader("📎 Sources & Citations")
+                    st.info(f"**{len(sources)} source(s) were used to generate this answer:**")
+                    
+                    # Try to extract page numbers from context_chunks
+                    context_chunks = result.get("context_chunks", [])
+                    
+                    for idx, source in enumerate(sources, 1):
+                        with st.container():
+                            # Try to find matching chunk for this source
+                            chunk_text = ""
+                            page = None
+                            
+                            if context_chunks and idx <= len(context_chunks):
+                                chunk_text = context_chunks[idx - 1]
+                                # Extract page number from chunk text
+                                import re
+                                page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                                if page_match:
+                                    page = int(page_match.group(1))
+                            
+                            # Display source with page if found
+                            source_header = f"**[{idx}] {source}**"
+                            if page:
+                                source_header += f" - **Page {page}**"
+                                st.success(source_header)
+                            else:
+                                source_header += " - Page number not available"
+                                st.warning(source_header)
+                            
+                            # Show chunk text if available
+                            if chunk_text and chunk_text.strip():
+                                # Clean page markers for display
+                                clean_chunk = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
+                                if not clean_chunk:
+                                    clean_chunk = chunk_text
+                                
+                                st.text_area(
+                                    f"📄 Source text from [{idx}]:",
+                                    clean_chunk[:500] + "..." if len(clean_chunk) > 500 else clean_chunk,
+                                    height=120,
+                                    key=f"source_{idx}_{len(st.session_state.chat_history)}",
+                                    label_visibility="visible"
+                                )
+                            else:
+                                st.caption("Source text not available")
+                            
+                            if idx < len(sources):
+                                st.divider()
+                else:
+                    # Show message if no sources found
+                    st.warning("⚠️ No sources found for this answer.")
         
-        # Add to chat history
-        st.session_state.chat_history.append((question, answer, sources))
+        # Store citations in session state for persistent display
+        if citations and len(citations) > 0:
+            st.session_state.citations_history.append({
+                'question': question,
+                'answer': answer,
+                'citations': citations,
+                'sources': sources,
+                'num_chunks': num_chunks,
+                'context_chunks': context_chunks
+            })
+        elif context_chunks and len(context_chunks) > 0:
+            # Create citations from context_chunks if not available
+            import re
+            created_citations = []
+            for idx, chunk_text in enumerate(context_chunks, 1):
+                page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                page = int(page_match.group(1)) if page_match else None
+                source = sources[0] if sources else 'Unknown'
+                if len(sources) > idx - 1:
+                    source = sources[idx - 1]
+                
+                # Clean snippet
+                snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
+                if not snippet_clean:
+                    snippet_clean = chunk_text
+                
+                # Determine content type
+                content_type = 'text'
+                if 'image' in chunk_text.lower() or 'ocr' in chunk_text.lower():
+                    content_type = 'image'
+                
+                # Build source location
+                source_location = f"Page {page}" if page else "Text content"
+                
+                created_citations.append({
+                    'id': idx,
+                    'source': source,
+                    'page': page,
+                    'snippet': snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
+                    'full_text': chunk_text,
+                    'source_location': source_location,
+                    'content_type': content_type
+                })
+            st.session_state.citations_history.append({
+                'question': question,
+                'answer': answer,
+                'citations': created_citations,
+                'sources': sources,
+                'num_chunks': num_chunks,
+                'context_chunks': context_chunks
+            })
+        
+        # Add to chat history with citations
+        # Store as dict to preserve citations
+        history_entry = {
+            'question': question,
+            'answer': answer,
+            'sources': sources,
+            'citations': citations if citations and len(citations) > 0 else None
+        }
+        st.session_state.chat_history.append(history_entry)
         st.rerun()
     
 else:

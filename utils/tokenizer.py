@@ -321,8 +321,9 @@ class TokenTextSplitter:
                 chunk_end_char = text_start_pos + len(chunk_text)
                 text_start_pos = chunk_end_char  # Update for next chunk (accounting for overlap)
                 
-                # Determine page number for this chunk
+                # Determine page number for this chunk and check for image references
                 chunk_page = None
+                chunk_image_ref = None
                 if page_blocks:
                     # Find which page this chunk belongs to based on character position
                     # Account for "--- Page X ---" markers in the text
@@ -330,6 +331,20 @@ class TokenTextSplitter:
                     for page_block in page_blocks:
                         page_text = page_block.get('text', '')
                         page_num = page_block.get('page', None)
+                        block_type = page_block.get('type', 'text')
+                        
+                        # Check if this is an image block on the same page
+                        if block_type == 'image' and page_num:
+                            # If chunk is on this page, associate with image
+                            if chunk_page == page_num or (chunk_page is None and page_num):
+                                chunk_image_ref = {
+                                    'page': page_num,
+                                    'image_index': page_block.get('image_index'),
+                                    'bbox': page_block.get('bbox'),
+                                    'xref': page_block.get('xref'),
+                                    'type': 'image'
+                                }
+                        
                         if page_text and page_num:
                             # Account for page marker in original text (if present)
                             page_marker = f"--- Page {page_num} ---\n"
@@ -340,11 +355,37 @@ class TokenTextSplitter:
                             # Check if chunk starts within this page
                             if chunk_start_char >= page_start and chunk_start_char < page_end:
                                 chunk_page = page_num
-                                break
+                                # Check for images on this page
+                                if not chunk_image_ref:
+                                    for img_block in page_blocks:
+                                        if (isinstance(img_block, dict) and 
+                                            img_block.get('type') == 'image' and 
+                                            img_block.get('page') == page_num):
+                                            chunk_image_ref = {
+                                                'page': page_num,
+                                                'image_index': img_block.get('image_index'),
+                                                'bbox': img_block.get('bbox'),
+                                                'xref': img_block.get('xref'),
+                                                'type': 'image'
+                                            }
+                                            break
                             # Also check if chunk overlaps with this page
                             elif chunk_start_char < page_end and chunk_end_char > page_start:
                                 chunk_page = page_num
-                                break
+                                # Check for images on this page
+                                if not chunk_image_ref:
+                                    for img_block in page_blocks:
+                                        if (isinstance(img_block, dict) and 
+                                            img_block.get('type') == 'image' and 
+                                            img_block.get('page') == page_num):
+                                            chunk_image_ref = {
+                                                'page': page_num,
+                                                'image_index': img_block.get('image_index'),
+                                                'bbox': img_block.get('bbox'),
+                                                'xref': img_block.get('xref'),
+                                                'type': 'image'
+                                            }
+                                            break
                             
                             cumulative_pos = page_end
                 
@@ -373,6 +414,13 @@ class TokenTextSplitter:
                     chunk_metadata_copy['source_page'] = chunk_page
                 elif 'page' in chunk_metadata_copy:
                     chunk_metadata_copy['source_page'] = chunk_metadata_copy['page']
+                
+                # Add image reference if found
+                if chunk_image_ref:
+                    chunk_metadata_copy['image_ref'] = chunk_image_ref
+                    chunk_metadata_copy['has_image'] = True
+                    chunk_metadata_copy['image_index'] = chunk_image_ref.get('image_index')
+                    chunk_metadata_copy['image_bbox'] = chunk_image_ref.get('bbox')
                 
                 # Preserve page_blocks metadata if available (for citation support)
                 if 'page_blocks' in chunk_metadata_copy:
