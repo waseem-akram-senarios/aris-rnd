@@ -13,6 +13,8 @@ from ingestion.document_processor import DocumentProcessor
 from parsers.parser_factory import ParserFactory
 from metrics.metrics_collector import MetricsCollector
 from utils.chunking_strategies import get_all_strategies, get_chunking_params, validate_custom_params
+from config.settings import ARISConfig
+from storage.document_registry import DocumentRegistry
 
 load_dotenv()
 
@@ -38,6 +40,10 @@ if 'document_processor' not in st.session_state:
     st.session_state.document_processor = None
 if 'metrics_collector' not in st.session_state:
     st.session_state.metrics_collector = MetricsCollector()
+if 'document_registry' not in st.session_state:
+    st.session_state.document_registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+if 'vectorstore_loaded' not in st.session_state:
+    st.session_state.vectorstore_loaded = False
 
 def process_uploaded_files(uploaded_files, use_cerebras, parser_preference, 
                           embedding_model, openai_model, cerebras_model,
@@ -84,6 +90,22 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap
         )
+        
+        # Try to load existing vectorstore if FAISS and not already loaded
+        if vector_store_type.lower() == 'faiss' and not st.session_state.vectorstore_loaded:
+            vectorstore_path = ARISConfig.get_vectorstore_path()
+            if os.path.exists(vectorstore_path):
+                try:
+                    loaded = st.session_state.rag_system.load_vectorstore(vectorstore_path)
+                    if loaded:
+                        st.session_state.vectorstore_loaded = True
+                        st.session_state.documents_processed = True
+                        # Load existing documents from registry
+                        existing_docs = st.session_state.document_registry.list_documents()
+                        if existing_docs:
+                            st.info(f"📚 Loaded {len(existing_docs)} existing document(s) from shared storage")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not load existing vectorstore: {e}")
     
     # Initialize or update document processor
     if (st.session_state.document_processor is None or 
@@ -214,6 +236,33 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                 
                 results.append(result)
                 
+                # Save to shared document registry if successful
+                if result.status == 'success':
+                    import uuid
+                    document_id = str(uuid.uuid4())
+                    # Get pages from metrics if available
+                    pages = None
+                    if st.session_state.metrics_collector.processing_metrics:
+                        for metric in reversed(st.session_state.metrics_collector.processing_metrics):
+                            if metric.document_name == result.document_name:
+                                pages = metric.pages
+                                break
+                    
+                    doc_metadata = {
+                        'document_id': document_id,
+                        'document_name': result.document_name,
+                        'status': result.status,
+                        'chunks_created': result.chunks_created,
+                        'tokens_extracted': result.tokens_extracted,
+                        'parser_used': result.parser_used,
+                        'processing_time': result.processing_time,
+                        'extraction_percentage': result.extraction_percentage,
+                        'images_detected': result.images_detected,
+                        'pages': pages,
+                        'error': result.error
+                    }
+                    st.session_state.document_registry.add_document(document_id, doc_metadata)
+                
                 # Show result summary
                 if result.status == 'success':
                     parser_info = f"Parser: {result.parser_used}"
@@ -241,6 +290,19 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
             f"✅ Processed {len(successful_results)} document(s) into {total_chunks} chunks "
             f"({total_tokens:,} tokens)!"
         )
+        
+        # Save vectorstore to disk for sharing with FastAPI (FAISS only)
+        if (st.session_state.rag_system and 
+            st.session_state.rag_system.vectorstore and 
+            st.session_state.rag_system.vector_store_type.lower() == 'faiss'):
+            try:
+                vectorstore_path = ARISConfig.get_vectorstore_path()
+                st.session_state.rag_system.save_vectorstore(vectorstore_path)
+                st.session_state.vectorstore_loaded = True
+                st.caption("💾 Vectorstore saved to shared storage")
+            except Exception as e:
+                st.warning(f"⚠️ Could not save vectorstore: {e}")
+        
         return True
     else:
         st.error("No documents were successfully processed.")
@@ -254,10 +316,12 @@ st.markdown("Upload documents and ask questions about them using AI with advance
 with st.sidebar:
     st.header("⚙️ Settings")
     
-    # API selection
+    # API selection (use shared config default)
+    default_api = "Cerebras" if ARISConfig.USE_CEREBRAS else "OpenAI"
     api_choice = st.radio(
         "Choose API:",
         ["OpenAI", "Cerebras"],
+        index=1 if ARISConfig.USE_CEREBRAS else 0,
         help="Select which API to use for generating answers"
     )
     use_cerebras = api_choice == "Cerebras"
@@ -290,35 +354,40 @@ with st.sidebar:
     }
     
     if api_choice == "OpenAI":
+        # Use shared config default
+        default_openai_index = list(openai_models.keys()).index(ARISConfig.OPENAI_MODEL) if ARISConfig.OPENAI_MODEL in openai_models else 0
         openai_model = st.selectbox(
             "OpenAI Model:",
             list(openai_models.keys()),
-            index=0,
+            index=default_openai_index,
             help="Select OpenAI model for generating answers"
         )
         # Show description
         with st.expander("ℹ️ Model Description", expanded=False):
             st.write(f"**{openai_model}**")
             st.write(openai_models[openai_model])
-        cerebras_model = "llama3.1-8b"  # Default, not used
+        cerebras_model = ARISConfig.CEREBRAS_MODEL  # Default, not used
     else:
+        # Use shared config default
+        default_cerebras_index = list(cerebras_models.keys()).index(ARISConfig.CEREBRAS_MODEL) if ARISConfig.CEREBRAS_MODEL in cerebras_models else 0
         cerebras_model = st.selectbox(
             "Cerebras Model:",
             list(cerebras_models.keys()),
-            index=0,
+            index=default_cerebras_index,
             help="Select Cerebras model for generating answers"
         )
         # Show description
         with st.expander("ℹ️ Model Description", expanded=False):
             st.write(f"**{cerebras_model}**")
             st.write(cerebras_models[cerebras_model])
-        openai_model = "gpt-3.5-turbo"  # Default, not used
+        openai_model = ARISConfig.OPENAI_MODEL  # Default, not used
     
-    # Embedding model selection
+    # Embedding model selection (use shared config default)
+    default_embedding_index = list(embedding_models.keys()).index(ARISConfig.EMBEDDING_MODEL) if ARISConfig.EMBEDDING_MODEL in embedding_models else 0
     embedding_model = st.selectbox(
         "Embedding Model:",
         list(embedding_models.keys()),
-        index=0,
+        index=default_embedding_index,
         help="Select embedding model for document vectors"
     )
     # Show embedding model description
@@ -346,10 +415,13 @@ with st.sidebar:
     chunking_strategies = get_all_strategies()
     strategy_options = ["Precise", "Balanced", "Comprehensive", "Custom"]
     
+    # Use shared config default for chunking strategy
+    strategy_map = {'precise': 0, 'balanced': 1, 'comprehensive': 2, 'custom': 3}
+    default_strategy_index = strategy_map.get(ARISConfig.CHUNKING_STRATEGY.lower(), 1)
     chunking_strategy = st.selectbox(
         "Choose Chunking Strategy:",
         strategy_options,
-        index=1,  # Default to "Balanced"
+        index=default_strategy_index,
         help="Select how documents should be split into chunks. "
              "Precise: Small chunks for exact matches. "
              "Balanced: Medium chunks (recommended). "
@@ -406,12 +478,14 @@ with st.sidebar:
             st.write(f"**Description:** {strategy_info['description']}")
             st.write(f"**Use Case:** {strategy_info['use_case']}")
     
-    # Vector Store selection
+    # Vector Store selection (use shared config default)
     st.divider()
     st.header("💾 Vector Store Settings")
+    default_vector_store = "OpenSearch" if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else "FAISS"
     vector_store_choice = st.radio(
         "Choose Vector Store:",
         ["FAISS", "OpenSearch"],
+        index=1 if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else 0,
         help="FAISS: Local storage, fast, no cloud required. "
              "OpenSearch: Cloud storage, scalable, requires AWS OpenSearch domain."
     )
@@ -420,8 +494,9 @@ with st.sidebar:
     opensearch_index = None
     
     if vector_store_choice == "OpenSearch":
-        # Get default domain from environment or use the working domain
-        default_domain = os.getenv('AWS_OPENSEARCH_DOMAIN', 'intelycx-waseem-os')
+        # Get default domain from shared config
+        opensearch_config = ARISConfig.get_opensearch_config()
+        default_domain = opensearch_config['domain'] or 'intelycx-waseem-os'
         opensearch_domains = [
             "intelycx-waseem-os",  # Default working domain
             "intelycx-os-dev",
@@ -442,7 +517,7 @@ with st.sidebar:
         )
         opensearch_index = st.text_input(
             "OpenSearch Index Name:",
-            value="aris-rag-index",
+            value=opensearch_config['index'] or "aris-rag-index",
             help="Name of the OpenSearch index (will be created if it doesn't exist)"
         )
         
@@ -771,6 +846,86 @@ with st.sidebar:
             file_name="rag_metrics.json",
             mime="application/json"
         )
+        
+        # Sync Status Section
+        st.divider()
+        st.subheader("🔄 Synchronization Status")
+        
+        # Get sync status
+        registry_status = st.session_state.document_registry.get_sync_status()
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Shared Documents", registry_status['total_documents'])
+        with col2:
+            last_update = registry_status.get('last_update', 'Never')
+            if last_update:
+                st.caption(f"Last Update: {last_update[:19]}")
+            else:
+                st.caption("Last Update: Never")
+        with col3:
+            vectorstore_path = ARISConfig.get_vectorstore_path()
+            vectorstore_exists = os.path.exists(vectorstore_path) if st.session_state.rag_system and st.session_state.rag_system.vector_store_type.lower() == 'faiss' else False
+            if vectorstore_exists:
+                st.success("✅ Vectorstore synced")
+            else:
+                st.info("ℹ️ No shared vectorstore")
+        
+        # Manual sync buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 Save Vectorstore", help="Save current vectorstore to shared storage"):
+                if st.session_state.rag_system and st.session_state.rag_system.vectorstore:
+                    if st.session_state.rag_system.vector_store_type.lower() == 'faiss':
+                        try:
+                            st.session_state.rag_system.save_vectorstore(vectorstore_path)
+                            st.success("✅ Vectorstore saved to shared storage")
+                            st.session_state.vectorstore_loaded = True
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Failed to save: {e}")
+                    else:
+                        st.info("ℹ️ OpenSearch stores data in cloud automatically")
+                else:
+                    st.warning("⚠️ No vectorstore to save")
+        
+        with col2:
+            if st.button("🔄 Reload Vectorstore", help="Reload vectorstore from shared storage"):
+                if st.session_state.rag_system and st.session_state.rag_system.vector_store_type.lower() == 'faiss':
+                    try:
+                        # Check for conflicts before reloading
+                        conflict = st.session_state.document_registry.check_for_conflicts()
+                        if conflict:
+                            st.warning(f"⚠️ {conflict['message']}. Reloading anyway...")
+                            st.session_state.document_registry.reload_from_disk()
+                        
+                        loaded = st.session_state.rag_system.load_vectorstore(vectorstore_path)
+                        if loaded:
+                            st.success("✅ Vectorstore reloaded from shared storage")
+                            st.session_state.vectorstore_loaded = True
+                            st.session_state.documents_processed = True
+                            # Reload documents from registry
+                            existing_docs = st.session_state.document_registry.list_documents()
+                            if existing_docs:
+                                st.info(f"📚 Loaded {len(existing_docs)} document(s) from shared registry")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ No vectorstore found to reload")
+                    except Exception as e:
+                        st.error(f"❌ Failed to reload: {e}")
+                else:
+                    st.info("ℹ️ OpenSearch loads from cloud automatically")
+        
+        # Check for conflicts and show warning
+        conflict = st.session_state.document_registry.check_for_conflicts()
+        if conflict:
+            st.warning(
+                f"⚠️ **Conflict Detected**: {conflict['message']}. "
+                f"The registry was modified externally. Consider reloading."
+            )
+            if st.button("🔄 Reload Registry", help="Reload document registry from disk"):
+                if st.session_state.document_registry.reload_from_disk():
+                    st.success("✅ Registry reloaded")
+                    st.rerun()
     else:
         st.info("⏳ No documents processed yet. Upload and process documents to see metrics.")
     

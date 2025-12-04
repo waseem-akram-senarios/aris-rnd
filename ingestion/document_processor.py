@@ -9,8 +9,13 @@ from typing import Optional, Dict, List
 from parsers.parser_factory import ParserFactory
 from rag_system import RAGSystem
 
-# Set up logging
-logger = logging.getLogger(__name__)
+# Set up enhanced logging
+from scripts.setup_logging import setup_logging
+logger = setup_logging(
+    name="aris_rag.document_processor",
+    level=logging.INFO,
+    log_file="logs/document_processor.log"
+)
 
 
 @dataclass
@@ -65,6 +70,11 @@ class DocumentProcessor:
         doc_name = file_name or os.path.basename(file_path)
         doc_id = file_path
         
+        logger.info("=" * 60)
+        logger.info(f"[STEP 1] DocumentProcessor: Starting processing for: {doc_name}")
+        logger.info(f"   Document ID: {doc_id}")
+        logger.info("=" * 60)
+        
         # Initialize state
         self.processing_state[doc_id] = {
             'status': 'processing',
@@ -77,6 +87,7 @@ class DocumentProcessor:
         
         try:
             # Get file size
+            logger.info("[STEP 1.1] DocumentProcessor: Validating and preparing document...")
             file_size = len(file_content) if file_content else 0
             if not file_size and os.path.exists(file_path):
                 file_size = os.path.getsize(file_path)
@@ -84,8 +95,11 @@ class DocumentProcessor:
             # Get file type
             file_ext = os.path.splitext(doc_name)[1].lower().lstrip('.')
             file_type = file_ext if file_ext else 'unknown'
+            file_size_mb = file_size / 1024 / 1024
+            logger.info(f"✅ [STEP 1.1] Document validated: type={file_type}, size={file_size:,} bytes ({file_size_mb:.2f} MB)")
             
-            # Step 1: Parse document (25% progress)
+            # Step 2: Parse document (25% progress)
+            logger.info("[STEP 2] DocumentProcessor: Starting document parsing...")
             if progress_callback:
                 progress_callback('parsing', 0.25)
             
@@ -93,19 +107,28 @@ class DocumentProcessor:
             try:
                 # Log parser selection
                 parser_name = parser_preference or "auto"
-                logger.info(f"DocumentProcessor: Processing {doc_name} with parser: {parser_name}")
+                logger.info(f"[STEP 2.1] DocumentProcessor: Parser selection - preference: {parser_name}")
                 if parser_preference:
-                    logger.info(f"DocumentProcessor: Explicit parser selected: {parser_preference} (will NOT fall back)")
+                    logger.info(f"[STEP 2.1] Explicit parser selected: {parser_preference} (will NOT fall back)")
                 
                 # Special handling for Docling - show progress updates
                 if parser_preference and parser_preference.lower() == 'docling':
                     if progress_callback:
                         progress_callback('parsing', 0.3)
-                        # Update status to show Docling is processing
-                        logger.info(f"Docling: Processing {doc_name} (this may take 5-15 minutes)...")
+                    # Estimate processing time based on file size
+                    if file_size_mb > 10:
+                        estimated_time = "15-30 minutes"
+                    elif file_size_mb > 5:
+                        estimated_time = "10-20 minutes"
+                    else:
+                        estimated_time = "5-15 minutes"
+                    # Update status to show Docling is processing
+                    logger.info(f"[STEP 2.2] Docling: Processing {doc_name} ({file_size_mb:.2f} MB) - Estimated time: {estimated_time}")
                 
                 # Parse document (this will block for Docling, but that's expected)
-                logger.info(f"DocumentProcessor: Calling parser with preference: {parser_preference}")
+                logger.info(f"[STEP 2.2] DocumentProcessor: Calling parser with preference: {parser_preference}")
+                if file_size_mb > 0:
+                    logger.info(f"[STEP 2.2] File size: {file_size_mb:.2f} MB | Estimated processing time: {estimated_time if parser_preference and parser_preference.lower() == 'docling' else 'varies'}")
                 
                 # Create a wrapper callback that provides parser-specific progress updates
                 def parser_progress_callback(status_msg, progress):
@@ -131,34 +154,41 @@ class DocumentProcessor:
                 # Log successful parsing
                 if parsed_doc:
                     logger.info(
-                        f"DocumentProcessor: Parser '{parsed_doc.parser_used}' completed successfully: "
+                        f"✅ [STEP 2.3] DocumentProcessor: Parser '{parsed_doc.parser_used}' completed successfully: "
                         f"{parsed_doc.pages} pages, {len(parsed_doc.text):,} chars, "
                         f"{parsed_doc.extraction_percentage*100:.1f}% extraction"
                     )
-                    logger.info(f"DocumentProcessor: Text preview (first 200 chars): {parsed_doc.text[:200] if parsed_doc.text else 'EMPTY'}...")
+                    text_preview = parsed_doc.text[:200] if parsed_doc.text else 'EMPTY'
+                    logger.info(f"[STEP 2.3] Text preview (first 200 chars): {text_preview}...")
                 else:
-                    logger.error("DocumentProcessor: Parser returned None!")
+                    logger.error("❌ [STEP 2.3] DocumentProcessor: Parser returned None!")
                     raise ValueError("Parser returned None - document could not be parsed")
             except IndexError as e:
-                logger.error(f"Parser error (list index out of range): {str(e)}")
+                logger.error(f"❌ [STEP 2] Parser error (list index out of range): {str(e)}")
                 raise ValueError(f"Parser error (list index out of range): {str(e)}. The PDF may be corrupted or in an unsupported format.")
             except Exception as e:
-                logger.error(f"Parser error: {str(e)}")
+                logger.error(f"❌ [STEP 2] Parser error: {str(e)}")
                 raise ValueError(f"Parser error: {str(e)}")
             parsing_time = time.time() - parse_start
-            logger.info(f"Parsing completed in {parsing_time:.2f} seconds")
+            logger.info(f"✅ [STEP 2] Parsing completed in {parsing_time:.2f} seconds")
             
-            # Validate parsed document
+            # Step 3: Validate parsed document
+            logger.info("[STEP 3] DocumentProcessor: Validating parsed document...")
             if parsed_doc is None:
+                logger.error("❌ [STEP 3] Parser returned None - document could not be parsed")
                 raise ValueError("Parser returned None - document could not be parsed")
             if not hasattr(parsed_doc, 'text'):
+                logger.error("❌ [STEP 3] Parsed document missing 'text' attribute")
                 raise ValueError("Parsed document missing 'text' attribute")
             if not hasattr(parsed_doc, 'parser_used'):
+                logger.error("❌ [STEP 3] Parsed document missing 'parser_used' attribute")
                 raise ValueError("Parsed document missing 'parser_used' attribute")
             
             # Check if text is empty (common for scanned/image PDFs)
             doc_text = parsed_doc.text if parsed_doc.text else ""
+            logger.info(f"[STEP 3.1] DocumentProcessor: Extracted text length: {len(doc_text):,} characters")
             if not doc_text or not doc_text.strip():
+                logger.warning("⚠️ [STEP 3.1] Document text is empty - checking if image-based PDF...")
                 # Check if this is an image-based PDF
                 if parsed_doc.images_detected or parsed_doc.extraction_percentage < 0.1:
                     # Check if a specific parser was requested
@@ -167,7 +197,7 @@ class DocumentProcessor:
                     
                     # If a specific parser was requested but a different one was used, that's an error
                     if requested_parser and requested_parser != 'auto' and actual_parser != requested_parser:
-                        logger.error(f"DocumentProcessor: ERROR - Requested {requested_parser} but got {actual_parser}")
+                        logger.error(f"❌ [STEP 3.1] DocumentProcessor: ERROR - Requested {requested_parser} but got {actual_parser}")
                         raise ValueError(
                             f"Parser selection error: You selected '{parser_preference}' but '{parsed_doc.parser_used}' was used instead. "
                             f"This should not happen. Please report this issue."
@@ -203,12 +233,16 @@ class DocumentProcessor:
                     
                     raise ValueError(error_msg)
                 else:
+                    logger.error("❌ [STEP 3.1] No text could be extracted from the document")
                     raise ValueError(
                         f"No text could be extracted from the document. "
                         f"The document may be corrupted or in an unsupported format."
                     )
             
-            # Step 2: Process with RAG system (50% progress)
+            logger.info(f"✅ [STEP 3] Document validation completed - {len(doc_text):,} characters ready for processing")
+            
+            # Step 4: Process with RAG system (chunking and embedding)
+            logger.info("[STEP 4] DocumentProcessor: Starting chunking and embedding process...")
             if progress_callback:
                 progress_callback('chunking', 0.5)
             
@@ -238,7 +272,11 @@ class DocumentProcessor:
                         else:
                             progress_callback(status, mapped_progress)
                 
-                logger.info(f"Starting chunking and embedding for {doc_name} ({len(doc_text):,} characters)...")
+                # Estimate chunks and tokens
+                estimated_chunks = max(1, len(doc_text) // (self.rag_system.chunk_size * 4))  # Rough estimate: 4 chars per token
+                estimated_tokens = len(doc_text) // 4  # Rough estimate: 4 chars per token
+                logger.info(f"[STEP 4.1] DocumentProcessor: Starting chunking and embedding for {doc_name}")
+                logger.info(f"[STEP 4.1] Text length: {len(doc_text):,} characters | Estimated chunks: ~{estimated_chunks} | Estimated tokens: ~{estimated_tokens:,}")
                 
                 # Build metadata with page_blocks for citation support
                 doc_metadata = {
@@ -254,15 +292,17 @@ class DocumentProcessor:
                     if 'page_blocks' in parsed_doc.metadata:
                         doc_metadata['page_blocks'] = parsed_doc.metadata['page_blocks']
                 
+                logger.info(f"[STEP 4.2] DocumentProcessor: Calling RAGSystem.add_documents_incremental...")
                 stats = self.rag_system.add_documents_incremental(
                     texts=[doc_text],
                     metadatas=[doc_metadata],
                     progress_callback=chunking_progress_callback
                 )
-                logger.info(f"Chunking and embedding completed: {stats['chunks_created']} chunks, {stats['tokens_added']:,} tokens")
+                logger.info(f"✅ [STEP 4.2] Chunking and embedding completed: {stats['chunks_created']} chunks, {stats['tokens_added']:,} tokens")
             except IndexError as e:
                 import traceback
                 error_details = traceback.format_exc()
+                logger.error(f"❌ [STEP 4] Chunking error (list index out of range): {str(e)}")
                 raise ValueError(
                     f"Chunking error (list index out of range): {str(e)}\n"
                     f"The document may be too large or have formatting issues.\n"
@@ -271,17 +311,21 @@ class DocumentProcessor:
             except Exception as e:
                 import traceback
                 error_details = traceback.format_exc()
+                logger.error(f"❌ [STEP 4] Chunking error: {str(e)}")
                 raise ValueError(f"Chunking error: {str(e)}\nError details: {error_details[:500]}")
             chunking_time = time.time() - chunk_start
+            logger.info(f"✅ [STEP 4] Chunking and embedding completed in {chunking_time:.2f} seconds")
             
             # Estimate embedding time (usually fast, but track it)
             embedding_time = 0.0  # Embedding happens in add_documents_incremental
             
-            # Step 3: Complete (100% progress)
+            # Step 5: Complete (100% progress)
+            logger.info("[STEP 5] DocumentProcessor: Finalizing processing...")
             if progress_callback:
                 progress_callback('complete', 1.0)
             
             processing_time = time.time() - start_time
+            logger.info(f"✅ [STEP 5] Processing finalized - Total time: {processing_time:.2f}s")
             
             result = ProcessingResult(
                 status='success',
@@ -294,7 +338,17 @@ class DocumentProcessor:
                 images_detected=parsed_doc.images_detected
             )
             
+            logger.info("=" * 60)
+            logger.info(f"✅ ALL STEPS COMPLETE: Document processed successfully")
+            logger.info(f"   Document: {doc_name}")
+            logger.info(f"   Total time: {processing_time:.2f}s")
+            logger.info(f"   Chunks: {stats['chunks_created']}")
+            logger.info(f"   Tokens: {stats['tokens_added']:,}")
+            logger.info(f"   Parser: {parsed_doc.parser_used}")
+            logger.info("=" * 60)
+            
             # Record metrics if collector is available
+            logger.info("[STEP 6] DocumentProcessor: Recording metrics...")
             if hasattr(self.rag_system, 'metrics_collector') and self.rag_system.metrics_collector:
                 self.rag_system.metrics_collector.record_processing(
                     document_name=doc_name,
@@ -313,6 +367,7 @@ class DocumentProcessor:
                     success=True,
                     images_detected=parsed_doc.images_detected
                 )
+                logger.info("✅ [STEP 6] Metrics recorded")
             
             self.processing_state[doc_id] = {
                 'status': 'success',
@@ -326,6 +381,12 @@ class DocumentProcessor:
         except Exception as e:
             processing_time = time.time() - start_time
             error_msg = str(e)
+            logger.error("=" * 60)
+            logger.error(f"❌ ERROR: Document processing failed")
+            logger.error(f"   Document: {doc_name}")
+            logger.error(f"   Error: {error_msg}")
+            logger.error(f"   Time elapsed: {processing_time:.2f}s")
+            logger.error("=" * 60)
             
             # Get file size for metrics
             file_size = len(file_content) if file_content else 0

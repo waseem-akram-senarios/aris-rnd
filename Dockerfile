@@ -54,7 +54,15 @@ COPY parsers/ ./parsers/
 COPY utils/ ./utils/
 COPY metrics/ ./metrics/
 COPY vectorstores/ ./vectorstores/
+COPY config/ ./config/
+COPY storage/ ./storage/
+COPY api/ ./api/
+COPY scripts/ ./scripts/
 COPY .streamlit/ ./.streamlit/
+
+# Copy startup script
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
 # Create directories for data persistence
 RUN mkdir -p /app/vectorstore /app/data
@@ -73,6 +81,6 @@ EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8501/_stcore/health')" || exit 1
 
-# Run Streamlit
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Run both Streamlit and FastAPI
+CMD ["/app/start.sh"]
 

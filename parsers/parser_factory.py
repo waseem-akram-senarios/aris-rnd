@@ -2,8 +2,12 @@
 Parser factory for selecting and managing document parsers.
 """
 import os
+import logging
 from typing import Optional, Dict, Type
 from .base_parser import BaseParser, ParsedDocument
+from scripts.setup_logging import get_logger
+
+logger = get_logger("aris_rag.parser_factory")
 
 
 class ParserFactory:
@@ -144,13 +148,11 @@ class ParserFactory:
         
         # If specific parser requested, use it WITHOUT fallback
         if preferred_parser and preferred_parser.lower() != 'auto':
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"ParserFactory: Explicit parser requested: {preferred_parser}")
+            logger.info(f"[STEP 2.1] ParserFactory: Explicit parser requested: {preferred_parser}")
             
             parser = cls.get_parser(file_path, preferred_parser)
             if parser:
-                logger.info(f"ParserFactory: Using {preferred_parser} parser (no fallback)")
+                logger.info(f"[STEP 2.2] ParserFactory: Using {preferred_parser} parser (no fallback)")
                 try:
                     # Try to pass progress_callback if parser supports it
                     import inspect
@@ -161,12 +163,13 @@ class ParserFactory:
                         result = parser.parse(file_path, file_content)
                     # Verify the result actually used the requested parser
                     if hasattr(result, 'parser_used') and result.parser_used.lower() != preferred_parser.lower():
-                        logger.warning(f"ParserFactory: Requested {preferred_parser} but got {result.parser_used}")
+                        logger.warning(f"⚠️ [STEP 2.2] ParserFactory: Requested {preferred_parser} but got {result.parser_used}")
+                    logger.info(f"✅ [STEP 2.2] ParserFactory: {preferred_parser} parser completed successfully")
                     return result
                 except Exception as e:
                     # If explicitly selected parser fails, raise error instead of falling back
                     error_msg = str(e)
-                    logger.error(f"ParserFactory: {preferred_parser} parser failed: {error_msg}")
+                    logger.error(f"❌ [STEP 2.2] ParserFactory: {preferred_parser} parser failed: {error_msg}")
                     if "timed out" in error_msg.lower() or "timeout" in error_msg.lower():
                         raise ValueError(
                             f"{preferred_parser.capitalize()} parser timed out: {error_msg}. "
@@ -178,18 +181,21 @@ class ParserFactory:
                             f"Please try again or use a different parser."
                         )
             else:
-                logger.error(f"ParserFactory: Parser '{preferred_parser}' is not available")
+                logger.error(f"❌ [STEP 2.1] ParserFactory: Parser '{preferred_parser}' is not available")
                 raise ValueError(f"Parser '{preferred_parser}' is not available")
         
         # Detect PDF type
+        logger.info(f"[STEP 2.1] ParserFactory: Detecting PDF type...")
         pdf_type = detect_pdf_type(file_path, file_content)
         is_image_heavy = is_image_heavy_pdf(file_path, file_content)
+        logger.info(f"[STEP 2.1] ParserFactory: PDF type detected - type={pdf_type}, image_heavy={is_image_heavy}")
         
         best_result = None
         best_confidence = 0.0
         pymupdf_result = None  # Keep PyMuPDF result as fallback
         
         # Try PyMuPDF first (fastest, free)
+        logger.info(f"[STEP 2.2] ParserFactory: Trying PyMuPDF parser (fastest, free)...")
         try:
             from .pymupdf_parser import PyMuPDFParser
             parser = PyMuPDFParser()
@@ -202,6 +208,7 @@ class ParserFactory:
             
             # Check if result is good enough
             if result.extraction_percentage >= 0.5 and result.confidence >= 0.7:
+                logger.info(f"✅ [STEP 2.2] ParserFactory: PyMuPDF result is good enough (extraction={result.extraction_percentage*100:.1f}%, confidence={result.confidence:.2f})")
                 return result  # Good enough, return immediately
             
             # Keep as candidate
@@ -217,7 +224,13 @@ class ParserFactory:
             try:
                 from .docling_parser import DoclingParser
                 parser = DoclingParser()
-                result = parser.parse(file_path, file_content)
+                # Check if parser supports progress_callback
+                import inspect
+                sig = inspect.signature(parser.parse)
+                if 'progress_callback' in sig.parameters:
+                    result = parser.parse(file_path, file_content, progress_callback=progress_callback)
+                else:
+                    result = parser.parse(file_path, file_content)
                 
                 # Use Docling if it has better confidence or extraction
                 if result.confidence > best_confidence or result.extraction_percentage > best_result.extraction_percentage:

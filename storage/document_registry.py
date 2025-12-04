@@ -1,0 +1,221 @@
+"""
+Shared document registry for storing document metadata.
+Thread-safe operations for concurrent access from FastAPI and Streamlit.
+"""
+import os
+import json
+import threading
+import time
+import fcntl
+from typing import Dict, List, Optional
+from datetime import datetime
+from pathlib import Path
+
+
+class DocumentRegistry:
+    """Thread-safe document metadata registry"""
+    
+    def __init__(self, registry_path: str = "storage/document_registry.json"):
+        """
+        Initialize document registry.
+        
+        Args:
+            registry_path: Path to JSON file for storing metadata
+        """
+        self.registry_path = registry_path
+        self._lock = threading.Lock()
+        self._version_file = f"{registry_path}.version"
+        self._ensure_directory()
+        self._load_registry()
+    
+    def _ensure_directory(self):
+        """Ensure storage directory exists"""
+        Path(self.registry_path).parent.mkdir(parents=True, exist_ok=True)
+    
+    def _load_registry(self):
+        """Load registry from disk"""
+        if os.path.exists(self.registry_path):
+            try:
+                with open(self.registry_path, 'r', encoding='utf-8') as f:
+                    self._documents = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                # If file is corrupted or can't be read, start fresh
+                self._documents = {}
+        else:
+            self._documents = {}
+    
+    def _save_registry(self):
+        """Save registry to disk with file locking"""
+        try:
+            # Write to temp file first, then rename (atomic operation)
+            temp_path = f"{self.registry_path}.tmp"
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                # Try to acquire file lock (non-blocking)
+                try:
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except (IOError, OSError):
+                    # Lock failed, wait a bit and retry
+                    time.sleep(0.1)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+                
+                json.dump(self._documents, f, indent=2, ensure_ascii=False)
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            
+            os.replace(temp_path, self.registry_path)
+            
+            # Update version file
+            with open(self._version_file, 'w') as vf:
+                fcntl.flock(vf.fileno(), fcntl.LOCK_EX)
+                vf.write(str(time.time()))
+                fcntl.flock(vf.fileno(), fcntl.LOCK_UN)
+        except IOError as e:
+            # Log error but don't fail
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to save document registry: {e}")
+    
+    def add_document(self, document_id: str, metadata: Dict):
+        """
+        Add or update document metadata.
+        
+        Args:
+            document_id: Unique document identifier
+            metadata: Document metadata dictionary
+        """
+        with self._lock:
+            # Add timestamp if not present
+            if 'created_at' not in metadata:
+                metadata['created_at'] = datetime.now().isoformat()
+            metadata['updated_at'] = datetime.now().isoformat()
+            
+            self._documents[document_id] = metadata
+            self._save_registry()
+    
+    def get_document(self, document_id: str) -> Optional[Dict]:
+        """
+        Get document metadata by ID.
+        
+        Args:
+            document_id: Document identifier
+        
+        Returns:
+            Document metadata or None if not found
+        """
+        with self._lock:
+            return self._documents.get(document_id)
+    
+    def list_documents(self) -> List[Dict]:
+        """
+        List all documents.
+        
+        Returns:
+            List of document metadata dictionaries
+        """
+        with self._lock:
+            return list(self._documents.values())
+    
+    def remove_document(self, document_id: str) -> bool:
+        """
+        Remove document from registry.
+        
+        Args:
+            document_id: Document identifier
+        
+        Returns:
+            True if removed, False if not found
+        """
+        with self._lock:
+            if document_id in self._documents:
+                del self._documents[document_id]
+                self._save_registry()
+                return True
+            return False
+    
+    def clear_all(self):
+        """Clear all documents from registry"""
+        with self._lock:
+            self._documents = {}
+            self._save_registry()
+    
+    def get_sync_status(self) -> Dict:
+        """
+        Get synchronization status.
+        
+        Returns:
+            Dictionary with sync status information
+        """
+        with self._lock:
+            last_update = None
+            if self._documents:
+                # Find most recent update
+                updates = [doc.get('updated_at') for doc in self._documents.values() if doc.get('updated_at')]
+                if updates:
+                    last_update = max(updates)
+            
+            # Get version timestamp
+            version_timestamp = None
+            if os.path.exists(self._version_file):
+                try:
+                    with open(self._version_file, 'r') as vf:
+                        version_timestamp = float(vf.read().strip())
+                except (ValueError, IOError):
+                    pass
+            
+            return {
+                'total_documents': len(self._documents),
+                'last_update': last_update,
+                'registry_path': self.registry_path,
+                'registry_exists': os.path.exists(self.registry_path),
+                'version_timestamp': version_timestamp
+            }
+    
+    def check_for_conflicts(self) -> Optional[Dict]:
+        """
+        Check if registry was modified externally.
+        
+        Returns:
+            Conflict info dict if conflict detected, None otherwise
+        """
+        if not os.path.exists(self.registry_path):
+            return None
+        
+        # Check version file
+        if os.path.exists(self._version_file):
+            try:
+                with open(self._version_file, 'r') as vf:
+                    disk_version = float(vf.read().strip())
+                
+                # Get current in-memory version
+                current_status = self.get_sync_status()
+                memory_version = current_status.get('version_timestamp')
+                
+                # If disk version is newer, there's a conflict
+                if memory_version and disk_version > memory_version:
+                    return {
+                        'conflict': True,
+                        'message': 'Registry was modified externally',
+                        'disk_version': disk_version,
+                        'memory_version': memory_version
+                    }
+            except (ValueError, IOError):
+                pass
+        
+        return None
+    
+    def reload_from_disk(self) -> bool:
+        """
+        Reload registry from disk, discarding in-memory changes.
+        
+        Returns:
+            True if reloaded successfully
+        """
+        with self._lock:
+            try:
+                self._load_registry()
+                return True
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Failed to reload registry: {e}")
+                return False
+

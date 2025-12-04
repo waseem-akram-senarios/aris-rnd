@@ -2,6 +2,8 @@
 Token-aware text splitter using TikToken.
 """
 import tiktoken
+import time
+import logging
 from typing import List, Optional, Callable
 try:
     from langchain.docstore.document import Document
@@ -64,34 +66,97 @@ class TokenTextSplitter:
             # Fallback: estimate based on character count (rough approximation)
             return len(text) // 4
     
-    def split_text(self, text: str) -> List[str]:
+    def split_text(self, text: str, progress_callback: Optional[Callable] = None) -> List[str]:
         """
         Split text into chunks based on token count, preserving sentence boundaries.
         
         Args:
             text: Text to split
+            progress_callback: Optional callback for progress updates
         
         Returns:
             List of text chunks
         """
+        logger = logging.getLogger(__name__)
+        
         if not text.strip():
             return []
         
         # Encode text to tokens
+        logger.debug(f"TokenTextSplitter: Encoding text ({len(text):,} chars)...")
         tokens = self.encoding.encode(text)
+        total_tokens = len(tokens)
+        logger.debug(f"TokenTextSplitter: Encoded to {total_tokens:,} tokens")
         
         if len(tokens) <= self.chunk_size:
             return [text]
         
+        # Estimate number of chunks for progress tracking
+        estimated_chunks = (total_tokens + self.chunk_size - 1) // self.chunk_size
+        logger.info(f"TokenTextSplitter: Splitting {total_tokens:,} tokens into ~{estimated_chunks} chunks (chunk_size={self.chunk_size})")
+        
         chunks = []
         start_idx = 0
+        chunk_count = 0
+        last_progress_log = time.time()
+        chunking_start_time = time.time()
         
         # Try to split on sentence boundaries for better accuracy
-        import re
-        # Common sentence endings
-        sentence_endings = re.compile(r'([.!?]\s+|\.\n|\n\n)')
+        # For very large documents (>100K chars), use simpler/faster chunking
+        use_sentence_boundaries = len(text) < 100000
+        if use_sentence_boundaries:
+            import re
+            # Common sentence endings
+            sentence_endings = re.compile(r'([.!?]\s+|\.\n|\n\n)')
+        else:
+            logger.info(f"TokenTextSplitter: Large document detected ({len(text):,} chars) - using fast chunking (no sentence boundary detection)")
         
         while start_idx < len(tokens):
+            # Log progress every 10 chunks or every 5 seconds for large documents
+            chunk_count += 1
+            current_time = time.time()
+            
+            # Determine logging frequency based on document size
+            if total_tokens > 500000:  # Very large document - log every 2 chunks or 3 seconds
+                log_interval_chunks = 2
+                log_interval_seconds = 3.0
+            elif total_tokens > 100000:  # Large document - log every 5 chunks or 3 seconds
+                log_interval_chunks = 5
+                log_interval_seconds = 3.0
+            else:  # Smaller document - log every 10 chunks or 5 seconds
+                log_interval_chunks = 10
+                log_interval_seconds = 5.0
+            
+            if chunk_count % log_interval_chunks == 0 or (current_time - last_progress_log) >= log_interval_seconds:
+                progress_pct = (start_idx / total_tokens * 100) if total_tokens > 0 else 0
+                elapsed_time = current_time - chunking_start_time
+                tokens_remaining = total_tokens - start_idx
+                
+                # Calculate processing speed and estimated time remaining
+                if elapsed_time > 0 and start_idx > 0:
+                    chunks_per_sec = chunk_count / elapsed_time
+                    tokens_per_sec = start_idx / elapsed_time
+                    if tokens_per_sec > 0:
+                        estimated_remaining = tokens_remaining / tokens_per_sec
+                        remaining_min = int(estimated_remaining // 60)
+                        remaining_sec = int(estimated_remaining % 60)
+                        time_remaining_str = f"~{remaining_min}m {remaining_sec}s remaining"
+                    else:
+                        time_remaining_str = "calculating..."
+                else:
+                    chunks_per_sec = 0
+                    time_remaining_str = "calculating..."
+                
+                logger.info(
+                    f"TokenTextSplitter: Progress - {chunk_count} chunks created, "
+                    f"{start_idx:,}/{total_tokens:,} tokens ({progress_pct:.1f}%) | "
+                    f"Speed: {chunks_per_sec:.2f} chunks/sec | {time_remaining_str}"
+                )
+                if progress_callback:
+                    progress_callback('chunking', progress_pct / 100, 
+                                    detailed_message=f"Creating chunks... {chunk_count} chunks, {progress_pct:.1f}% complete | {time_remaining_str}")
+                last_progress_log = current_time
+            
             # Get chunk
             end_idx = min(start_idx + self.chunk_size, len(tokens))
             chunk_tokens = tokens[start_idx:end_idx]
@@ -99,8 +164,15 @@ class TokenTextSplitter:
             # Decode to check for sentence boundaries
             chunk_text = self.encoding.decode(chunk_tokens)
             
-            # If not at end of text, try to extend to sentence boundary
-            if end_idx < len(tokens):
+            # For large documents without sentence boundaries, skip complex validation
+            # Only perform simple token count check
+            if not use_sentence_boundaries:
+                # Simple chunking for large documents - just verify token count
+                if len(chunk_tokens) > self.chunk_size:
+                    chunk_tokens = chunk_tokens[:self.chunk_size]
+                    chunk_text = self.encoding.decode(chunk_tokens)
+            # If not at end of text, try to extend to sentence boundary (only for smaller docs)
+            elif end_idx < len(tokens) and use_sentence_boundaries:
                 try:
                     # Look ahead a bit to find sentence boundary
                     lookahead = min(50, len(tokens) - end_idx)  # Look ahead up to 50 tokens
@@ -162,43 +234,55 @@ class TokenTextSplitter:
                     pass
             
             # Final verification: ensure chunk doesn't exceed limit (CRITICAL CHECK)
-            try:
-                final_encoded = self.encoding.encode(chunk_text)
-                final_token_count = len(final_encoded)
-                
-                if final_token_count > self.chunk_size:
-                    # Force truncate to exact limit
-                    final_encoded = final_encoded[:self.chunk_size]
-                    chunk_text = self.encoding.decode(final_encoded)
-                    end_idx = start_idx + self.chunk_size
+            # For large documents, use simpler validation to avoid multiple encode/decode cycles
+            if use_sentence_boundaries:
+                try:
+                    final_encoded = self.encoding.encode(chunk_text)
+                    final_token_count = len(final_encoded)
                     
-                    # Verify one more time after truncation
-                    verify_encoded = self.encoding.encode(chunk_text)
-                    if len(verify_encoded) > self.chunk_size:
-                        # Last resort: take exact token slice from original
-                        chunk_tokens = tokens[start_idx:start_idx + self.chunk_size]
-                        chunk_text = self.encoding.decode(chunk_tokens)
+                    if final_token_count > self.chunk_size:
+                        # Force truncate to exact limit
+                        final_encoded = final_encoded[:self.chunk_size]
+                        chunk_text = self.encoding.decode(final_encoded)
                         end_idx = start_idx + self.chunk_size
-            except Exception:
-                # If encoding fails, use safe truncation
-                chunk_tokens = tokens[start_idx:min(start_idx + self.chunk_size, len(tokens))]
-                chunk_text = self.encoding.decode(chunk_tokens)
-                end_idx = start_idx + len(chunk_tokens)
+                        
+                        # Verify one more time after truncation
+                        verify_encoded = self.encoding.encode(chunk_text)
+                        if len(verify_encoded) > self.chunk_size:
+                            # Last resort: take exact token slice from original
+                            chunk_tokens = tokens[start_idx:start_idx + self.chunk_size]
+                            chunk_text = self.encoding.decode(chunk_tokens)
+                            end_idx = start_idx + self.chunk_size
+                except Exception:
+                    # If encoding fails, use safe truncation
+                    chunk_tokens = tokens[start_idx:min(start_idx + self.chunk_size, len(tokens))]
+                    chunk_text = self.encoding.decode(chunk_tokens)
+                    end_idx = start_idx + len(chunk_tokens)
+            else:
+                # For large documents, just verify token count (already done above)
+                # No need for multiple re-encodings
+                pass
             
             # Only add non-empty chunks (with final safety check)
             if chunk_text.strip():
-                # Final safety check before adding to chunks list
-                try:
-                    safety_check = len(self.encoding.encode(chunk_text))
-                    if safety_check > self.chunk_size:
-                        # Force truncate one more time
-                        encoded = self.encoding.encode(chunk_text)
-                        encoded = encoded[:self.chunk_size]
-                        chunk_text = self.encoding.decode(encoded)
-                except Exception:
-                    pass  # If check fails, proceed with chunk as-is
+                # Final safety check before adding to chunks list (only for smaller docs)
+                if use_sentence_boundaries:
+                    try:
+                        safety_check = len(self.encoding.encode(chunk_text))
+                        if safety_check > self.chunk_size:
+                            # Force truncate one more time
+                            encoded = self.encoding.encode(chunk_text)
+                            encoded = encoded[:self.chunk_size]
+                            chunk_text = self.encoding.decode(encoded)
+                    except Exception:
+                        pass  # If check fails, proceed with chunk as-is
+                # For large documents, skip this check to avoid extra encoding
                 
                 chunks.append(chunk_text)
+            
+            # Log completion for large documents
+            if total_tokens > 100000 and chunk_count % 50 == 0:
+                logger.info(f"TokenTextSplitter: Created {chunk_count} chunks so far, {len(tokens) - start_idx:,} tokens remaining")
             
             # Move start index with overlap
             start_idx = end_idx - self.chunk_overlap
@@ -218,6 +302,19 @@ class TokenTextSplitter:
                     if remaining_text.strip():
                         chunks.append(remaining_text)
                 break
+        
+        # Calculate completion metrics
+        chunking_end_time = time.time()
+        total_time = chunking_end_time - chunking_start_time
+        chunks_per_sec = len(chunks) / total_time if total_time > 0 else 0
+        tokens_per_sec = total_tokens / total_time if total_time > 0 else 0
+        
+        logger.info(
+            f"TokenTextSplitter: Chunking completed - {len(chunks)} chunks created from {total_tokens:,} tokens | "
+            f"Time: {total_time:.2f}s | Speed: {chunks_per_sec:.2f} chunks/sec, {tokens_per_sec:.0f} tokens/sec"
+        )
+        if progress_callback:
+            progress_callback('chunking', 1.0, detailed_message=f"Chunking complete: {len(chunks)} chunks created in {total_time:.1f}s")
         
         return chunks
     
@@ -272,7 +369,7 @@ class TokenTextSplitter:
                         progress_callback('chunking', 0.1 + ((doc_idx + 0.5) / total_docs) * 0.2,
                                         detailed_message=f"Splitting document {doc_idx + 1}/{total_docs} into chunks...")
                 
-                text_chunks = self.split_text(page_content)
+                text_chunks = self.split_text(page_content, progress_callback=progress_callback)
                 
                 # Update progress after splitting
                 if progress_callback:

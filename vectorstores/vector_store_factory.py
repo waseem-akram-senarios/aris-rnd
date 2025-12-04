@@ -119,9 +119,35 @@ class FAISSVectorStore:
         """Add documents to existing vector store."""
         if self.vectorstore is None:
             raise ValueError("Vector store not initialized. Call from_documents() first.")
-        logger.info(f"Adding {len(documents)} documents to FAISS vectorstore...")
-        self.vectorstore.add_documents(documents)
-        logger.info("Documents added to FAISS vectorstore successfully")
+        
+        if not documents:
+            raise ValueError("Cannot add empty document list to vectorstore.")
+        
+        # Validate documents before adding
+        valid_docs = []
+        for doc in documents:
+            if doc is None:
+                continue
+            if not hasattr(doc, 'page_content'):
+                continue
+            if not doc.page_content or not str(doc.page_content).strip():
+                continue
+            valid_docs.append(doc)
+        
+        if not valid_docs:
+            raise ValueError("No valid documents to add to vectorstore. All documents are empty or None.")
+        
+        logger.info(f"Adding {len(valid_docs)} documents to FAISS vectorstore...")
+        try:
+            self.vectorstore.add_documents(valid_docs)
+            logger.info("Documents added to FAISS vectorstore successfully")
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            error_msg = str(e) if str(e) else type(e).__name__
+            logger.error(f"FAISS: Error adding documents: {error_msg}")
+            logger.error(f"FAISS: Full traceback:\n{error_details}")
+            raise
     
     def as_retriever(self, search_type: str = "similarity", search_kwargs: Optional[Dict] = None):
         """Get retriever for querying."""

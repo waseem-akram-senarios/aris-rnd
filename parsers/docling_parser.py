@@ -4,7 +4,7 @@ Uses ThreadPoolExecutor to prevent UI blocking during long processing.
 """
 import os
 import logging
-from typing import Optional
+from typing import Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from .base_parser import BaseParser, ParsedDocument
 
@@ -31,13 +31,14 @@ class DoclingParser(BaseParser):
         _, ext = os.path.splitext(file_path.lower())
         return ext == '.pdf'
     
-    def parse(self, file_path: str, file_content: Optional[bytes] = None) -> ParsedDocument:
+    def parse(self, file_path: str, file_content: Optional[bytes] = None, progress_callback: Optional[Callable[[str, float], None]] = None, _retry_without_callback: bool = False) -> ParsedDocument:
         """
         Parse PDF using Docling - simple quickstart pattern.
         
         Args:
             file_path: Path to PDF file
             file_content: Optional file content as bytes
+            progress_callback: Optional callback(status_message, progress) for UI updates
         
         Returns:
             ParsedDocument with extracted text and metadata
@@ -68,34 +69,73 @@ class DoclingParser(BaseParser):
             
             # Log start of processing
             file_size = os.path.getsize(actual_path)
-            logger.info(f"Docling: Starting conversion of {os.path.basename(actual_path)} ({file_size/1024/1024:.2f} MB)")
+            file_size_mb = file_size / 1024 / 1024
+            # Estimate pages based on file size (1-2 MB per page for scanned PDFs, less for text-based)
+            estimated_pages = max(1, int(file_size_mb / 1.5)) if file_size_mb > 0 else 0
+            # Estimate processing time (5-20 minutes for scanned PDFs with OCR)
+            if file_size_mb > 10:
+                estimated_time = "15-30 minutes"
+            elif file_size_mb > 5:
+                estimated_time = "10-20 minutes"
+            else:
+                estimated_time = "5-15 minutes"
+            
+            logger.info(f"Docling: Starting conversion of {os.path.basename(actual_path)} ({file_size_mb:.2f} MB)")
+            logger.info(f"Docling: File size: {file_size_mb:.2f} MB | Estimated pages: {estimated_pages} | Estimated time: {estimated_time}")
+            logger.info(f"Docling: Progress updates every 15 seconds")
             
             # Run Docling conversion in a separate thread to prevent UI blocking
             # Docling can take 5-10 minutes for large PDFs
             def run_docling_conversion():
                 """Run Docling conversion in thread."""
                 try:
-                    logger.info("Docling: Initializing DocumentConverter...")
+                    logger.info("Docling: [Phase 1/4] Initializing DocumentConverter...")
+                    if progress_callback:
+                        try:
+                            progress_callback("Docling: [Phase 1/4] Initializing DocumentConverter...", 0.1)
+                        except Exception as e:
+                            if "NoSessionContext" not in str(e):
+                                logger.warning(f"Docling: Progress callback error: {str(e)}")
                     converter = self.DocumentConverter()
-                    logger.info("Docling: Starting document conversion (this may take 5-10 minutes)...")
-                    logger.info(f"Docling: Converting file: {os.path.basename(actual_path)}")
+                    logger.info("Docling: [Phase 2/4] DocumentConverter initialized, starting conversion...")
+                    if progress_callback:
+                        try:
+                            progress_callback("Docling: [Phase 2/4] Starting document conversion...", 0.2)
+                        except Exception as e:
+                            if "NoSessionContext" not in str(e):
+                                logger.warning(f"Docling: Progress callback error: {str(e)}")
+                    logger.info(f"Docling: [Phase 2/4] Converting file: {os.path.basename(actual_path)}")
                     result = converter.convert(actual_path, raises_on_error=False)
-                    logger.info("Docling: Conversion completed, accessing document...")
+                    logger.info("Docling: [Phase 3/4] Conversion completed, accessing document...")
+                    if progress_callback:
+                        try:
+                            progress_callback("Docling: [Phase 3/4] Conversion completed, accessing document...", 0.8)
+                        except Exception as e:
+                            if "NoSessionContext" not in str(e):
+                                logger.warning(f"Docling: Progress callback error: {str(e)}")
                     doc = result.document
-                    logger.info(f"Docling: Document accessed successfully, pages: {len(doc.pages) if hasattr(doc, 'pages') else 'unknown'}")
+                    page_count = len(doc.pages) if hasattr(doc, 'pages') else 'unknown'
+                    logger.info(f"Docling: [Phase 4/4] Document accessed successfully, pages: {page_count}")
+                    if progress_callback:
+                        try:
+                            progress_callback(f"Docling: [Phase 4/4] Document accessed, {page_count} pages", 0.9)
+                        except Exception as e:
+                            if "NoSessionContext" not in str(e):
+                                logger.warning(f"Docling: Progress callback error: {str(e)}")
                     return doc
                 except Exception as e:
                     logger.error(f"Docling: Error in conversion thread: {str(e)}")
                     raise
             
-            # Use ThreadPoolExecutor with a very long timeout (20 minutes) for Docling
+            # Use ThreadPoolExecutor without file-level timeout
+            # Files will process completely regardless of size
             # Docling processes all pages which can take a long time, especially for scanned PDFs with OCR
-            timeout_seconds = 1200  # 20 minutes timeout (increased for OCR processing)
+            # No timeout - will process completely
             try:
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(run_docling_conversion)
-                    logger.info(f"Docling: Processing in background thread (timeout: {timeout_seconds}s)...")
-                    logger.info(f"Docling: This may take 5-20 minutes for scanned PDFs with OCR...")
+                    logger.info(f"Docling: Processing in background thread (no timeout - will process completely)...")
+                    logger.info(f"Docling: File size: {file_size_mb:.2f} MB | Estimated time: {estimated_time} | Estimated pages: {estimated_pages}")
                     
                     # Wait for result with periodic progress logging
                     import time as time_module
@@ -106,19 +146,82 @@ class DoclingParser(BaseParser):
                     progress_logging_active.set()
                     
                     def log_progress():
-                        """Log progress every minute while processing."""
-                        check_interval = 60  # Log every minute
+                        """Log detailed progress every 15 seconds while processing."""
+                        check_interval = 15  # Log every 15 seconds (more frequent)
                         last_log_time = start_time
+                        
                         while progress_logging_active.is_set():
                             time_module.sleep(check_interval)
                             if not progress_logging_active.is_set():
                                 break
+                            
                             elapsed = time_module.time() - start_time
-                            if elapsed >= timeout_seconds:
-                                break
                             minutes = int(elapsed // 60)
                             seconds = int(elapsed % 60)
-                            logger.info(f"Docling: Still processing... ({minutes}m {seconds}s elapsed, max {timeout_seconds//60}m)")
+                            
+                            # Calculate estimated progress based on elapsed time and file size
+                            # Docling typically processes at 0.5-2 pages per minute for scanned PDFs with OCR
+                            # For text-based PDFs, it's much faster (10-50 pages per minute)
+                            if file_size_mb > 10:
+                                # Large scanned PDF - estimate 0.5-1 page per minute
+                                estimated_pages_processed = min(estimated_pages, elapsed / 60 * 0.75)
+                                estimated_progress = min(0.95, estimated_pages_processed / estimated_pages) if estimated_pages > 0 else 0.3
+                            elif file_size_mb > 5:
+                                # Medium scanned PDF - estimate 1-2 pages per minute
+                                estimated_pages_processed = min(estimated_pages, elapsed / 60 * 1.5)
+                                estimated_progress = min(0.95, estimated_pages_processed / estimated_pages) if estimated_pages > 0 else 0.4
+                            else:
+                                # Small PDF - estimate 2-5 pages per minute
+                                estimated_pages_processed = min(estimated_pages, elapsed / 60 * 3)
+                                estimated_progress = min(0.95, estimated_pages_processed / estimated_pages) if estimated_pages > 0 else 0.5
+                            
+                            # Estimate remaining time based on current progress
+                            if estimated_progress > 0.05:  # Only estimate if we have meaningful progress
+                                estimated_total_time = elapsed / estimated_progress
+                                estimated_remaining = max(0, estimated_total_time - elapsed)
+                                remaining_minutes = int(estimated_remaining // 60)
+                                remaining_seconds = int(estimated_remaining % 60)
+                                remaining_str = f"~{remaining_minutes}m {remaining_seconds}s remaining"
+                            else:
+                                remaining_str = "calculating..."
+                            
+                            # Determine current phase based on elapsed time
+                            if elapsed < 30:
+                                phase = "Initializing DocumentConverter"
+                            elif elapsed < 120:
+                                phase = "Analyzing document structure"
+                            elif elapsed < 300:
+                                phase = "Processing pages (OCR if needed)"
+                            else:
+                                phase = "Processing remaining pages (OCR if needed)"
+                            
+                            # Log detailed progress
+                            progress_pct = int(estimated_progress * 100)
+                            log_msg = (
+                                f"Docling: [{phase}] "
+                                f"Progress: ~{progress_pct}% | "
+                                f"Elapsed: {minutes}m {seconds}s | "
+                                f"{remaining_str} | "
+                                f"File: {file_size_mb:.1f}MB | "
+                                f"Estimated pages: {estimated_pages}"
+                            )
+                            logger.info(log_msg)
+                            
+                            # Call progress callback if available (safely handle Streamlit NoSessionContext)
+                            if progress_callback:
+                                try:
+                                    # Map progress to 0.1-0.9 range (leaving 0.9-1.0 for final steps)
+                                    callback_progress = 0.1 + (estimated_progress * 0.8)
+                                    progress_callback(log_msg, callback_progress)
+                                except Exception as callback_error:
+                                    # Handle NoSessionContext and other threading issues
+                                    if "NoSessionContext" in str(callback_error) or "NoSessionContext" in type(callback_error).__name__:
+                                        # Don't call callback from background thread - just log
+                                        logger.debug(f"Docling: Skipping progress callback (NoSessionContext in background thread)")
+                                    else:
+                                        # Log other callback errors but don't fail
+                                        logger.warning(f"Docling: Progress callback error: {str(callback_error)}")
+                            
                             last_log_time = elapsed
                     
                     # Start progress logging thread
@@ -126,9 +229,9 @@ class DoclingParser(BaseParser):
                     progress_thread.start()
                     
                     try:
-                        # Wait for result with timeout
-                        logger.info(f"Docling: Waiting for conversion result (max {timeout_seconds//60} minutes)...")
-                        doc = future.result(timeout=timeout_seconds)
+                        # Wait for result without timeout (will process completely)
+                        logger.info(f"Docling: Waiting for conversion result (no timeout - will process completely)...")
+                        doc = future.result()  # No timeout - wait until complete
                         progress_logging_active.clear()
                         logger.info("Docling: Document conversion successful - result received")
                         if doc is None:
@@ -140,13 +243,6 @@ class DoclingParser(BaseParser):
                         raise
                     finally:
                         progress_logging_active.clear()
-            except FutureTimeoutError:
-                logger.error(f"Docling: Conversion timed out after {timeout_seconds} seconds")
-                raise ValueError(
-                    f"Docling conversion timed out after {timeout_seconds} seconds. "
-                    f"The document may be too large or complex. "
-                    f"Try using PyMuPDF parser for faster processing."
-                )
             except Exception as e:
                 import traceback
                 error_details = traceback.format_exc()
@@ -340,7 +436,28 @@ class DoclingParser(BaseParser):
                     pass
             
             # Create user-friendly error message
-            if "not valid" in error_str.lower() or "cannot process" in error_str.lower():
+            if "NoSessionContext" in error_str or "NoSessionContext" in type(e).__name__:
+                # This is a Streamlit threading issue - try direct parsing without callbacks (only once)
+                if not _retry_without_callback:
+                    logger.warning(f"Docling: NoSessionContext error detected - this is a Streamlit threading issue, not a PDF problem")
+                    logger.info(f"Docling: Attempting direct parsing without progress callbacks...")
+                    try:
+                        # Retry without progress callback (set flag to prevent infinite recursion)
+                        return self.parse(file_path, file_content, progress_callback=None, _retry_without_callback=True)
+                    except Exception as retry_error:
+                        error_msg = (
+                            f"Docling parser failed due to Streamlit session context issues (NoSessionContext). "
+                            f"This is a threading limitation, not a PDF problem. "
+                            f"Try using PyMuPDF parser instead, which handles this better."
+                        )
+                else:
+                    # Already retried once, don't retry again
+                    error_msg = (
+                        f"Docling parser failed due to Streamlit session context issues (NoSessionContext). "
+                        f"This is a threading limitation, not a PDF problem. "
+                        f"Try using PyMuPDF parser instead, which handles this better."
+                    )
+            elif "not valid" in error_str.lower() or "cannot process" in error_str.lower():
                 error_msg = f"Docling cannot process this PDF. The file may be corrupted, encrypted, or in an unsupported format. Error: {error_str}. Try using PyMuPDF parser instead."
             elif "timeout" in error_str.lower() or "timed out" in error_str.lower():
                 error_msg = f"Docling parsing timed out. The PDF may be very large or complex. Error: {error_str}. Try using PyMuPDF parser for faster processing."

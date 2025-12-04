@@ -98,28 +98,52 @@ class PyMuPDFParser(BaseParser):
                 if progress_callback:
                     progress_callback(f"📖 Found {total_pages} pages. Starting extraction...", 0.1)
                 
-                # Process pages with timeout protection per page
+                # Process pages with per-page timeout protection
                 start_time = time.time()
                 last_progress_update = 0
+                last_log_time = start_time
+                LOG_INTERVAL = 15  # Log progress every 15 seconds (more frequent)
+                PAGE_TIMEOUT = 60  # 60 seconds max per page (prevents infinite hang on single page)
+                skipped_pages = []  # Track skipped pages
                 
                 for page_num in range(total_pages):
-                    # Check for timeout every page
+                    # Log progress periodically (every 15 seconds)
                     elapsed = time.time() - start_time
-                    if elapsed > 580:  # Warn at 9m 40s (20s before timeout)
-                        error_msg = f"PyMuPDF parsing is taking too long ({elapsed:.0f}s). This may indicate a problematic PDF."
-                        logger.warning(error_msg)
-                        if progress_callback:
-                            progress_callback(f"⚠️ Processing is slow ({elapsed:.0f}s elapsed)...", page_num / total_pages)
+                    if elapsed - last_log_time >= LOG_INTERVAL:
+                        pages_per_sec = (page_num + 1) / elapsed if elapsed > 0 else 0
+                        remaining_pages = total_pages - (page_num + 1)
+                        estimated_remaining = remaining_pages / pages_per_sec if pages_per_sec > 0 else 0
+                        minutes = int(elapsed // 60)
+                        seconds = int(elapsed % 60)
+                        progress_pct = int((page_num + 1) / total_pages * 100) if total_pages > 0 else 0
+                        remaining_minutes = int(estimated_remaining // 60)
+                        remaining_seconds = int(estimated_remaining % 60)
+                        
+                        log_msg = (
+                            f"PyMuPDF: Progress - {page_num + 1}/{total_pages} pages ({progress_pct}%) | "
+                            f"Elapsed: {minutes}m {seconds}s | "
+                            f"~{remaining_minutes}m {remaining_seconds}s remaining | "
+                            f"Speed: {pages_per_sec:.2f} pages/sec"
+                        )
+                        if skipped_pages:
+                            log_msg += f" | Skipped: {len(skipped_pages)} pages"
+                        logger.info(log_msg)
+                        last_log_time = elapsed
                     
                     # Update progress every page or every 5 seconds
                     current_time = time.time()
                     if progress_callback and (page_num == 0 or (page_num + 1) % 5 == 0 or (current_time - last_progress_update) >= 2.0):
                         progress = 0.1 + (page_num / total_pages) * 0.85  # 10% to 95%
                         status_msg = f"📄 Processing page {page_num + 1}/{total_pages}..."
+                        if skipped_pages:
+                            status_msg += f" ({len(skipped_pages)} skipped)"
                         progress_callback(status_msg, progress)
                         last_progress_update = current_time
-                        logger.info(f"PyMuPDF: Processing page {page_num + 1}/{total_pages}...")
+                        progress_pct = int((page_num + 1) / total_pages * 100) if total_pages > 0 else 0
+                        logger.info(f"PyMuPDF: Processing page {page_num + 1}/{total_pages} ({progress_pct}%)...")
                     
+                    # Per-page timeout protection
+                    page_start_time = time.time()
                     try:
                         page = doc[page_num]
                         
@@ -128,6 +152,21 @@ class PyMuPDFParser(BaseParser):
                             # Get text blocks with positions
                             text_dict = page.get_text("dict")
                             page_text = page.get_text()
+                            
+                            # Check if this page took too long
+                            page_elapsed = time.time() - page_start_time
+                            if page_elapsed > PAGE_TIMEOUT:
+                                logger.warning(
+                                    f"PyMuPDF: Page {page_num + 1} took {page_elapsed:.1f}s (>{PAGE_TIMEOUT}s) - "
+                                    f"skipping problematic page to prevent hang"
+                                )
+                                skipped_pages.append(page_num + 1)
+                                if progress_callback:
+                                    progress_callback(
+                                        f"⚠️ Skipping slow page {page_num + 1}...", 
+                                        page_num / total_pages
+                                    )
+                                continue  # Skip this page and continue with next
                             
                             if page_text.strip():
                                 # Store page-level blocks with metadata
@@ -170,7 +209,12 @@ class PyMuPDFParser(BaseParser):
                                 text_parts.append(f"--- Page {page_num + 1} ---\n{page_text}")
                                 pages_with_text += 1
                         except Exception as e:
-                            logger.warning(f"PyMuPDF: Failed to extract text from page {page_num + 1}: {str(e)[:100]}")
+                            page_elapsed = time.time() - page_start_time
+                            logger.warning(
+                                f"PyMuPDF: Failed to extract text from page {page_num + 1} "
+                                f"(took {page_elapsed:.1f}s): {str(e)[:100]} - skipping page"
+                            )
+                            skipped_pages.append(page_num + 1)
                             # Continue with next page
                         
                         # Check for images (with timeout protection)
@@ -200,7 +244,13 @@ class PyMuPDFParser(BaseParser):
                             # Continue with next page
                     
                     except Exception as e:
-                        logger.warning(f"PyMuPDF: Error processing page {page_num + 1}: {str(e)[:100]}")
+                        page_elapsed = time.time() - page_start_time
+                        error_str = str(e) if str(e) else type(e).__name__
+                        logger.warning(
+                            f"PyMuPDF: Error processing page {page_num + 1} "
+                            f"(took {page_elapsed:.1f}s): {error_str[:100]} - skipping page"
+                        )
+                        skipped_pages.append(page_num + 1)
                         # Continue with next page
                 
                 # Combine all text before closing
@@ -215,10 +265,20 @@ class PyMuPDFParser(BaseParser):
                 # Close document
                 doc.close()
                 
-                logger.info(f"PyMuPDF: Parsing completed - {pages_with_text}/{total_pages} pages with text")
+                total_time = time.time() - start_time
+                skipped_info = f", {len(skipped_pages)} pages skipped" if skipped_pages else ""
+                if skipped_pages:
+                    logger.warning(f"PyMuPDF: Skipped pages: {skipped_pages}")
+                logger.info(
+                    f"✅ PyMuPDF: Parsing completed in {total_time:.2f}s ({total_time/60:.1f} minutes) - "
+                    f"{pages_with_text}/{total_pages} pages with text{skipped_info}"
+                )
                 
                 if progress_callback:
-                    progress_callback(f"✅ Completed! Extracted {pages_with_text}/{total_pages} pages", 1.0)
+                    status_msg = f"✅ Completed! Extracted {pages_with_text}/{total_pages} pages"
+                    if skipped_pages:
+                        status_msg += f" ({len(skipped_pages)} skipped)"
+                    progress_callback(status_msg, 1.0)
                 
                 # Calculate confidence based on extraction percentage and text length
                 if extraction_percentage >= 0.8 and len(full_text.strip()) > 100:
@@ -240,6 +300,11 @@ class PyMuPDFParser(BaseParser):
                     "page_blocks": page_blocks  # Store page-level text blocks with bboxes
                 }
                 
+                # Add skipped pages info to metadata
+                if skipped_pages:
+                    metadata["skipped_pages"] = skipped_pages
+                    metadata["skipped_count"] = len(skipped_pages)
+                
                 return ParsedDocument(
                     text=full_text,
                     metadata=metadata,
@@ -258,53 +323,45 @@ class PyMuPDFParser(BaseParser):
                 logger.error(f"PyMuPDF: Traceback:\n{error_details}")
                 raise
         
-        # Use ThreadPoolExecutor with timeout (5 minutes max for PyMuPDF)
-        # PyMuPDF should be fast, but some PDFs can hang
-        # Some PDFs may cause NoSessionContext errors in threads, so we'll try threaded first, then fallback to direct
-        timeout_seconds = 300  # 5 minutes timeout (reduced from 10 minutes)
+        # Use ThreadPoolExecutor without file-level timeout
+        # Files will process completely regardless of size
+        # Per-page timeout protection prevents infinite hangs on single pages
         try:
             if progress_callback:
-                progress_callback(f"⏳ Starting PyMuPDF parsing (max {timeout_seconds//60} minutes)...", 0.0)
+                progress_callback(f"⏳ Starting PyMuPDF parsing (no timeout - will process completely)...", 0.0)
             
-            logger.info(f"PyMuPDF: Processing in background thread (timeout: {timeout_seconds}s)...")
+            logger.info(f"PyMuPDF: Processing in background thread (no file-level timeout - will process completely)...")
             start_time = time.time()
             
             with ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(run_pymupdf_parsing)
                 
-                # Monitor progress and update UI periodically
+                # Monitor progress and update UI periodically (no timeout cancellation)
+                last_progress_log = start_time
+                LOG_INTERVAL = 15  # Log progress every 15 seconds (more frequent)
+                
                 while not future.done():
                     elapsed = time.time() - start_time
-                    if elapsed >= timeout_seconds:
-                        future.cancel()
-                        error_msg = f"PyMuPDF parsing timed out after {timeout_seconds} seconds for {file_name}"
-                        logger.error(error_msg)
-                        if progress_callback:
-                            progress_callback(f"❌ Timeout after {timeout_seconds//60} minutes", 1.0)
-                        raise ValueError(error_msg)
                     
-                    # Update progress every 5 seconds
+                    # Log progress every 15 seconds
+                    if elapsed - last_progress_log >= LOG_INTERVAL:
+                        minutes, seconds = divmod(int(elapsed), 60)
+                        logger.info(f"PyMuPDF: Still processing... ({minutes}m {seconds}s elapsed)")
+                        if progress_callback:
+                            progress_callback(f"⏳ Processing... ({minutes}m {seconds}s elapsed)", 0.5)
+                        last_progress_log = elapsed
+                    
+                    # Update progress callback every 5 seconds
                     if progress_callback and int(elapsed) % 5 == 0 and elapsed > 0:
                         minutes, seconds = divmod(int(elapsed), 60)
-                        progress = min(0.9, elapsed / timeout_seconds * 0.8)  # 0-80% based on elapsed time
-                        progress_callback(f"⏳ Processing... ({minutes}m {seconds}s elapsed)", progress)
+                        progress_callback(f"⏳ Processing... ({minutes}m {seconds}s elapsed)", 0.5)
                     
                     time.sleep(0.5)  # Check every 0.5 seconds
                 
                 result = future.result(timeout=1)  # Should be immediate since future is done
-                logger.info(f"PyMuPDF: Parsing completed successfully in {time.time() - start_time:.2f}s")
+                total_time = time.time() - start_time
+                logger.info(f"✅ PyMuPDF: Parsing completed successfully in {total_time:.2f}s ({total_time/60:.1f} minutes)")
                 return result
-                
-        except FutureTimeoutError:
-            error_msg = f"PyMuPDF parsing timed out after {timeout_seconds} seconds for {file_name}"
-            logger.error(error_msg)
-            if progress_callback:
-                progress_callback(f"❌ Timeout after {timeout_seconds//60} minutes", 1.0)
-            raise ValueError(
-                f"PyMuPDF parsing timed out after {timeout_seconds} seconds. "
-                f"The PDF may be very complex or corrupted. "
-                f"Try using Docling parser for better handling of complex PDFs."
-            )
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()

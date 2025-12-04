@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 # Configuration
-SERVER_IP="${SERVER_IP:-35.175.133.235}"
+SERVER_IP="${SERVER_IP:-44.221.84.58}"
 SERVER_USER="${SERVER_USER:-ec2-user}"
 SERVER_DIR="${SERVER_DIR:-/opt/aris-rag}"
 PEM_FILE="$SCRIPT_DIR/ec2_wah_pk.pem"
@@ -106,19 +106,54 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
 EOF
 
 echo ""
-echo -e "${BLUE}🚀 Step 4: Starting container...${NC}"
+echo -e "${BLUE}📊 Step 4: Detecting server specs and calculating optimal resources...${NC}"
+
+# Detect server specs dynamically
+CPU_COUNT=$(ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" \
+    "nproc" 2>/dev/null || echo "8")
+
+TOTAL_MEM_GB=$(ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" \
+    "free -g | awk '/^Mem:/ {print \$2}'" 2>/dev/null || echo "14")
+
+# Calculate optimal allocation (leave 1 CPU and 2GB for system)
+ALLOCATED_CPUS=$((CPU_COUNT - 1))
+ALLOCATED_MEM_GB=$((TOTAL_MEM_GB - 2))
+MEM_RESERVATION_GB=$((ALLOCATED_MEM_GB - 4))  # Reserve 4GB less than limit
+
+# Ensure minimum values
+if [ $ALLOCATED_CPUS -lt 1 ]; then
+    ALLOCATED_CPUS=1
+fi
+if [ $ALLOCATED_MEM_GB -lt 4 ]; then
+    ALLOCATED_MEM_GB=4
+fi
+if [ $MEM_RESERVATION_GB -lt 2 ]; then
+    MEM_RESERVATION_GB=2
+fi
+
+echo "   Server Specs:"
+echo "   - Total CPUs: $CPU_COUNT"
+echo "   - Total Memory: ${TOTAL_MEM_GB} GB"
+echo "   - Allocated CPUs: $ALLOCATED_CPUS (leaving 1 for system)"
+echo "   - Allocated Memory: ${ALLOCATED_MEM_GB} GB (leaving 2 GB for system)"
+echo "   - Memory Reservation: ${MEM_RESERVATION_GB} GB"
+
+echo ""
+echo -e "${BLUE}🚀 Step 5: Starting container with optimal resources...${NC}"
 ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
     set -e
     cd $SERVER_DIR
     
-    # Start container with resource limits
+    # Start container with dynamically calculated resource limits
+    # Port 80 -> Streamlit (8501), Port 8500 -> FastAPI (8000)
     sudo docker run -d \
         --name aris-rag-app \
         --restart unless-stopped \
         -p 80:8501 \
-        --cpus="7" \
-        --memory="12g" \
-        --memory-reservation="8g" \
+        -p 8500:8000 \
+        --cpus="$ALLOCATED_CPUS" \
+        --memory="${ALLOCATED_MEM_GB}g" \
+        --memory-reservation="${MEM_RESERVATION_GB}g" \
         -v \$(pwd)/vectorstore:/app/vectorstore \
         -v \$(pwd)/data:/app/data \
         -v \$(pwd)/.env:/app/.env:ro \
@@ -130,11 +165,11 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
         --health-start-period=40s \
         aris-rag:latest >/dev/null 2>&1
     
-    echo "   ✅ Container started"
+    echo "   ✅ Container started with $ALLOCATED_CPUS CPUs and ${ALLOCATED_MEM_GB}GB memory"
 EOF
 
 echo ""
-echo -e "${BLUE}⏳ Step 5: Health check...${NC}"
+echo -e "${BLUE}⏳ Step 6: Health check...${NC}"
 sleep 15
 
 HTTP_CODE=$(ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" \

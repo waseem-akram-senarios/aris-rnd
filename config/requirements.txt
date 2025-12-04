@@ -26,3 +26,9 @@ onnxruntime>=1.16.0
 opensearch-py>=2.0.0
 requests-aws4auth>=1.1.0
 
+# FastAPI for REST API
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pytest>=7.4.0
+

@@ -1,0 +1,46 @@
+{
+  "timestamp": "2025-12-04 19:30:32",
+  "total_time": 37.11332869529724,
+  "summary": {
+    "Phase 1: Code Verification": true,
+    "Phase 2: PDF Processing": null,
+    "Phase 3: FastAPI Endpoints": true,
+    "Phase 4: Unit Tests": true,
+    "Phase 5: Integration Tests": true,
+    "Phase 6: Problematic PDF": null,
+    "Phase 7: Full Integration": true
+  },
+  "detailed_results": {
+    "phase1_code_verification": {
+      "status": "PASS",
+      "output": "================================================================================\n\u001b[1mPDF Timeout Fix - Code Verification Tests\u001b[0m\n================================================================================\nTesting: s71500_getting_started_en-US_en-US (1).pdf\nStarted at: 2025-12-04 19:29:55\n\n\n\u001b[1mTest 1: Code Changes Verification\u001b[0m\n============================================================\n\u001b[92m\u2705 File-level timeout removed\u001b[0m\n   Timeout cancellation code not found\n\u001b[92m\u2705 Per-page timeout protection\u001b[0m\n   Per-page timeout logic found\n\u001b[92m\u2705 Progress monitoring\u001b[0m\n   Progress logging found\n\u001b[92m\u2705 No timeout messaging\u001b[0m\n   No timeout messages found in code\n\n\u001b[1mTest 2: Docling Timeout Changes\u001b[0m\n============================================================\n\u001b[92m\u2705 Docling timeout removed\u001b[0m\n   No timeout in Docling parser\n\u001b[92m\u2705 Docling progress logging\u001b[0m\n   Progress logging found\n\n\u001b[1mTest 3: PDF File Verification\u001b[0m\n============================================================\n\u001b[92m\u2705 PDF file exists\u001b[0m\n   Found: s71500_getting_started_en-US_en-US (1).pdf\n\u001b[92m\u2705 File size\u001b[0m\n   Size: 16.27 MB (17,063,296 bytes)\n\u001b[92m\u2705 PDF format\u001b[0m\n   Valid PDF header\n\n\u001b[1mTest 4: Code Import Verification\u001b[0m\n============================================================\n\u001b[92m\u2705 PyMuPDF parser import\u001b[0m\n   Code structure correct\n\u001b[92m\u2705 Docling parser import\u001b[0m\n   Code structure correct\n\u001b[92m\u2705 ParserFactory import\u001b[0m\n   Code structure correct\n\u001b[92m\u2705 DocumentProcessor import\u001b[0m\n   Code structure correct\n\n================================================================================\n\u001b[1mTest Summary\u001b[0m\n================================================================================\n  code_changes                   : \u001b[92mPASS\u001b[0m\n  docling_changes                : \u001b[92mPASS\u001b[0m\n  pdf_file                       : \u001b[92mPASS\u001b[0m\n  imports                        : \u001b[92mPASS\u001b[0m\n\n--------------------------------------------------------------------------------\nTotal: 4 tests, \u001b[92m4 passed\u001b[0m, \u001b[91m0 failed\u001b[0m\n\n\u001b[92m\u001b[1m\u2705 All code verification tests passed!\u001b[0m\n\u001b[92m   The timeout fixes are correctly implemented.\u001b[0m\n\u001b[94m   Note: To test actual PDF processing, install parsers:\u001b[0m\n\u001b[94m   - pip install pymupdf\u001b[0m\n\u001b[94m   - pip install docling\u001b[0m\n"
+    },
+    "phase2_pdf_processing": {
+      "status": "SKIP",
+      "reason": "No parsers"
+    },
+    "phase3_fastapi_endpoints": {
+      "status": "PASS",
+      "endpoints_passed": 5,
+      "endpoints_tested": 5
+    },
+    "phase4_unit_tests": {
+      "status": "PASS",
+      "passed": 2,
+      "failed": 0
+    },
+    "phase5_integration_tests": {
+      "status": "PASS",
+      "passed": 2,
+      "failed": 0
+    },
+    "phase6_problematic_pdf": {
+      "status": "SKIP",
+      "reason": "No parsers available",
+      "code_verified": true
+    },
+    "phase7_full_integration": {
+      "status": "PASS"
+    }
+  }
+}

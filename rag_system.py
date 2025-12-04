@@ -2,7 +2,7 @@
 RAG System for document processing and querying
 """
 import os
-import time
+import time as time_module
 import math
 import logging
 import traceback
@@ -75,7 +75,8 @@ class RAGSystem:
     
     def process_documents(self, texts: List[str], metadatas: List[Dict] = None, progress_callback: Optional[Callable] = None):
         """Process and chunk documents, then create vector store"""
-        logger = logging.getLogger(__name__)
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
         
         # Validate inputs
         if not texts:
@@ -138,7 +139,7 @@ class RAGSystem:
         # Split documents into chunks using token-aware splitter
         # IMPORTANT: Extract all text content BEFORE threading to avoid PyMuPDF NoSessionContext errors
         total_text_length = sum(len(doc.page_content) if hasattr(doc, 'page_content') and isinstance(doc.page_content, str) else 0 for doc in documents)
-        logger.info(f"Starting chunking for {len(documents)} document(s), total text length: {total_text_length:,} chars")
+        logger.info(f"[STEP 3.1] RAGSystem: Starting chunking for {len(documents)} document(s), total text length: {total_text_length:,} chars")
         if progress_callback:
             progress_callback('chunking', 0.1, detailed_message="Starting chunking process...")
         
@@ -181,7 +182,7 @@ class RAGSystem:
         
         estimated_chunks = math.ceil(estimated_tokens / max(self.chunk_size, 1))
         logger.info(
-            f"Chunking configuration: requested chunk_size={self.chunk_size}, "
+            f"[STEP 3.1.1] RAGSystem: Chunking configuration - requested chunk_size={self.chunk_size}, "
             f"overlap={self.chunk_overlap}, estimated tokens≈{estimated_tokens:,}, "
             f"estimated chunks≈{estimated_chunks}"
         )
@@ -212,7 +213,7 @@ class RAGSystem:
                 )
                 
                 logger.info(
-                    f"Adaptive chunking enabled for large document: "
+                    f"[STEP 3.1.2] RAGSystem: Adaptive chunking enabled for large document - "
                     f"chunk_size {self.chunk_size} -> {adaptive_chunk_size}, "
                     f"overlap {self.chunk_overlap} -> {adaptive_chunk_overlap}, "
                     f"document tokens≈{estimated_tokens:,}"
@@ -233,13 +234,40 @@ class RAGSystem:
             if progress_callback:
                 progress_callback(status, progress, **kwargs)
         
+        # Track chunking performance
+        chunking_start_time = time_module.time()
+        chunking_timeout_warning = 600  # 10 minutes in seconds
+        
         try:
+            logger.info(f"[STEP 3.1.3] RAGSystem: Starting chunking operation (timeout warning at {chunking_timeout_warning}s)...")
             chunks = splitter_to_use.split_documents(
                 safe_documents,
                 progress_callback=splitter_progress_callback
             )
             if chunks is None:
                 chunks = []
+            
+            # Log chunking performance
+            chunking_end_time = time_module.time()
+            chunking_duration = chunking_end_time - chunking_start_time
+            
+            if chunking_duration > chunking_timeout_warning:
+                logger.warning(
+                    f"⚠️ [STEP 3.1] RAGSystem: Chunking took {chunking_duration:.1f}s ({chunking_duration/60:.1f} minutes) - "
+                    f"this is longer than expected. Consider using larger chunk sizes for very large documents."
+                )
+            else:
+                logger.info(
+                    f"[STEP 3.1] RAGSystem: Chunking completed in {chunking_duration:.1f}s ({chunking_duration/60:.1f} minutes)"
+                )
+            
+            # Log performance metrics
+            if len(chunks) > 0:
+                chunks_per_sec = len(chunks) / chunking_duration if chunking_duration > 0 else 0
+                logger.info(
+                    f"[STEP 3.1] RAGSystem: Chunking performance - {chunks_per_sec:.2f} chunks/sec, "
+                    f"{estimated_tokens/chunking_duration:.0f} tokens/sec"
+                )
         except Exception as e:
             error_details = traceback.format_exc()
             error_msg = str(e) if str(e) else type(e).__name__
@@ -251,13 +279,13 @@ class RAGSystem:
                     "This typically happens when attempting to update the UI from a background thread. "
                     "Please retry the operation."
                 )
-            logger.error(f"Chunking failed: {error_msg}\n{error_details}")
+            logger.error(f"❌ [STEP 3.1] RAGSystem: Chunking failed: {error_msg}\n{error_details}")
             raise ValueError(f"Failed to split documents into chunks: {error_msg}")
         
         chunk_size_used = adaptive_chunk_size or self.chunk_size
         overlap_used = adaptive_chunk_overlap if adaptive_chunk_overlap is not None else self.chunk_overlap
         logger.info(
-            f"Chunking completed: {len(chunks)} chunks created "
+            f"✅ [STEP 3.1] RAGSystem: Chunking completed - {len(chunks)} chunks created "
             f"(effective chunk_size={chunk_size_used}, overlap={overlap_used})"
         )
         
@@ -326,7 +354,7 @@ class RAGSystem:
                     raise ValueError("Cannot create vectorstore: no valid chunks")
                 
                 # Create vector store using factory
-                logger.info(f"Creating new {self.vector_store_type.upper()} vectorstore with {len(valid_chunks)} chunks (this may take a few minutes for large documents)...")
+                logger.info(f"[STEP 3.2.1] RAGSystem: Creating new {self.vector_store_type.upper()} vectorstore with {len(valid_chunks)} chunks (this may take a few minutes for large documents)...")
                 if progress_callback:
                     progress_callback('embedding', 0.65)
                 
@@ -343,110 +371,170 @@ class RAGSystem:
                 total_batches = (len(valid_chunks) + batch_size - 1) // batch_size
                 
                 if len(valid_chunks) > batch_size:
-                    logger.info(f"Processing {len(valid_chunks)} chunks in {total_batches} batches of {batch_size} (this may take several minutes)...")
+                    logger.info(f"[STEP 3.2.2] RAGSystem: Processing {len(valid_chunks)} chunks in {total_batches} batches of {batch_size} (this may take several minutes)...")
                     # Process first batch to create vectorstore
                     first_batch = valid_chunks[:batch_size]
-                    logger.info(f"Processing batch 1/{total_batches} ({len(first_batch)} chunks) - creating embeddings...")
+                    logger.info(f"[STEP 3.2.2.1] RAGSystem: Processing batch 1/{total_batches} ({len(first_batch)} chunks) - creating embeddings...")
                     if progress_callback:
                         progress_callback('embedding', 0.65, detailed_message=f"Initializing vector store... Batch 1/{total_batches} ({len(first_batch)} chunks)")
                     
                     import time
-                    batch_start = time.time()
+                    batch_start = time_module.time()
                     self.vectorstore.from_documents(first_batch)
-                    batch_time = time.time() - batch_start
-                    logger.info(f"Batch 1/{total_batches} completed in {batch_time:.1f}s ({len(first_batch)} chunks embedded)")
+                    batch_time = time_module.time() - batch_start
+                    logger.info(f"✅ [STEP 3.2.2.1] RAGSystem: Batch 1/{total_batches} completed in {batch_time:.1f}s ({len(first_batch)} chunks embedded)")
                     
                     if progress_callback:
                         progress_callback('embedding', 0.7, detailed_message=f"Batch 1/{total_batches} complete ({len(first_batch)} chunks embedded in {batch_time:.1f}s)")
                     
                     # Process remaining batches
+                    embedding_start_time = time_module.time()
                     for batch_num in range(1, total_batches):
                         start_idx = batch_num * batch_size
                         end_idx = min(start_idx + batch_size, len(valid_chunks))
                         batch = valid_chunks[start_idx:end_idx]
                         
                         if batch:
-                            logger.info(f"Processing batch {batch_num + 1}/{total_batches} ({len(batch)} chunks) - creating embeddings...")
+                            batch_pct = int((batch_num + 1) / total_batches * 100)
+                            elapsed_embedding = time_module.time() - embedding_start_time
+                            
+                            # Calculate speed and remaining time
+                            chunks_processed_so_far = (batch_num * batch_size) + len(first_batch)
+                            if elapsed_embedding > 0:
+                                chunks_per_sec = chunks_processed_so_far / elapsed_embedding
+                                remaining_chunks = len(valid_chunks) - chunks_processed_so_far
+                                estimated_remaining = remaining_chunks / chunks_per_sec if chunks_per_sec > 0 else 0
+                                remaining_minutes = int(estimated_remaining // 60)
+                                remaining_seconds = int(estimated_remaining % 60)
+                                remaining_str = f"~{remaining_minutes}m {remaining_seconds}s remaining" if estimated_remaining > 0 else "calculating..."
+                            else:
+                                remaining_str = "calculating..."
+                                chunks_per_sec = 0
+                            
+                            logger.info(f"[STEP 3.2.2.{batch_num + 1}] RAGSystem: Processing batch {batch_num + 1}/{total_batches} ({batch_pct}%) - {len(batch)} chunks | {remaining_str}")
                             if progress_callback:
                                 # Update progress: 0.7 to 0.9 based on batches
                                 batch_progress = 0.7 + ((batch_num + 1) / total_batches) * 0.2
-                                progress_callback('embedding', batch_progress, detailed_message=f"Processing batch {batch_num + 1}/{total_batches} ({len(batch)} chunks)... This may take a few minutes")
+                                detailed_msg = f"Batch {batch_num + 1}/{total_batches} ({batch_pct}%) | {len(batch)} chunks | {remaining_str}"
+                                progress_callback('embedding', batch_progress, detailed_message=detailed_msg)
                             
-                            batch_start = time.time()
+                            batch_start = time_module.time()
                             self.vectorstore.add_documents(batch)
-                            batch_time = time.time() - batch_start
-                            logger.info(f"Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s ({len(batch)} chunks embedded)")
+                            batch_time = time_module.time() - batch_start
+                            chunks_per_sec_batch = len(batch) / batch_time if batch_time > 0 else 0
+                            logger.info(f"✅ [STEP 3.2.2.{batch_num + 1}] RAGSystem: Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s | Speed: {chunks_per_sec_batch:.2f} chunks/sec | {len(batch)} chunks embedded")
                             
                             if progress_callback:
                                 # Update progress: 0.7 to 0.9 based on batches
                                 batch_progress = 0.7 + ((batch_num + 1) / total_batches) * 0.2
-                                progress_callback('embedding', batch_progress, detailed_message=f"Batch {batch_num + 1}/{total_batches} complete ({len(batch)} chunks embedded in {batch_time:.1f}s)")
+                                progress_callback('embedding', batch_progress, detailed_message=f"Batch {batch_num + 1}/{total_batches} complete ({len(batch)} chunks embedded in {batch_time:.1f}s, {chunks_per_sec_batch:.2f} chunks/sec)")
                 else:
                     # Small document - process all at once
-                    logger.info(f"Processing {len(valid_chunks)} chunks - creating embeddings (this may take a minute)...")
+                    logger.info(f"[STEP 3.2.2] RAGSystem: Processing {len(valid_chunks)} chunks - creating embeddings (this may take a minute)...")
                     if progress_callback:
                         progress_callback('embedding', 0.7, detailed_message=f"Creating embeddings for {len(valid_chunks)} chunks... This may take a minute")
                     import time
-                    embed_start = time.time()
+                    embed_start = time_module.time()
                     self.vectorstore.from_documents(valid_chunks)
-                    embed_time = time.time() - embed_start
-                    logger.info(f"Embedding completed in {embed_time:.1f}s ({len(valid_chunks)} chunks)")
+                    embed_time = time_module.time() - embed_start
+                    logger.info(f"✅ [STEP 3.2.2] RAGSystem: Embedding completed in {embed_time:.1f}s ({len(valid_chunks)} chunks)")
                     if progress_callback:
                         progress_callback('embedding', 0.85, detailed_message=f"Embeddings complete! {len(valid_chunks)} chunks embedded in {embed_time:.1f}s")
                 
-                logger.info(f"{self.vector_store_type.upper()} vectorstore created successfully")
+                logger.info(f"✅ [STEP 3.2] RAGSystem: {self.vector_store_type.upper()} vectorstore created successfully")
             else:
                 # Add to existing vector store (incremental update)
                 if len(valid_chunks) > 0:
-                    logger.info(f"Adding {len(valid_chunks)} chunks to existing {self.vector_store_type.upper()} vectorstore (this may take a few minutes for large documents)...")
+                    logger.info(f"[STEP 3.2.3] RAGSystem: Adding {len(valid_chunks)} chunks to existing {self.vector_store_type.upper()} vectorstore (this may take a few minutes for large documents)...")
                     
                     # Process in batches for large documents
                     batch_size = 50  # Use smaller batches for better progress visibility
                     total_batches = (len(valid_chunks) + batch_size - 1) // batch_size
                     
                     if len(valid_chunks) > batch_size:
-                        logger.info(f"Processing {len(valid_chunks)} chunks in {total_batches} batches of {batch_size} (this may take several minutes)...")
+                        logger.info(f"[STEP 3.2.3.1] RAGSystem: Processing {len(valid_chunks)} chunks in {total_batches} batches of {batch_size} (this may take several minutes)...")
+                        embedding_start_time = time_module.time()
                         for batch_num in range(total_batches):
                             start_idx = batch_num * batch_size
                             end_idx = min(start_idx + batch_size, len(valid_chunks))
                             batch = valid_chunks[start_idx:end_idx]
                             
                             if batch:
-                                logger.info(f"Processing batch {batch_num + 1}/{total_batches} ({len(batch)} chunks) - creating embeddings...")
-                                import time
-                                batch_start = time.time()
+                                batch_pct = int((batch_num + 1) / total_batches * 100)
+                                elapsed_embedding = time_module.time() - embedding_start_time
+                                
+                                # Calculate speed and remaining time
+                                chunks_processed_so_far = (batch_num + 1) * batch_size if (batch_num + 1) * batch_size <= len(valid_chunks) else len(valid_chunks)
+                                if elapsed_embedding > 0:
+                                    chunks_per_sec = chunks_processed_so_far / elapsed_embedding
+                                    remaining_chunks = len(valid_chunks) - chunks_processed_so_far
+                                    estimated_remaining = remaining_chunks / chunks_per_sec if chunks_per_sec > 0 else 0
+                                    remaining_minutes = int(estimated_remaining // 60)
+                                    remaining_seconds = int(estimated_remaining % 60)
+                                    remaining_str = f"~{remaining_minutes}m {remaining_seconds}s remaining" if estimated_remaining > 0 else "calculating..."
+                                else:
+                                    remaining_str = "calculating..."
+                                    chunks_per_sec = 0
+                                
+                                logger.info(f"[STEP 3.2.3.{batch_num + 1}] RAGSystem: Processing batch {batch_num + 1}/{total_batches} ({batch_pct}%) - {len(batch)} chunks | {remaining_str}")
+                                batch_start = time_module.time()
                                 self.vectorstore.add_documents(batch)
-                                batch_time = time.time() - batch_start
-                                logger.info(f"Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s ({len(batch)} chunks embedded)")
+                                batch_time = time_module.time() - batch_start
+                                chunks_per_sec_batch = len(batch) / batch_time if batch_time > 0 else 0
+                                logger.info(f"✅ [STEP 3.2.3.{batch_num + 1}] RAGSystem: Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s | Speed: {chunks_per_sec_batch:.2f} chunks/sec | {len(batch)} chunks embedded")
                                 
                                 if progress_callback:
                                     # Update progress: 0.6 to 0.9 based on batches
                                     batch_progress = 0.6 + ((batch_num + 1) / total_batches) * 0.3
-                                    progress_callback('embedding', batch_progress)
+                                    detailed_msg = f"Batch {batch_num + 1}/{total_batches} ({batch_pct}%) | {len(batch)} chunks | {remaining_str}"
+                                    progress_callback('embedding', batch_progress, detailed_message=detailed_msg)
                     else:
                         # Small update - process all at once
-                        logger.info(f"Processing {len(valid_chunks)} chunks - creating embeddings (this may take a minute)...")
+                        logger.info(f"[STEP 3.2.3.1] RAGSystem: Processing {len(valid_chunks)} chunks - creating embeddings (this may take a minute)...")
                         if progress_callback:
                             progress_callback('embedding', 0.7)
-                        import time
-                        embed_start = time.time()
+                        embed_start = time_module.time()
                         self.vectorstore.add_documents(valid_chunks)
-                        embed_time = time.time() - embed_start
-                        logger.info(f"Embedding completed in {embed_time:.1f}s ({len(valid_chunks)} chunks)")
+                        embed_time = time_module.time() - embed_start
+                        logger.info(f"✅ [STEP 3.2.3.1] RAGSystem: Embedding completed in {embed_time:.1f}s ({len(valid_chunks)} chunks)")
                         if progress_callback:
                             progress_callback('embedding', 0.85)
                     
-                    logger.info(f"Chunks added to {self.vector_store_type.upper()} vectorstore successfully")
+                    logger.info(f"✅ [STEP 3.2.3] RAGSystem: Chunks added to {self.vector_store_type.upper()} vectorstore successfully")
         except Exception as e:
-            logger.error(f"Vectorstore creation/update failed: {str(e)}")
-            error_msg = str(e)
+            # Capture full error details including traceback
+            error_details = traceback.format_exc()
+            error_msg = str(e) if str(e) else type(e).__name__
+            if not error_msg or error_msg.strip() == "":
+                error_msg = f"Unknown error ({type(e).__name__})"
+            
+            logger.error(f"❌ [STEP 3.2] RAGSystem: Vectorstore creation/update failed: {error_msg}")
+            logger.error(f"❌ [STEP 3.2] RAGSystem: Full traceback:\n{error_details}")
+            
+            # Check for specific error types
             if "OpenSearch" in error_msg or "opensearch" in error_msg.lower():
                 raise ValueError(
                     f"Failed to create/update OpenSearch vectorstore: {error_msg}. "
                     f"Please check your OpenSearch credentials and domain configuration. "
                     f"You may want to use FAISS instead for local storage."
                 )
-            raise ValueError(f"Failed to create/update vectorstore: {error_msg}. This may be due to empty chunks or embedding issues.")
+            elif "dimension" in error_msg.lower() or "shape" in error_msg.lower():
+                raise ValueError(
+                    f"Failed to create/update vectorstore: {error_msg}. "
+                    f"This may be due to dimension mismatch in embeddings. "
+                    f"Try removing existing vectorstore and reprocessing documents."
+                )
+            elif "empty" in error_msg.lower() or "no documents" in error_msg.lower():
+                raise ValueError(
+                    f"Failed to create/update vectorstore: {error_msg}. "
+                    f"This may be due to empty chunks. Please check your document content."
+                )
+            else:
+                raise ValueError(
+                    f"Failed to create/update vectorstore: {error_msg}. "
+                    f"This may be due to empty chunks or embedding issues. "
+                    f"Full error: {error_details[-500:]}"  # Last 500 chars of traceback
+                )
         
         if progress_callback:
             progress_callback('embedding', 0.9)
@@ -460,7 +548,7 @@ class RAGSystem:
                 self.document_index[doc_id] = []
             self.document_index[doc_id].append(chunk_start + i)
         
-        logger.info(f"Document indexing completed: {len(valid_chunks)} chunks indexed")
+        logger.info(f"✅ [STEP 3.3] RAGSystem: Document indexing completed - {len(valid_chunks)} chunks indexed")
         
         return len(valid_chunks)
     
@@ -561,7 +649,7 @@ class RAGSystem:
         Returns:
             Dict with answer, sources, and context chunks
         """
-        query_start_time = time.time()
+        query_start_time = time_module.time()
         
         if self.vectorstore is None:
             return {
@@ -699,7 +787,7 @@ class RAGSystem:
         else:
             answer, response_tokens = self._query_openai(question, context, relevant_docs)
         
-        response_time = time.time() - query_start_time
+        response_time = time_module.time() - query_start_time
         total_tokens = context_tokens + response_tokens
         
         # Record query metrics
@@ -889,26 +977,36 @@ Answer:"""
     
     def save_vectorstore(self, path: str = "vectorstore"):
         """Save vector store to disk (FAISS only) or cloud (OpenSearch)"""
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
         if self.vectorstore:
             if self.vector_store_type == "faiss":
+                logger.info(f"[STEP 1] RAGSystem: Saving FAISS vectorstore to: {path}")
                 self.vectorstore.save_local(path)
                 # Also save document index
                 import pickle
                 index_path = os.path.join(path, "document_index.pkl")
+                logger.info(f"[STEP 2] RAGSystem: Saving document index to: {index_path}")
                 with open(index_path, 'wb') as f:
                     pickle.dump({
                         'document_index': self.document_index,
                         'total_tokens': self.total_tokens
                     }, f)
+                logger.info(f"✅ [STEP 2] RAGSystem: Vectorstore saved successfully")
             else:
                 # OpenSearch stores data in cloud, no local save needed
-                logger = logging.getLogger(__name__)
-                logger.info("OpenSearch stores data in the cloud. No local save needed.")
+                logger.info("ℹ️ [STEP 1] RAGSystem: OpenSearch stores data in the cloud. No local save needed.")
     
     def load_vectorstore(self, path: str = "vectorstore"):
         """Load vector store from disk (FAISS) or cloud (OpenSearch)"""
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
         if self.vector_store_type == "faiss":
+            logger.info(f"[STEP 1] RAGSystem: Loading FAISS vectorstore from: {path}")
             if os.path.exists(path):
+                logger.info(f"[STEP 1.1] RAGSystem: Vectorstore path exists, loading...")
                 self.vectorstore = VectorStoreFactory.load_vector_store(
                     store_type="faiss",
                     embeddings=self.embeddings,
@@ -917,18 +1015,22 @@ Answer:"""
                 # Also load document index
                 import pickle
                 index_path = os.path.join(path, "document_index.pkl")
+                logger.info(f"[STEP 1.2] RAGSystem: Loading document index from: {index_path}")
                 if os.path.exists(index_path):
                     with open(index_path, 'rb') as f:
                         data = pickle.load(f)
                         self.document_index = data.get('document_index', {})
                         self.total_tokens = data.get('total_tokens', 0)
+                    logger.info(f"✅ [STEP 1.2] RAGSystem: Document index loaded - {len(self.document_index)} documents, {self.total_tokens:,} tokens")
+                logger.info(f"✅ [STEP 1] RAGSystem: Vectorstore loaded successfully")
                 return True
+            logger.warning(f"⚠️ [STEP 1] RAGSystem: Vectorstore path does not exist: {path}")
             return False
         else:
             # OpenSearch loads from cloud index automatically
-            logger = logging.getLogger(__name__)
-            logger.info("OpenSearch loads data from the cloud index automatically.")
+            logger.info("[STEP 1] RAGSystem: OpenSearch loads data from the cloud index automatically.")
             try:
+                logger.info(f"[STEP 1.1] RAGSystem: Connecting to OpenSearch domain: {self.opensearch_domain}, index: {self.opensearch_index}")
                 self.vectorstore = VectorStoreFactory.load_vector_store(
                     store_type="opensearch",
                     embeddings=self.embeddings,
@@ -936,9 +1038,10 @@ Answer:"""
                     opensearch_domain=self.opensearch_domain,
                     opensearch_index=self.opensearch_index
                 )
+                logger.info(f"✅ [STEP 1.1] RAGSystem: OpenSearch vectorstore connected successfully")
                 return True
             except Exception as e:
-                logger.error(f"Failed to load OpenSearch vectorstore: {str(e)}")
+                logger.error(f"❌ [STEP 1.1] RAGSystem: Failed to load OpenSearch vectorstore: {str(e)}")
                 return False
     
     def get_stats(self) -> Dict:
