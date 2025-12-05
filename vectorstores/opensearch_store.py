@@ -205,6 +205,49 @@ class OpenSearchVectorStore:
         except Exception as e:
             raise ValueError(f"Failed to initialize LangChain OpenSearch store: {str(e)}")
     
+    def _clean_metadata_for_opensearch(self, documents: List[Document]) -> List[Document]:
+        """
+        Clean metadata to ensure it's compatible with OpenSearch limits.
+        Removes large nested structures and keeps only essential fields.
+        """
+        cleaned_documents = []
+        for doc in documents:
+            # Create a copy of the document
+            from langchain_core.documents import Document
+            cleaned_metadata = {}
+            
+            # Keep only essential metadata fields
+            essential_fields = [
+                'source', 'page', 'source_page', 'chunk_index', 'total_chunks',
+                'parser_used', 'pages', 'images_detected', 'extraction_percentage',
+                'start_char', 'end_char', 'token_count'
+            ]
+            
+            if doc.metadata:
+                for key in essential_fields:
+                    if key in doc.metadata:
+                        value = doc.metadata[key]
+                        # Skip None values
+                        if value is not None:
+                            # Truncate string values if too long
+                            if isinstance(value, str) and len(value) > 1000:
+                                cleaned_metadata[key] = value[:1000]
+                            else:
+                                cleaned_metadata[key] = value
+                
+                # Add source if not already present (required for filtering)
+                if 'source' not in cleaned_metadata and 'source' in doc.metadata:
+                    cleaned_metadata['source'] = doc.metadata['source']
+            
+            # Create cleaned document
+            cleaned_doc = Document(
+                page_content=doc.page_content,
+                metadata=cleaned_metadata
+            )
+            cleaned_documents.append(cleaned_doc)
+        
+        return cleaned_documents
+    
     def from_documents(self, documents: List[Document]) -> 'OpenSearchVectorStore':
         """Create vector store from documents."""
         if not documents:
@@ -213,10 +256,14 @@ class OpenSearchVectorStore:
         logger.info(f"Creating OpenSearch vectorstore from {len(documents)} documents...")
         
         try:
+            # Clean metadata before adding to OpenSearch (remove large nested structures)
+            cleaned_documents = self._clean_metadata_for_opensearch(documents)
+            logger.info(f"Cleaned metadata for {len(cleaned_documents)} documents (removed large nested structures)")
+            
             # Add documents to the index
             # OpenSearchVectorSearch will create the index if it doesn't exist
-            self.vectorstore.add_documents(documents)
-            logger.info(f"OpenSearch vectorstore created successfully with {len(documents)} documents")
+            self.vectorstore.add_documents(cleaned_documents)
+            logger.info(f"OpenSearch vectorstore created successfully with {len(cleaned_documents)} documents")
         except Exception as e:
             logger.error(f"Failed to create OpenSearch vectorstore: {str(e)}")
             raise ValueError(f"Failed to create OpenSearch vectorstore: {str(e)}")
@@ -235,8 +282,12 @@ class OpenSearchVectorStore:
         logger.info(f"Adding {len(documents)} documents to OpenSearch vectorstore...")
         
         try:
-            self.vectorstore.add_documents(documents)
-            logger.info(f"Successfully added {len(documents)} documents to OpenSearch vectorstore")
+            # Clean metadata before adding to OpenSearch (remove large nested structures)
+            cleaned_documents = self._clean_metadata_for_opensearch(documents)
+            logger.info(f"Cleaned metadata for {len(cleaned_documents)} documents (removed large nested structures)")
+            
+            self.vectorstore.add_documents(cleaned_documents)
+            logger.info(f"Successfully added {len(cleaned_documents)} documents to OpenSearch vectorstore")
         except Exception as e:
             logger.error(f"Failed to add documents to OpenSearch vectorstore: {str(e)}")
             raise ValueError(f"Failed to add documents to OpenSearch vectorstore: {str(e)}")

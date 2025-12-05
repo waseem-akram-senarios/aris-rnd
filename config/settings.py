@@ -17,10 +17,10 @@ class ARISConfig:
     OPENAI_API_KEY: Optional[str] = os.getenv('OPENAI_API_KEY')
     CEREBRAS_API_KEY: Optional[str] = os.getenv('CEREBRAS_API_KEY')
     
-    # Model Configuration
-    EMBEDDING_MODEL: str = os.getenv('EMBEDDING_MODEL', 'text-embedding-3-small')
-    OPENAI_MODEL: str = os.getenv('OPENAI_MODEL', 'gpt-3.5-turbo')
-    CEREBRAS_MODEL: str = os.getenv('CEREBRAS_MODEL', 'llama3.1-8b')
+    # Model Configuration - Best quality defaults
+    EMBEDDING_MODEL: str = os.getenv('EMBEDDING_MODEL', 'text-embedding-3-large')  # Best quality: 3072 dimensions
+    OPENAI_MODEL: str = os.getenv('OPENAI_MODEL', 'gpt-4o')  # Best quality: Latest GPT-4o model
+    CEREBRAS_MODEL: str = os.getenv('CEREBRAS_MODEL', 'llama-3.3-70b')  # Best quality: 70B parameter model
     
     # Vector Store Configuration
     VECTOR_STORE_TYPE: str = os.getenv('VECTOR_STORE_TYPE', 'faiss').lower()
@@ -31,16 +31,39 @@ class ARISConfig:
     AWS_OPENSEARCH_SECRET_ACCESS_KEY: Optional[str] = os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY')
     AWS_OPENSEARCH_REGION: str = os.getenv('AWS_OPENSEARCH_REGION', 'us-east-2')
     
-    # Chunking Configuration
-    CHUNKING_STRATEGY: str = os.getenv('CHUNKING_STRATEGY', 'balanced')
+    # Chunking Configuration - Optimized for maximum accuracy
+    CHUNKING_STRATEGY: str = os.getenv('CHUNKING_STRATEGY', 'comprehensive')
+    
+    # Default chunking parameters - Optimized for retrieval accuracy
+    # Smaller chunks = more precise retrieval, larger overlap = better context continuity
+    DEFAULT_CHUNK_SIZE: int = int(os.getenv('DEFAULT_CHUNK_SIZE', '384'))  # Reduced for precision
+    DEFAULT_CHUNK_OVERLAP: int = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '100'))  # Maintained for continuity
+    
+    # Retrieval Configuration - Maximum accuracy settings
+    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '10'))  # More chunks = better coverage
+    DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '40'))  # Larger candidate pool
+    DEFAULT_MMR_LAMBDA: float = float(os.getenv('DEFAULT_MMR_LAMBDA', '0.3'))  # Prioritize relevance over diversity
+    DEFAULT_USE_MMR: bool = os.getenv('DEFAULT_USE_MMR', 'true').lower() == 'true'
+    
+    # Generation Configuration - Maximum accuracy
+    DEFAULT_TEMPERATURE: float = float(os.getenv('DEFAULT_TEMPERATURE', '0.0'))  # Maximum determinism
+    DEFAULT_MAX_TOKENS: int = int(os.getenv('DEFAULT_MAX_TOKENS', '1000'))  # More detailed answers
     
     # Document Storage Configuration
     DOCUMENT_REGISTRY_PATH: str = os.getenv('DOCUMENT_REGISTRY_PATH', 'storage/document_registry.json')
     
+    # Parser Configuration
+    DOCLING_MAX_TIMEOUT: int = int(os.getenv('DOCLING_MAX_TIMEOUT', '1800'))  # 30 minutes default
+    
     @classmethod
-    def get_vectorstore_path(cls) -> str:
-        """Get vectorstore path"""
-        return cls.VECTORSTORE_PATH
+    def get_vectorstore_path(cls, embedding_model: Optional[str] = None) -> str:
+        """Get vectorstore path, optionally with model-specific subdirectory"""
+        base_path = cls.VECTORSTORE_PATH
+        if embedding_model:
+            # Create model-specific path to support multiple embedding models
+            model_safe = embedding_model.replace("/", "_")
+            return os.path.join(base_path, model_safe)
+        return base_path
     
     @classmethod
     def get_opensearch_config(cls) -> dict:
@@ -67,6 +90,8 @@ class ARISConfig:
     def get_chunking_config(cls) -> dict:
         """Get chunking configuration"""
         return {
-            'strategy': cls.CHUNKING_STRATEGY
+            'strategy': cls.CHUNKING_STRATEGY,
+            'chunk_size': cls.DEFAULT_CHUNK_SIZE,
+            'chunk_overlap': cls.DEFAULT_CHUNK_OVERLAP
         }
 

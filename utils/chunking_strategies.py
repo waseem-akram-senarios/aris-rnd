@@ -56,9 +56,9 @@ def get_chunking_params(strategy_name: str) -> Tuple[int, int]:
     strategy = get_strategy(strategy_name)
     if strategy:
         return (strategy["chunk_size"], strategy["chunk_overlap"])
-    # Default to balanced if not found
-    return (CHUNKING_STRATEGIES["balanced"]["chunk_size"], 
-            CHUNKING_STRATEGIES["balanced"]["chunk_overlap"])
+    # Default to comprehensive (optimized for large documents) if not found
+    return (CHUNKING_STRATEGIES["comprehensive"]["chunk_size"], 
+            CHUNKING_STRATEGIES["comprehensive"]["chunk_overlap"])
 
 
 def get_all_strategies() -> Dict[str, Dict[str, any]]:

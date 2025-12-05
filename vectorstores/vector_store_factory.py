@@ -4,7 +4,7 @@ Supports FAISS (local) and OpenSearch (cloud).
 """
 import os
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from dotenv import load_dotenv
 
 try:
@@ -107,6 +107,42 @@ class FAISSVectorStore:
     def __init__(self, embeddings: OpenAIEmbeddings):
         self.embeddings = embeddings
         self.vectorstore: Optional[FAISS] = None
+        self._embedding_dimension: Optional[int] = None
+    
+    def _get_embedding_dimension(self) -> int:
+        """Get the dimension of embeddings dynamically."""
+        if self._embedding_dimension is None:
+            # Use a small test text to get embedding dimension
+            test_text = "test"
+            test_embedding = self.embeddings.embed_query(test_text)
+            self._embedding_dimension = len(test_embedding)
+            logger.info(f"Detected embedding dimension: {self._embedding_dimension} (model: {getattr(self.embeddings, 'model', 'unknown')})")
+        return self._embedding_dimension
+    
+    def _get_existing_dimension(self) -> Optional[int]:
+        """Get the dimension of the existing FAISS index."""
+        if self.vectorstore is None or not hasattr(self.vectorstore, 'index'):
+            return None
+        try:
+            return self.vectorstore.index.d if hasattr(self.vectorstore.index, 'd') else None
+        except Exception:
+            return None
+    
+    def _check_dimension_compatibility(self) -> Tuple[bool, Optional[int], Optional[int]]:
+        """
+        Check if embedding dimensions are compatible.
+        
+        Returns:
+            (is_compatible, existing_dim, new_dim)
+        """
+        existing_dim = self._get_existing_dimension()
+        if existing_dim is None:
+            return True, None, None  # No existing index, compatible
+        
+        new_dim = self._get_embedding_dimension()
+        is_compatible = existing_dim == new_dim
+        
+        return is_compatible, existing_dim, new_dim
     
     def from_documents(self, documents: List[Document]) -> 'FAISSVectorStore':
         """Create vector store from documents."""
@@ -115,8 +151,14 @@ class FAISSVectorStore:
         logger.info("FAISS vectorstore created successfully")
         return self
     
-    def add_documents(self, documents: List[Document]):
-        """Add documents to existing vector store."""
+    def add_documents(self, documents: List[Document], auto_recreate_on_mismatch: bool = True):
+        """
+        Add documents to existing vector store.
+        
+        Args:
+            documents: Documents to add
+            auto_recreate_on_mismatch: If True, automatically recreate vectorstore when dimension mismatch is detected
+        """
         if self.vectorstore is None:
             raise ValueError("Vector store not initialized. Call from_documents() first.")
         
@@ -137,10 +179,78 @@ class FAISSVectorStore:
         if not valid_docs:
             raise ValueError("No valid documents to add to vectorstore. All documents are empty or None.")
         
-        logger.info(f"Adding {len(valid_docs)} documents to FAISS vectorstore...")
+        # Check dimension compatibility before adding
+        is_compatible, existing_dim, new_dim = self._check_dimension_compatibility()
+        
+        if not is_compatible:
+            error_msg = (
+                f"❌ Embedding dimension mismatch detected!\n"
+                f"   Existing vectorstore dimension: {existing_dim}\n"
+                f"   New embeddings dimension: {new_dim}\n"
+                f"   Embedding model: {getattr(self.embeddings, 'model', 'unknown')}"
+            )
+            
+            if auto_recreate_on_mismatch:
+                logger.warning(f"{error_msg}")
+                logger.warning("⚠️ Automatically recreating vectorstore with correct dimension...")
+                # Clear the existing vectorstore
+                self.vectorstore = None
+                # Recreate with new documents
+                logger.info(f"Recreating FAISS vectorstore with {len(valid_docs)} documents (dimension: {new_dim})...")
+                self.vectorstore = FAISS.from_documents(valid_docs, self.embeddings)
+                logger.info("✅ Vectorstore recreated successfully with correct dimension")
+                return
+            else:
+                logger.error(error_msg)
+                raise ValueError(
+                    f"Dimension mismatch: existing={existing_dim}, new={new_dim}. "
+                    f"Set auto_recreate_on_mismatch=True to automatically fix this."
+                )
+        
+        logger.info(f"Adding {len(valid_docs)} documents to FAISS vectorstore (dimension: {new_dim or self._get_embedding_dimension()})...")
         try:
             self.vectorstore.add_documents(valid_docs)
             logger.info("Documents added to FAISS vectorstore successfully")
+        except AssertionError as e:
+            # Catch FAISS dimension assertion error
+            error_str = str(e) if str(e) else "AssertionError"
+            if "d == self.d" in error_str or "dimension" in error_str.lower():
+                # This is a dimension mismatch error
+                existing_dim = self._get_existing_dimension()
+                new_dim = self._get_embedding_dimension()
+                
+                if auto_recreate_on_mismatch:
+                    logger.warning(
+                        f"⚠️ Dimension mismatch detected during add_documents: "
+                        f"existing={existing_dim}, new={new_dim}. Auto-recreating..."
+                    )
+                    # Get all existing documents from the vectorstore
+                    try:
+                        # Try to retrieve existing documents (if possible)
+                        existing_docs = []
+                        # Note: FAISS doesn't easily allow retrieving all documents, so we'll just recreate with new ones
+                        logger.warning("⚠️ Existing documents in vectorstore will be lost. Recreating with new documents only.")
+                    except Exception:
+                        pass
+                    
+                    # Clear and recreate
+                    self.vectorstore = None
+                    self.vectorstore = FAISS.from_documents(valid_docs, self.embeddings)
+                    logger.info(f"✅ Vectorstore recreated with {len(valid_docs)} documents (dimension: {new_dim})")
+                    return
+                else:
+                    detailed_error = (
+                        f"❌ FAISS Dimension Mismatch!\n"
+                        f"   Existing index dimension: {existing_dim}\n"
+                        f"   New embedding dimension: {new_dim}\n"
+                        f"   Embedding model: {getattr(self.embeddings, 'model', 'unknown')}\n\n"
+                        f"   Solution: Delete the existing vectorstore or set auto_recreate_on_mismatch=True"
+                    )
+                    logger.error(detailed_error)
+                    raise ValueError(detailed_error) from e
+            else:
+                # Other AssertionError, re-raise as-is
+                raise
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
@@ -166,11 +276,38 @@ class FAISSVectorStore:
         logger.info(f"FAISS vectorstore saved to {path}")
     
     def load_local(self, path: str):
-        """Load vector store from local disk."""
+        """Load vector store from local disk with dimension validation."""
         if not os.path.exists(path):
             raise FileNotFoundError(f"Vector store path not found: {path}")
-        self.vectorstore = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
-        logger.info(f"FAISS vectorstore loaded from {path}")
+        
+        try:
+            self.vectorstore = FAISS.load_local(path, self.embeddings, allow_dangerous_deserialization=True)
+            
+            # Validate dimension after loading
+            is_compatible, existing_dim, new_dim = self._check_dimension_compatibility()
+            if not is_compatible:
+                logger.warning(
+                    f"⚠️ Dimension mismatch detected after loading:\n"
+                    f"   Loaded index dimension: {existing_dim}\n"
+                    f"   Current embedding dimension: {new_dim}\n"
+                    f"   This vectorstore was created with a different embedding model.\n"
+                    f"   The vectorstore will be recreated on next document addition."
+                )
+                # Don't fail here, let add_documents handle the recreation
+            else:
+                logger.info(f"FAISS vectorstore loaded from {path} (dimension: {existing_dim})")
+        except Exception as e:
+            # If loading fails due to dimension mismatch, log and re-raise
+            error_msg = str(e)
+            if "dimension" in error_msg.lower() or "assert" in error_msg.lower():
+                new_dim = self._get_embedding_dimension()
+                logger.error(
+                    f"❌ Cannot load vectorstore: dimension mismatch.\n"
+                    f"   Current embedding dimension: {new_dim}\n"
+                    f"   Vectorstore at {path} was created with a different dimension.\n"
+                    f"   Solution: Delete {path} and recreate, or use a different embedding model."
+                )
+            raise
 
 
 # Convenience function

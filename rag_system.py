@@ -7,6 +7,7 @@ import math
 import logging
 import traceback
 from typing import List, Dict, Optional, Callable
+import numpy as np
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
 try:
@@ -16,22 +17,30 @@ except ImportError:
 import requests
 from utils.tokenizer import TokenTextSplitter
 from vectorstores.vector_store_factory import VectorStoreFactory
+from config.settings import ARISConfig
 
 load_dotenv()
 
 class RAGSystem:
     def __init__(self, use_cerebras=False, metrics_collector=None, 
-                 embedding_model="text-embedding-3-small",
-                 openai_model="gpt-3.5-turbo",
-                 cerebras_model="llama3.1-8b",
+                 embedding_model=None,
+                 openai_model=None,
+                 cerebras_model=None,
                  vector_store_type="faiss",
                  opensearch_domain=None,
                  opensearch_index=None,
-                 chunk_size=384,
-                 chunk_overlap=75):
+                 chunk_size=None,
+                 chunk_overlap=None):
         self.use_cerebras = use_cerebras
         
-        # Store model selections
+        # Store model selections - use ARISConfig defaults if not provided
+        if embedding_model is None:
+            embedding_model = ARISConfig.EMBEDDING_MODEL
+        if openai_model is None:
+            openai_model = ARISConfig.OPENAI_MODEL
+        if cerebras_model is None:
+            cerebras_model = ARISConfig.CEREBRAS_MODEL
+        
         self.embedding_model = embedding_model
         self.openai_model = openai_model
         self.cerebras_model = cerebras_model
@@ -40,15 +49,23 @@ class RAGSystem:
         self.vector_store_type = vector_store_type.lower()
         self.opensearch_domain = opensearch_domain
         self.opensearch_index = opensearch_index
+
+        # Active document filter (set by UI to restrict queries to selected docs)
+        self.active_sources: Optional[List[str]] = None
         
-        # Chunking configuration
+        # Chunking configuration - use defaults optimized for large documents if not provided
+        if chunk_size is None:
+            chunk_size = ARISConfig.DEFAULT_CHUNK_SIZE
+        if chunk_overlap is None:
+            chunk_overlap = ARISConfig.DEFAULT_CHUNK_OVERLAP
+        
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         
-        # Use selected embedding model
+        # Use selected embedding model (use instance variable after defaults applied)
         self.embeddings = OpenAIEmbeddings(
             openai_api_key=os.getenv('OPENAI_API_KEY'),
-            model=embedding_model
+            model=self.embedding_model
         )
         self.vectorstore = None
         # Use token-aware text splitter with configurable chunking
@@ -419,7 +436,7 @@ class RAGSystem:
                                 progress_callback('embedding', batch_progress, detailed_message=detailed_msg)
                             
                             batch_start = time_module.time()
-                            self.vectorstore.add_documents(batch)
+                            self.vectorstore.add_documents(batch, auto_recreate_on_mismatch=True)
                             batch_time = time_module.time() - batch_start
                             chunks_per_sec_batch = len(batch) / batch_time if batch_time > 0 else 0
                             logger.info(f"✅ [STEP 3.2.2.{batch_num + 1}] RAGSystem: Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s | Speed: {chunks_per_sec_batch:.2f} chunks/sec | {len(batch)} chunks embedded")
@@ -478,7 +495,7 @@ class RAGSystem:
                                 
                                 logger.info(f"[STEP 3.2.3.{batch_num + 1}] RAGSystem: Processing batch {batch_num + 1}/{total_batches} ({batch_pct}%) - {len(batch)} chunks | {remaining_str}")
                                 batch_start = time_module.time()
-                                self.vectorstore.add_documents(batch)
+                                self.vectorstore.add_documents(batch, auto_recreate_on_mismatch=True)
                                 batch_time = time_module.time() - batch_start
                                 chunks_per_sec_batch = len(batch) / batch_time if batch_time > 0 else 0
                                 logger.info(f"✅ [STEP 3.2.3.{batch_num + 1}] RAGSystem: Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s | Speed: {chunks_per_sec_batch:.2f} chunks/sec | {len(batch)} chunks embedded")
@@ -494,7 +511,7 @@ class RAGSystem:
                         if progress_callback:
                             progress_callback('embedding', 0.7)
                         embed_start = time_module.time()
-                        self.vectorstore.add_documents(valid_chunks)
+                        self.vectorstore.add_documents(valid_chunks, auto_recreate_on_mismatch=True)
                         embed_time = time_module.time() - embed_start
                         logger.info(f"✅ [STEP 3.2.3.1] RAGSystem: Embedding completed in {embed_time:.1f}s ({len(valid_chunks)} chunks)")
                         if progress_callback:
@@ -580,6 +597,360 @@ class RAGSystem:
             'total_chunks': chunks_after,
             'total_tokens': tokens_after
         }
+
+    def load_selected_documents(self, document_names: List[str], path: str = "vectorstore") -> Dict:
+        """
+        Load only the selected documents into a fresh vectorstore (FAISS) or
+        configure OpenSearch to filter by those documents.
+
+        Args:
+            document_names: List of document names (metadata 'source') to load.
+            path: Base path for FAISS vectorstore storage.
+
+        Returns:
+            Dict with keys:
+                loaded: bool
+                docs_loaded: int
+                chunks_loaded: int
+                message: str
+        """
+        from scripts.setup_logging import get_logger
+        from langchain_community.docstore.in_memory import InMemoryDocstore
+        from config.settings import ARISConfig
+        logger = get_logger("aris_rag.rag_system")
+
+        if not document_names:
+            return {
+                "loaded": False,
+                "docs_loaded": 0,
+                "chunks_loaded": 0,
+                "message": "No documents selected."
+            }
+
+        self.active_sources = document_names
+
+        if self.vector_store_type == "opensearch":
+            # For OpenSearch, we don't load locally; rely on filtered retrieval
+            msg = f"OpenSearch filter applied for {len(document_names)} document(s)."
+            logger.info(f"✅ {msg}")
+            return {
+                "loaded": True,
+                "docs_loaded": len(document_names),
+                "chunks_loaded": 0,
+                "message": msg
+            }
+
+        # FAISS: build a fresh in-memory index containing only selected docs
+        # Load the full store once to extract vectors, then rebuild subset
+        model_specific_path = ARISConfig.get_vectorstore_path(self.embedding_model)
+        base_path = path
+        if not model_specific_path.startswith(os.path.abspath(base_path)) and not os.path.isabs(model_specific_path):
+            model_specific_path = os.path.join(base_path, self.embedding_model.replace("/", "_"))
+
+        if not os.path.exists(model_specific_path):
+            msg = f"Vectorstore path does not exist: {model_specific_path}. Reprocess documents first."
+            logger.warning(f"⚠️ {msg}")
+            return {
+                "loaded": False,
+                "docs_loaded": 0,
+                "chunks_loaded": 0,
+                "message": msg
+            }
+
+        try:
+            logger.info(f"[STEP 1] Loading full FAISS store to extract selected docs: {model_specific_path}")
+            full_vs = VectorStoreFactory.load_vector_store(
+                store_type="faiss",
+                embeddings=self.embeddings,
+                path=model_specific_path
+            )
+        except Exception as e:
+            msg = f"Failed to load base vectorstore: {e}"
+            logger.error(f"❌ {msg}", exc_info=True)
+            return {
+                "loaded": False,
+                "docs_loaded": 0,
+                "chunks_loaded": 0,
+                "message": msg
+            }
+
+        # Extract matching docs and vectors
+        docs = []
+        vectors = []
+        
+        # Try multiple ways to access docstore and mapping
+        mapping = None
+        ds = None
+        actual_faiss = None  # The actual FAISS object we'll use
+        
+        # Method 1: Check if it's a wrapped FAISSVectorStore (from VectorStoreFactory)
+        if hasattr(full_vs, "vectorstore"):
+            actual_faiss = full_vs.vectorstore
+            logger.info("Detected FAISSVectorStore wrapper, accessing inner vectorstore")
+        # Method 2: Direct FAISS object
+        elif hasattr(full_vs, "docstore"):
+            actual_faiss = full_vs
+        else:
+            actual_faiss = full_vs
+        
+        # Now try to access docstore and mapping from the actual FAISS object
+        if actual_faiss and hasattr(actual_faiss, "docstore"):
+            ds = actual_faiss.docstore
+            # Try to get index_to_docstore_id
+            if hasattr(actual_faiss, "index_to_docstore_id"):
+                mapping = actual_faiss.index_to_docstore_id
+            # Some versions might store it differently
+            elif hasattr(actual_faiss, "_index_to_docstore_id"):
+                mapping = actual_faiss._index_to_docstore_id
+        
+        # Check if documents are stored as strings (metadata lost) by sampling first document
+        use_fallback = False
+        if mapping is not None and ds is not None:
+            # Sample first document to check if it's a string
+            try:
+                if len(mapping) > 0:
+                    first_doc_id = mapping[0]
+                    if hasattr(ds, "_dict") and first_doc_id in ds._dict:
+                        first_doc = ds._dict[first_doc_id]
+                        if isinstance(first_doc, str):
+                            logger.info("Documents in docstore are strings (metadata lost), using similarity_search fallback")
+                            use_fallback = True
+            except Exception:
+                pass
+        
+        if mapping is not None and ds is not None and not use_fallback:
+            # Extract documents and vectors using mapping
+            logger.info(f"Using index_to_docstore_id mapping with {len(mapping)} entries")
+            all_sources_in_mapping = []
+            for i, doc_id in enumerate(mapping):
+                try:
+                    # Try different ways to get document from docstore
+                    # Prefer _dict access as it's more direct
+                    doc = None
+                    if hasattr(ds, "_dict") and doc_id in ds._dict:
+                        doc = ds._dict[doc_id]
+                    elif hasattr(ds, "search"):
+                        doc = ds.search(doc_id)
+                    elif hasattr(ds, "get") and callable(ds.get):
+                        doc = ds.get(doc_id)
+                    
+                    if doc and hasattr(doc, "metadata"):
+                        metadata = doc.metadata
+                        source = metadata.get("source", "") if isinstance(metadata, dict) else ""
+                        all_sources_in_mapping.append(source)
+                        if i < 3:  # Log first 3 for debugging
+                            logger.info(f"Document {i} (id={doc_id}) source: '{source}'")
+                        if source in document_names:
+                            docs.append(doc)
+                            logger.info(f"✅ Found matching document via mapping: {source}")
+                            try:
+                                # Try to reconstruct vector from index (use actual_faiss if available)
+                                index_obj = actual_faiss.index if actual_faiss and hasattr(actual_faiss, "index") else (full_vs.index if hasattr(full_vs, "index") else None)
+                                if index_obj and hasattr(index_obj, "reconstruct"):
+                                    vec = index_obj.reconstruct(i)
+                                    vectors.append(vec)
+                            except Exception as e:
+                                logger.debug(f"Could not reconstruct vector for index {i}: {e}")
+                                # Continue without vector - we'll re-embed if needed
+                except Exception as e:
+                    logger.debug(f"Error accessing document {doc_id}: {e}")
+                    continue
+            
+            if not docs and all_sources_in_mapping:
+                logger.warning(f"Looking for: {document_names}, but found sources in mapping: {set(all_sources_in_mapping)}")
+        
+        if use_fallback or mapping is None or not docs:
+            # Fallback: Try to access docstore directly or use similarity_search
+            logger.info("Using fallback method: attempting direct docstore access or similarity_search")
+            try:
+                # Determine which vectorstore to use for searching
+                search_vs = actual_faiss if actual_faiss else full_vs
+                
+                # Try to access docstore directly if available
+                if hasattr(search_vs, "docstore"):
+                    ds = search_vs.docstore
+                    # Try to iterate through all documents in docstore
+                    if hasattr(ds, "_dict"):
+                        logger.info(f"Accessing docstore._dict with {len(ds._dict)} entries")
+                        all_sources_found = []
+                        for doc_id, doc in ds._dict.items():
+                            try:
+                                if hasattr(doc, "metadata"):
+                                    source = doc.metadata.get("source", "")
+                                    all_sources_found.append(source)
+                                    logger.debug(f"Document {doc_id} has source: {source}")
+                                    if source in document_names:
+                                        docs.append(doc)
+                                        logger.info(f"✅ Found matching document: {source}")
+                            except Exception as e:
+                                logger.debug(f"Error checking document {doc_id}: {e}")
+                                continue
+                        
+                        if not docs and all_sources_found:
+                            logger.warning(f"Looking for: {document_names}, but found sources: {set(all_sources_found)}")
+                    elif hasattr(ds, "search"):
+                        # Try to search for documents - this is tricky without knowing IDs
+                        # We'll use similarity_search as fallback
+                        pass
+                
+                # If we still don't have docs, use similarity_search with multiple queries
+                if not docs:
+                    logger.info("Using similarity_search to extract documents...")
+                    # Try multiple generic queries to get all documents
+                    queries = ["document", "text", "content", "information", "data"]
+                    all_docs_set = set()  # Use set to avoid duplicates
+                    
+                    for query in queries:
+                        try:
+                            found_docs = search_vs.similarity_search(query, k=1000)
+                            for doc in found_docs:
+                                # Use a unique identifier for each doc (content + metadata)
+                                doc_key = (doc.page_content[:100] if hasattr(doc, "page_content") else str(doc),
+                                          str(doc.metadata.get("source", "")) if hasattr(doc, "metadata") else "")
+                                if doc_key not in all_docs_set:
+                                    all_docs_set.add(doc_key)
+                                    if hasattr(doc, "metadata") and doc.metadata.get("source") in document_names:
+                                        docs.append(doc)
+                        except Exception:
+                            continue
+                    
+                    # If still no docs, try one more time with empty query and very large k
+                    if not docs:
+                        try:
+                            all_docs = search_vs.similarity_search("the", k=10000)
+                            seen = set()
+                            for doc in all_docs:
+                                doc_key = (doc.page_content[:100] if hasattr(doc, "page_content") else str(doc),
+                                          str(doc.metadata.get("source", "")) if hasattr(doc, "metadata") else "")
+                                if doc_key not in seen:
+                                    seen.add(doc_key)
+                                    if hasattr(doc, "metadata") and doc.metadata.get("source") in document_names:
+                                        docs.append(doc)
+                        except Exception:
+                            pass
+                
+                if not docs:
+                    msg = f"Selected documents ({document_names}) not found in vectorstore. Available sources may differ."
+                    logger.warning(f"⚠️ {msg}")
+                    # Try to list available sources for debugging
+                    try:
+                        debug_vs = actual_faiss if actual_faiss else full_vs
+                        if hasattr(debug_vs, "docstore") and hasattr(debug_vs.docstore, "_dict"):
+                            available_sources = set()
+                            for doc in debug_vs.docstore._dict.values():
+                                if hasattr(doc, "metadata") and "source" in doc.metadata:
+                                    available_sources.add(doc.metadata["source"])
+                            if available_sources:
+                                logger.info(f"Available document sources in vectorstore: {list(available_sources)[:10]}")
+                    except Exception:
+                        pass
+                    return {
+                        "loaded": False,
+                        "docs_loaded": 0,
+                        "chunks_loaded": 0,
+                        "message": msg
+                    }
+                
+                # Re-embed the filtered documents to get vectors
+                logger.info(f"Re-embedding {len(docs)} filtered documents...")
+                doc_texts = [doc.page_content if hasattr(doc, "page_content") else str(doc) for doc in docs]
+                vectors = self.embeddings.embed_documents(doc_texts)
+                
+            except Exception as e:
+                msg = f"Failed to extract documents from vectorstore: {e}"
+                logger.error(f"❌ {msg}", exc_info=True)
+                return {
+                    "loaded": False,
+                    "docs_loaded": 0,
+                    "chunks_loaded": 0,
+                    "message": msg
+                }
+
+        if not docs:
+            msg = "Selected documents not found in vectorstore."
+            logger.warning(f"⚠️ {msg}")
+            return {
+                "loaded": False,
+                "docs_loaded": 0,
+                "chunks_loaded": 0,
+                "message": msg
+            }
+        
+        # If we don't have vectors (fallback method), re-embed the documents
+        if not vectors or len(vectors) != len(docs):
+            logger.info(f"Re-embedding {len(docs)} documents to get vectors...")
+            doc_texts = [doc.page_content if hasattr(doc, "page_content") else str(doc) for doc in docs]
+            vectors = self.embeddings.embed_documents(doc_texts)
+
+        # Build a fresh FAISS index with selected vectors
+        try:
+            # Get dimension from vectors or existing index
+            if vectors and len(vectors) > 0:
+                dim = len(vectors[0])
+            else:
+                # Try to get dimension from the actual FAISS index
+                index_obj = None
+                if actual_faiss and hasattr(actual_faiss, "index"):
+                    index_obj = actual_faiss.index
+                elif hasattr(full_vs, "index"):
+                    index_obj = full_vs.index
+                elif hasattr(full_vs, "vectorstore") and hasattr(full_vs.vectorstore, "index"):
+                    index_obj = full_vs.vectorstore.index
+                
+                if index_obj and hasattr(index_obj, "d"):
+                    dim = index_obj.d
+                else:
+                    # Fallback: get dimension from embeddings
+                    test_embedding = self.embeddings.embed_query("test")
+                    dim = len(test_embedding)
+            
+            import faiss
+            new_index = faiss.IndexFlatL2(dim)
+            new_docstore = InMemoryDocstore()
+            new_index_to_docstore_id = []
+
+            for vec, doc in zip(vectors, docs):
+                doc_id = str(len(new_index_to_docstore_id))
+                new_docstore._dict[doc_id] = doc
+                new_index_to_docstore_id.append(doc_id)
+                new_index.add(np.array([vec], dtype="float32"))
+
+            from langchain_community.vectorstores.faiss import FAISS as LCFAISS
+            subset_vs = LCFAISS(
+                embedding_function=self.embeddings,
+                index=new_index,
+                docstore=new_docstore,
+                index_to_docstore_id=new_index_to_docstore_id
+            )
+
+            # Replace active vectorstore with subset
+            self.vectorstore = subset_vs
+
+            # Rebuild document_index for the subset
+            self.document_index = {}
+            for idx, doc in enumerate(docs):
+                src = doc.metadata.get("source", f"doc_{idx}")
+                if src not in self.document_index:
+                    self.document_index[src] = []
+                self.document_index[src].append(idx)
+
+            msg = f"Loaded {len(docs)} document(s) into subset vectorstore ({len(vectors)} chunks)."
+            logger.info(f"✅ {msg}")
+            return {
+                "loaded": True,
+                "docs_loaded": len(docs),
+                "chunks_loaded": len(vectors),
+                "message": msg
+            }
+        except Exception as e:
+            msg = f"Failed to build subset vectorstore: {e}"
+            logger.error(f"❌ {msg}", exc_info=True)
+            return {
+                "loaded": False,
+                "docs_loaded": 0,
+                "chunks_loaded": 0,
+                "message": msg
+            }
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text using the tokenizer."""
@@ -637,18 +1008,25 @@ class RAGSystem:
         
         return cleaned.strip()
     
-    def query_with_rag(self, question: str, k: int = 6, use_mmr: bool = True) -> Dict:
+    def query_with_rag(self, question: str, k: int = None, use_mmr: bool = None) -> Dict:
         """
-        Query the RAG system with improved accuracy.
+        Query the RAG system with maximum accuracy settings.
         
         Args:
             question: The question to answer
-            k: Number of chunks to retrieve (default 6 for better coverage)
-            use_mmr: Use Maximum Marginal Relevance for diverse, relevant chunks
+            k: Number of chunks to retrieve (default from config for maximum accuracy)
+            use_mmr: Use Maximum Marginal Relevance (default True for best accuracy)
         
         Returns:
             Dict with answer, sources, and context chunks
         """
+        from config.settings import ARISConfig
+        
+        # Use accuracy-optimized defaults if not specified
+        if k is None:
+            k = ARISConfig.DEFAULT_RETRIEVAL_K
+        if use_mmr is None:
+            use_mmr = ARISConfig.DEFAULT_USE_MMR
         query_start_time = time_module.time()
         
         if self.vectorstore is None:
@@ -657,20 +1035,62 @@ class RAGSystem:
                 "sources": []
             }
         
-        # Retrieve relevant documents with MMR for better diversity and relevance
+        # Prepare filter for OpenSearch (different syntax than FAISS)
+        opensearch_filter = None
+        if self.active_sources and self.vector_store_type.lower() == "opensearch":
+            # Filter out None/empty values and construct OpenSearch filter
+            valid_sources = [s for s in self.active_sources if s and s.strip()]
+            if valid_sources:
+                if len(valid_sources) == 1:
+                    # Single source: use term filter
+                    opensearch_filter = {"term": {"metadata.source.keyword": valid_sources[0]}}
+                else:
+                    # Multiple sources: use terms filter
+                    opensearch_filter = {"terms": {"metadata.source.keyword": valid_sources}}
+        
+        # Retrieve relevant documents with MMR optimized for maximum accuracy
         if use_mmr:
-            # Use MMR to get diverse but relevant chunks
+            # Use MMR with accuracy-optimized parameters
+            from config.settings import ARISConfig
+            fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
+            lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
+            
+            # Build search_kwargs with appropriate filter
+            search_kwargs = {
+                "k": k,
+                "fetch_k": fetch_k,  # Large candidate pool for best selection
+                "lambda_mult": lambda_mult,  # Prioritize relevance (lower = more relevant)
+            }
+            
+            # Add filter only if we have valid sources and it's OpenSearch
+            if opensearch_filter:
+                search_kwargs["filter"] = opensearch_filter
+            elif self.active_sources and self.vector_store_type.lower() != "opensearch":
+                # For FAISS, use MongoDB-style filter (if supported)
+                valid_sources = [s for s in self.active_sources if s and s.strip()]
+                if valid_sources:
+                    search_kwargs["filter"] = {"source": {"$in": valid_sources}}
+            
             retriever = self.vectorstore.as_retriever(
                 search_type="mmr",
-                search_kwargs={
-                    "k": k,
-                    "fetch_k": min(k * 3, 20),  # Fetch more candidates for MMR
-                    "lambda_mult": 0.5  # Balance diversity (0.5 = balanced)
-                }
+                search_kwargs=search_kwargs
             )
         else:
             # Standard similarity search
-            retriever = self.vectorstore.as_retriever(search_kwargs={"k": k})
+            search_kwargs = {"k": k}
+            
+            # Add filter only if we have valid sources
+            if opensearch_filter:
+                search_kwargs["filter"] = opensearch_filter
+            elif self.active_sources and self.vector_store_type.lower() != "opensearch":
+                # For FAISS, use MongoDB-style filter (if supported)
+                valid_sources = [s for s in self.active_sources if s and s.strip()]
+                if valid_sources:
+                    search_kwargs["filter"] = {"source": {"$in": valid_sources}}
+            
+            retriever = self.vectorstore.as_retriever(
+                search_kwargs=search_kwargs
+            )
         
         # Use invoke for newer LangChain versions, fallback to get_relevant_documents
         try:
@@ -678,6 +1098,32 @@ class RAGSystem:
         except AttributeError:
             # Fallback for older versions
             relevant_docs = retriever.get_relevant_documents(question)
+
+        # If UI selected specific documents, filter results to those sources
+        if self.active_sources:
+            allowed_sources = set(self.active_sources)
+            filtered_docs = [doc for doc in relevant_docs if doc.metadata.get('source') in allowed_sources]
+
+            # If none found, retry with a broader pull and then filter
+            if not filtered_docs:
+                try:
+                    alt_docs = self.vectorstore.similarity_search(question, k=max(k * 4, 20))
+                    filtered_docs = [doc for doc in alt_docs if doc.metadata.get('source') in allowed_sources]
+                except Exception:
+                    filtered_docs = []
+
+            if not filtered_docs:
+                return {
+                    "answer": (
+                        "No chunks were found for the selected document(s). "
+                        "Try selecting a different document or load all documents."
+                    ),
+                    "sources": [],
+                    "citations": [],
+                    "context_chunks": []
+                }
+
+            relevant_docs = filtered_docs
         
         # Build context with metadata for better accuracy and collect citations
         context_parts = []
@@ -819,7 +1265,7 @@ class RAGSystem:
     
     def _query_openai(self, question: str, context: str, relevant_docs: List = None) -> tuple:
         """
-        Query OpenAI with improved prompt for accuracy.
+        Query OpenAI with maximum accuracy settings.
         
         Args:
             question: The question to answer
@@ -827,6 +1273,7 @@ class RAGSystem:
             relevant_docs: List of relevant documents (for metadata)
         """
         from openai import OpenAI
+        from config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
         # Improved prompt for accuracy - prevents hallucinations and repetitive text
@@ -869,8 +1316,8 @@ Answer:"""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.3,  # Lower temperature for more accurate, deterministic answers
-                max_tokens=800,  # Increased for more detailed answers
+                temperature=ARISConfig.DEFAULT_TEMPERATURE,  # Maximum determinism (0.0 = most accurate)
+                max_tokens=ARISConfig.DEFAULT_MAX_TOKENS,  # More tokens for comprehensive answers
                 stop=["Best regards", "Thank you", "Please let me know", "If you have any other questions"]  # Stop at common endings
             )
             # Check if response has choices
@@ -908,7 +1355,8 @@ Answer:"""
             return error_answer, self.count_tokens(error_answer)
     
     def _query_cerebras(self, question: str, context: str, relevant_docs: List = None) -> tuple:
-        """Query Cerebras API with improved prompt for accuracy"""
+        """Query Cerebras API with maximum accuracy settings"""
+        from config.settings import ARISConfig
         # Improved prompt for Cerebras
         prompt = f"""You are a precise technical assistant. Answer the question using ONLY information from the provided context. Be specific and accurate.
 
@@ -939,8 +1387,8 @@ Answer:"""
             data = {
                 "model": self.cerebras_model,
                 "prompt": prompt,
-                "max_tokens": 500,
-                "temperature": 0.7
+                "max_tokens": ARISConfig.DEFAULT_MAX_TOKENS,
+                "temperature": ARISConfig.DEFAULT_TEMPERATURE
             }
             
             response = requests.post(
@@ -978,54 +1426,123 @@ Answer:"""
     def save_vectorstore(self, path: str = "vectorstore"):
         """Save vector store to disk (FAISS only) or cloud (OpenSearch)"""
         from scripts.setup_logging import get_logger
+        from config.settings import ARISConfig
         logger = get_logger("aris_rag.rag_system")
         
         if self.vectorstore:
             if self.vector_store_type == "faiss":
-                logger.info(f"[STEP 1] RAGSystem: Saving FAISS vectorstore to: {path}")
-                self.vectorstore.save_local(path)
-                # Also save document index
-                import pickle
-                index_path = os.path.join(path, "document_index.pkl")
-                logger.info(f"[STEP 2] RAGSystem: Saving document index to: {index_path}")
-                with open(index_path, 'wb') as f:
-                    pickle.dump({
-                        'document_index': self.document_index,
-                        'total_tokens': self.total_tokens
-                    }, f)
-                logger.info(f"✅ [STEP 2] RAGSystem: Vectorstore saved successfully")
+                # Use model-specific path to support multiple embedding models
+                base_path = path
+                model_specific_path = ARISConfig.get_vectorstore_path(self.embedding_model)
+                if not model_specific_path.startswith(os.path.abspath(base_path)) and not os.path.isabs(model_specific_path):
+                    # If get_vectorstore_path returns relative path, join with base_path
+                    model_specific_path = os.path.join(base_path, self.embedding_model.replace("/", "_"))
+                else:
+                    # Use the model-specific path directly
+                    model_specific_path = model_specific_path
+                
+                logger.info(f"[STEP 1] RAGSystem: Saving FAISS vectorstore to: {model_specific_path}")
+                # Create directory if it doesn't exist
+                os.makedirs(model_specific_path, exist_ok=True)
+                
+                try:
+                    self.vectorstore.save_local(model_specific_path)
+                    logger.info(f"✅ [STEP 1] RAGSystem: Vectorstore saved to {model_specific_path}")
+                    
+                    # Also save document index
+                    import pickle
+                    index_path = os.path.join(model_specific_path, "document_index.pkl")
+                    logger.info(f"[STEP 2] RAGSystem: Saving document index to: {index_path}")
+                    with open(index_path, 'wb') as f:
+                        pickle.dump({
+                            'document_index': self.document_index,
+                            'total_tokens': self.total_tokens,
+                            'embedding_model': self.embedding_model
+                        }, f)
+                    logger.info(f"✅ [STEP 2] RAGSystem: Document index saved to {index_path}")
+                except Exception as e:
+                    logger.error(f"❌ [STEP 1] RAGSystem: Failed to save vectorstore: {e}", exc_info=True)
             else:
                 # OpenSearch stores data in cloud, no local save needed
                 logger.info("ℹ️ [STEP 1] RAGSystem: OpenSearch stores data in the cloud. No local save needed.")
     
     def load_vectorstore(self, path: str = "vectorstore"):
-        """Load vector store from disk (FAISS) or cloud (OpenSearch)"""
+        """Load vector store from disk (FAISS) or cloud (OpenSearch) with model-specific path"""
         from scripts.setup_logging import get_logger
+        from config.settings import ARISConfig
         logger = get_logger("aris_rag.rag_system")
         
         if self.vector_store_type == "faiss":
-            logger.info(f"[STEP 1] RAGSystem: Loading FAISS vectorstore from: {path}")
-            if os.path.exists(path):
+            # Use model-specific path
+            base_path = path
+            model_specific_path = ARISConfig.get_vectorstore_path(self.embedding_model)
+            if not model_specific_path.startswith(os.path.abspath(base_path)) and not os.path.isabs(model_specific_path):
+                # If get_vectorstore_path returns relative path, join with base_path
+                model_specific_path = os.path.join(base_path, self.embedding_model.replace("/", "_"))
+            else:
+                # Use the model-specific path directly
+                model_specific_path = model_specific_path
+            
+            logger.info(f"[STEP 1] RAGSystem: Loading FAISS vectorstore from: {model_specific_path}")
+            if os.path.exists(model_specific_path):
                 logger.info(f"[STEP 1.1] RAGSystem: Vectorstore path exists, loading...")
-                self.vectorstore = VectorStoreFactory.load_vector_store(
-                    store_type="faiss",
-                    embeddings=self.embeddings,
-                    path=path
-                )
-                # Also load document index
-                import pickle
-                index_path = os.path.join(path, "document_index.pkl")
-                logger.info(f"[STEP 1.2] RAGSystem: Loading document index from: {index_path}")
-                if os.path.exists(index_path):
-                    with open(index_path, 'rb') as f:
-                        data = pickle.load(f)
-                        self.document_index = data.get('document_index', {})
-                        self.total_tokens = data.get('total_tokens', 0)
-                    logger.info(f"✅ [STEP 1.2] RAGSystem: Document index loaded - {len(self.document_index)} documents, {self.total_tokens:,} tokens")
-                logger.info(f"✅ [STEP 1] RAGSystem: Vectorstore loaded successfully")
-                return True
-            logger.warning(f"⚠️ [STEP 1] RAGSystem: Vectorstore path does not exist: {path}")
-            return False
+                try:
+                    self.vectorstore = VectorStoreFactory.load_vector_store(
+                        store_type="faiss",
+                        embeddings=self.embeddings,
+                        path=model_specific_path
+                    )
+                    # Also load document index
+                    import pickle
+                    index_path = os.path.join(model_specific_path, "document_index.pkl")
+                    logger.info(f"[STEP 1.2] RAGSystem: Loading document index from: {index_path}")
+                    if os.path.exists(index_path):
+                        with open(index_path, 'rb') as f:
+                            data = pickle.load(f)
+                            self.document_index = data.get('document_index', {})
+                            self.total_tokens = data.get('total_tokens', 0)
+                            saved_model = data.get('embedding_model', 'unknown')
+                            if saved_model != self.embedding_model:
+                                logger.warning(
+                                    f"⚠️ [STEP 1.2] RAGSystem: Vectorstore was created with '{saved_model}' "
+                                    f"but current model is '{self.embedding_model}'. "
+                                    f"Dimension mismatch may occur."
+                                )
+                        logger.info(f"✅ [STEP 1.2] RAGSystem: Document index loaded - {len(self.document_index)} documents, {self.total_tokens:,} tokens")
+                    logger.info(f"✅ [STEP 1] RAGSystem: Vectorstore loaded successfully")
+                    return True
+                except Exception as e:
+                    error_msg = str(e)
+                    if "dimension" in error_msg.lower():
+                        logger.warning(
+                            f"⚠️ [STEP 1] RAGSystem: Dimension mismatch when loading vectorstore.\n"
+                            f"   This vectorstore was created with a different embedding model.\n"
+                            f"   It will be recreated automatically when you add new documents."
+                        )
+                        return False
+                    else:
+                        raise
+            else:
+                # Check if old path exists (backward compatibility)
+                if os.path.exists(path) and os.path.isdir(path) and not os.path.basename(path).startswith("text-embedding"):
+                    logger.info(f"[STEP 1.1] RAGSystem: Found old vectorstore at {path}, migrating to model-specific path...")
+                    try:
+                        # Try to load from old path
+                        self.vectorstore = VectorStoreFactory.load_vector_store(
+                            store_type="faiss",
+                            embeddings=self.embeddings,
+                            path=path
+                        )
+                        # If successful, save to new model-specific path
+                        self.save_vectorstore(path)
+                        logger.info(f"✅ [STEP 1.1] RAGSystem: Migrated to model-specific path: {model_specific_path}")
+                        return True
+                    except Exception as e:
+                        logger.warning(f"⚠️ [STEP 1.1] RAGSystem: Could not migrate old vectorstore: {e}")
+                        return False
+                else:
+                    logger.warning(f"⚠️ [STEP 1] RAGSystem: Vectorstore path does not exist: {model_specific_path}")
+                    return False
         else:
             # OpenSearch loads from cloud index automatically
             logger.info("[STEP 1] RAGSystem: OpenSearch loads data from the cloud index automatically.")

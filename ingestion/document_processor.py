@@ -338,6 +338,61 @@ class DocumentProcessor:
                 images_detected=parsed_doc.images_detected
             )
             
+            # Ensure document is ALWAYS saved to registry for long-term storage
+            logger.info("[STEP 6] DocumentProcessor: Ensuring document is saved to registry for long-term storage...")
+            try:
+                # Import here to avoid circular dependency
+                from storage.document_registry import DocumentRegistry
+                from config.settings import ARISConfig
+                import hashlib
+                from datetime import datetime
+                
+                # Get or create registry
+                registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
+                registry = DocumentRegistry(registry_path)
+                
+                # Create stable document ID from file name and content hash
+                content_hash = hashlib.md5(
+                    (doc_name + str(file_size)).encode()
+                ).hexdigest()[:16]
+                doc_id = f"{doc_name}_{content_hash}"
+                
+                # Save comprehensive metadata to registry
+                doc_metadata = {
+                    'document_id': doc_id,
+                    'document_name': doc_name,
+                    'status': 'success',
+                    'chunks_created': stats['chunks_created'],
+                    'tokens_extracted': stats['tokens_added'],
+                    'parser_used': parsed_doc.parser_used,
+                    'processing_time': processing_time,
+                    'extraction_percentage': parsed_doc.extraction_percentage,
+                    'images_detected': parsed_doc.images_detected,
+                    'pages': parsed_doc.pages,
+                    'file_size': file_size,
+                    'file_type': file_type,
+                    'created_at': datetime.now().isoformat()
+                }
+                
+                # Add vector store information for long-term tracking
+                if hasattr(self.rag_system, 'vector_store_type'):
+                    doc_metadata['vector_store_type'] = self.rag_system.vector_store_type
+                    if self.rag_system.vector_store_type.lower() == 'opensearch':
+                        # Add OpenSearch connection info for long-term reference
+                        if hasattr(self.rag_system, 'opensearch_domain') and self.rag_system.opensearch_domain:
+                            doc_metadata['opensearch_domain'] = self.rag_system.opensearch_domain
+                        if hasattr(self.rag_system, 'opensearch_index') and self.rag_system.opensearch_index:
+                            doc_metadata['opensearch_index'] = self.rag_system.opensearch_index
+                        doc_metadata['storage_location'] = 'opensearch_cloud'
+                    else:
+                        doc_metadata['storage_location'] = 'local_faiss'
+                
+                registry.add_document(doc_id, doc_metadata)
+                logger.info(f"✅ [STEP 6] Document saved to registry for long-term storage: {doc_id}")
+            except Exception as e:
+                logger.warning(f"⚠️ [STEP 6] Could not save to registry (non-critical): {e}")
+                # Don't fail processing if registry save fails
+            
             logger.info("=" * 60)
             logger.info(f"✅ ALL STEPS COMPLETE: Document processed successfully")
             logger.info(f"   Document: {doc_name}")

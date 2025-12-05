@@ -44,6 +44,10 @@ if 'document_registry' not in st.session_state:
     st.session_state.document_registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
 if 'vectorstore_loaded' not in st.session_state:
     st.session_state.vectorstore_loaded = False
+if 'active_sources' not in st.session_state:
+    st.session_state.active_sources = []
+if 'active_loaded_docs' not in st.session_state:
+    st.session_state.active_loaded_docs = []
 
 def process_uploaded_files(uploaded_files, use_cerebras, parser_preference, 
                           embedding_model, openai_model, cerebras_model,
@@ -94,7 +98,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
         # Try to load existing vectorstore if FAISS and not already loaded
         if vector_store_type.lower() == 'faiss' and not st.session_state.vectorstore_loaded:
             vectorstore_path = ARISConfig.get_vectorstore_path()
-            if os.path.exists(vectorstore_path):
+            # load_vectorstore now uses model-specific paths internally
+            if os.path.exists(vectorstore_path) or os.path.exists(ARISConfig.get_vectorstore_path(embedding_model)):
                 try:
                     loaded = st.session_state.rag_system.load_vectorstore(vectorstore_path)
                     if loaded:
@@ -103,7 +108,13 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         # Load existing documents from registry
                         existing_docs = st.session_state.document_registry.list_documents()
                         if existing_docs:
-                            st.info(f"📚 Loaded {len(existing_docs)} existing document(s) from shared storage")
+                            st.success(
+                                f"📚 **Loaded {len(existing_docs)} document(s) from storage**\n\n"
+                                f"✅ Vectorstore loaded\n"
+                                f"✅ Documents ready for querying\n"
+                                f"💾 All data persisted across restarts\n\n"
+                                f"📖 View documents in sidebar under 'Document Library'"
+                            )
                 except Exception as e:
                     st.warning(f"⚠️ Could not load existing vectorstore: {e}")
     
@@ -292,6 +303,7 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
         )
         
         # Save vectorstore to disk for sharing with FastAPI (FAISS only)
+        # OpenSearch stores data in cloud, so no local save needed
         if (st.session_state.rag_system and 
             st.session_state.rag_system.vectorstore and 
             st.session_state.rag_system.vector_store_type.lower() == 'faiss'):
@@ -302,6 +314,13 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                 st.caption("💾 Vectorstore saved to shared storage")
             except Exception as e:
                 st.warning(f"⚠️ Could not save vectorstore: {e}")
+        elif (st.session_state.rag_system and 
+              st.session_state.rag_system.vectorstore and 
+              st.session_state.rag_system.vector_store_type.lower() == 'opensearch'):
+            # OpenSearch stores data in cloud - already persisted
+            opensearch_domain = getattr(st.session_state.rag_system, 'opensearch_domain', 'N/A')
+            opensearch_index = getattr(st.session_state.rag_system, 'opensearch_index', 'N/A')
+            st.caption(f"☁️ Vectorstore saved to OpenSearch Cloud (Domain: {opensearch_domain}, Index: {opensearch_index})")
         
         return True
     else:
@@ -408,6 +427,281 @@ with st.sidebar:
     )
     parser_preference = parser_choice.lower()
     
+    # Document Library - Long-term Storage Review
+    st.divider()
+    st.header("📚 Document Library")
+    
+    # Initialize vector_store_choice in session state if not set (for use in Document Library)
+    if 'vector_store_choice' not in st.session_state:
+        st.session_state.vector_store_choice = "OpenSearch" if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else "FAISS"
+    
+    # Load and display stored documents
+    if 'document_registry' in st.session_state:
+        existing_docs = st.session_state.document_registry.list_documents()
+        
+        if existing_docs:
+            st.success(f"📚 **{len(existing_docs)} document(s) stored**")
+            st.caption("💾 Documents persist across restarts")
+
+            st.divider()
+            st.subheader("🔄 Load Stored Documents")
+
+            docs_loaded = (
+                st.session_state.rag_system is not None and
+                st.session_state.rag_system.vectorstore is not None and
+                st.session_state.documents_processed
+            )
+
+            # Allow selecting a single document for Q&A
+            st.divider()
+            available_sources = sorted({doc.get('document_name', 'Unknown') for doc in existing_docs})
+            selected_single = st.selectbox(
+                "Select one document for Q&A",
+                options=["(None)"] + available_sources,
+                index=0,
+                help="Pick one document to load for Q&A."
+            )
+            selected_sources = [] if selected_single == "(None)" else [selected_single]
+
+            # Buttons for per-document actions
+            col_load, col_clear = st.columns(2)
+            with col_load:
+                if st.button("🔄 Load Selected Document", type="primary", use_container_width=True):
+                    if not selected_sources:
+                        st.warning("Please select one document to load.")
+                    else:
+                        with st.spinner(f"Loading {selected_sources[0]}..."):
+                            try:
+                                # Get vector store type from session state, existing RAG system, or config
+                                if 'vector_store_choice' in st.session_state:
+                                    current_vector_store = st.session_state.vector_store_choice.lower()
+                                elif st.session_state.rag_system and hasattr(st.session_state.rag_system, 'vector_store_type'):
+                                    current_vector_store = st.session_state.rag_system.vector_store_type.lower()
+                                else:
+                                    # Fallback to config default
+                                    current_vector_store = ARISConfig.VECTOR_STORE_TYPE.lower()
+                                
+                                current_embedding = embedding_model
+                                current_chunk_size = ARISConfig.DEFAULT_CHUNK_SIZE
+                                current_chunk_overlap = ARISConfig.DEFAULT_CHUNK_OVERLAP
+
+                                # Initialize RAG system if needed
+                                if st.session_state.rag_system is None:
+                                    st.session_state.rag_system = RAGSystem(
+                                        use_cerebras=use_cerebras,
+                                        metrics_collector=st.session_state.metrics_collector,
+                                        embedding_model=current_embedding,
+                                        openai_model=openai_model,
+                                        cerebras_model=cerebras_model,
+                                        vector_store_type=current_vector_store,
+                                        opensearch_domain=opensearch_domain,
+                                        opensearch_index=opensearch_index,
+                                        chunk_size=current_chunk_size,
+                                        chunk_overlap=current_chunk_overlap
+                                    )
+
+                                # Get the correct vectorstore path
+                                # Use the base vectorstore path (not model-specific) since load_selected_documents
+                                # will handle model-specific paths internally
+                                vectorstore_base_path = ARISConfig.VECTORSTORE_PATH
+                                
+                                # For FAISS, ensure we're using the correct path
+                                if current_vector_store == "faiss":
+                                    # Check if vectorstore exists
+                                    model_specific_path = ARISConfig.get_vectorstore_path(current_embedding)
+                                    if not os.path.exists(model_specific_path) and not os.path.exists(vectorstore_base_path):
+                                        st.error(f"❌ Vectorstore not found at: {model_specific_path}\n\n"
+                                                f"Please process and save documents first.")
+                                        st.stop()
+                                
+                                # Enforce single-document load
+                                st.session_state.rag_system.active_sources = selected_sources
+                                
+                                # Load the selected document
+                                result = st.session_state.rag_system.load_selected_documents(
+                                    document_names=selected_sources[:1],
+                                    path=vectorstore_base_path  # Pass base path, method handles model-specific
+                                )
+
+                                if result.get("loaded"):
+                                    st.session_state.vectorstore_loaded = True
+                                    st.session_state.documents_processed = True
+                                    st.session_state.active_sources = selected_sources
+                                    st.session_state.active_loaded_docs = selected_sources
+                                    st.success(f"✅ {result.get('message', 'Loaded selected document.')}")
+                                    chunks_loaded = result.get("chunks_loaded", 0)
+                                    docs_loaded = result.get("docs_loaded", 0)
+                                    if chunks_loaded:
+                                        st.caption(f"📊 {chunks_loaded:,} chunks from {docs_loaded} document(s) ready for Q&A")
+                                    st.rerun()
+                                else:
+                                    error_msg = result.get("message", "Could not load selected documents.")
+                                    st.error(f"❌ {error_msg}")
+                                    # Show helpful debugging info
+                                    with st.expander("🔍 Troubleshooting", expanded=False):
+                                        st.write(f"**Document name:** {selected_sources[0]}")
+                                        st.write(f"**Vectorstore path:** {vectorstore_base_path}")
+                                        st.write(f"**Model-specific path:** {ARISConfig.get_vectorstore_path(current_embedding)}")
+                                        st.write(f"**Vectorstore exists:** {os.path.exists(ARISConfig.get_vectorstore_path(current_embedding))}")
+                                        # Show available document sources if possible
+                                        try:
+                                            if st.session_state.rag_system and hasattr(st.session_state.rag_system, 'vectorstore'):
+                                                st.write("**Note:** Make sure the document name matches exactly what's stored in the vectorstore.")
+                                        except:
+                                            pass
+                            except Exception as e:
+                                st.error(f"❌ Error loading selected documents: {e}")
+                                import traceback
+                                with st.expander("🔍 Error Details", expanded=False):
+                                    st.code(traceback.format_exc())
+
+            with col_clear:
+                if st.button("🧹 Clear Loaded Selection", use_container_width=True):
+                    st.session_state.active_sources = []
+                    st.session_state.active_loaded_docs = []
+                    if st.session_state.rag_system:
+                        st.session_state.rag_system.active_sources = []
+                    st.info("Selection cleared. Choose documents and load again to start Q&A.")
+
+            # Status of currently loaded docs
+            if st.session_state.active_loaded_docs:
+                st.success(f"✅ Loaded for Q&A: {', '.join(st.session_state.active_loaded_docs)}")
+                try:
+                    vs = st.session_state.rag_system.vectorstore if st.session_state.rag_system else None
+                    if vs and hasattr(vs, 'index') and hasattr(vs.index, 'ntotal'):
+                        st.caption(f"📊 {vs.index.ntotal:,} chunks loaded")
+                except Exception:
+                    pass
+
+            # Document review expander
+            with st.expander("📖 Review Stored Documents", expanded=False):
+                # Sort by creation date (newest first)
+                sorted_docs = sorted(
+                    existing_docs, 
+                    key=lambda x: x.get('created_at', ''), 
+                    reverse=True
+                )
+                
+                for idx, doc in enumerate(sorted_docs):
+                    doc_name = doc.get('document_name', 'Unknown')
+                    doc_id = doc.get('document_id', 'N/A')
+                    chunks = doc.get('chunks_created', 0)
+                    tokens = doc.get('tokens_extracted', 0)
+                    parser = doc.get('parser_used', 'unknown')
+                    created = doc.get('created_at', 'N/A')
+                    pages = doc.get('pages', 'N/A')
+                    status = doc.get('status', 'unknown')
+                    processing_time = doc.get('processing_time', 0)
+                    
+                    # Format date
+                    if created and len(created) > 10:
+                        date_str = created[:10]  # YYYY-MM-DD
+                        time_str = created[11:19] if len(created) > 19 else ""
+                        display_date = f"{date_str} {time_str}".strip()
+                    else:
+                        display_date = created
+                    
+                    # Document card
+                    with st.container():
+                        st.markdown(f"**📄 {doc_name}**")
+                        
+                        # Status badge
+                        if status == 'success':
+                            st.caption(f"✅ Status: {status.upper()}")
+                        else:
+                            st.caption(f"⚠️ Status: {status.upper()}")
+                        
+                        # Document stats in columns
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.caption(f"📊 {chunks} chunks")
+                            st.caption(f"🔤 {tokens:,} tokens")
+                        with col2:
+                            st.caption(f"📑 {pages} pages")
+                            if processing_time > 0:
+                                st.caption(f"⏱️ {processing_time:.1f}s")
+                        
+                        # Metadata
+                        st.caption(f"🔧 Parser: {parser}")
+                        st.caption(f"📅 Added: {display_date}")
+                        st.caption(f"🆔 ID: `{doc_id[:12]}...`")
+                        
+                        # Storage location
+                        storage_location = doc.get('storage_location', 'local_faiss')
+                        vector_store_type = doc.get('vector_store_type', 'faiss')
+                        if storage_location == 'opensearch_cloud' or vector_store_type.lower() == 'opensearch':
+                            opensearch_domain = doc.get('opensearch_domain', 'N/A')
+                            opensearch_index = doc.get('opensearch_index', 'N/A')
+                            st.caption(f"☁️ Storage: OpenSearch Cloud (Domain: {opensearch_domain}, Index: {opensearch_index})")
+                        else:
+                            st.caption(f"💾 Storage: Local FAISS")
+                        
+                        # Extraction quality
+                        extraction_pct = doc.get('extraction_percentage', 0)
+                        if extraction_pct > 0:
+                            st.progress(extraction_pct, text=f"Extraction: {extraction_pct*100:.1f}%")
+                        
+                        if idx < len(sorted_docs) - 1:
+                            st.divider()
+            
+            # Storage info
+            with st.expander("💾 Storage Information", expanded=False):
+                # Determine current vector store type
+                vector_store_type = 'faiss'
+                opensearch_domain = None
+                opensearch_index = None
+                if st.session_state.rag_system:
+                    vector_store_type = getattr(st.session_state.rag_system, 'vector_store_type', 'faiss')
+                    if vector_store_type.lower() == 'opensearch':
+                        opensearch_domain = getattr(st.session_state.rag_system, 'opensearch_domain', None)
+                        opensearch_index = getattr(st.session_state.rag_system, 'opensearch_index', None)
+                
+                if vector_store_type.lower() == 'opensearch':
+                    st.info("""
+                    **Long-term Storage:**
+                    - ✅ Document metadata saved to: `storage/document_registry.json`
+                    - ✅ Vectorstore embeddings saved to: OpenSearch Cloud
+                    - ✅ Documents persist across server restarts
+                    - ✅ Auto-loaded on startup
+                    - ✅ OpenSearch provides cloud-based persistence
+                    """)
+                    
+                    # Show storage paths
+                    registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
+                    
+                    st.caption(f"📁 Registry: `{registry_path}`")
+                    st.caption(f"☁️ Vectorstore: OpenSearch Cloud")
+                    if opensearch_domain:
+                        st.caption(f"🌐 OpenSearch Domain: `{opensearch_domain}`")
+                    if opensearch_index:
+                        st.caption(f"📇 OpenSearch Index: `{opensearch_index}`")
+                else:
+                    st.info("""
+                    **Long-term Storage:**
+                    - ✅ Document metadata saved to: `storage/document_registry.json`
+                    - ✅ Vectorstore embeddings saved to: `vectorstore/`
+                    - ✅ Documents persist across server restarts
+                    - ✅ Auto-loaded on startup
+                    """)
+                    
+                    # Show storage paths
+                    registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
+                    vectorstore_path = ARISConfig.get_vectorstore_path()
+                    
+                    st.caption(f"📁 Registry: `{registry_path}`")
+                    st.caption(f"📁 Vectorstore: `{vectorstore_path}`")
+                
+                # Sync status
+                sync_status = st.session_state.document_registry.get_sync_status()
+                st.caption(f"📊 Total documents: {sync_status.get('total_documents', 0)}")
+                if sync_status.get('last_update'):
+                    st.caption(f"🕒 Last update: {sync_status['last_update'][:19]}")
+        else:
+            st.info("📭 No documents stored yet")
+            st.caption("Upload and process documents to see them here")
+    else:
+        st.warning("⚠️ Document registry not initialized")
+    
     # Chunking Strategy selection
     st.divider()
     st.header("✂️ Chunking Strategy")
@@ -429,22 +723,23 @@ with st.sidebar:
              "Custom: Set your own chunk size and overlap."
     )
     
-    chunk_size = 384
-    chunk_overlap = 75
+    # Use defaults optimized for large documents
+    chunk_size = ARISConfig.DEFAULT_CHUNK_SIZE
+    chunk_overlap = ARISConfig.DEFAULT_CHUNK_OVERLAP
     
     if chunking_strategy == "Custom":
         st.subheader("Custom Chunking Parameters")
         chunk_size = st.number_input(
             "Chunk Size (tokens):",
             min_value=1,
-            value=384,
+            value=ARISConfig.DEFAULT_CHUNK_SIZE,
             step=1,
             help="Maximum number of tokens per chunk. Set any value you want. Smaller = more precise, Larger = more context."
         )
         chunk_overlap = st.number_input(
             "Chunk Overlap (tokens):",
             min_value=0,
-            value=75,
+            value=ARISConfig.DEFAULT_CHUNK_OVERLAP,
             step=1,
             help="Number of tokens to overlap between chunks. Can be any value (even >= chunk_size). Helps maintain context continuity."
         )
@@ -489,6 +784,8 @@ with st.sidebar:
         help="FAISS: Local storage, fast, no cloud required. "
              "OpenSearch: Cloud storage, scalable, requires AWS OpenSearch domain."
     )
+    # Store in session state for use in Document Library section
+    st.session_state.vector_store_choice = vector_store_choice
     
     opensearch_domain = None
     opensearch_index = None
@@ -1075,8 +1372,9 @@ if st.session_state.documents_processed and st.session_state.rag_system:
         # Get answer with improved accuracy settings
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # Use improved accuracy settings: more chunks, MMR for diversity
-                result = st.session_state.rag_system.query_with_rag(question, k=6, use_mmr=True)
+                # Use maximum accuracy settings: more chunks, optimized MMR
+                # k and use_mmr will use config defaults optimized for accuracy
+                result = st.session_state.rag_system.query_with_rag(question)
                 answer = result["answer"]
                 sources = result.get("sources", [])
                 citations = result.get("citations", [])
@@ -1415,17 +1713,27 @@ if st.session_state.documents_processed and st.session_state.rag_system:
         st.rerun()
     
 else:
-    st.info("👆 Please upload and process documents using the sidebar to start asking questions.")
+    # If documents are stored but not loaded, guide user to load selected docs
+    if 'document_registry' in st.session_state:
+        existing_docs = st.session_state.document_registry.list_documents()
+        if existing_docs and not st.session_state.documents_processed:
+            st.warning(
+                f"📚 You have {len(existing_docs)} stored document(s). "
+                f"Go to the sidebar → Document Library → pick documents → click **Load Selected Documents** to start Q&A."
+            )
+        else:
+            st.info("👆 Please upload and process documents using the sidebar to start asking questions.")
+    else:
+        st.info("👆 Please upload and process documents using the sidebar to start asking questions.")
     
     # Instructions
     with st.expander("📖 How to use"):
         st.markdown("""
         ### Steps:
-        1. **Choose API**: Select OpenAI or Cerebras in the sidebar
-        2. **Choose Parser**: Select parser (PyMuPDF recommended for speed)
-        3. **Upload Documents**: Click "Browse files" and select your PDF, TXT, or DOCX files
-        4. **Process**: Click "Process Documents" button
-        5. **Ask Questions**: Once processed, type your questions in the chat input
+        1. **Load Stored Documents (if any):** Sidebar → Document Library → Load All Stored Documents
+        2. **Or Upload New Documents:** Choose API/Parser, upload files
+        3. **Process:** Click "Process Documents" (only for new uploads)
+        4. **Ask Questions:** Once documents are loaded, type your questions in the chat input
         
         ### Supported Formats:
         - PDF files (.pdf) - Uses PyMuPDF, Docling, or Textract
@@ -1441,4 +1749,5 @@ else:
         - Token-aware chunking (512 tokens per chunk)
         - Real-time processing with progress tracking
         - Source attribution
+        - Long-term storage: documents persist across restarts
         """)

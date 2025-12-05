@@ -169,17 +169,40 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
 EOF
 
 echo ""
-echo -e "${BLUE}⏳ Step 6: Health check...${NC}"
-sleep 15
+echo -e "${BLUE}⏳ Step 6: Health check with retry...${NC}"
 
-HTTP_CODE=$(ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" \
-    "curl -s -o /dev/null -w '%{http_code}' http://localhost/" 2>/dev/null || echo "000")
+# Health check with retries
+MAX_HEALTH_RETRIES=5
+HEALTH_RETRY_DELAY=10
+HTTP_CODE="000"
+HEALTH_SUCCESS=false
+
+for i in $(seq 1 $MAX_HEALTH_RETRIES); do
+    sleep $HEALTH_RETRY_DELAY
+    
+    # Check from server itself first (more reliable)
+    HTTP_CODE=$(ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" \
+        "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8501/_stcore/health 2>/dev/null || echo '000'")
+    
+    # Also check external access
+    EXTERNAL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --connect-timeout 5 "http://$SERVER_IP/" 2>/dev/null || echo "000")
+    
+    if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$EXTERNAL_CODE" = "200" ] || [ "$EXTERNAL_CODE" = "302" ]; then
+        HEALTH_SUCCESS=true
+        HTTP_CODE="$HTTP_CODE"
+        break
+    fi
+    
+    if [ $i -lt $MAX_HEALTH_RETRIES ]; then
+        echo "   ⏳ Health check attempt $i/$MAX_HEALTH_RETRIES failed (HTTP $HTTP_CODE), retrying in ${HEALTH_RETRY_DELAY}s..."
+    fi
+done
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
 echo ""
-if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+if [ "$HEALTH_SUCCESS" = true ]; then
     echo -e "${GREEN}╔════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║  ✅ Deployment Successful!            ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════╝${NC}"
@@ -188,6 +211,9 @@ if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
     echo "   Time: ${DURATION}s"
     echo "   URL: http://$SERVER_IP/"
 else
-    echo -e "${YELLOW}⚠️  Deployment completed (${DURATION}s) but HTTP: $HTTP_CODE${NC}"
+    echo -e "${YELLOW}⚠️  Deployment completed (${DURATION}s) but health check failed${NC}"
+    echo "   HTTP Code: $HTTP_CODE"
+    echo "   The container may still be starting. It will auto-recover."
     echo "   Check logs: ssh -i $PEM_FILE $SERVER_USER@$SERVER_IP 'sudo docker logs aris-rag-app'"
+    echo "   Or run auto-redeploy: bash scripts/auto-redeploy.sh"
 fi

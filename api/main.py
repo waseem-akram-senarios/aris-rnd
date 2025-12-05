@@ -50,9 +50,11 @@ async def lifespan(app: FastAPI):
     # Try to load existing vectorstore if FAISS
     logger.info("[STEP 3] Checking for existing vectorstore...")
     if service_container.rag_system.vector_store_type.lower() == 'faiss':
+        # Use model-specific path
         vectorstore_path = ARISConfig.get_vectorstore_path()
-        logger.info(f"[STEP 3.1] Checking for existing vectorstore at: {vectorstore_path}")
-        if os.path.exists(vectorstore_path):
+        model_specific_path = ARISConfig.get_vectorstore_path(service_container.rag_system.embedding_model)
+        logger.info(f"[STEP 3.1] Checking for existing vectorstore at: {model_specific_path}")
+        if os.path.exists(model_specific_path):
             try:
                 logger.info("[STEP 3.2] Loading vectorstore from disk...")
                 loaded = service_container.rag_system.load_vectorstore(vectorstore_path)
@@ -222,6 +224,7 @@ async def upload_document(
         logger.info(f"✅ [STEP 6] Document metadata stored")
         
         # Save vectorstore to disk for sharing with Streamlit (FAISS only)
+        # OpenSearch stores data in cloud, so no local save needed
         if (service.rag_system.vectorstore and 
             service.rag_system.vector_store_type.lower() == 'faiss'):
             try:
@@ -231,6 +234,13 @@ async def upload_document(
                 logger.info("✅ [STEP 7] Vectorstore saved successfully")
             except Exception as e:
                 logger.warning(f"⚠️ [STEP 7] Could not save vectorstore: {e}", exc_info=True)
+        elif (service.rag_system.vectorstore and 
+              service.rag_system.vector_store_type.lower() == 'opensearch'):
+            # OpenSearch stores data in cloud - already persisted
+            opensearch_domain = getattr(service.rag_system, 'opensearch_domain', 'N/A')
+            opensearch_index = getattr(service.rag_system, 'opensearch_index', 'N/A')
+            logger.info(f"[STEP 7] OpenSearch vectorstore persisted to cloud (Domain: {opensearch_domain}, Index: {opensearch_index})")
+            logger.info("✅ [STEP 7] OpenSearch vectorstore saved to cloud (no local save needed)")
         
         logger.info(f"✅ [STEP 8] Document processed successfully: {document_id} - Total time: {result.processing_time:.2f}s")
         # Return metadata with document_id
