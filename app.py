@@ -133,6 +133,13 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
         file_content = uploaded_file.read()
         file_name = uploaded_file.name
         
+        # Validate file content
+        if not file_content or len(file_content) == 0:
+            import logging
+            logging.error(f"File {file_name} has no content (size: {len(file_content) if file_content else 0} bytes)")
+            st.error(f"❌ {file_name}: File is empty or could not be read. Please try uploading again.")
+            continue
+        
         # Save to temporary file for parsers that need file paths
         # This ensures file_path is always a valid path, not just a filename
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_name)[1], mode='wb')
@@ -140,6 +147,26 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
         temp_file.flush()
         os.fsync(temp_file.fileno())  # Ensure data is written to disk
         temp_file.close()
+        
+        # Verify temp file was created and has content
+        if not os.path.exists(temp_file.name):
+            import logging
+            logging.error(f"Temp file was not created: {temp_file.name}")
+            st.error(f"❌ {file_name}: Failed to create temporary file. Please try again.")
+            continue
+        
+        file_size = os.path.getsize(temp_file.name)
+        if file_size == 0:
+            import logging
+            logging.error(f"Temp file is empty: {temp_file.name} (expected {len(file_content)} bytes)")
+            st.error(f"❌ {file_name}: Temporary file is empty. Please try uploading again.")
+            os.unlink(temp_file.name)  # Clean up empty file
+            continue
+        
+        if file_size != len(file_content):
+            import logging
+            logging.warning(f"Temp file size mismatch: {file_size} bytes written, expected {len(file_content)} bytes")
+        
         temp_files.append(temp_file.name)  # Track for potential cleanup
         
         files_to_process.append({
@@ -1001,9 +1028,20 @@ with st.sidebar:
     
     if st.button("Process Documents", type="primary"):
         if uploaded_files:
-            # Store processing parameters in session state
+            # Read file contents immediately (before storing in session state)
+            # Streamlit file objects become invalid after rerun, so we need to read them now
+            files_data = []
+            for uploaded_file in uploaded_files:
+                file_content = uploaded_file.read()
+                files_data.append({
+                    'name': uploaded_file.name,
+                    'content': file_content,
+                    'type': uploaded_file.type
+                })
+            
+            # Store processing parameters in session state (with file contents, not file objects)
             st.session_state[process_key] = {
-                'uploaded_files': uploaded_files,
+                'files_data': files_data,  # Store file contents, not file objects
                 'use_cerebras': use_cerebras,
                 'parser_preference': parser_preference,
                 'embedding_model': embedding_model,
@@ -1022,9 +1060,24 @@ with st.sidebar:
     
     # Continue processing if there's pending processing
     if should_process:
+        # Convert stored file data back to format expected by process_uploaded_files
+        # Create mock file objects from stored data
+        class MockUploadedFile:
+            def __init__(self, name, content, content_type):
+                self.name = name
+                self._content = content
+                self.type = content_type
+            def read(self):
+                return self._content
+        
+        mock_uploaded_files = [
+            MockUploadedFile(f['name'], f['content'], f.get('type', 'application/pdf'))
+            for f in params['files_data']
+        ]
+        
         # Process documents (don't clear the flag yet - let process_uploaded_files handle it)
         result = process_uploaded_files(
-            params['uploaded_files'], params['use_cerebras'], params['parser_preference'],
+            mock_uploaded_files, params['use_cerebras'], params['parser_preference'],
             params['embedding_model'], params['openai_model'], params['cerebras_model'],
             params['vector_store_type'], params['opensearch_domain'], params['opensearch_index'],
             params['chunk_size'], params['chunk_overlap']
@@ -1034,9 +1087,9 @@ with st.sidebar:
         if result is not False:
             # Check if any files are still waiting for user choice
             has_pending_choice = False
-            if 'uploaded_files' in params:
-                for uploaded_file in params['uploaded_files']:
-                    file_name = uploaded_file.name
+            if 'files_data' in params:
+                for file_data in params['files_data']:
+                    file_name = file_data['name']
                     choice_key = f"index_choice_{file_name}"
                     if choice_key in st.session_state and st.session_state[choice_key] is None:
                         has_pending_choice = True
