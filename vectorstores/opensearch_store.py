@@ -416,12 +416,9 @@ class OpenSearchVectorStore:
             # Perform semantic (k-NN) search
             if semantic_weight > 0:
                 try:
-                    # OpenSearch k-NN query structure
+                    # OpenSearch k-NN query structure (no query field needed for pure k-NN)
                     knn_query = {
                         "size": int(k * (1 + semantic_weight)),
-                        "query": {
-                            "match_all": {}  # Match all for k-NN
-                        },
                         "knn": {
                             "vector": {
                                 "vector": query_vector,

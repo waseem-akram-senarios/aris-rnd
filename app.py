@@ -1454,31 +1454,37 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     for source in sources:
                         st.write(f"- {source}")
     
-    # Search mode selection (for hybrid search)
-    st.subheader("🔍 Search Mode")
-    search_mode = st.radio(
-        "Select search mode:",
-        ["Semantic Only", "Keyword Only", "Hybrid"],
-        index=0,
-        help="Semantic: Vector similarity search (default)\nKeyword: Text/keyword matching\nHybrid: Combines both semantic and keyword search"
-    )
-    
-    # Weight controls for hybrid mode
-    semantic_weight = 0.7
-    if search_mode == "Hybrid":
-        semantic_weight = st.slider(
-            "Semantic Weight",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.7,
-            step=0.1,
-            help="Weight for semantic search (0.0 = keyword only, 1.0 = semantic only)"
+    # Search mode selection (for hybrid search) - only show for OpenSearch
+    if hasattr(st.session_state.rag_system, 'vector_store_type') and \
+       st.session_state.rag_system.vector_store_type.lower() == 'opensearch':
+        st.subheader("🔍 Search Mode")
+        search_mode = st.radio(
+            "Select search mode:",
+            ["Semantic Only", "Keyword Only", "Hybrid"],
+            index=0,
+            help="Semantic: Vector similarity search (default)\nKeyword: Text/keyword matching\nHybrid: Combines both semantic and keyword search"
         )
-        keyword_weight = 1.0 - semantic_weight
-        st.caption(f"Keyword Weight: {keyword_weight:.1f}")
-    elif search_mode == "Keyword Only":
-        semantic_weight = 0.0
-    else:  # Semantic Only
+        
+        # Weight controls for hybrid mode
+        semantic_weight = 0.7
+        if search_mode == "Hybrid":
+            semantic_weight = st.slider(
+                "Semantic Weight",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.7,
+                step=0.1,
+                help="Weight for semantic search (0.0 = keyword only, 1.0 = semantic only)"
+            )
+            keyword_weight = 1.0 - semantic_weight
+            st.caption(f"Keyword Weight: {keyword_weight:.1f}")
+        elif search_mode == "Keyword Only":
+            semantic_weight = 0.0
+        else:  # Semantic Only
+            semantic_weight = 1.0
+    else:
+        # For FAISS, only semantic search is available
+        search_mode = "Semantic Only"
         semantic_weight = 1.0
     
     # Query input
@@ -1499,6 +1505,14 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     search_mode_param = "keyword"
                 else:
                     search_mode_param = "hybrid"
+                
+                # Check if hybrid search is available and provide feedback
+                if search_mode_param in ["hybrid", "keyword"] and \
+                   hasattr(st.session_state.rag_system, 'vector_store_type') and \
+                   st.session_state.rag_system.vector_store_type.lower() != 'opensearch':
+                    st.info("ℹ️ Hybrid search is only available for OpenSearch. Using semantic search instead.")
+                    search_mode_param = "semantic"
+                    semantic_weight = 1.0
                 
                 # Use maximum accuracy settings: more chunks, optimized MMR
                 # k and use_mmr will use config defaults optimized for accuracy

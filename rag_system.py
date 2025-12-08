@@ -1094,7 +1094,15 @@ class RAGSystem:
             try:
                 from vectorstores.opensearch_store import OpenSearchVectorStore
                 
-                if isinstance(self.vectorstore, OpenSearchVectorStore):
+                # Check if vectorstore is OpenSearchVectorStore (handle both direct and wrapped)
+                is_opensearch = False
+                if self.vectorstore is not None:
+                    if isinstance(self.vectorstore, OpenSearchVectorStore):
+                        is_opensearch = True
+                    elif hasattr(self.vectorstore, '__class__') and 'OpenSearch' in self.vectorstore.__class__.__name__:
+                        is_opensearch = True
+                
+                if is_opensearch:
                     # Get query embedding
                     query_vector = self.embeddings.embed_query(question)
                     
