@@ -241,7 +241,6 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                     try:
                         from vectorstores.opensearch_store import OpenSearchVectorStore
                         from langchain_openai import OpenAIEmbeddings
-                        import os
                         
                         # Generate index name from document name
                         base_index_name = OpenSearchVectorStore.sanitize_index_name(file_name)
