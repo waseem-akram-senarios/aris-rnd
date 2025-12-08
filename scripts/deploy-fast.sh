@@ -145,12 +145,12 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
     cd $SERVER_DIR
     
     # Start container with dynamically calculated resource limits
-    # Port 8051 -> Streamlit (8051), Port 8050 -> FastAPI (8050) - no port mapping
+    # Port 80 -> Streamlit (80), Port 8500 -> FastAPI (8500) - no port mapping
     sudo docker run -d \
         --name aris-rag-app \
         --restart unless-stopped \
-        -p 8051:8051 \
-        -p 8050:8050 \
+        -p 80:80 \
+        -p 8500:8500 \
         --cpus="$ALLOCATED_CPUS" \
         --memory="${ALLOCATED_MEM_GB}g" \
         --memory-reservation="${MEM_RESERVATION_GB}g" \
@@ -158,7 +158,7 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
         -v \$(pwd)/data:/app/data \
         -v \$(pwd)/.env:/app/.env:ro \
         --env-file .env \
-        --health-cmd="python -c 'import requests; requests.get(\"http://localhost:8051/_stcore/health\")'" \
+        --health-cmd="python -c 'import requests; requests.get(\"http://localhost:80/_stcore/health\")'" \
         --health-interval=30s \
         --health-timeout=10s \
         --health-retries=3 \
@@ -182,10 +182,10 @@ for i in $(seq 1 $MAX_HEALTH_RETRIES); do
     
     # Check from server itself first (more reliable)
     HTTP_CODE=$(ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" \
-        "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8051/_stcore/health 2>/dev/null || echo '000'")
+        "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:80/_stcore/health 2>/dev/null || echo '000'")
     
     # Also check external access
-    EXTERNAL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --connect-timeout 5 "http://$SERVER_IP:8051/" 2>/dev/null || echo "000")
+    EXTERNAL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --connect-timeout 5 "http://$SERVER_IP/" 2>/dev/null || echo "000")
     
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$EXTERNAL_CODE" = "200" ] || [ "$EXTERNAL_CODE" = "302" ]; then
         HEALTH_SUCCESS=true
@@ -209,7 +209,7 @@ if [ "$HEALTH_SUCCESS" = true ]; then
     echo ""
     echo "   Status: HTTP $HTTP_CODE"
     echo "   Time: ${DURATION}s"
-    echo "   URL: http://$SERVER_IP:8051/"
+    echo "   URL: http://$SERVER_IP/"
 else
     echo -e "${YELLOW}⚠️  Deployment completed (${DURATION}s) but health check failed${NC}"
     echo "   HTTP Code: $HTTP_CODE"

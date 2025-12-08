@@ -5,11 +5,11 @@
 # Create log directory
 mkdir -p /app/logs
 
-# Start FastAPI in background on port 8050
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting FastAPI on port 8050..."
+# Start FastAPI in background on port 8500
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting FastAPI on port 8500..."
 uvicorn api.main:app \
     --host 0.0.0.0 \
-    --port 8050 \
+    --port 8500 \
     --log-level info \
     --access-log \
     --use-colors \
@@ -30,9 +30,9 @@ else
 fi
 
 # Start Streamlit in foreground (keeps container alive)
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Streamlit on port 8051..."
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Streamlit on port 80..."
 streamlit run app.py \
-    --server.port=8051 \
+    --server.port=80 \
     --server.address=0.0.0.0 \
     --logger.level=info \
     --server.headless=true
