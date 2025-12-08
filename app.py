@@ -949,7 +949,6 @@ with st.sidebar:
         )
         
         # Check if credentials are available
-        import os
         from dotenv import load_dotenv
         load_dotenv()
         if not os.getenv('AWS_OPENSEARCH_ACCESS_KEY_ID') or not os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY'):
