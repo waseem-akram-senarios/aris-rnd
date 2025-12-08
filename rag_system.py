@@ -436,7 +436,10 @@ class RAGSystem:
                                 progress_callback('embedding', batch_progress, detailed_message=detailed_msg)
                             
                             batch_start = time_module.time()
-                            self.vectorstore.add_documents(batch, auto_recreate_on_mismatch=True)
+                            if self.vector_store_type == "faiss":
+                                self.vectorstore.add_documents(batch, auto_recreate_on_mismatch=True)
+                            else:
+                                self.vectorstore.add_documents(batch)
                             batch_time = time_module.time() - batch_start
                             chunks_per_sec_batch = len(batch) / batch_time if batch_time > 0 else 0
                             logger.info(f"✅ [STEP 3.2.2.{batch_num + 1}] RAGSystem: Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s | Speed: {chunks_per_sec_batch:.2f} chunks/sec | {len(batch)} chunks embedded")
@@ -495,7 +498,10 @@ class RAGSystem:
                                 
                                 logger.info(f"[STEP 3.2.3.{batch_num + 1}] RAGSystem: Processing batch {batch_num + 1}/{total_batches} ({batch_pct}%) - {len(batch)} chunks | {remaining_str}")
                                 batch_start = time_module.time()
-                                self.vectorstore.add_documents(batch, auto_recreate_on_mismatch=True)
+                                if self.vector_store_type == "faiss":
+                                    self.vectorstore.add_documents(batch, auto_recreate_on_mismatch=True)
+                                else:
+                                    self.vectorstore.add_documents(batch)
                                 batch_time = time_module.time() - batch_start
                                 chunks_per_sec_batch = len(batch) / batch_time if batch_time > 0 else 0
                                 logger.info(f"✅ [STEP 3.2.3.{batch_num + 1}] RAGSystem: Batch {batch_num + 1}/{total_batches} completed in {batch_time:.1f}s | Speed: {chunks_per_sec_batch:.2f} chunks/sec | {len(batch)} chunks embedded")
@@ -511,7 +517,10 @@ class RAGSystem:
                         if progress_callback:
                             progress_callback('embedding', 0.7)
                         embed_start = time_module.time()
-                        self.vectorstore.add_documents(valid_chunks, auto_recreate_on_mismatch=True)
+                        if self.vector_store_type == "faiss":
+                            self.vectorstore.add_documents(valid_chunks, auto_recreate_on_mismatch=True)
+                        else:
+                            self.vectorstore.add_documents(valid_chunks)
                         embed_time = time_module.time() - embed_start
                         logger.info(f"✅ [STEP 3.2.3.1] RAGSystem: Embedding completed in {embed_time:.1f}s ({len(valid_chunks)} chunks)")
                         if progress_callback:

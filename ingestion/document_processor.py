@@ -75,6 +75,47 @@ class DocumentProcessor:
         logger.info(f"   Document ID: {doc_id}")
         logger.info("=" * 60)
         
+        # Handle OpenSearch index name generation from document name (for non-UI cases like API)
+        # Only generate if index is not explicitly set or is the default
+        if (hasattr(self.rag_system, 'vector_store_type') and 
+            self.rag_system.vector_store_type.lower() == 'opensearch'):
+            current_index = getattr(self.rag_system, 'opensearch_index', None)
+            default_index = 'aris-rag-index'
+            
+            # Generate from document name if index is None or is the default
+            if not current_index or current_index == default_index:
+                try:
+                    from vectorstores.opensearch_store import OpenSearchVectorStore
+                    from langchain_openai import OpenAIEmbeddings
+                    
+                    # Generate index name from document name
+                    base_index_name = OpenSearchVectorStore.sanitize_index_name(doc_name)
+                    
+                    # Check if index exists and auto-increment if needed
+                    try:
+                        # Create a temporary OpenSearchVectorStore to check index existence
+                        temp_embeddings = OpenAIEmbeddings(
+                            openai_api_key=os.getenv('OPENAI_API_KEY'),
+                            model=self.rag_system.embedding_model
+                        )
+                        temp_store = OpenSearchVectorStore(
+                            embeddings=temp_embeddings,
+                            domain=self.rag_system.opensearch_domain,
+                            index_name=base_index_name
+                        )
+                        
+                        # Auto-increment if index exists
+                        final_index_name = temp_store.get_index_name_for_document(doc_name, auto_increment=True)
+                        self.rag_system.opensearch_index = final_index_name
+                        logger.info(f"📇 Generated OpenSearch index name from document: '{final_index_name}'")
+                    except Exception as e:
+                        logger.warning(f"Could not generate index name from document name: {str(e)}. Using base name.")
+                        # Use base name as fallback
+                        self.rag_system.opensearch_index = base_index_name
+                except Exception as e:
+                    logger.warning(f"Could not set up document-based index name: {str(e)}")
+                    # Continue with default index
+        
         # Initialize state
         self.processing_state[doc_id] = {
             'status': 'processing',

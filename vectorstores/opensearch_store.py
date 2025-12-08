@@ -3,6 +3,7 @@ OpenSearch Vector Store implementation for RAG system.
 Uses AWS OpenSearch Service with LangChain integration.
 """
 import os
+import re
 import logging
 from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
@@ -316,4 +317,122 @@ class OpenSearchVectorStore:
             pass
         except Exception as e:
             logger.warning(f"Could not verify OpenSearch index connection: {str(e)}")
+    
+    @staticmethod
+    def sanitize_index_name(document_name: str) -> str:
+        """
+        Sanitize a document name to create a valid OpenSearch index name.
+        
+        OpenSearch index naming rules:
+        - Lowercase only
+        - No spaces (replace with hyphens)
+        - No special characters except hyphens and underscores
+        - Must start with a letter or underscore
+        - Max length: 255 characters
+        
+        Args:
+            document_name: Original document name (e.g., "My Document.pdf")
+            
+        Returns:
+            Sanitized index name (e.g., "my-document-pdf")
+        """
+        # Remove file extension if present
+        name_without_ext = os.path.splitext(document_name)[0]
+        
+        # Convert to lowercase
+        sanitized = name_without_ext.lower()
+        
+        # Replace spaces and special characters with hyphens
+        sanitized = re.sub(r'[^a-z0-9_-]', '-', sanitized)
+        
+        # Replace multiple consecutive hyphens with single hyphen
+        sanitized = re.sub(r'-+', '-', sanitized)
+        
+        # Remove leading/trailing hyphens and underscores
+        sanitized = sanitized.strip('-').strip('_')
+        
+        # Ensure it starts with a letter or underscore (OpenSearch requirement)
+        if sanitized and not sanitized[0].isalpha() and sanitized[0] != '_':
+            sanitized = 'doc-' + sanitized
+        
+        # Truncate to 255 characters (OpenSearch limit)
+        if len(sanitized) > 255:
+            sanitized = sanitized[:255]
+            # Remove trailing hyphen if truncated
+            sanitized = sanitized.rstrip('-')
+        
+        # If empty after sanitization, use default
+        if not sanitized:
+            sanitized = 'document'
+        
+        return sanitized
+    
+    def index_exists(self, index_name: Optional[str] = None) -> bool:
+        """
+        Check if an OpenSearch index exists.
+        
+        Args:
+            index_name: Index name to check (defaults to self.index_name)
+            
+        Returns:
+            True if index exists, False otherwise
+        """
+        if self.vectorstore is None:
+            return False
+        
+        check_index = index_name or self.index_name
+        
+        try:
+            client = self.vectorstore.client
+            exists = client.indices.exists(index=check_index)
+            return exists
+        except Exception as e:
+            logger.warning(f"Could not check if index '{check_index}' exists: {str(e)}")
+            return False
+    
+    def find_next_available_index_name(self, base_index_name: str) -> str:
+        """
+        Find the next available index name by auto-incrementing.
+        
+        If base_index_name exists, tries base_index_name-1, base_index_name-2, etc.
+        
+        Args:
+            base_index_name: Base index name to check
+            
+        Returns:
+            Available index name (either base_index_name or base_index_name-N)
+        """
+        # First check if base name is available
+        if not self.index_exists(base_index_name):
+            return base_index_name
+        
+        # Try incrementing numbers
+        counter = 1
+        while counter < 1000:  # Safety limit
+            candidate_name = f"{base_index_name}-{counter}"
+            if not self.index_exists(candidate_name):
+                return candidate_name
+            counter += 1
+        
+        # If we've tried 1000 times, something is wrong
+        raise ValueError(f"Could not find available index name after 1000 attempts for base: {base_index_name}")
+    
+    def get_index_name_for_document(self, document_name: str, auto_increment: bool = True) -> str:
+        """
+        Generate an OpenSearch index name from a document name.
+        
+        Args:
+            document_name: Name of the document (e.g., "My Document.pdf")
+            auto_increment: If True, auto-increment if index exists. If False, return base name.
+            
+        Returns:
+            Index name to use (sanitized and possibly incremented)
+        """
+        # Sanitize document name
+        base_index_name = self.sanitize_index_name(document_name)
+        
+        if auto_increment:
+            return self.find_next_available_index_name(base_index_name)
+        else:
+            return base_index_name
 
