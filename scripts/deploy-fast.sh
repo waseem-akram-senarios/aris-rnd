@@ -185,7 +185,7 @@ for i in $(seq 1 $MAX_HEALTH_RETRIES); do
         "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:8051/_stcore/health 2>/dev/null || echo '000'")
     
     # Also check external access
-    EXTERNAL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --connect-timeout 5 "http://$SERVER_IP/" 2>/dev/null || echo "000")
+    EXTERNAL_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --connect-timeout 5 "http://$SERVER_IP:8051/" 2>/dev/null || echo "000")
     
     if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ] || [ "$EXTERNAL_CODE" = "200" ] || [ "$EXTERNAL_CODE" = "302" ]; then
         HEALTH_SUCCESS=true
@@ -209,7 +209,7 @@ if [ "$HEALTH_SUCCESS" = true ]; then
     echo ""
     echo "   Status: HTTP $HTTP_CODE"
     echo "   Time: ${DURATION}s"
-    echo "   URL: http://$SERVER_IP/"
+    echo "   URL: http://$SERVER_IP:8051/"
 else
     echo -e "${YELLOW}⚠️  Deployment completed (${DURATION}s) but health check failed${NC}"
     echo "   HTTP Code: $HTTP_CODE"
