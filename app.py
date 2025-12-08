@@ -126,12 +126,26 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
     
     # Prepare files for processing
     files_to_process = []
+    import tempfile
+    temp_files = []  # Keep track of temp files for cleanup
+    
     for uploaded_file in uploaded_files:
         file_content = uploaded_file.read()
+        file_name = uploaded_file.name
+        
+        # Save to temporary file for parsers that need file paths
+        # This ensures file_path is always a valid path, not just a filename
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file_name)[1], mode='wb')
+        temp_file.write(file_content)
+        temp_file.flush()
+        os.fsync(temp_file.fileno())  # Ensure data is written to disk
+        temp_file.close()
+        temp_files.append(temp_file.name)  # Track for potential cleanup
+        
         files_to_process.append({
-            'path': uploaded_file.name,
-            'content': file_content,
-            'name': uploaded_file.name
+            'path': temp_file.name,  # Use actual temp file path
+            'content': file_content,  # Also keep content for parsers that prefer it
+            'name': file_name
         })
     
     # Process files with progress tracking
@@ -421,6 +435,15 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
     
     # Update session state
     st.session_state.processing_results.extend(results)
+    # Clean up temporary files
+    for temp_file_path in temp_files:
+        try:
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+        except Exception as e:
+            import logging
+            logging.warning(f"Could not delete temp file {temp_file_path}: {str(e)}")
+    
     successful_results = [r for r in results if r.status == 'success']
     
     if successful_results:
