@@ -276,53 +276,64 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                             
                             # If index exists, ask user what to do
                             if index_exists:
-                                st.info(f"📇 Index '{base_index_name}' already exists for this document.")
-                                
-                                col1, col2 = st.columns(2)
-                                with col1:
-                                    if st.button(
-                                        "🔄 Update Existing Index",
-                                        key=f"update_index_{file_name}",
-                                        help="Replace existing data in the index"
-                                    ):
-                                        st.session_state[choice_key] = "update"
-                                        st.rerun()
-                                with col2:
-                                    if st.button(
-                                        "➕ Create New Index (Auto-increment)",
-                                        key=f"new_index_{file_name}",
-                                        help="Create a new index with auto-incremented name"
-                                    ):
-                                        st.session_state[choice_key] = "new"
-                                        st.rerun()
-                                
-                                # Wait for user decision
-                                st.stop()
+                                # Check if choice was already made in a previous run
+                                if st.session_state[choice_key] is None:
+                                    st.info(f"📇 Index '{base_index_name}' already exists for this document.")
+                                    
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        update_clicked = st.button(
+                                            "🔄 Update Existing Index",
+                                            key=f"update_index_{file_name}",
+                                            help="Replace existing data in the index"
+                                        )
+                                        if update_clicked:
+                                            st.session_state[choice_key] = "update"
+                                            # Store temp_store in session state for later use
+                                            st.session_state[f"temp_store_{file_name}"] = temp_store
+                                            st.rerun()
+                                    with col2:
+                                        new_clicked = st.button(
+                                            "➕ Create New Index (Auto-increment)",
+                                            key=f"new_index_{file_name}",
+                                            help="Create a new index with auto-incremented name"
+                                        )
+                                        if new_clicked:
+                                            st.session_state[choice_key] = "new"
+                                            # Store temp_store in session state for later use
+                                            st.session_state[f"temp_store_{file_name}"] = temp_store
+                                            st.rerun()
+                                    
+                                    # Wait for user decision - only stop if no choice has been made
+                                    st.stop()
                             else:
                                 # Index doesn't exist, use the base name
                                 final_index_name = base_index_name
                                 st.session_state.rag_system.opensearch_index = final_index_name
                                 st.info(f"📇 Using index: `{final_index_name}`")
                                 # Clear choice key since we're done
-                                del st.session_state[choice_key]
+                                if choice_key in st.session_state:
+                                    del st.session_state[choice_key]
                         
                         # User has made a choice (index existed), process it
                         if choice_key in st.session_state and st.session_state[choice_key] is not None:
-                            # Recreate temp_store if needed for auto-increment
-                            temp_store = None
-                            try:
-                                temp_embeddings = OpenAIEmbeddings(
-                                    openai_api_key=os.getenv('OPENAI_API_KEY'),
-                                    model=st.session_state.rag_system.embedding_model
-                                )
-                                temp_store = OpenSearchVectorStore(
-                                    embeddings=temp_embeddings,
-                                    domain=opensearch_domain or st.session_state.rag_system.opensearch_domain,
-                                    index_name=base_index_name
-                                )
-                            except Exception as e:
-                                import logging
-                                logging.warning(f"Could not create temp store: {str(e)}")
+                            # Get temp_store from session state or recreate if needed
+                            temp_store = st.session_state.get(f"temp_store_{file_name}")
+                            if temp_store is None:
+                                try:
+                                    temp_embeddings = OpenAIEmbeddings(
+                                        openai_api_key=os.getenv('OPENAI_API_KEY'),
+                                        model=st.session_state.rag_system.embedding_model
+                                    )
+                                    temp_store = OpenSearchVectorStore(
+                                        embeddings=temp_embeddings,
+                                        domain=opensearch_domain or st.session_state.rag_system.opensearch_domain,
+                                        index_name=base_index_name
+                                    )
+                                except Exception as e:
+                                    import logging
+                                    logging.warning(f"Could not create temp store: {str(e)}")
+                                    temp_store = None
                             
                             if st.session_state[choice_key] == "update":
                                 # Use existing index name
@@ -347,8 +358,10 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                             # Update RAGSystem's opensearch_index
                             st.session_state.rag_system.opensearch_index = final_index_name
                             st.success(f"✅ Using index: `{final_index_name}`")
-                            # Clear the choice after using it so it can be reused if needed
+                            # Clear the choice and temp_store after using it
                             del st.session_state[choice_key]
+                            if f"temp_store_{file_name}" in st.session_state:
+                                del st.session_state[f"temp_store_{file_name}"]
                             
                     except Exception as e:
                         st.warning(f"⚠️ Could not generate index name from document name: {str(e)}. Using default index.")
@@ -956,17 +969,61 @@ with st.sidebar:
         help="Upload PDF, TXT, or DOCX files"
     )
     
+    # Store processing parameters in session state for continuation after rerun
+    process_key = "pending_processing"
+    
+    # Check if we should continue processing (after user makes index choice)
+    should_process = False
+    if process_key in st.session_state and st.session_state[process_key] is not None:
+        should_process = True
+        params = st.session_state[process_key]
+    
     if st.button("Process Documents", type="primary"):
         if uploaded_files:
-            # Process documents (warnings shown above, but allow any values)
-            process_uploaded_files(
-                uploaded_files, use_cerebras, parser_preference,
-                embedding_model, openai_model, cerebras_model,
-                vector_store_choice.lower(), opensearch_domain, opensearch_index,
-                chunk_size, chunk_overlap
-            )
+            # Store processing parameters in session state
+            st.session_state[process_key] = {
+                'uploaded_files': uploaded_files,
+                'use_cerebras': use_cerebras,
+                'parser_preference': parser_preference,
+                'embedding_model': embedding_model,
+                'openai_model': openai_model,
+                'cerebras_model': cerebras_model,
+                'vector_store_type': vector_store_choice.lower(),
+                'opensearch_domain': opensearch_domain,
+                'opensearch_index': opensearch_index,
+                'chunk_size': chunk_size,
+                'chunk_overlap': chunk_overlap
+            }
+            should_process = True
+            params = st.session_state[process_key]
         else:
             st.warning("Please upload at least one document")
+    
+    # Continue processing if there's pending processing
+    if should_process:
+        # Process documents (don't clear the flag yet - let process_uploaded_files handle it)
+        result = process_uploaded_files(
+            params['uploaded_files'], params['use_cerebras'], params['parser_preference'],
+            params['embedding_model'], params['openai_model'], params['cerebras_model'],
+            params['vector_store_type'], params['opensearch_domain'], params['opensearch_index'],
+            params['chunk_size'], params['chunk_overlap']
+        )
+        # Only clear the flag if processing completed successfully (no user interaction needed)
+        # If user interaction is needed (duplicate index), the flag stays so processing can continue after choice
+        if result is not False:
+            # Check if any files are still waiting for user choice
+            has_pending_choice = False
+            if 'uploaded_files' in params:
+                for uploaded_file in params['uploaded_files']:
+                    file_name = uploaded_file.name
+                    choice_key = f"index_choice_{file_name}"
+                    if choice_key in st.session_state and st.session_state[choice_key] is None:
+                        has_pending_choice = True
+                        break
+            
+            # Only clear if no pending choices
+            if not has_pending_choice:
+                del st.session_state[process_key]
     
     st.divider()
     
