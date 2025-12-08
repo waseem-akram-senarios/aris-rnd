@@ -416,18 +416,18 @@ class OpenSearchVectorStore:
             # Perform semantic (k-NN) search
             if semantic_weight > 0:
                 try:
-                    # OpenSearch k-NN query structure (no query field needed for pure k-NN)
+                    # OpenSearch k-NN query structure
+                    # The field name is typically "vector" for LangChain OpenSearchVectorSearch
                     knn_query = {
                         "size": int(k * (1 + semantic_weight)),
                         "knn": {
-                            "vector": {
-                                "vector": query_vector,
-                                "k": int(k * (1 + semantic_weight))
-                            }
+                            "field": "vector",  # Field name in the index
+                            "vector": query_vector,
+                            "k": int(k * (1 + semantic_weight))
                         }
                     }
                     if filter:
-                        knn_query["knn"]["vector"]["filter"] = filter
+                        knn_query["knn"]["filter"] = filter
                     
                     semantic_response = client.search(index=self.index_name, body=knn_query)
                     semantic_results = semantic_response.get("hits", {}).get("hits", [])

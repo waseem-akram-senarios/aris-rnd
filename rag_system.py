@@ -21,6 +21,9 @@ from config.settings import ARISConfig
 
 load_dotenv()
 
+# Set up logging
+logger = logging.getLogger(__name__)
+
 class RAGSystem:
     def __init__(self, use_cerebras=False, metrics_collector=None, 
                  embedding_model=None,
