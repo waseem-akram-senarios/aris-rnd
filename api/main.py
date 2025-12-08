@@ -355,11 +355,14 @@ async def query_documents(
     logger.info(f"✅ [STEP 1] Query validated - vectorstore available")
     
     try:
-        logger.info(f"[STEP 2] Executing vector store retrieval: k={request.k}, mmr={request.use_mmr}")
+        logger.info(f"[STEP 2] Executing vector store retrieval: k={request.k}, mmr={request.use_mmr}, hybrid={request.use_hybrid_search}")
         result = service.rag_system.query_with_rag(
             question=request.question,
             k=request.k,
-            use_mmr=request.use_mmr
+            use_mmr=request.use_mmr,
+            use_hybrid_search=request.use_hybrid_search,
+            semantic_weight=request.semantic_weight,
+            search_mode=request.search_mode
         )
         logger.info(f"✅ [STEP 2] Vector store retrieval completed")
         

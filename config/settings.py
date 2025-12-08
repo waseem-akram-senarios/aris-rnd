@@ -49,6 +49,12 @@ class ARISConfig:
     DEFAULT_TEMPERATURE: float = float(os.getenv('DEFAULT_TEMPERATURE', '0.0'))  # Maximum determinism
     DEFAULT_MAX_TOKENS: int = int(os.getenv('DEFAULT_MAX_TOKENS', '1000'))  # More detailed answers
     
+    # Hybrid Search Configuration
+    DEFAULT_USE_HYBRID_SEARCH: bool = os.getenv('DEFAULT_USE_HYBRID_SEARCH', 'false').lower() == 'true'
+    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.7'))
+    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.3'))
+    DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'semantic')  # 'semantic', 'keyword', 'hybrid'
+    
     # Document Storage Configuration
     DOCUMENT_REGISTRY_PATH: str = os.getenv('DOCUMENT_REGISTRY_PATH', 'storage/document_registry.json')
     
@@ -93,5 +99,26 @@ class ARISConfig:
             'strategy': cls.CHUNKING_STRATEGY,
             'chunk_size': cls.DEFAULT_CHUNK_SIZE,
             'chunk_overlap': cls.DEFAULT_CHUNK_OVERLAP
+        }
+    
+    @classmethod
+    def get_hybrid_search_config(cls) -> dict:
+        """Get hybrid search configuration"""
+        # Ensure weights sum to 1.0
+        semantic_weight = cls.DEFAULT_SEMANTIC_WEIGHT
+        keyword_weight = cls.DEFAULT_KEYWORD_WEIGHT
+        total = semantic_weight + keyword_weight
+        if total > 0:
+            semantic_weight = semantic_weight / total
+            keyword_weight = keyword_weight / total
+        else:
+            semantic_weight = 0.7
+            keyword_weight = 0.3
+        
+        return {
+            'use_hybrid_search': cls.DEFAULT_USE_HYBRID_SEARCH,
+            'semantic_weight': semantic_weight,
+            'keyword_weight': keyword_weight,
+            'search_mode': cls.DEFAULT_SEARCH_MODE
         }
 

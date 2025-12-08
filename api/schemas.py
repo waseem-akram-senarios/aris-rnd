@@ -11,6 +11,9 @@ class QueryRequest(BaseModel):
     question: str = Field(..., description="The question to answer")
     k: int = Field(default=6, ge=1, le=20, description="Number of chunks to retrieve")
     use_mmr: bool = Field(default=True, description="Use Maximum Marginal Relevance for diverse results")
+    use_hybrid_search: Optional[bool] = Field(default=None, description="Use hybrid search combining semantic and keyword search")
+    semantic_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Weight for semantic search in hybrid mode (0.0-1.0)")
+    search_mode: Optional[str] = Field(default=None, description="Search mode: 'semantic', 'keyword', or 'hybrid'")
 
 
 class Citation(BaseModel):

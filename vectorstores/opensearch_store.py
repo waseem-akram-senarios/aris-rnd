@@ -367,6 +367,228 @@ class OpenSearchVectorStore:
         
         return sanitized
     
+    def hybrid_search(
+        self,
+        query: str,
+        query_vector: List[float],
+        k: int = 10,
+        semantic_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+        filter: Optional[Dict] = None
+    ) -> List[Document]:
+        """
+        Perform hybrid search combining semantic (vector) and keyword (text) search.
+        
+        Uses OpenSearch's native query capabilities to combine k-NN and text search.
+        
+        Args:
+            query: Text query for keyword search
+            query_vector: Embedding vector for semantic search
+            k: Number of results to return
+            semantic_weight: Weight for semantic search results (0.0-1.0)
+            keyword_weight: Weight for keyword search results (0.0-1.0)
+            filter: Optional OpenSearch filter for document source selection
+            
+        Returns:
+            List of Document objects with combined results
+        """
+        if self.vectorstore is None:
+            raise ValueError("Vector store not initialized. Process documents first.")
+        
+        try:
+            client = self.vectorstore.client
+            
+            # Normalize weights
+            total_weight = semantic_weight + keyword_weight
+            if total_weight > 0:
+                semantic_weight = semantic_weight / total_weight
+                keyword_weight = keyword_weight / total_weight
+            else:
+                semantic_weight = 0.5
+                keyword_weight = 0.5
+            
+            # Build hybrid query
+            # OpenSearch supports combining k-NN and text queries
+            # For OpenSearch, we need to use separate queries and combine results
+            semantic_results = []
+            keyword_results = []
+            
+            # Perform semantic (k-NN) search
+            if semantic_weight > 0:
+                try:
+                    # OpenSearch k-NN query structure
+                    knn_query = {
+                        "size": int(k * (1 + semantic_weight)),
+                        "query": {
+                            "match_all": {}  # Match all for k-NN
+                        },
+                        "knn": {
+                            "vector": {
+                                "vector": query_vector,
+                                "k": int(k * (1 + semantic_weight))
+                            }
+                        }
+                    }
+                    if filter:
+                        knn_query["knn"]["vector"]["filter"] = filter
+                    
+                    semantic_response = client.search(index=self.index_name, body=knn_query)
+                    semantic_results = semantic_response.get("hits", {}).get("hits", [])
+                except Exception as e:
+                    logger.warning(f"Semantic search failed: {str(e)}")
+                    semantic_results = []
+            
+            # Perform keyword (text) search
+            if keyword_weight > 0:
+                try:
+                    text_query = {
+                        "size": int(k * (1 + keyword_weight)),
+                        "query": {
+                            "bool": {
+                                "should": [
+                                    {
+                                        "multi_match": {
+                                            "query": query,
+                                            "fields": ["text^2", "metadata.source"],
+                                            "type": "best_fields",
+                                            "fuzziness": "AUTO"
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                    if filter:
+                        text_query["query"]["bool"]["filter"] = filter
+                    
+                    keyword_response = client.search(index=self.index_name, body=text_query)
+                    keyword_results = keyword_response.get("hits", {}).get("hits", [])
+                except Exception as e:
+                    logger.warning(f"Keyword search failed: {str(e)}")
+                    keyword_results = []
+            
+            # Combine results using RRF
+            all_hits = semantic_results + keyword_results
+            
+            # Process results and combine using RRF
+            results = self._combine_hybrid_results(
+                all_hits,
+                k,
+                semantic_weight,
+                keyword_weight,
+                semantic_results,
+                keyword_results
+            )
+            
+            # Convert to Document objects
+            documents = []
+            for hit in results:
+                source = hit.get("_source", {})
+                text = source.get("text", "")
+                metadata = source.get("metadata", {})
+                
+                doc = Document(
+                    page_content=text,
+                    metadata=metadata
+                )
+                documents.append(doc)
+            
+            logger.info(f"Hybrid search returned {len(documents)} results (semantic_weight={semantic_weight:.2f}, keyword_weight={keyword_weight:.2f})")
+            return documents[:k]  # Return top k
+            
+        except Exception as e:
+            logger.error(f"Hybrid search failed: {str(e)}")
+            # Fallback to semantic-only search
+            logger.warning("Falling back to semantic-only search")
+            try:
+                # Use standard similarity search as fallback
+                return self.vectorstore.similarity_search(query, k=k)
+            except Exception as fallback_error:
+                logger.error(f"Fallback search also failed: {str(fallback_error)}")
+                return []
+    
+    def _combine_hybrid_results(
+        self,
+        all_hits: List[Dict],
+        k: int,
+        semantic_weight: float,
+        keyword_weight: float,
+        semantic_results: List[Dict],
+        keyword_results: List[Dict]
+    ) -> List[Dict]:
+        """
+        Combine semantic and keyword search results using Reciprocal Rank Fusion (RRF).
+        
+        Args:
+            all_hits: Combined list of all search hits
+            k: Number of final results
+            semantic_weight: Weight for semantic results
+            keyword_weight: Weight for keyword results
+            semantic_results: List of semantic search hits
+            keyword_results: List of keyword search hits
+            
+        Returns:
+            Combined and re-ranked results
+        """
+        # Create sets to identify which results came from which search
+        semantic_ids = {hit.get("_id") for hit in semantic_results}
+        keyword_ids = {hit.get("_id") for hit in keyword_results}
+        
+        # Group results by document ID
+        doc_scores = {}
+        doc_hits = {}
+        
+        # Process semantic results
+        for rank, hit in enumerate(semantic_results, 1):
+            doc_id = hit.get("_id")
+            if doc_id not in doc_scores:
+                doc_scores[doc_id] = {
+                    "semantic_score": 0.0,
+                    "keyword_score": 0.0,
+                    "semantic_rank": float('inf'),
+                    "keyword_rank": float('inf')
+                }
+                doc_hits[doc_id] = hit
+            
+            # Calculate RRF score: 1 / (k + rank)
+            rrf_score = 1.0 / (60 + rank)  # k=60 is standard RRF parameter
+            doc_scores[doc_id]["semantic_score"] = rrf_score * semantic_weight
+            doc_scores[doc_id]["semantic_rank"] = rank
+        
+        # Process keyword results
+        for rank, hit in enumerate(keyword_results, 1):
+            doc_id = hit.get("_id")
+            if doc_id not in doc_scores:
+                doc_scores[doc_id] = {
+                    "semantic_score": 0.0,
+                    "keyword_score": 0.0,
+                    "semantic_rank": float('inf'),
+                    "keyword_rank": float('inf')
+                }
+                doc_hits[doc_id] = hit
+            
+            # Calculate RRF score: 1 / (k + rank)
+            rrf_score = 1.0 / (60 + rank)  # k=60 is standard RRF parameter
+            doc_scores[doc_id]["keyword_score"] = rrf_score * keyword_weight
+            doc_scores[doc_id]["keyword_rank"] = rank
+        
+        # Combine scores and sort
+        combined_results = []
+        for doc_id, scores in doc_scores.items():
+            total_score = scores["semantic_score"] + scores["keyword_score"]
+            combined_results.append({
+                "hit": doc_hits[doc_id],
+                "combined_score": total_score,
+                "semantic_score": scores["semantic_score"],
+                "keyword_score": scores["keyword_score"]
+            })
+        
+        # Sort by combined score (descending)
+        combined_results.sort(key=lambda x: x["combined_score"], reverse=True)
+        
+        # Return top k
+        return [result["hit"] for result in combined_results[:k]]
+    
     def index_exists(self, index_name: Optional[str] = None) -> bool:
         """
         Check if an OpenSearch index exists.

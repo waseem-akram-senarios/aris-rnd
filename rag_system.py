@@ -1017,7 +1017,15 @@ class RAGSystem:
         
         return cleaned.strip()
     
-    def query_with_rag(self, question: str, k: int = None, use_mmr: bool = None) -> Dict:
+    def query_with_rag(
+        self,
+        question: str,
+        k: int = None,
+        use_mmr: bool = None,
+        use_hybrid_search: bool = None,
+        semantic_weight: float = None,
+        search_mode: str = None
+    ) -> Dict:
         """
         Query the RAG system with maximum accuracy settings.
         
@@ -1025,6 +1033,9 @@ class RAGSystem:
             question: The question to answer
             k: Number of chunks to retrieve (default from config for maximum accuracy)
             use_mmr: Use Maximum Marginal Relevance (default True for best accuracy)
+            use_hybrid_search: Use hybrid search combining semantic and keyword (default from config)
+            semantic_weight: Weight for semantic search in hybrid mode (0.0-1.0, default 0.7)
+            search_mode: Search mode - 'semantic', 'keyword', or 'hybrid' (default from config)
         
         Returns:
             Dict with answer, sources, and context chunks
@@ -1036,6 +1047,27 @@ class RAGSystem:
             k = ARISConfig.DEFAULT_RETRIEVAL_K
         if use_mmr is None:
             use_mmr = ARISConfig.DEFAULT_USE_MMR
+        
+        # Get hybrid search config
+        hybrid_config = ARISConfig.get_hybrid_search_config()
+        if use_hybrid_search is None:
+            use_hybrid_search = hybrid_config['use_hybrid_search']
+        if semantic_weight is None:
+            semantic_weight = hybrid_config['semantic_weight']
+        if search_mode is None:
+            search_mode = hybrid_config['search_mode']
+        
+        # Determine if we should use hybrid search based on mode
+        if search_mode == 'hybrid':
+            use_hybrid_search = True
+        elif search_mode == 'keyword':
+            use_hybrid_search = True
+            semantic_weight = 0.0  # Keyword only
+        elif search_mode == 'semantic':
+            use_hybrid_search = False
+        
+        keyword_weight = 1.0 - semantic_weight
+        
         query_start_time = time_module.time()
         
         if self.vectorstore is None:
@@ -1057,56 +1089,87 @@ class RAGSystem:
                     # Multiple sources: use terms filter
                     opensearch_filter = {"terms": {"metadata.source.keyword": valid_sources}}
         
-        # Retrieve relevant documents with MMR optimized for maximum accuracy
-        if use_mmr:
-            # Use MMR with accuracy-optimized parameters
-            from config.settings import ARISConfig
-            fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
-            lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
-            
-            # Build search_kwargs with appropriate filter
-            search_kwargs = {
-                "k": k,
-                "fetch_k": fetch_k,  # Large candidate pool for best selection
-                "lambda_mult": lambda_mult,  # Prioritize relevance (lower = more relevant)
-            }
-            
-            # Add filter only if we have valid sources and it's OpenSearch
-            if opensearch_filter:
-                search_kwargs["filter"] = opensearch_filter
-            elif self.active_sources and self.vector_store_type.lower() != "opensearch":
-                # For FAISS, use MongoDB-style filter (if supported)
-                valid_sources = [s for s in self.active_sources if s and s.strip()]
-                if valid_sources:
-                    search_kwargs["filter"] = {"source": {"$in": valid_sources}}
-            
-            retriever = self.vectorstore.as_retriever(
-                search_type="mmr",
-                search_kwargs=search_kwargs
-            )
+        # Use hybrid search if enabled and OpenSearch is available
+        if use_hybrid_search and self.vector_store_type.lower() == "opensearch":
+            try:
+                from vectorstores.opensearch_store import OpenSearchVectorStore
+                
+                if isinstance(self.vectorstore, OpenSearchVectorStore):
+                    # Get query embedding
+                    query_vector = self.embeddings.embed_query(question)
+                    
+                    # Perform hybrid search
+                    relevant_docs = self.vectorstore.hybrid_search(
+                        query=question,
+                        query_vector=query_vector,
+                        k=k,
+                        semantic_weight=semantic_weight,
+                        keyword_weight=keyword_weight,
+                        filter=opensearch_filter
+                    )
+                    
+                    logger.info(f"Hybrid search completed: {len(relevant_docs)} results (mode={search_mode}, semantic_weight={semantic_weight:.2f})")
+                else:
+                    # Fallback to standard search
+                    relevant_docs = None
+            except Exception as e:
+                logger.warning(f"Hybrid search failed, falling back to semantic search: {str(e)}")
+                relevant_docs = None
         else:
-            # Standard similarity search
-            search_kwargs = {"k": k}
-            
-            # Add filter only if we have valid sources
-            if opensearch_filter:
-                search_kwargs["filter"] = opensearch_filter
-            elif self.active_sources and self.vector_store_type.lower() != "opensearch":
-                # For FAISS, use MongoDB-style filter (if supported)
-                valid_sources = [s for s in self.active_sources if s and s.strip()]
-                if valid_sources:
-                    search_kwargs["filter"] = {"source": {"$in": valid_sources}}
-            
-            retriever = self.vectorstore.as_retriever(
-                search_kwargs=search_kwargs
-            )
+            relevant_docs = None
         
-        # Use invoke for newer LangChain versions, fallback to get_relevant_documents
-        try:
-            relevant_docs = retriever.invoke(question)
-        except AttributeError:
-            # Fallback for older versions
-            relevant_docs = retriever.get_relevant_documents(question)
+        # If hybrid search didn't work or wasn't used, use standard search
+        if relevant_docs is None:
+            # Retrieve relevant documents with MMR optimized for maximum accuracy
+            if use_mmr:
+                # Use MMR with accuracy-optimized parameters
+                from config.settings import ARISConfig
+                fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
+                lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
+                
+                # Build search_kwargs with appropriate filter
+                search_kwargs = {
+                    "k": k,
+                    "fetch_k": fetch_k,  # Large candidate pool for best selection
+                    "lambda_mult": lambda_mult,  # Prioritize relevance (lower = more relevant)
+                }
+                
+                # Add filter only if we have valid sources and it's OpenSearch
+                if opensearch_filter:
+                    search_kwargs["filter"] = opensearch_filter
+                elif self.active_sources and self.vector_store_type.lower() != "opensearch":
+                    # For FAISS, use MongoDB-style filter (if supported)
+                    valid_sources = [s for s in self.active_sources if s and s.strip()]
+                    if valid_sources:
+                        search_kwargs["filter"] = {"source": {"$in": valid_sources}}
+                
+                retriever = self.vectorstore.as_retriever(
+                    search_type="mmr",
+                    search_kwargs=search_kwargs
+                )
+            else:
+                # Standard similarity search
+                search_kwargs = {"k": k}
+                
+                # Add filter only if we have valid sources
+                if opensearch_filter:
+                    search_kwargs["filter"] = opensearch_filter
+                elif self.active_sources and self.vector_store_type.lower() != "opensearch":
+                    # For FAISS, use MongoDB-style filter (if supported)
+                    valid_sources = [s for s in self.active_sources if s and s.strip()]
+                    if valid_sources:
+                        search_kwargs["filter"] = {"source": {"$in": valid_sources}}
+                
+                retriever = self.vectorstore.as_retriever(
+                    search_kwargs=search_kwargs
+                )
+            
+            # Use invoke for newer LangChain versions, fallback to get_relevant_documents
+            try:
+                relevant_docs = retriever.invoke(question)
+            except AttributeError:
+                # Fallback for older versions
+                relevant_docs = retriever.get_relevant_documents(question)
 
         # If UI selected specific documents, filter results to those sources
         if self.active_sources:
