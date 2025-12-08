@@ -246,62 +246,88 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         # Generate index name from document name
                         base_index_name = OpenSearchVectorStore.sanitize_index_name(file_name)
                         
-                        # Check if index exists by creating a temporary OpenSearch connection
-                        index_exists = False
-                        temp_store = None
-                        try:
-                            # Create a temporary OpenSearchVectorStore to check index existence
-                            temp_embeddings = OpenAIEmbeddings(
-                                openai_api_key=os.getenv('OPENAI_API_KEY'),
-                                model=st.session_state.rag_system.embedding_model
-                            )
-                            temp_store = OpenSearchVectorStore(
-                                embeddings=temp_embeddings,
-                                domain=opensearch_domain or st.session_state.rag_system.opensearch_domain,
-                                index_name=base_index_name  # Check this specific index
-                            )
-                            index_exists = temp_store.index_exists(base_index_name)
-                        except Exception as check_error:
-                            # If we can't check, assume it doesn't exist and continue
-                            import logging
-                            logging.warning(f"Could not check if index exists: {str(check_error)}")
-                            index_exists = False
+                        # Use session state to track user's choice for this document
+                        choice_key = f"index_choice_{file_name}"
+                        if choice_key not in st.session_state:
+                            st.session_state[choice_key] = None
                         
-                        # If index exists, ask user what to do
-                        if index_exists:
-                            st.info(f"📇 Index '{base_index_name}' already exists for this document.")
+                        # Check if user has already made a choice
+                        if st.session_state[choice_key] is None:
+                            # Check if index exists by creating a temporary OpenSearch connection
+                            index_exists = False
+                            temp_store = None
+                            try:
+                                # Create a temporary OpenSearchVectorStore to check index existence
+                                temp_embeddings = OpenAIEmbeddings(
+                                    openai_api_key=os.getenv('OPENAI_API_KEY'),
+                                    model=st.session_state.rag_system.embedding_model
+                                )
+                                temp_store = OpenSearchVectorStore(
+                                    embeddings=temp_embeddings,
+                                    domain=opensearch_domain or st.session_state.rag_system.opensearch_domain,
+                                    index_name=base_index_name  # Check this specific index
+                                )
+                                index_exists = temp_store.index_exists(base_index_name)
+                            except Exception as check_error:
+                                # If we can't check, assume it doesn't exist and continue
+                                import logging
+                                logging.warning(f"Could not check if index exists: {str(check_error)}")
+                                index_exists = False
                             
-                            # Use session state to track user's choice for this document
-                            choice_key = f"index_choice_{file_name}"
-                            if choice_key not in st.session_state:
-                                st.session_state[choice_key] = None
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                if st.button(
-                                    "🔄 Update Existing Index",
-                                    key=f"update_index_{file_name}",
-                                    help="Replace existing data in the index"
-                                ):
-                                    st.session_state[choice_key] = "update"
-                                    st.rerun()
-                            with col2:
-                                if st.button(
-                                    "➕ Create New Index (Auto-increment)",
-                                    key=f"new_index_{file_name}",
-                                    help="Create a new index with auto-incremented name"
-                                ):
-                                    st.session_state[choice_key] = "new"
-                                    st.rerun()
-                            
-                            # Wait for user decision
-                            if st.session_state[choice_key] is None:
+                            # If index exists, ask user what to do
+                            if index_exists:
+                                st.info(f"📇 Index '{base_index_name}' already exists for this document.")
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    if st.button(
+                                        "🔄 Update Existing Index",
+                                        key=f"update_index_{file_name}",
+                                        help="Replace existing data in the index"
+                                    ):
+                                        st.session_state[choice_key] = "update"
+                                        st.rerun()
+                                with col2:
+                                    if st.button(
+                                        "➕ Create New Index (Auto-increment)",
+                                        key=f"new_index_{file_name}",
+                                        help="Create a new index with auto-incremented name"
+                                    ):
+                                        st.session_state[choice_key] = "new"
+                                        st.rerun()
+                                
+                                # Wait for user decision
                                 st.stop()
+                            else:
+                                # Index doesn't exist, use the base name
+                                final_index_name = base_index_name
+                                st.session_state.rag_system.opensearch_index = final_index_name
+                                st.info(f"📇 Using index: `{final_index_name}`")
+                                # Clear choice key since we're done
+                                del st.session_state[choice_key]
+                        
+                        # User has made a choice (index existed), process it
+                        if choice_key in st.session_state and st.session_state[choice_key] is not None:
+                            # Recreate temp_store if needed for auto-increment
+                            temp_store = None
+                            try:
+                                temp_embeddings = OpenAIEmbeddings(
+                                    openai_api_key=os.getenv('OPENAI_API_KEY'),
+                                    model=st.session_state.rag_system.embedding_model
+                                )
+                                temp_store = OpenSearchVectorStore(
+                                    embeddings=temp_embeddings,
+                                    domain=opensearch_domain or st.session_state.rag_system.opensearch_domain,
+                                    index_name=base_index_name
+                                )
+                            except Exception as e:
+                                import logging
+                                logging.warning(f"Could not create temp store: {str(e)}")
                             
                             if st.session_state[choice_key] == "update":
                                 # Use existing index name
                                 final_index_name = base_index_name
-                            else:  # "new"
+                            elif st.session_state[choice_key] == "new":
                                 # Find next available index name
                                 try:
                                     if temp_store:
@@ -309,20 +335,20 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                     else:
                                         # Fallback: just append -1
                                         final_index_name = f"{base_index_name}-1"
-                                except:
+                                except Exception as e:
+                                    import logging
+                                    logging.warning(f"Could not find next available index: {str(e)}")
                                     # Fallback: just append -1
                                     final_index_name = f"{base_index_name}-1"
+                            else:
+                                # No choice made yet (shouldn't happen, but fallback)
+                                final_index_name = base_index_name
                             
                             # Update RAGSystem's opensearch_index
                             st.session_state.rag_system.opensearch_index = final_index_name
                             st.success(f"✅ Using index: `{final_index_name}`")
-                            # Clear the choice after using it
+                            # Clear the choice after using it so it can be reused if needed
                             del st.session_state[choice_key]
-                        else:
-                            # Index doesn't exist, use the base name
-                            final_index_name = base_index_name
-                            st.session_state.rag_system.opensearch_index = final_index_name
-                            st.info(f"📇 Using index: `{final_index_name}`")
                             
                     except Exception as e:
                         st.warning(f"⚠️ Could not generate index name from document name: {str(e)}. Using default index.")
