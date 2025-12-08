@@ -665,6 +665,46 @@ with st.sidebar:
                                 current_chunk_size = ARISConfig.DEFAULT_CHUNK_SIZE
                                 current_chunk_overlap = ARISConfig.DEFAULT_CHUNK_OVERLAP
 
+                                # Get opensearch_domain and opensearch_index from multiple sources
+                                opensearch_domain = None
+                                opensearch_index = None
+
+                                # Priority 1: Try to get from document metadata (if document was processed with OpenSearch)
+                                if selected_sources:
+                                    doc_name = selected_sources[0]
+                                    # Find the document in the registry
+                                    for doc in existing_docs:
+                                        if doc.get('document_name') == doc_name:
+                                            # Check if document was stored in OpenSearch
+                                            if doc.get('storage_location') == 'opensearch_cloud' or \
+                                               doc.get('vector_store_type', '').lower() == 'opensearch':
+                                                opensearch_domain = doc.get('opensearch_domain')
+                                                opensearch_index = doc.get('opensearch_index')
+                                                break
+
+                                # Priority 2: If not found in document, try existing RAG system
+                                if not opensearch_domain and st.session_state.rag_system:
+                                    if hasattr(st.session_state.rag_system, 'opensearch_domain'):
+                                        opensearch_domain = st.session_state.rag_system.opensearch_domain
+                                    if hasattr(st.session_state.rag_system, 'opensearch_index'):
+                                        opensearch_index = st.session_state.rag_system.opensearch_index
+
+                                # Priority 3: If still not found and using OpenSearch, get from config
+                                if not opensearch_domain and current_vector_store == 'opensearch':
+                                    opensearch_config = ARISConfig.get_opensearch_config()
+                                    opensearch_domain = opensearch_config.get('domain') or 'intelycx-waseem-os'
+                                    opensearch_index = opensearch_config.get('index') or 'aris-rag-index'
+
+                                # Priority 4: For FAISS, ensure they're None (not needed)
+                                if current_vector_store == 'faiss':
+                                    opensearch_domain = None
+                                    opensearch_index = None
+
+                                # Validate OpenSearch configuration if needed
+                                if current_vector_store == 'opensearch' and not opensearch_domain:
+                                    st.error("❌ OpenSearch domain not found. Please ensure the document was processed with OpenSearch or configure OpenSearch settings.")
+                                    st.stop()
+
                                 # Initialize RAG system if needed
                                 if st.session_state.rag_system is None:
                                     st.session_state.rag_system = RAGSystem(
