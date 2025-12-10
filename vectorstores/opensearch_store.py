@@ -167,6 +167,10 @@ class OpenSearchVectorStore:
                         # This will fail if auth doesn't work
                         test_client = self.vectorstore.client
                         cluster_info = test_client.info()
+                        
+                        # Validate embedding dimension matches index
+                        self._validate_embedding_dimension(test_client)
+                        
                         logger.info(f"✅ OpenSearch vector store initialized with {auth_name} (index: {self.index_name}, cluster: {cluster_info.get('cluster_name', 'Unknown')})")
                         return
                     except Exception as test_e:
@@ -205,6 +209,90 @@ class OpenSearchVectorStore:
             )
         except Exception as e:
             raise ValueError(f"Failed to initialize LangChain OpenSearch store: {str(e)}")
+    
+    def _validate_embedding_dimension(self, client):
+        """
+        Validate that the embedding model dimension matches the OpenSearch index dimension.
+        
+        Args:
+            client: OpenSearch client
+        """
+        try:
+            # Check if index exists
+            if not client.indices.exists(index=self.index_name):
+                logger.info(f"Index {self.index_name} does not exist yet - will be created with current embedding model")
+                return
+            
+            # Get index mapping to find vector dimension
+            mapping = client.indices.get_mapping(index=self.index_name)
+            index_mapping = mapping.get(self.index_name, {}).get('mappings', {})
+            
+            # Find vector field dimension
+            vector_dimension = None
+            properties = index_mapping.get('properties', {})
+            
+            # Check for common vector field names
+            for field_name, field_config in properties.items():
+                if field_config.get('type') == 'knn_vector':
+                    vector_dimension = field_config.get('dimension')
+                    if vector_dimension:
+                        logger.info(f"Found vector field '{field_name}' with dimension {vector_dimension}")
+                        break
+            
+            if vector_dimension is None:
+                # Try to find in nested properties
+                for field_name, field_config in properties.items():
+                    if isinstance(field_config, dict) and 'properties' in field_config:
+                        nested_props = field_config.get('properties', {})
+                        for nested_field, nested_config in nested_props.items():
+                            if nested_config.get('type') == 'knn_vector':
+                                vector_dimension = nested_config.get('dimension')
+                                if vector_dimension:
+                                    logger.info(f"Found vector field '{field_name}.{nested_field}' with dimension {vector_dimension}")
+                                    break
+                        if vector_dimension:
+                            break
+            
+            if vector_dimension:
+                # Get current embedding model dimension
+                # Try to get dimension from embeddings model
+                try:
+                    # Test embedding to get dimension
+                    test_embedding = self.embeddings.embed_query("test")
+                    current_dimension = len(test_embedding)
+                    
+                    if current_dimension != vector_dimension:
+                        # Map dimensions to models
+                        dimension_to_model = {
+                            1536: 'text-embedding-3-small',
+                            3072: 'text-embedding-3-large',
+                            1536: 'text-embedding-ada-002'  # Also 1536
+                        }
+                        
+                        expected_model = dimension_to_model.get(vector_dimension, f"model with {vector_dimension} dimensions")
+                        current_model = getattr(self.embeddings, 'model', 'unknown')
+                        
+                        error_msg = (
+                            f"Embedding dimension mismatch! "
+                            f"Index '{self.index_name}' was created with {vector_dimension} dimensions "
+                            f"(likely {expected_model}), but current embedding model '{current_model}' "
+                            f"produces {current_dimension} dimensions. "
+                            f"Please use the same embedding model that was used to create the index, "
+                            f"or recreate the index with the current model."
+                        )
+                        
+                        logger.error(error_msg)
+                        raise ValueError(error_msg)
+                    else:
+                        logger.info(f"✅ Embedding dimension validated: {current_dimension} dimensions match index")
+                except Exception as e:
+                    logger.warning(f"Could not validate embedding dimension: {e}")
+            else:
+                logger.info(f"Could not determine vector dimension from index mapping - skipping validation")
+                
+        except Exception as e:
+            # Don't fail initialization if validation fails, just log warning
+            logger.warning(f"Could not validate embedding dimension: {e}")
     
     def _clean_metadata_for_opensearch(self, documents: List[Document]) -> List[Document]:
         """
@@ -654,4 +742,80 @@ class OpenSearchVectorStore:
             return self.find_next_available_index_name(base_index_name)
         else:
             return base_index_name
+
+
+class OpenSearchMultiIndexManager:
+    """Manages multiple OpenSearch indexes for per-document storage."""
+    
+    def __init__(self, embeddings, domain, region=None, endpoint=None):
+        self.embeddings = embeddings
+        self.domain = domain
+        self.region = region
+        self.endpoint = endpoint
+        self.index_stores: Dict[str, OpenSearchVectorStore] = {}  # index_name -> store
+    
+    def get_or_create_index_store(self, index_name: str) -> OpenSearchVectorStore:
+        """Get or create vectorstore for a specific index."""
+        if index_name not in self.index_stores:
+            self.index_stores[index_name] = OpenSearchVectorStore(
+                embeddings=self.embeddings,
+                domain=self.domain,
+                index_name=index_name,
+                region=self.region,
+                endpoint=self.endpoint
+            )
+        return self.index_stores[index_name]
+    
+    def search_across_indexes(
+        self, 
+        query: str, 
+        index_names: List[str], 
+        k: int = 10,
+        use_mmr: bool = False,
+        fetch_k: int = 50,
+        lambda_mult: float = 0.3,
+        **kwargs
+    ) -> List[Document]:
+        """Search across multiple indexes and combine results."""
+        all_results = []
+        results_per_index = max(1, k // len(index_names)) if index_names else k
+        
+        for index_name in index_names:
+            try:
+                store = self.get_or_create_index_store(index_name)
+                if use_mmr:
+                    retriever = store.vectorstore.as_retriever(
+                        search_type="mmr",
+                        search_kwargs={
+                            "k": results_per_index,
+                            "fetch_k": fetch_k,
+                            "lambda_mult": lambda_mult
+                        }
+                    )
+                else:
+                    retriever = store.vectorstore.as_retriever(
+                        search_kwargs={"k": results_per_index}
+                    )
+                
+                results = retriever.invoke(query)
+                all_results.extend(results)
+                logger.debug(f"Found {len(results)} results in index '{index_name}'")
+            except Exception as e:
+                logger.warning(f"Error searching index '{index_name}': {e}")
+                continue
+        
+        # Deduplicate by content hash and return top k
+        seen = set()
+        unique_results = []
+        for doc in all_results:
+            content_hash = hash(doc.page_content[:100])  # Hash first 100 chars
+            if content_hash not in seen:
+                seen.add(content_hash)
+                unique_results.append(doc)
+        
+        return unique_results[:k]
+    
+    def get_all_indexes(self) -> List[str]:
+        """Get list of all managed index names."""
+        return list(self.index_stores.keys())
 

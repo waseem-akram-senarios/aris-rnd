@@ -52,7 +52,7 @@ class RAGSystem:
         self.vector_store_type = vector_store_type.lower()
         self.opensearch_domain = opensearch_domain
         self.opensearch_index = opensearch_index
-
+        
         # Active document filter (set by UI to restrict queries to selected docs)
         self.active_sources: Optional[List[str]] = None
         
@@ -82,6 +82,14 @@ class RAGSystem:
         self.document_index: Dict[str, List[int]] = {}  # {doc_id: [chunk_indices]}
         self.total_tokens = 0
         
+        # Document-to-index mapping for per-document OpenSearch indexes
+        self.document_index_map: Dict[str, str] = {}  # document_name -> index_name
+        self.document_index_map_path = os.path.join(
+            ARISConfig.VECTORSTORE_PATH,
+            "document_index_map.json"
+        )
+        self._load_document_index_map()
+        
         # Metrics collector for R&D analytics
         self.metrics_collector = metrics_collector
         
@@ -92,6 +100,34 @@ class RAGSystem:
         else:
             self.llm = None  # Will use OpenAI API directly
             self.openai_api_key = os.getenv('OPENAI_API_KEY')
+    
+    def _load_document_index_map(self):
+        """Load document-to-index mapping from file."""
+        import json
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        if os.path.exists(self.document_index_map_path):
+            try:
+                with open(self.document_index_map_path, 'r') as f:
+                    self.document_index_map = json.load(f)
+                    logger.info(f"Loaded {len(self.document_index_map)} document-index mappings")
+            except Exception as e:
+                logger.warning(f"Could not load document index map: {e}")
+    
+    def _save_document_index_map(self):
+        """Save document-to-index mapping to file."""
+        import json
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        os.makedirs(os.path.dirname(self.document_index_map_path), exist_ok=True)
+        try:
+            with open(self.document_index_map_path, 'w') as f:
+                json.dump(self.document_index_map, f, indent=2)
+            logger.info(f"Saved {len(self.document_index_map)} document-index mappings")
+        except Exception as e:
+            logger.error(f"Could not save document index map: {e}")
     
     def process_documents(self, texts: List[str], metadatas: List[Dict] = None, progress_callback: Optional[Callable] = None):
         """Process and chunk documents, then create vector store"""
@@ -368,12 +404,66 @@ class RAGSystem:
         # Create or update vector store incrementally
         logger.info(f"Creating/updating {self.vector_store_type.upper()} vector store with {len(valid_chunks)} chunks...")
         try:
+            # For OpenSearch: Create per-document index
+            if self.vector_store_type == "opensearch" and valid_chunks:
+                # Extract document name from chunks
+                doc_name = valid_chunks[0].metadata.get('source', 'Unknown') if valid_chunks else 'Unknown'
+                
+                # Generate index name for this document
+                from vectorstores.opensearch_store import OpenSearchVectorStore
+                temp_store = OpenSearchVectorStore(
+                    embeddings=self.embeddings,
+                    domain=self.opensearch_domain,
+                    index_name="temp"  # Temporary, just for method access
+                )
+                
+                # Get or create index name for this document
+                if doc_name in self.document_index_map:
+                    index_name = self.document_index_map[doc_name]
+                    logger.info(f"Using existing index '{index_name}' for document '{doc_name}'")
+                else:
+                    index_name = temp_store.get_index_name_for_document(doc_name, auto_increment=True)
+                    self.document_index_map[doc_name] = index_name
+                    logger.info(f"Created new index '{index_name}' for document '{doc_name}'")
+                    self._save_document_index_map()
+                
+                # Create vectorstore with document-specific index
+                if self.vectorstore is None:
+                    # First document - create vectorstore with its index
+                    logger.info(f"[STEP 3.2.1] RAGSystem: Creating new OpenSearch vectorstore with index '{index_name}' for document '{doc_name}' ({len(valid_chunks)} chunks)...")
+                    if progress_callback:
+                        progress_callback('embedding', 0.65)
+                    
+                    self.vectorstore = VectorStoreFactory.create_vector_store(
+                        store_type=self.vector_store_type,
+                        embeddings=self.embeddings,
+                        opensearch_domain=self.opensearch_domain,
+                        opensearch_index=index_name  # Use document-specific index
+                    )
+                else:
+                    # Check if we need to switch to a different index
+                    current_index = getattr(self.vectorstore, 'index_name', None)
+                    if current_index != index_name:
+                        # Create new vectorstore instance for this document's index
+                        logger.info(f"[STEP 3.2.1] RAGSystem: Creating new OpenSearch vectorstore with index '{index_name}' for document '{doc_name}' ({len(valid_chunks)} chunks)...")
+                        doc_vectorstore = VectorStoreFactory.create_vector_store(
+                            store_type=self.vector_store_type,
+                            embeddings=self.embeddings,
+                            opensearch_domain=self.opensearch_domain,
+                            opensearch_index=index_name
+                        )
+                        doc_vectorstore.from_documents(valid_chunks)
+                        logger.info(f"Added document '{doc_name}' to index '{index_name}'")
+                        # Don't update self.vectorstore - we'll use multi_index_manager for queries
+                        return len(valid_chunks)
+                    # Same index, continue with normal flow below
+            
             if self.vectorstore is None:
                 # Validate chunks before creating vectorstore
                 if len(valid_chunks) == 0:
                     raise ValueError("Cannot create vectorstore: no valid chunks")
                 
-                # Create vector store using factory
+                # Create vector store using factory (for FAISS or OpenSearch without per-doc indexes)
                 logger.info(f"[STEP 3.2.1] RAGSystem: Creating new {self.vector_store_type.upper()} vectorstore with {len(valid_chunks)} chunks (this may take a few minutes for large documents)...")
                 if progress_callback:
                     progress_callback('embedding', 0.65)
@@ -642,15 +732,55 @@ class RAGSystem:
         self.active_sources = document_names
 
         if self.vector_store_type == "opensearch":
-            # For OpenSearch, we don't load locally; rely on filtered retrieval
-            msg = f"OpenSearch filter applied for {len(document_names)} document(s)."
-            logger.info(f"✅ {msg}")
-            return {
-                "loaded": True,
-                "docs_loaded": len(document_names),
-                "chunks_loaded": 0,
-                "message": msg
-            }
+            # For per-document indexes, verify indexes exist for selected documents
+            indexes_found = []
+            for doc_name in document_names:
+                if doc_name in self.document_index_map:
+                    index_name = self.document_index_map[doc_name]
+                    # Verify index exists
+                    from vectorstores.opensearch_store import OpenSearchVectorStore
+                    temp_store = OpenSearchVectorStore(
+                        embeddings=self.embeddings,
+                        domain=self.opensearch_domain,
+                        index_name=index_name
+                    )
+                    if temp_store.index_exists(index_name):
+                        indexes_found.append(index_name)
+                    else:
+                        logger.warning(f"Index '{index_name}' for document '{doc_name}' does not exist")
+                else:
+                    logger.warning(f"Document '{doc_name}' not found in index map")
+            
+            if indexes_found:
+                # Initialize multi-index manager
+                if not hasattr(self, 'multi_index_manager'):
+                    from vectorstores.opensearch_store import OpenSearchMultiIndexManager
+                    self.multi_index_manager = OpenSearchMultiIndexManager(
+                        embeddings=self.embeddings,
+                        domain=self.opensearch_domain
+                    )
+                
+                # Verify indexes are accessible
+                for index_name in indexes_found:
+                    self.multi_index_manager.get_or_create_index_store(index_name)
+                
+                msg = f"OpenSearch indexes ready for {len(indexes_found)} document(s): {indexes_found}"
+                logger.info(f"✅ {msg}")
+                return {
+                    "loaded": True,
+                    "docs_loaded": len(indexes_found),
+                    "chunks_loaded": 0,
+                    "message": msg
+                }
+            else:
+                msg = f"No indexes found for selected documents: {document_names}"
+                logger.error(f"❌ {msg}")
+                return {
+                    "loaded": False,
+                    "docs_loaded": 0,
+                    "chunks_loaded": 0,
+                    "message": msg
+                }
 
         # FAISS: build a fresh in-memory index containing only selected docs
         # Load the full store once to extract vectors, then rebuild subset
@@ -752,9 +882,31 @@ class RAGSystem:
                         all_sources_in_mapping.append(source)
                         if i < 3:  # Log first 3 for debugging
                             logger.info(f"Document {i} (id={doc_id}) source: '{source}'")
+                        
+                        # Try multiple matching strategies
+                        matched = False
+                        # Strategy 1: Exact match
                         if source in document_names:
+                            matched = True
+                        # Strategy 2: Case-insensitive match
+                        elif not matched:
+                            source_lower = source.lower()
+                            for doc_name in document_names:
+                                if source_lower == doc_name.lower():
+                                    matched = True
+                                    break
+                        # Strategy 3: Filename match (extract just filename from path)
+                        elif not matched:
+                            source_filename = os.path.basename(source) if source else ""
+                            for doc_name in document_names:
+                                doc_filename = os.path.basename(doc_name) if doc_name else ""
+                                if source_filename and doc_filename and source_filename.lower() == doc_filename.lower():
+                                    matched = True
+                                    break
+                        
+                        if matched:
                             docs.append(doc)
-                            logger.info(f"✅ Found matching document via mapping: {source}")
+                            logger.info(f"✅ Found matching document via mapping: '{source}' matches '{document_names}'")
                             try:
                                 # Try to reconstruct vector from index (use actual_faiss if available)
                                 index_obj = actual_faiss.index if actual_faiss and hasattr(actual_faiss, "index") else (full_vs.index if hasattr(full_vs, "index") else None)
@@ -791,9 +943,31 @@ class RAGSystem:
                                     source = doc.metadata.get("source", "")
                                     all_sources_found.append(source)
                                     logger.debug(f"Document {doc_id} has source: {source}")
+                                    
+                                    # Try multiple matching strategies
+                                    matched = False
+                                    # Strategy 1: Exact match
                                     if source in document_names:
+                                        matched = True
+                                    # Strategy 2: Case-insensitive match
+                                    elif not matched:
+                                        source_lower = source.lower()
+                                        for doc_name in document_names:
+                                            if source_lower == doc_name.lower():
+                                                matched = True
+                                                break
+                                    # Strategy 3: Filename match (extract just filename from path)
+                                    elif not matched:
+                                        source_filename = os.path.basename(source) if source else ""
+                                        for doc_name in document_names:
+                                            doc_filename = os.path.basename(doc_name) if doc_name else ""
+                                            if source_filename and doc_filename and source_filename.lower() == doc_filename.lower():
+                                                matched = True
+                                                break
+                                    
+                                    if matched:
                                         docs.append(doc)
-                                        logger.info(f"✅ Found matching document: {source}")
+                                        logger.info(f"✅ Found matching document via fallback: '{source}' matches '{document_names}'")
                             except Exception as e:
                                 logger.debug(f"Error checking document {doc_id}: {e}")
                                 continue
@@ -821,8 +995,31 @@ class RAGSystem:
                                           str(doc.metadata.get("source", "")) if hasattr(doc, "metadata") else "")
                                 if doc_key not in all_docs_set:
                                     all_docs_set.add(doc_key)
-                                    if hasattr(doc, "metadata") and doc.metadata.get("source") in document_names:
-                                        docs.append(doc)
+                                    # Try multiple matching strategies
+                                    if hasattr(doc, "metadata"):
+                                        source = doc.metadata.get("source", "")
+                                        matched = False
+                                        # Strategy 1: Exact match
+                                        if source in document_names:
+                                            matched = True
+                                        # Strategy 2: Case-insensitive match
+                                        elif not matched:
+                                            source_lower = source.lower()
+                                            for doc_name in document_names:
+                                                if source_lower == doc_name.lower():
+                                                    matched = True
+                                                    break
+                                        # Strategy 3: Filename match
+                                        elif not matched:
+                                            source_filename = os.path.basename(source) if source else ""
+                                            for doc_name in document_names:
+                                                doc_filename = os.path.basename(doc_name) if doc_name else ""
+                                                if source_filename and doc_filename and source_filename.lower() == doc_filename.lower():
+                                                    matched = True
+                                                    break
+                                        
+                                        if matched:
+                                            docs.append(doc)
                         except Exception:
                             continue
                     
@@ -836,26 +1033,59 @@ class RAGSystem:
                                           str(doc.metadata.get("source", "")) if hasattr(doc, "metadata") else "")
                                 if doc_key not in seen:
                                     seen.add(doc_key)
-                                    if hasattr(doc, "metadata") and doc.metadata.get("source") in document_names:
-                                        docs.append(doc)
+                                    # Try multiple matching strategies
+                                    if hasattr(doc, "metadata"):
+                                        source = doc.metadata.get("source", "")
+                                        matched = False
+                                        # Strategy 1: Exact match
+                                        if source in document_names:
+                                            matched = True
+                                        # Strategy 2: Case-insensitive match
+                                        elif not matched:
+                                            source_lower = source.lower()
+                                            for doc_name in document_names:
+                                                if source_lower == doc_name.lower():
+                                                    matched = True
+                                                    break
+                                        # Strategy 3: Filename match
+                                        elif not matched:
+                                            source_filename = os.path.basename(source) if source else ""
+                                            for doc_name in document_names:
+                                                doc_filename = os.path.basename(doc_name) if doc_name else ""
+                                                if source_filename and doc_filename and source_filename.lower() == doc_filename.lower():
+                                                    matched = True
+                                                    break
+                                        
+                                        if matched:
+                                            docs.append(doc)
                         except Exception:
                             pass
                 
                 if not docs:
-                    msg = f"Selected documents ({document_names}) not found in vectorstore. Available sources may differ."
-                    logger.warning(f"⚠️ {msg}")
-                    # Try to list available sources for debugging
+                    # Try to list available sources for better error message
+                    available_sources = set()
                     try:
                         debug_vs = actual_faiss if actual_faiss else full_vs
                         if hasattr(debug_vs, "docstore") and hasattr(debug_vs.docstore, "_dict"):
-                            available_sources = set()
                             for doc in debug_vs.docstore._dict.values():
                                 if hasattr(doc, "metadata") and "source" in doc.metadata:
                                     available_sources.add(doc.metadata["source"])
-                            if available_sources:
-                                logger.info(f"Available document sources in vectorstore: {list(available_sources)[:10]}")
+                        # Also check all_sources_found and all_sources_in_mapping
+                        if all_sources_found:
+                            available_sources.update(all_sources_found)
+                        if all_sources_in_mapping:
+                            available_sources.update(all_sources_in_mapping)
                     except Exception:
                         pass
+                    
+                    if available_sources:
+                        available_list = sorted(list(available_sources))[:10]
+                        msg = f"Selected documents ({document_names}) not found in vectorstore.\n\nAvailable sources: {', '.join(available_list)}{'...' if len(available_sources) > 10 else ''}\n\nTip: Make sure the document name matches exactly (including file extension)."
+                        logger.warning(f"⚠️ {msg}")
+                    else:
+                        msg = f"Selected documents ({document_names}) not found in vectorstore. Available sources may differ."
+                        logger.warning(f"⚠️ {msg}")
+                    
                     return {
                         "loaded": False,
                         "docs_loaded": 0,
@@ -962,7 +1192,7 @@ class RAGSystem:
                 "docs_loaded": 0,
                 "chunks_loaded": 0,
                 "message": msg
-            }
+        }
     
     def count_tokens(self, text: str) -> int:
         """Count tokens in text using the tokenizer."""
@@ -1020,6 +1250,44 @@ class RAGSystem:
         
         return cleaned.strip()
     
+    def _detect_and_expand_query(self, question: str) -> tuple:
+        """
+        Detect if query is a summary/overview type and expand it.
+        
+        Args:
+            question: The user's question
+            
+        Returns:
+            Tuple of (is_summary_query, expanded_query, suggested_k)
+        """
+        from config.settings import ARISConfig
+        
+        question_lower = question.lower().strip()
+        
+        # Keywords that indicate summary/overview queries
+        summary_keywords = [
+            'summary', 'summarize', 'overview', 'what is this document about',
+            'what does this document contain', 'what is in this document',
+            'tell me about', 'describe', 'explain this document',
+            'what are the main points', 'key points', 'highlights',
+            'what is the document about', 'document summary'
+        ]
+        
+        is_summary = any(keyword in question_lower for keyword in summary_keywords)
+        
+        if is_summary:
+            # Expand query to include multiple aspects
+            expanded = f"{question} Include: overview, introduction, key points, main topics, important information, highlights, main themes, primary content"
+            # Increase k for summaries (more chunks = better coverage)
+            summary_config = ARISConfig.get_summary_query_config()
+            suggested_k = max(
+                int(ARISConfig.DEFAULT_RETRIEVAL_K * summary_config['k_multiplier']),
+                summary_config['min_k']
+            )
+            return True, expanded, suggested_k
+        
+        return False, question, None
+    
     def query_with_rag(
         self,
         question: str,
@@ -1027,7 +1295,10 @@ class RAGSystem:
         use_mmr: bool = None,
         use_hybrid_search: bool = None,
         semantic_weight: float = None,
-        search_mode: str = None
+        search_mode: str = None,
+        use_agentic_rag: bool = None,
+        temperature: float = None,  # NEW: UI temperature
+        max_tokens: int = None  # NEW: UI max_tokens
     ) -> Dict:
         """
         Query the RAG system with maximum accuracy settings.
@@ -1073,64 +1344,333 @@ class RAGSystem:
         
         query_start_time = time_module.time()
         
+        # Store UI configuration for citation extraction and LLM calls
+        self.ui_config = {
+            'temperature': temperature if temperature is not None else ARISConfig.DEFAULT_TEMPERATURE,
+            'max_tokens': max_tokens if max_tokens is not None else ARISConfig.DEFAULT_MAX_TOKENS,
+            'active_sources': self.active_sources
+        }
+        
         if self.vectorstore is None:
             return {
                 "answer": "No documents have been uploaded yet. Please upload documents first.",
                 "sources": []
             }
         
-        # Prepare filter for OpenSearch (different syntax than FAISS)
-        opensearch_filter = None
-        if self.active_sources and self.vector_store_type.lower() == "opensearch":
-            # Filter out None/empty values and construct OpenSearch filter
-            valid_sources = [s for s in self.active_sources if s and s.strip()]
-            if valid_sources:
-                if len(valid_sources) == 1:
-                    # Single source: use term filter
-                    opensearch_filter = {"term": {"metadata.source.keyword": valid_sources[0]}}
-                else:
-                    # Multiple sources: use terms filter
-                    opensearch_filter = {"terms": {"metadata.source.keyword": valid_sources}}
-        
-        # Use hybrid search if enabled and OpenSearch is available
-        if use_hybrid_search and self.vector_store_type.lower() == "opensearch":
-            try:
-                from vectorstores.opensearch_store import OpenSearchVectorStore
-                
-                # Check if vectorstore is OpenSearchVectorStore (handle both direct and wrapped)
-                is_opensearch = False
-                if self.vectorstore is not None:
-                    if isinstance(self.vectorstore, OpenSearchVectorStore):
-                        is_opensearch = True
-                    elif hasattr(self.vectorstore, '__class__') and 'OpenSearch' in self.vectorstore.__class__.__name__:
-                        is_opensearch = True
-                
-                if is_opensearch:
-                    # Get query embedding
-                    query_vector = self.embeddings.embed_query(question)
-                    
-                    # Perform hybrid search
-                    relevant_docs = self.vectorstore.hybrid_search(
-                        query=question,
-                        query_vector=query_vector,
-                        k=k,
-                        semantic_weight=semantic_weight,
-                        keyword_weight=keyword_weight,
-                        filter=opensearch_filter
-                    )
-                    
-                    logger.info(f"Hybrid search completed: {len(relevant_docs)} results (mode={search_mode}, semantic_weight={semantic_weight:.2f})")
-                else:
-                    # Fallback to standard search
-                    relevant_docs = None
-            except Exception as e:
-                logger.warning(f"Hybrid search failed, falling back to semantic search: {str(e)}")
-                relevant_docs = None
+        # Log active document filter status
+        if self.active_sources:
+            logger.info(f"Document filter active: {self.active_sources} - queries will only search within these documents")
         else:
-            relevant_docs = None
+            logger.info("No document filter - queries will search across all documents")
+        
+        # NEW: Detect and expand summary queries
+        is_summary_query, expanded_question, suggested_k = self._detect_and_expand_query(question)
+        
+        # Use expanded question for retrieval (but keep original for answer generation)
+        retrieval_question = expanded_question if is_summary_query else question
+        
+        # Increase k for summary queries
+        if is_summary_query and suggested_k:
+            if k is None:
+                k = suggested_k
+            else:
+                k = max(k, suggested_k)
+            logger.info(f"Summary query detected - increasing k to {k} for better coverage")
+        
+        # Get Agentic RAG config
+        agentic_config = ARISConfig.get_agentic_rag_config()
+        summary_config = ARISConfig.get_summary_query_config()
+        
+        # For summary queries, auto-enable Agentic RAG if configured
+        if is_summary_query and use_agentic_rag is None and summary_config['auto_enable_agentic']:
+            use_agentic_rag = True
+            logger.info("Summary query detected - auto-enabling Agentic RAG for better coverage")
+        elif use_agentic_rag is None:
+            use_agentic_rag = agentic_config['use_agentic_rag']
+        
+        # Agentic RAG: Decompose query and perform multi-query retrieval
+        if use_agentic_rag:
+            try:
+                from rag.query_decomposer import QueryDecomposer
+                
+                # Initialize query decomposer
+                query_decomposer = QueryDecomposer(
+                    llm_model=self.openai_model,
+                    openai_api_key=self.openai_api_key
+                )
+                
+                # Decompose query into sub-queries (use retrieval_question for better decomposition)
+                sub_queries = query_decomposer.decompose_query(
+                    retrieval_question,  # Use expanded question for decomposition
+                    max_subqueries=agentic_config['max_sub_queries']
+                )
+                
+                logger.info(f"Agentic RAG: Decomposed query into {len(sub_queries)} sub-queries")
+                
+                # If decomposition resulted in single query, use standard flow
+                if len(sub_queries) == 1:
+                    logger.info("Agentic RAG: Single query after decomposition, using standard retrieval")
+                    use_agentic_rag = False
+                else:
+                    # Perform multi-query retrieval
+                    all_chunks = []
+                    chunks_per_subquery = agentic_config['chunks_per_subquery']
+                    
+                    for sub_query in sub_queries:
+                        try:
+                            # Retrieve chunks for this sub-query
+                            sub_chunks = self._retrieve_chunks_for_query(
+                                sub_query,
+                                k=chunks_per_subquery,
+                                use_mmr=use_mmr,
+                                use_hybrid_search=use_hybrid_search,
+                                semantic_weight=semantic_weight,
+                                keyword_weight=keyword_weight,
+                                search_mode=search_mode
+                            )
+                            all_chunks.extend(sub_chunks)
+                            logger.info(f"Retrieved {len(sub_chunks)} chunks for sub-query: {sub_query[:50]}...")
+                        except Exception as e:
+                            logger.warning(f"Failed to retrieve chunks for sub-query '{sub_query[:50]}...': {e}")
+                            continue
+                    
+                    if not all_chunks:
+                        logger.warning("Agentic RAG: No chunks retrieved from any sub-query, falling back to standard retrieval")
+                        use_agentic_rag = False
+                    else:
+                        # Deduplicate chunks
+                        unique_chunks = self._deduplicate_chunks(
+                            all_chunks,
+                            threshold=agentic_config['deduplication_threshold']
+                        )
+                        
+                        # Limit total chunks
+                        max_total_chunks = agentic_config['max_total_chunks']
+                        relevant_docs = unique_chunks[:max_total_chunks]
+                        
+                        # Re-apply active_sources filter after deduplication (strict filtering)
+                        if self.active_sources:
+                            allowed_sources = set(self.active_sources)
+                            # Also create normalized versions for case-insensitive matching
+                            allowed_sources_normalized = {s.lower().strip() if s else "" for s in allowed_sources if s}
+                            allowed_filenames = {os.path.basename(s).lower().strip() if s else "" for s in allowed_sources if s}
+                            
+                            filtered_docs = []
+                            for doc in relevant_docs:
+                                doc_source = doc.metadata.get('source', '')
+                                if not doc_source:
+                                    continue
+                                
+                                # Try multiple matching strategies
+                                matched = False
+                                # Strategy 1: Exact match
+                                if doc_source in allowed_sources:
+                                    matched = True
+                                # Strategy 2: Case-insensitive match
+                                elif doc_source.lower().strip() in allowed_sources_normalized:
+                                    matched = True
+                                # Strategy 3: Filename match
+                                elif os.path.basename(doc_source).lower().strip() in allowed_filenames:
+                                    matched = True
+                                
+                                if matched:
+                                    filtered_docs.append(doc)
+                            
+                            if filtered_docs:
+                                relevant_docs = filtered_docs
+                                logger.info(f"Agentic RAG: After filtering, {len(relevant_docs)} chunks from selected documents: {self.active_sources}")
+                            else:
+                                logger.warning(f"Agentic RAG: No chunks matched selected documents: {self.active_sources}. Available sources: {set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs])}")
+                                relevant_docs = []  # Return empty if no matches
+                        
+                        logger.info(f"Agentic RAG: Retrieved {len(all_chunks)} total chunks, {len(unique_chunks)} unique, using top {len(relevant_docs)}")
+                        
+                        # Use synthesis for answer generation
+                        return self._synthesize_agentic_results(
+                            question=question,
+                            sub_queries=sub_queries,
+                            relevant_docs=relevant_docs,
+                            query_start_time=query_start_time
+                        )
+            except Exception as e:
+                logger.warning(f"Agentic RAG failed: {e}. Falling back to standard retrieval.", exc_info=True)
+                use_agentic_rag = False
+        
+        # Standard RAG flow (or fallback from Agentic RAG)
+        # Initialize flag to track if we should skip retriever logic
+        skip_retriever_logic = False
+        retriever = None  # Initialize retriever to None
+        
+        # For OpenSearch: Use per-document indexes instead of metadata filtering
+        if self.vector_store_type == "opensearch":
+            # Determine which index(es) to search
+            indexes_to_search = []
+            
+            if self.active_sources:
+                # Search only indexes for selected documents
+                for doc_name in self.active_sources:
+                    if doc_name in self.document_index_map:
+                        indexes_to_search.append(self.document_index_map[doc_name])
+                    else:
+                        logger.warning(f"Document '{doc_name}' not found in index map. Available: {list(self.document_index_map.keys())}")
+                
+                if not indexes_to_search:
+                    return {
+                        "answer": "No indexes found for selected documents. Please reprocess the documents.",
+                        "sources": [],
+                        "citations": [],
+                        "context_chunks": []
+                    }
+            else:
+                # No filter - search all document indexes
+                indexes_to_search = list(self.document_index_map.values())
+                if not indexes_to_search:
+                    # Fallback to default index if no mappings exist (backward compatibility)
+                    indexes_to_search = [self.opensearch_index or "aris-rag-index"]
+                    logger.info(f"No document index mappings found, using default index: {indexes_to_search[0]}")
+            
+            # Initialize multi-index manager if needed
+            if not hasattr(self, 'multi_index_manager'):
+                from vectorstores.opensearch_store import OpenSearchMultiIndexManager
+                self.multi_index_manager = OpenSearchMultiIndexManager(
+                    embeddings=self.embeddings,
+                    domain=self.opensearch_domain,
+                    region=getattr(self, 'region', None)
+                )
+            
+            # Search across selected indexes
+            if len(indexes_to_search) == 1:
+                # Single index - use it directly (more efficient)
+                index_name = indexes_to_search[0]
+                store = self.multi_index_manager.get_or_create_index_store(index_name)
+                
+                # Use hybrid search if enabled
+                if use_hybrid_search:
+                    try:
+                        from vectorstores.opensearch_store import OpenSearchVectorStore
+                        query_vector = self.embeddings.embed_query(retrieval_question)
+                        relevant_docs = store.hybrid_search(
+                            query=retrieval_question,
+                            query_vector=query_vector,
+                            k=k,
+                            semantic_weight=semantic_weight,
+                            keyword_weight=keyword_weight,
+                            filter=None  # No filter needed with per-document indexes
+                        )
+                        logger.info(f"Hybrid search completed: {len(relevant_docs)} results from index '{index_name}'")
+                    except Exception as e:
+                        logger.warning(f"Hybrid search failed, falling back to standard search: {e}")
+                        # Fall through to standard search
+                        if use_mmr:
+                            from config.settings import ARISConfig
+                            fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
+                            lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
+                            retriever = store.vectorstore.as_retriever(
+                                search_type="mmr",
+                                search_kwargs={
+                                    "k": k,
+                                    "fetch_k": fetch_k,
+                                    "lambda_mult": lambda_mult
+                                }
+                            )
+                        else:
+                            retriever = store.vectorstore.as_retriever(
+                                search_kwargs={"k": k}
+                            )
+                        relevant_docs = retriever.invoke(retrieval_question)
+                else:
+                    # Standard search
+                    if use_mmr:
+                        from config.settings import ARISConfig
+                        fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
+                        lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
+                        retriever = store.vectorstore.as_retriever(
+                            search_type="mmr",
+                            search_kwargs={
+                                "k": k,
+                                "fetch_k": fetch_k,
+                                "lambda_mult": lambda_mult
+                            }
+                        )
+                    else:
+                        retriever = store.vectorstore.as_retriever(
+                            search_kwargs={"k": k}
+                        )
+                    relevant_docs = retriever.invoke(retrieval_question)
+            else:
+                # Multiple indexes - search across all
+                from config.settings import ARISConfig
+                relevant_docs = self.multi_index_manager.search_across_indexes(
+                    query=retrieval_question,
+                    index_names=indexes_to_search,
+                    k=k,
+                    use_mmr=use_mmr,
+                    fetch_k=ARISConfig.DEFAULT_MMR_FETCH_K if use_mmr else 50,
+                    lambda_mult=ARISConfig.DEFAULT_MMR_LAMBDA if use_mmr else 0.3
+                )
+            
+            logger.info(f"Searched {len(indexes_to_search)} index(es): {indexes_to_search}, found {len(relevant_docs)} results")
+            
+            # Skip metadata filtering (not needed with per-document indexes)
+            # Skip the old search logic below - we already have relevant_docs
+            # Continue with citation creation below (skip to line ~1736)
+            skip_retriever_logic = True
+        else:
+            skip_retriever_logic = False
+            # FAISS or OpenSearch without per-document indexes: Use existing filter logic
+            # Prepare filter for OpenSearch (different syntax than FAISS)
+            opensearch_filter = None
+            if self.active_sources and self.vector_store_type.lower() == "opensearch":
+                # Filter out None/empty values and construct OpenSearch filter
+                valid_sources = [s for s in self.active_sources if s and s.strip()]
+                if valid_sources:
+                    if len(valid_sources) == 1:
+                        # Single source: use term filter
+                        opensearch_filter = {"term": {"metadata.source.keyword": valid_sources[0]}}
+                    else:
+                        # Multiple sources: use terms filter
+                        opensearch_filter = {"terms": {"metadata.source.keyword": valid_sources}}
+            
+            # Use hybrid search if enabled and OpenSearch is available (for non-per-doc path)
+            if use_hybrid_search and self.vector_store_type.lower() == "opensearch":
+                try:
+                    from vectorstores.opensearch_store import OpenSearchVectorStore
+                    
+                    # Check if vectorstore is OpenSearchVectorStore (handle both direct and wrapped)
+                    is_opensearch = False
+                    if self.vectorstore is not None:
+                        if isinstance(self.vectorstore, OpenSearchVectorStore):
+                            is_opensearch = True
+                        elif hasattr(self.vectorstore, '__class__') and 'OpenSearch' in self.vectorstore.__class__.__name__:
+                            is_opensearch = True
+                    
+                    if is_opensearch:
+                        # Get query embedding (use retrieval_question for better matching)
+                        query_vector = self.embeddings.embed_query(retrieval_question)
+                        
+                        # Perform hybrid search (use retrieval_question for better matching)
+                        relevant_docs = self.vectorstore.hybrid_search(
+                            query=retrieval_question,
+                            query_vector=query_vector,
+                            k=k,
+                            semantic_weight=semantic_weight,
+                            keyword_weight=keyword_weight,
+                            filter=opensearch_filter
+                        )
+                        
+                        logger.info(f"Hybrid search completed: {len(relevant_docs)} results (mode={search_mode}, semantic_weight={semantic_weight:.2f})")
+                    else:
+                        # Fallback to standard search
+                        relevant_docs = None
+                except Exception as e:
+                    logger.warning(f"Hybrid search failed, falling back to semantic search: {str(e)}")
+                    relevant_docs = None
+            else:
+                relevant_docs = None
         
         # If hybrid search didn't work or wasn't used, use standard search
-        if relevant_docs is None:
+        # Skip if we already have relevant_docs from per-document index path
+        if relevant_docs is None and not skip_retriever_logic:
             # Retrieve relevant documents with MMR optimized for maximum accuracy
             if use_mmr:
                 # Use MMR with accuracy-optimized parameters
@@ -1139,20 +1679,25 @@ class RAGSystem:
                 lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
                 
                 # Build search_kwargs with appropriate filter
+                # For FAISS: Increase k when filtering is needed (FAISS doesn't support native filtering)
+                # We'll retrieve more and filter post-retrieval
+                effective_k = k
+                if self.active_sources and self.vector_store_type.lower() != "opensearch":
+                    # Increase k to account for post-filtering (retrieve 3-5x more to ensure we get enough after filtering)
+                    effective_k = k * 4
+                    fetch_k = max(fetch_k, effective_k * 2)  # Also increase fetch_k for MMR
+                    logger.info(f"FAISS filtering active: Increasing k from {k} to {effective_k} to account for post-filtering")
+                
                 search_kwargs = {
-                    "k": k,
+                    "k": effective_k,
                     "fetch_k": fetch_k,  # Large candidate pool for best selection
                     "lambda_mult": lambda_mult,  # Prioritize relevance (lower = more relevant)
                 }
                 
-                # Add filter only if we have valid sources and it's OpenSearch
+                # Add filter only for OpenSearch (FAISS doesn't support native filtering)
                 if opensearch_filter:
                     search_kwargs["filter"] = opensearch_filter
-                elif self.active_sources and self.vector_store_type.lower() != "opensearch":
-                    # For FAISS, use MongoDB-style filter (if supported)
-                    valid_sources = [s for s in self.active_sources if s and s.strip()]
-                    if valid_sources:
-                        search_kwargs["filter"] = {"source": {"$in": valid_sources}}
+                # Note: FAISS filtering is done post-retrieval, not via search_kwargs
                 
                 retriever = self.vectorstore.as_retriever(
                     search_type="mmr",
@@ -1160,38 +1705,133 @@ class RAGSystem:
                 )
             else:
                 # Standard similarity search
-                search_kwargs = {"k": k}
+                # For FAISS: Increase k when filtering is needed (FAISS doesn't support native filtering)
+                effective_k = k
+                if self.active_sources and self.vector_store_type.lower() != "opensearch":
+                    # Increase k to account for post-filtering (retrieve 3-5x more to ensure we get enough after filtering)
+                    effective_k = k * 4
+                    logger.info(f"FAISS filtering active: Increasing k from {k} to {effective_k} to account for post-filtering")
                 
-                # Add filter only if we have valid sources
+                search_kwargs = {"k": effective_k}
+                
+                # Add filter only for OpenSearch (FAISS doesn't support native filtering)
                 if opensearch_filter:
                     search_kwargs["filter"] = opensearch_filter
-                elif self.active_sources and self.vector_store_type.lower() != "opensearch":
-                    # For FAISS, use MongoDB-style filter (if supported)
-                    valid_sources = [s for s in self.active_sources if s and s.strip()]
-                    if valid_sources:
-                        search_kwargs["filter"] = {"source": {"$in": valid_sources}}
+                # Note: FAISS filtering is done post-retrieval, not via search_kwargs
                 
                 retriever = self.vectorstore.as_retriever(
                     search_kwargs=search_kwargs
                 )
-            
-            # Use invoke for newer LangChain versions, fallback to get_relevant_documents
+        
+        # Use invoke for newer LangChain versions, fallback to get_relevant_documents
+        # Use retrieval_question for better matching (expanded for summaries)
+        # Only use retriever if we don't already have relevant_docs (from per-doc index path)
+        if not skip_retriever_logic and retriever is not None:
             try:
-                relevant_docs = retriever.invoke(question)
+                relevant_docs = retriever.invoke(retrieval_question)
             except AttributeError:
                 # Fallback for older versions
-                relevant_docs = retriever.get_relevant_documents(question)
+                relevant_docs = retriever.get_relevant_documents(retrieval_question)
+            except Exception as e:
+                error_str = str(e)
+                # Check for dimension mismatch error
+                if 'dimension' in error_str.lower() or 'invalid dimension' in error_str.lower():
+                    logger.error(f"Embedding dimension mismatch error: {error_str}")
+                    return {
+                        "answer": (
+                            f"❌ **Embedding Model Mismatch Error**\n\n"
+                            f"The OpenSearch index was created with a different embedding model than the one currently configured.\n\n"
+                            f"**Error:** {error_str}\n\n"
+                            f"**Solution:**\n"
+                            f"1. Check which embedding model was used to create the index (likely 'text-embedding-3-small' with 1536 dimensions)\n"
+                            f"2. Set `EMBEDDING_MODEL=text-embedding-3-small` in your .env file, OR\n"
+                            f"3. Recreate the index by re-uploading all documents with the current embedding model\n\n"
+                            f"**Current embedding model:** {self.embedding_model}\n"
+                            f"**Expected:** The model used when the index was created"
+                        ),
+                        "sources": [],
+                        "citations": [],
+                        "context_chunks": []
+                    }
+                raise
 
-        # If UI selected specific documents, filter results to those sources
-        if self.active_sources:
+        # If UI selected specific documents, filter results to those sources (strict filtering with robust matching)
+        # Skip this for OpenSearch with per-document indexes (already isolated by index)
+        if self.active_sources and not (self.vector_store_type == "opensearch" and self.document_index_map):
             allowed_sources = set(self.active_sources)
-            filtered_docs = [doc for doc in relevant_docs if doc.metadata.get('source') in allowed_sources]
+            # Also create normalized versions for case-insensitive matching
+            allowed_sources_normalized = {s.lower().strip() if s else "" for s in allowed_sources if s}
+            allowed_filenames = {os.path.basename(s).lower().strip() if s else "" for s in allowed_sources if s}
+            
+            def matches_source(doc_source, doc_text=""):
+                """Check if document source matches any allowed source using multiple strategies"""
+                if not doc_source:
+                    # If no metadata source, try extracting from text markers
+                    if doc_text:
+                        # Look for source markers in text (e.g., "Source: filename.pdf")
+                        import re
+                        source_patterns = [
+                            r"Source:\s*([^\n]+)",
+                            r"Document:\s*([^\n]+)",
+                            r"File:\s*([^\n]+)",
+                        ]
+                        for pattern in source_patterns:
+                            match = re.search(pattern, doc_text, re.IGNORECASE)
+                            if match:
+                                extracted_source = match.group(1).strip()
+                                # Check if extracted source matches
+                                if extracted_source in allowed_sources or \
+                                   extracted_source.lower().strip() in allowed_sources_normalized or \
+                                   os.path.basename(extracted_source).lower().strip() in allowed_filenames:
+                                    return True
+                    return False
+                # Strategy 1: Exact match
+                if doc_source in allowed_sources:
+                    return True
+                # Strategy 2: Case-insensitive match
+                if doc_source.lower().strip() in allowed_sources_normalized:
+                    return True
+                # Strategy 3: Filename match
+                doc_filename = os.path.basename(doc_source).lower().strip()
+                if doc_filename in allowed_filenames:
+                    return True
+                # Strategy 4: Check if any allowed source is contained in doc_source (for path variations)
+                for allowed in allowed_sources:
+                    if allowed and allowed.lower() in doc_source.lower():
+                        return True
+                return False
+            
+            # Filter with strict matching
+            filtered_docs = [
+                doc for doc in relevant_docs 
+                if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
+            ]
+            
+            # Validate: Ensure NO documents from other sources slipped through
+            invalid_sources = set()
+            for doc in filtered_docs:
+                doc_source = doc.metadata.get('source', '')
+                if doc_source and not matches_source(doc_source):
+                    invalid_sources.add(doc_source)
+            
+            if invalid_sources:
+                logger.warning(f"Document mixing detected! Found invalid sources in filtered results: {invalid_sources}")
+                # Remove invalid sources
+                filtered_docs = [
+                    doc for doc in filtered_docs 
+                    if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
+                ]
 
             # If none found, retry with a broader pull and then filter
             if not filtered_docs:
                 try:
-                    alt_docs = self.vectorstore.similarity_search(question, k=max(k * 4, 20))
-                    filtered_docs = [doc for doc in alt_docs if doc.metadata.get('source') in allowed_sources]
+                    # Use effective_k if available (from FAISS filtering), otherwise use k * 4
+                    retry_k = effective_k if 'effective_k' in locals() else k * 4
+                    alt_docs = self.vectorstore.similarity_search(retrieval_question, k=max(retry_k, 20))
+                    filtered_docs = [
+                        doc for doc in alt_docs 
+                        if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
+                    ]
                 except Exception:
                     filtered_docs = []
 
@@ -1205,8 +1845,29 @@ class RAGSystem:
                     "citations": [],
                     "context_chunks": []
                 }
-
-            relevant_docs = filtered_docs
+            
+            # Final validation: Log document isolation status
+            # For OpenSearch: Validate that native filtering worked correctly (safety check)
+            # For FAISS: This is the primary filtering mechanism
+            final_sources = set(doc.metadata.get('source', 'Unknown') for doc in filtered_docs[:k])
+            logger.info(f"Document filtering: Retrieved {len(filtered_docs)} docs, limiting to {k}. Final sources: {final_sources}")
+            
+            # Validate document isolation (should be empty for both OpenSearch and FAISS)
+            invalid_final_sources = final_sources - allowed_sources
+            if invalid_final_sources:
+                logger.error(f"CRITICAL: Document mixing detected! Allowed: {allowed_sources}, Found: {final_sources}, Invalid: {invalid_final_sources}")
+                # For OpenSearch, this shouldn't happen if filtering is working correctly
+                if self.vector_store_type.lower() == "opensearch":
+                    logger.error(f"OpenSearch native filtering may have failed! Filter was: {opensearch_filter}")
+                # Remove invalid sources as a safety measure
+                filtered_docs = [
+                    doc for doc in filtered_docs 
+                    if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
+                ]
+                final_sources = set(doc.metadata.get('source', 'Unknown') for doc in filtered_docs[:k])
+                logger.info(f"After removing invalid sources: {len(filtered_docs)} docs, Final sources: {final_sources}")
+            
+            relevant_docs = filtered_docs[:k]  # Limit to requested k after filtering
         
         # Build context with metadata for better accuracy and collect citations
         context_parts = []
@@ -1215,24 +1876,32 @@ class RAGSystem:
         for i, doc in enumerate(relevant_docs, 1):
             import re
             
-            # Extract citation metadata
-            source = doc.metadata.get('source', 'Unknown')
+            # Extract citation metadata - use helper method for consistent extraction
             chunk_text = doc.page_content
             
-            # Try multiple ways to get page number
-            page = doc.metadata.get('source_page', doc.metadata.get('page', None))
+            # Validate document has metadata before extraction
+            if not hasattr(doc, 'metadata') or not doc.metadata:
+                logger.warning(f"Document at index {i} missing metadata during citation creation (standard RAG)")
+                doc.metadata = {}
             
-            # If page not in metadata, try to extract from text markers
-            if page is None:
-                # Look for "--- Page X ---" markers in chunk text
-                page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
-                if page_match:
-                    page = int(page_match.group(1))
-                else:
-                    # Try other patterns
-                    page_match = re.search(r'Page\s+(\d+)', chunk_text, re.IGNORECASE)
-                    if page_match:
-                        page = int(page_match.group(1))
+            # Build UI config from current state
+            ui_config = getattr(self, 'ui_config', {
+                'temperature': ARISConfig.DEFAULT_TEMPERATURE,
+                'max_tokens': ARISConfig.DEFAULT_MAX_TOKENS,
+                'active_sources': self.active_sources
+            })
+            
+            # Extract source with confidence score
+            # Get sources list if available (from relevant_docs metadata)
+            available_sources = list(set([d.metadata.get('source', 'Unknown') for d in relevant_docs if hasattr(d, 'metadata') and d.metadata.get('source')]))
+            source, source_confidence = self._extract_source_from_chunk(doc, chunk_text, available_sources if available_sources else None, ui_config=ui_config)
+            
+            # Validate source was extracted successfully
+            if not source or source == 'Unknown':
+                logger.warning(f"Could not extract valid source for citation {i} (standard RAG). Chunk preview: {chunk_text[:100]}...")
+            
+            # Extract page number with confidence score
+            page, page_confidence = self._extract_page_number(doc, chunk_text)
             
             start_char = doc.metadata.get('start_char', None)
             end_char = doc.metadata.get('end_char', None)
@@ -1266,12 +1935,8 @@ class RAGSystem:
                     }
                     image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference"
             
-            # Create snippet - show more context (up to 500 chars for better display)
-            snippet = chunk_text[:500] + "..." if len(chunk_text) > 500 else chunk_text
-            # Clean snippet - remove page markers for cleaner display
-            snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', snippet).strip()
-            if not snippet_clean:
-                snippet_clean = snippet  # Fallback to original if cleaning removes everything
+            # Generate context-aware snippet using query
+            snippet_clean = self._generate_context_snippet(chunk_text, question, max_length=500)
             
             # Build source location description (certification field)
             source_location_parts = []
@@ -1284,11 +1949,25 @@ class RAGSystem:
             
             source_location = " | ".join(source_location_parts) if source_location_parts else "Text content"
             
-            # Build citation entry with enhanced metadata
+            # Extract section/heading information from page_blocks if available
+            section = None
+            if page_blocks:
+                for block in page_blocks:
+                    if isinstance(block, dict) and block.get('type') == 'heading':
+                        section = block.get('text', '')
+                        break
+            
+            # Determine extraction method based on confidence scores
+            extraction_method = 'metadata' if source_confidence >= 0.7 else ('text_marker' if source_confidence >= 0.3 else 'fallback')
+            
+            # Build citation entry with enhanced metadata including confidence scores
             citation = {
                 'id': i,
-                'source': source,
+                'source': source if source and source != 'Unknown' else 'Unknown',
+                'source_confidence': source_confidence,
                 'page': page,
+                'page_confidence': page_confidence,
+                'section': section,
                 'snippet': snippet_clean,
                 'full_text': chunk_text,
                 'start_char': start_char,
@@ -1297,9 +1976,11 @@ class RAGSystem:
                 'image_ref': image_ref,  # Image reference if available
                 'image_info': image_info,  # Human-readable image info
                 'source_location': source_location,  # Certification field: exact location
-                'content_type': 'image' if image_ref else 'text'  # Type of content
+                'content_type': 'image' if image_ref else 'text',  # Type of content
+                'extraction_method': extraction_method  # How source was extracted
             }
             citations.append(citation)
+            logger.debug(f"Citation {i}: source='{source}', page={page}, chunk_index={citation.get('chunk_index', 'N/A')}")
             
             # Add source and page info to context
             page_info = f" (Page {page})" if page else ""
@@ -1318,6 +1999,11 @@ class RAGSystem:
         
         response_time = time_module.time() - query_start_time
         total_tokens = context_tokens + response_tokens
+        
+        # Deduplicate and rank citations
+        if citations:
+            citations = self._deduplicate_citations(citations)
+            citations = self._rank_citations_by_relevance(citations, question)
         
         # Record query metrics
         if self.metrics_collector:
@@ -1359,20 +2045,58 @@ class RAGSystem:
         from config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
-        # Improved prompt for accuracy - prevents hallucinations and repetitive text
-        system_prompt = """You are a precise technical assistant that provides accurate, detailed answers based strictly on the provided context. 
+        # Detect if this is a summary query
+        question_lower = question.lower()
+        is_summary_query = any(kw in question_lower for kw in 
+                              ['summary', 'summarize', 'overview', 'what is this document about',
+                               'what does this document contain', 'what is in this document',
+                               'tell me about', 'describe', 'explain this document'])
+        
+        if is_summary_query:
+            # Use synthesis-friendly prompt for summaries
+            system_prompt = """You are a document summarization assistant. Your task is to synthesize information from the provided context to create a comprehensive summary.
 
 CRITICAL RULES:
-- Answer ONLY using information from the provided context
+- Synthesize information from ALL provided context chunks to create a coherent summary
+- Create a summary even if chunks are from different sections of the document
+- Include key points, main topics, and important information from the context
+- Organize information logically (overview, main points, important details)
+- DO NOT say "context does not contain" - instead, synthesize what IS available
+- Focus on main themes, important details, and key information
+- DO NOT add greetings, signatures, or closing statements
+- End your answer when you have provided the summary"""
+            
+            user_prompt = f"""Context from documents:
+{context}
+
+Question: {question}
+
+Instructions:
+1. Read ALL context chunks carefully
+2. Synthesize information from multiple chunks to create a comprehensive summary
+3. Include: overview, key points, main topics, important information
+4. Organize the summary logically
+5. Use information from the context - do not say it's not available
+6. DO NOT add greetings or closing statements
+
+Summary:"""
+        else:
+            # Synthesis-friendly prompt for all queries - encourages working with available information
+            system_prompt = """You are a precise technical assistant that provides accurate, detailed answers by synthesizing information from the provided context. 
+
+CRITICAL RULES:
+- Synthesize information from ALL provided context chunks to answer the question
+- Work with the information that IS available in the context
+- If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
+- DO NOT say "context does not contain" unless you have thoroughly analyzed ALL chunks and found absolutely no relevant information
+- Be specific and cite exact values, measurements, and specifications when available
+- Include relevant details like dimensions, materials, standards, and procedures
+- Maintain technical accuracy and precision
+- If multiple sources provide information, synthesize them clearly
 - DO NOT add greetings, signatures, or closing statements
 - DO NOT repeat phrases or sentences
 - DO NOT include "Best regards", "Thank you", or similar endings
 - DO NOT make up information not in the context
-- Be specific and cite exact values, measurements, and specifications when available
-- If information is not in the context, explicitly state "The provided context does not contain this information"
-- Include relevant details like dimensions, materials, standards, and procedures
-- Maintain technical accuracy and precision
-- If multiple sources provide information, synthesize them clearly
 - End your answer when you have provided the information - do not add unnecessary text"""
         
         user_prompt = f"""Context from documents:
@@ -1381,11 +2105,11 @@ CRITICAL RULES:
 Question: {question}
 
 Instructions:
-1. Read the context carefully
-2. Identify the most relevant information for the question
-3. Provide a comprehensive, accurate answer using ONLY information from the context
+1. Read ALL context chunks carefully
+2. Synthesize information from the context to answer the question
+3. If the context contains relevant information, use it to provide a comprehensive answer
 4. Include specific details, numbers, and specifications when available
-5. If the answer is not in the context, state so clearly
+5. Only say information is not available if you have thoroughly checked ALL chunks and found nothing relevant
 6. DO NOT add greetings, signatures, or closing statements
 7. DO NOT repeat information or phrases
 8. Stop immediately after providing the answer
@@ -1393,14 +2117,18 @@ Instructions:
 Answer:"""
         
         try:
+            # Get temperature and max_tokens from UI config or defaults
+            ui_temp = getattr(self, 'ui_config', {}).get('temperature', ARISConfig.DEFAULT_TEMPERATURE)
+            ui_max_tokens = getattr(self, 'ui_config', {}).get('max_tokens', ARISConfig.DEFAULT_MAX_TOKENS)
+            
             response = client.chat.completions.create(
                 model=self.openai_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=ARISConfig.DEFAULT_TEMPERATURE,  # Maximum determinism (0.0 = most accurate)
-                max_tokens=ARISConfig.DEFAULT_MAX_TOKENS,  # More tokens for comprehensive answers
+                temperature=ui_temp,  # Use UI config
+                max_tokens=ui_max_tokens,  # Use UI config
                 stop=["Best regards", "Thank you", "Please let me know", "If you have any other questions"]  # Stop at common endings
             )
             # Check if response has choices
@@ -1440,8 +2168,8 @@ Answer:"""
     def _query_cerebras(self, question: str, context: str, relevant_docs: List = None) -> tuple:
         """Query Cerebras API with maximum accuracy settings"""
         from config.settings import ARISConfig
-        # Improved prompt for Cerebras
-        prompt = f"""You are a precise technical assistant. Answer the question using ONLY information from the provided context. Be specific and accurate.
+        # Synthesis-friendly prompt for Cerebras
+        prompt = f"""You are a precise technical assistant. Synthesize information from the provided context to answer the question. Be specific and accurate.
 
 CRITICAL: DO NOT add greetings, signatures, or closing statements. DO NOT repeat phrases. End your answer when you have provided the information.
 
@@ -1451,9 +2179,11 @@ Context:
 Question: {question}
 
 Instructions:
-- Use ONLY information from the context above
+- Synthesize information from ALL context chunks to answer the question
+- Work with the information that IS available in the context
+- If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
+- Only say information is not available if you have thoroughly checked ALL chunks and found nothing relevant
 - Be specific with numbers, measurements, and technical details
-- If information is not in the context, state "The context does not contain this information"
 - Provide comprehensive and accurate answers
 - DO NOT add "Best regards", "Thank you", or similar endings
 - Stop immediately after providing the answer
@@ -1467,11 +2197,15 @@ Answer:"""
         
         # Use selected Cerebras model
         try:
+            # Get temperature and max_tokens from UI config or defaults
+            ui_temp = getattr(self, 'ui_config', {}).get('temperature', ARISConfig.DEFAULT_TEMPERATURE)
+            ui_max_tokens = getattr(self, 'ui_config', {}).get('max_tokens', ARISConfig.DEFAULT_MAX_TOKENS)
+            
             data = {
                 "model": self.cerebras_model,
                 "prompt": prompt,
-                "max_tokens": ARISConfig.DEFAULT_MAX_TOKENS,
-                "temperature": ARISConfig.DEFAULT_TEMPERATURE
+                "max_tokens": ui_max_tokens,  # Use UI config
+                "temperature": ui_temp  # Use UI config
             }
             
             response = requests.post(
@@ -1505,6 +2239,1104 @@ Answer:"""
         except Exception as e:
             error_msg = f"Error: Could not get response from Cerebras API: {str(e)}"
             return error_msg, self.count_tokens(error_msg)
+    
+    def _retrieve_chunks_for_query(
+        self,
+        query: str,
+        k: int,
+        use_mmr: bool,
+        use_hybrid_search: bool,
+        semantic_weight: float,
+        keyword_weight: float,
+        search_mode: str
+    ) -> List:
+        """
+        Retrieve chunks for a single query (used by Agentic RAG for multi-query retrieval).
+        
+        Args:
+            query: The query to retrieve chunks for
+            k: Number of chunks to retrieve
+            use_mmr: Use Maximum Marginal Relevance
+            use_hybrid_search: Use hybrid search
+            semantic_weight: Weight for semantic search
+            keyword_weight: Weight for keyword search
+            search_mode: Search mode
+        
+        Returns:
+            List of Document objects
+        """
+        # For OpenSearch: Use per-document indexes instead of metadata filtering
+        if self.vector_store_type == "opensearch":
+            # Determine which index(es) to search
+            indexes_to_search = []
+            
+            if self.active_sources:
+                # Search only indexes for selected documents
+                for doc_name in self.active_sources:
+                    if doc_name in self.document_index_map:
+                        indexes_to_search.append(self.document_index_map[doc_name])
+                    else:
+                        logger.warning(f"Agentic RAG - Document '{doc_name}' not found in index map. Available: {list(self.document_index_map.keys())}")
+                
+                if not indexes_to_search:
+                    logger.warning(f"Agentic RAG - No indexes found for selected documents")
+                    return []
+            else:
+                # No filter - search all document indexes
+                indexes_to_search = list(self.document_index_map.values())
+                if not indexes_to_search:
+                    # Fallback to default index if no mappings exist (backward compatibility)
+                    indexes_to_search = [self.opensearch_index or "aris-rag-index"]
+            
+            # Initialize multi-index manager if needed
+            if not hasattr(self, 'multi_index_manager'):
+                from vectorstores.opensearch_store import OpenSearchMultiIndexManager
+                self.multi_index_manager = OpenSearchMultiIndexManager(
+                    embeddings=self.embeddings,
+                    domain=self.opensearch_domain,
+                    region=getattr(self, 'region', None)
+                )
+            
+            # Search across selected indexes
+            if len(indexes_to_search) == 1:
+                # Single index - use it directly
+                index_name = indexes_to_search[0]
+                store = self.multi_index_manager.get_or_create_index_store(index_name)
+                
+                # Use hybrid search if enabled
+                if use_hybrid_search:
+                    try:
+                        query_vector = self.embeddings.embed_query(query)
+                        relevant_docs = store.hybrid_search(
+                            query=query,
+                            query_vector=query_vector,
+                            k=k,
+                            semantic_weight=semantic_weight,
+                            keyword_weight=keyword_weight,
+                            filter=None  # No filter needed with per-document indexes
+                        )
+                        return relevant_docs
+                    except Exception as e:
+                        logger.warning(f"Agentic RAG - Hybrid search failed for sub-query, falling back: {e}")
+                
+                # Standard search
+                if use_mmr:
+                    from config.settings import ARISConfig
+                    fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
+                    lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
+                    retriever = store.vectorstore.as_retriever(
+                        search_type="mmr",
+                        search_kwargs={
+                            "k": k,
+                            "fetch_k": fetch_k,
+                            "lambda_mult": lambda_mult
+                        }
+                    )
+                else:
+                    retriever = store.vectorstore.as_retriever(
+                        search_kwargs={"k": k}
+                    )
+                relevant_docs = retriever.invoke(query)
+                return relevant_docs
+            else:
+                # Multiple indexes - search across all
+                from config.settings import ARISConfig
+                relevant_docs = self.multi_index_manager.search_across_indexes(
+                    query=query,
+                    index_names=indexes_to_search,
+                    k=k,
+                    use_mmr=use_mmr,
+                    fetch_k=ARISConfig.DEFAULT_MMR_FETCH_K if use_mmr else 50,
+                    lambda_mult=ARISConfig.DEFAULT_MMR_LAMBDA if use_mmr else 0.3
+                )
+                return relevant_docs
+        
+        # FAISS: Use existing filter logic
+        # Prepare filter for OpenSearch (different syntax than FAISS) - not needed for FAISS
+        opensearch_filter = None
+        
+        # Use hybrid search if enabled and OpenSearch is available (for non-per-doc path)
+        if use_hybrid_search and self.vector_store_type.lower() == "opensearch":
+            try:
+                from vectorstores.opensearch_store import OpenSearchVectorStore
+                
+                is_opensearch = False
+                if self.vectorstore is not None:
+                    if isinstance(self.vectorstore, OpenSearchVectorStore):
+                        is_opensearch = True
+                    elif hasattr(self.vectorstore, '__class__') and 'OpenSearch' in self.vectorstore.__class__.__name__:
+                        is_opensearch = True
+                
+                if is_opensearch:
+                    query_vector = self.embeddings.embed_query(query)
+                    relevant_docs = self.vectorstore.hybrid_search(
+                        query=query,
+                        query_vector=query_vector,
+                        k=k,
+                        semantic_weight=semantic_weight,
+                        keyword_weight=keyword_weight,
+                        filter=opensearch_filter
+                    )
+                    return relevant_docs
+            except Exception as e:
+                logger.warning(f"Hybrid search failed for sub-query, falling back: {e}")
+        
+        # Standard retrieval
+        # For FAISS: Increase k when filtering is needed (FAISS doesn't support native filtering)
+        effective_k = k
+        if self.active_sources and self.vector_store_type.lower() != "opensearch":
+            # Increase k to account for post-filtering (retrieve 3-5x more to ensure we get enough after filtering)
+            effective_k = k * 4
+            logger.info(f"Agentic RAG - FAISS filtering active: Increasing k from {k} to {effective_k} to account for post-filtering")
+        
+        if use_mmr:
+            from config.settings import ARISConfig
+            fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
+            lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
+            
+            # Adjust fetch_k for FAISS filtering
+            if self.active_sources and self.vector_store_type.lower() != "opensearch":
+                fetch_k = max(fetch_k, effective_k * 2)
+            
+            search_kwargs = {
+                "k": effective_k,
+                "fetch_k": fetch_k,
+                "lambda_mult": lambda_mult,
+            }
+            
+            # Add filter only for OpenSearch (FAISS doesn't support native filtering)
+            if opensearch_filter:
+                search_kwargs["filter"] = opensearch_filter
+            # Note: FAISS filtering is done post-retrieval, not via search_kwargs
+            
+            retriever = self.vectorstore.as_retriever(
+                search_type="mmr",
+                search_kwargs=search_kwargs
+            )
+        else:
+            search_kwargs = {"k": effective_k}
+            
+            # Add filter only for OpenSearch (FAISS doesn't support native filtering)
+            if opensearch_filter:
+                search_kwargs["filter"] = opensearch_filter
+            # Note: FAISS filtering is done post-retrieval, not via search_kwargs
+            
+            retriever = self.vectorstore.as_retriever(
+                search_kwargs=search_kwargs
+            )
+        
+        try:
+            relevant_docs = retriever.invoke(query)
+        except AttributeError:
+            relevant_docs = retriever.get_relevant_documents(query)
+        
+        # Filter by active sources if set (strict filtering with robust matching)
+        # Skip this for OpenSearch with per-document indexes (already isolated by index)
+        if self.active_sources and not (self.vector_store_type == "opensearch" and self.document_index_map):
+            allowed_sources = set(self.active_sources)
+            # Also create normalized versions for case-insensitive matching
+            allowed_sources_normalized = {s.lower().strip() if s else "" for s in allowed_sources if s}
+            allowed_filenames = {os.path.basename(s).lower().strip() if s else "" for s in allowed_sources if s}
+            
+            def matches_source(doc_source, doc_text=""):
+                """Check if document source matches any allowed source using multiple strategies"""
+                if not doc_source:
+                    # If no metadata source, try extracting from text markers
+                    if doc_text:
+                        # Look for source markers in text (e.g., "Source: filename.pdf")
+                        import re
+                        source_patterns = [
+                            r"Source:\s*([^\n]+)",
+                            r"Document:\s*([^\n]+)",
+                            r"File:\s*([^\n]+)",
+                        ]
+                        for pattern in source_patterns:
+                            match = re.search(pattern, doc_text, re.IGNORECASE)
+                            if match:
+                                extracted_source = match.group(1).strip()
+                                # Check if extracted source matches
+                                if extracted_source in allowed_sources or \
+                                   extracted_source.lower().strip() in allowed_sources_normalized or \
+                                   os.path.basename(extracted_source).lower().strip() in allowed_filenames:
+                                    return True
+                    return False
+                # Strategy 1: Exact match
+                if doc_source in allowed_sources:
+                    return True
+                # Strategy 2: Case-insensitive match
+                if doc_source.lower().strip() in allowed_sources_normalized:
+                    return True
+                # Strategy 3: Filename match
+                doc_filename = os.path.basename(doc_source).lower().strip()
+                if doc_filename in allowed_filenames:
+                    return True
+                # Strategy 4: Check if any allowed source is contained in doc_source (for path variations)
+                for allowed in allowed_sources:
+                    if allowed and allowed.lower() in doc_source.lower():
+                        return True
+                return False
+            
+            # Filter with strict matching
+            filtered_docs = [
+                doc for doc in relevant_docs 
+                if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
+            ]
+            
+            # Validate: Ensure NO documents from other sources slipped through
+            invalid_sources = set()
+            for doc in filtered_docs:
+                doc_source = doc.metadata.get('source', '')
+                if doc_source and not matches_source(doc_source):
+                    invalid_sources.add(doc_source)
+            
+            if invalid_sources:
+                logger.warning(f"Agentic RAG - Document mixing detected! Found invalid sources in filtered results: {invalid_sources}")
+                # Remove invalid sources
+                filtered_docs = [
+                    doc for doc in filtered_docs 
+                    if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
+                ]
+            
+            if filtered_docs:
+                # Final validation: Log document isolation status
+                final_sources = set(doc.metadata.get('source', 'Unknown') for doc in filtered_docs)
+                logger.info(f"Agentic RAG - Filtered to {len(filtered_docs)} chunks from selected documents: {self.active_sources}. Final sources: {final_sources}")
+                if final_sources - allowed_sources:
+                    logger.error(f"Agentic RAG - CRITICAL: Document mixing detected! Allowed: {allowed_sources}, Found: {final_sources}")
+                return filtered_docs
+            else:
+                logger.warning(f"No chunks matched selected documents: {self.active_sources}. Available sources in results: {set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs])}")
+                return []  # Return empty if no matches
+        
+        return relevant_docs
+    
+    def _extract_source_from_chunk(self, doc, chunk_text: str, fallback_sources: List[str] = None, ui_config: Optional[Dict] = None) -> tuple:
+        """
+        Extract source document name from chunk metadata or text with confidence scoring.
+        Ensures accurate citation by preserving source through the entire pipeline.
+        
+        Args:
+            doc: Document object with metadata
+            chunk_text: Chunk text content
+            fallback_sources: List of source names as fallback
+            ui_config: Optional UI configuration (temperature, max_tokens, active_sources)
+        
+        Returns:
+            Tuple of (source_name, confidence_score)
+            confidence: 1.0 (metadata) > 0.7 (alt_metadata) > 0.5 (text_marker) > 0.3 (document_index) > 0.1 (fallback)
+        """
+        import re
+        import os
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        # Use UI config if provided, otherwise use instance config
+        if ui_config is None:
+            ui_config = getattr(self, 'ui_config', {})
+        
+        # Log UI configuration for debugging
+        if ui_config:
+            logger.debug(f"Citation extraction using UI config: temperature={ui_config.get('temperature')}, max_tokens={ui_config.get('max_tokens')}")
+        
+        def normalize_source(source_str: str) -> str:
+            """Normalize source path to filename and validate."""
+            if not source_str:
+                return source_str
+            source_str = str(source_str).strip()
+            # Extract filename from path if it's a path
+            if os.sep in source_str or '/' in source_str or '\\' in source_str:
+                source_str = os.path.basename(source_str)
+            return source_str
+        
+        def validate_against_document_index(source_str: str) -> bool:
+            """Check if source exists in document_index for validation."""
+            if not hasattr(self, 'document_index') or not self.document_index:
+                return False
+            # Check if source (or normalized version) exists in document_index
+            normalized = normalize_source(source_str)
+            for doc_id in self.document_index.keys():
+                if normalize_source(doc_id) == normalized or doc_id == source_str:
+                    return True
+            return False
+        
+        # First try metadata - this is the most reliable source (confidence: 1.0)
+        source = doc.metadata.get('source', None)
+        if source:
+            source = normalize_source(source)
+            if source and source != 'Unknown' and source != '':
+                # Validate against document_index if available
+                if validate_against_document_index(source):
+                    logger.debug(f"Source extracted from metadata (validated): {source}")
+                return source, 1.0
+        
+        # Try alternative metadata keys (for compatibility) (confidence: 0.7)
+        alt_keys = ['document_name', 'file_name', 'filename', 'doc_name']
+        for key in alt_keys:
+            source = doc.metadata.get(key, None)
+            if source:
+                source = normalize_source(source)
+                if source and source != 'Unknown' and source != '':
+                    if validate_against_document_index(source):
+                        logger.debug(f"Found source in alternate metadata key '{key}' (validated): {source}")
+                    else:
+                        logger.debug(f"Found source in alternate metadata key '{key}': {source}")
+                    return source, 0.7
+        
+        # Try to extract from chunk text markers (less reliable but useful fallback) (confidence: 0.5)
+        source_match = re.search(r'\[Source\s+\d+:\s*([^\]]+?)(?:\s*\(Page\s+\d+\))?\]', chunk_text)
+        if source_match:
+            source = source_match.group(1).strip()
+            source = re.sub(r'\s*\(Page\s+\d+\)', '', source)
+            source = normalize_source(source)
+            if source and source != 'Unknown':
+                if validate_against_document_index(source):
+                    logger.debug(f"Extracted source from chunk text marker (validated): {source}")
+                else:
+                    logger.debug(f"Extracted source from chunk text marker: {source}")
+                return source, 0.5
+        
+        # Try document_index lookup using chunk_index (confidence: 0.3)
+        if hasattr(self, 'document_index') and self.document_index and doc.metadata.get('chunk_index') is not None:
+            chunk_index = doc.metadata.get('chunk_index')
+            for doc_id, chunk_indices in self.document_index.items():
+                if chunk_index in chunk_indices:
+                    source = normalize_source(doc_id)
+                    if source and source != 'Unknown':
+                        logger.info(f"Recovered source from document_index: {source}")
+                        return source, 0.3
+        
+        # Fallback to provided sources list (last resort) (confidence: 0.1)
+        if fallback_sources:
+            for fallback_source in fallback_sources:
+                if fallback_source and str(fallback_source).strip() and str(fallback_source).strip() != 'Unknown':
+                    source = normalize_source(str(fallback_source).strip())
+                    if source and source != 'Unknown':
+                        logger.debug(f"Using fallback source: {source}")
+                        return source, 0.1
+        
+        # Log warning if we couldn't find a source
+        logger.warning(f"Could not extract source from chunk. Metadata keys: {list(doc.metadata.keys()) if hasattr(doc, 'metadata') else 'N/A'}")
+        return 'Unknown', 0.0
+    
+    def _extract_page_number(self, doc, chunk_text: str) -> tuple:
+        """
+        Extract and validate page number from multiple sources.
+        
+        Args:
+            doc: Document object with metadata
+            chunk_text: Chunk text content
+        
+        Returns:
+            Tuple of (page_number, confidence_score)
+            confidence: 1.0 (source_page metadata) > 0.8 (page metadata) > 0.6 (text marker --- Page X ---) > 0.4 (text marker Page X)
+            Returns (None, 0.0) if page is invalid or not found
+        """
+        import re
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        # Validate page number is within reasonable range
+        def validate_page(page_num) -> bool:
+            """Validate page number is within reasonable range (1-10000)."""
+            try:
+                page_int = int(page_num)
+                return 1 <= page_int <= 10000
+            except (ValueError, TypeError):
+                return False
+        
+        # Try source_page metadata first (highest confidence: 1.0)
+        page = doc.metadata.get('source_page', None)
+        if page is not None:
+            if validate_page(page):
+                logger.debug(f"Page extracted from source_page metadata: {page}")
+                return int(page), 1.0
+            else:
+                logger.warning(f"Invalid page number in source_page metadata: {page}")
+        
+        # Try page metadata (confidence: 0.8)
+        page = doc.metadata.get('page', None)
+        if page is not None:
+            if validate_page(page):
+                logger.debug(f"Page extracted from page metadata: {page}")
+                return int(page), 0.8
+            else:
+                logger.warning(f"Invalid page number in page metadata: {page}")
+        
+        # Extract from text markers: "--- Page X ---" (confidence: 0.6)
+        page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+        if page_match:
+            page_num = int(page_match.group(1))
+            if validate_page(page_num):
+                logger.debug(f"Page extracted from text marker (--- Page X ---): {page_num}")
+                return page_num, 0.6
+        
+        # Extract from text markers: "Page X" (confidence: 0.4)
+        page_match = re.search(r'Page\s+(\d+)', chunk_text, re.IGNORECASE)
+        if page_match:
+            page_num = int(page_match.group(1))
+            if validate_page(page_num):
+                logger.debug(f"Page extracted from text marker (Page X): {page_num}")
+                return page_num, 0.4
+        
+        # Try page range patterns: "Page 5-7" or "Pages 10-12" (take first page, confidence: 0.4)
+        page_range_match = re.search(r'Pages?\s+(\d+)[-\s]+(\d+)', chunk_text, re.IGNORECASE)
+        if page_range_match:
+            page_num = int(page_range_match.group(1))
+            if validate_page(page_num):
+                logger.debug(f"Page extracted from page range (first page): {page_num}")
+                return page_num, 0.4
+        
+        # No valid page found
+        return None, 0.0
+    
+    def _generate_context_snippet(self, chunk_text: str, query: str, max_length: int = 500) -> str:
+        """
+        Generate snippet centered around query-relevant content.
+        
+        Args:
+            chunk_text: Full chunk text content
+            query: User query to find relevant portions
+            max_length: Maximum snippet length in characters
+        
+        Returns:
+            Cleaned snippet with query-relevant content
+        """
+        import re
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        # Clean chunk text - remove page markers
+        cleaned_text = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
+        if not cleaned_text:
+            cleaned_text = chunk_text
+        
+        # If chunk is shorter than max_length, return it all
+        if len(cleaned_text) <= max_length:
+            return cleaned_text
+        
+        # Extract query keywords (simple word extraction, case-insensitive)
+        query_words = re.findall(r'\b\w+\b', query.lower())
+        # Filter out common stop words
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can'}
+        query_keywords = [w for w in query_words if w not in stop_words and len(w) > 2]
+        
+        # If no meaningful keywords, return first max_length chars
+        if not query_keywords:
+            # Try to preserve sentence boundaries
+            snippet = cleaned_text[:max_length]
+            last_period = snippet.rfind('.')
+            last_exclamation = snippet.rfind('!')
+            last_question = snippet.rfind('?')
+            last_sentence_end = max(last_period, last_exclamation, last_question)
+            if last_sentence_end > max_length * 0.5:  # Only use if we have at least 50% of max_length
+                snippet = cleaned_text[:last_sentence_end + 1]
+            return snippet + "..."
+        
+        # Find positions of query keywords in text
+        keyword_positions = []
+        text_lower = cleaned_text.lower()
+        for keyword in query_keywords:
+            # Find all occurrences of keyword
+            start = 0
+            while True:
+                pos = text_lower.find(keyword, start)
+                if pos == -1:
+                    break
+                keyword_positions.append(pos)
+                start = pos + 1
+        
+        if not keyword_positions:
+            # Keywords not found, return first max_length chars with sentence boundary
+            snippet = cleaned_text[:max_length]
+            last_period = snippet.rfind('.')
+            last_exclamation = snippet.rfind('!')
+            last_question = snippet.rfind('?')
+            last_sentence_end = max(last_period, last_exclamation, last_question)
+            if last_sentence_end > max_length * 0.5:
+                snippet = cleaned_text[:last_sentence_end + 1]
+            return snippet + "..."
+        
+        # Find the center of keyword positions
+        keyword_positions.sort()
+        center_pos = keyword_positions[len(keyword_positions) // 2]
+        
+        # Extract context around center position
+        start_pos = max(0, center_pos - max_length // 2)
+        end_pos = min(len(cleaned_text), start_pos + max_length)
+        
+        # Adjust to preserve sentence boundaries
+        # Try to start at sentence beginning
+        if start_pos > 0:
+            # Look for sentence end before start_pos
+            search_start = max(0, start_pos - 100)  # Look back up to 100 chars
+            period = cleaned_text.rfind('.', search_start, start_pos)
+            exclamation = cleaned_text.rfind('!', search_start, start_pos)
+            question = cleaned_text.rfind('?', search_start, start_pos)
+            sentence_end = max(period, exclamation, question)
+            if sentence_end > start_pos - 50:  # Only adjust if close
+                start_pos = sentence_end + 1
+                # Skip whitespace
+                while start_pos < len(cleaned_text) and cleaned_text[start_pos].isspace():
+                    start_pos += 1
+        
+        # Try to end at sentence end
+        if end_pos < len(cleaned_text):
+            period = cleaned_text.find('.', end_pos - 50, end_pos + 50)
+            exclamation = cleaned_text.find('!', end_pos - 50, end_pos + 50)
+            question = cleaned_text.find('?', end_pos - 50, end_pos + 50)
+            sentence_end = min([p for p in [period, exclamation, question] if p != -1], default=-1)
+            if sentence_end != -1 and sentence_end > end_pos - 50:
+                end_pos = sentence_end + 1
+        
+        snippet = cleaned_text[start_pos:end_pos].strip()
+        
+        # Add ellipsis if we're not at the start or end
+        if start_pos > 0:
+            snippet = "..." + snippet
+        if end_pos < len(cleaned_text):
+            snippet = snippet + "..."
+        
+        return snippet
+    
+    def _deduplicate_citations(self, citations: List[Dict]) -> List[Dict]:
+        """
+        Merge duplicate citations (same source + page).
+        Combines snippets intelligently and preserves best metadata.
+        
+        Args:
+            citations: List of citation dictionaries
+        
+        Returns:
+            Deduplicated list of citations with updated IDs
+        """
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        if not citations:
+            return []
+        
+        # Group citations by (source, page) tuple
+        citation_groups = {}
+        for citation in citations:
+            source = citation.get('source', 'Unknown')
+            page = citation.get('page')
+            key = (source, page)
+            
+            if key not in citation_groups:
+                citation_groups[key] = []
+            citation_groups[key].append(citation)
+        
+        # Merge citations in each group
+        merged_citations = []
+        for group_key, group_citations in citation_groups.items():
+            if len(group_citations) == 1:
+                # No duplicates, keep as is
+                merged_citations.append(group_citations[0])
+            else:
+                # Merge duplicates - keep citation with highest confidence
+                best_citation = max(group_citations, key=lambda c: (
+                    c.get('source_confidence', 0) + c.get('page_confidence', 0)
+                ))
+                
+                # Merge snippets - combine unique portions
+                all_snippets = [c.get('snippet', '') for c in group_citations if c.get('snippet')]
+                if all_snippets:
+                    # Use longest snippet (most context) or combine intelligently
+                    best_snippet = max(all_snippets, key=len)
+                    # If snippets are very different, combine them
+                    if len(set(all_snippets)) > 1:
+                        # Try to merge non-overlapping snippets
+                        combined = best_snippet
+                        for snippet in all_snippets:
+                            if snippet not in combined and len(snippet) > 50:
+                                # Add if it adds significant new content
+                                combined += " ... " + snippet[:200]
+                        best_snippet = combined[:500]  # Limit total length
+                    best_citation['snippet'] = best_snippet
+                
+                # Preserve best metadata from all citations
+                best_citation['source_confidence'] = max(
+                    c.get('source_confidence', 0) for c in group_citations
+                )
+                best_citation['page_confidence'] = max(
+                    c.get('page_confidence', 0) for c in group_citations
+                )
+                
+                # Merge other metadata if available
+                if any(c.get('section') for c in group_citations):
+                    sections = [c.get('section') for c in group_citations if c.get('section')]
+                    best_citation['section'] = sections[0] if sections else None
+                
+                merged_citations.append(best_citation)
+                logger.debug(f"Merged {len(group_citations)} duplicate citations for {group_key}")
+        
+        # Re-number IDs sequentially
+        for i, citation in enumerate(merged_citations, 1):
+            citation['id'] = i
+        
+        logger.info(f"Deduplicated citations: {len(citations)} -> {len(merged_citations)}")
+        return merged_citations
+    
+    def _rank_citations_by_relevance(self, citations: List[Dict], query: str) -> List[Dict]:
+        """
+        Rank citations by relevance to query.
+        
+        Args:
+            citations: List of citation dictionaries
+            query: User query string
+        
+        Returns:
+            Ranked list of citations with relevance_score added
+        """
+        import re
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        if not citations or not query:
+            return citations
+        
+        # Extract query keywords (simple word extraction, case-insensitive)
+        query_words = re.findall(r'\b\w+\b', query.lower())
+        # Filter out common stop words
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can', 'what', 'when', 'where', 'who', 'why', 'how'}
+        query_keywords = [w for w in query_words if w not in stop_words and len(w) > 2]
+        
+        if not query_keywords:
+            # No meaningful keywords, return as-is with default relevance
+            for citation in citations:
+                citation['relevance_score'] = 0.5
+            return citations
+        
+        # Calculate relevance score for each citation
+        for citation in citations:
+            snippet = citation.get('snippet', '').lower()
+            full_text = citation.get('full_text', '').lower()
+            
+            # Count keyword matches in snippet and full text
+            snippet_matches = sum(1 for keyword in query_keywords if keyword in snippet)
+            full_text_matches = sum(1 for keyword in query_keywords if keyword in full_text)
+            
+            # Calculate relevance score (0.0 to 1.0)
+            # Weight snippet matches more heavily (2x) since it's what user sees
+            total_keywords = len(query_keywords)
+            if total_keywords > 0:
+                snippet_score = (snippet_matches / total_keywords) * 0.7
+                full_text_score = (full_text_matches / total_keywords) * 0.3
+                relevance_score = min(1.0, snippet_score + full_text_score)
+            else:
+                relevance_score = 0.5
+            
+            # Boost score for high confidence citations
+            confidence_boost = (citation.get('source_confidence', 0) + citation.get('page_confidence', 0)) / 2 * 0.1
+            relevance_score = min(1.0, relevance_score + confidence_boost)
+            
+            citation['relevance_score'] = relevance_score
+        
+        # Sort by relevance score (descending), then by confidence, then by original order
+        citations.sort(key=lambda c: (
+            -c.get('relevance_score', 0),
+            -(c.get('source_confidence', 0) + c.get('page_confidence', 0)),
+            c.get('id', 0)
+        ))
+        
+        # Re-number IDs after sorting
+        for i, citation in enumerate(citations, 1):
+            citation['id'] = i
+        
+        logger.debug(f"Ranked {len(citations)} citations by relevance to query")
+        return citations
+    
+    def _deduplicate_chunks(self, chunks: List, threshold: float = 0.95) -> List:
+        """
+        Deduplicate chunks using content hash and similarity.
+        
+        Args:
+            chunks: List of Document objects
+            threshold: Similarity threshold for near-duplicates (0.0-1.0)
+        
+        Returns:
+            List of unique Document objects
+        """
+        import hashlib
+        
+        if not chunks:
+            return []
+        
+        # Use content hash for exact duplicates
+        seen_hashes = set()
+        unique_chunks = []
+        chunk_scores = {}  # Track how many times each chunk appears (priority)
+        
+        for chunk in chunks:
+            # Ensure source metadata is preserved
+            if hasattr(chunk, 'metadata') and chunk.metadata:
+                # Validate source exists in metadata
+                if 'source' not in chunk.metadata or not chunk.metadata.get('source'):
+                    from scripts.setup_logging import get_logger
+                    logger = get_logger("aris_rag.rag_system")
+                    logger.warning(f"Chunk missing source metadata during deduplication. Available keys: {list(chunk.metadata.keys())}")
+            
+            # Create hash of content
+            content_hash = hashlib.md5(chunk.page_content.encode('utf-8')).hexdigest()
+            
+            if content_hash not in seen_hashes:
+                seen_hashes.add(content_hash)
+                unique_chunks.append(chunk)
+                chunk_scores[content_hash] = 1
+            else:
+                # Increment score for chunks that appear multiple times (they're more relevant)
+                chunk_scores[content_hash] = chunk_scores.get(content_hash, 1) + 1
+        
+        # Sort by score (chunks appearing in multiple sub-queries are more relevant)
+        # Then by position (keep first occurrence)
+        unique_chunks_with_scores = []
+        for chunk in unique_chunks:
+            content_hash = hashlib.md5(chunk.page_content.encode('utf-8')).hexdigest()
+            score = chunk_scores.get(content_hash, 1)
+            unique_chunks_with_scores.append((score, chunk))
+        
+        # Sort by score (descending), then maintain order
+        unique_chunks_with_scores.sort(key=lambda x: x[0], reverse=True)
+        unique_chunks = [chunk for _, chunk in unique_chunks_with_scores]
+        
+        # TODO: Add similarity-based deduplication for near-duplicates if needed
+        # This would require embedding comparison which is expensive
+        
+        return unique_chunks
+    
+    def _synthesize_agentic_results(
+        self,
+        question: str,
+        sub_queries: List[str],
+        relevant_docs: List,
+        query_start_time: float
+    ) -> Dict:
+        """
+        Synthesize results from multiple sub-queries using LLM.
+        
+        Args:
+            question: Original question
+            sub_queries: List of sub-queries used for retrieval
+            relevant_docs: Retrieved document chunks
+            query_start_time: Start time for query (for metrics)
+        
+        Returns:
+            Dict with answer, sources, citations, etc.
+        """
+        # Build context with metadata
+        context_parts = []
+        citations = []
+        
+        for i, doc in enumerate(relevant_docs, 1):
+            import re
+            
+            # Extract citation metadata - use helper method for consistent extraction
+            chunk_text = doc.page_content
+            
+            # Validate document has metadata before extraction
+            if not hasattr(doc, 'metadata') or not doc.metadata:
+                logger.warning(f"Document at index {i} missing metadata during citation creation (Agentic RAG)")
+                doc.metadata = {}
+            
+            # Build UI config from current state
+            ui_config = getattr(self, 'ui_config', {
+                'temperature': ARISConfig.DEFAULT_TEMPERATURE,
+                'max_tokens': ARISConfig.DEFAULT_MAX_TOKENS,
+                'active_sources': self.active_sources
+            })
+            
+            # Extract source with confidence score
+            source, source_confidence = self._extract_source_from_chunk(doc, chunk_text, None, ui_config=ui_config)
+            
+            # Validate source was extracted successfully
+            if not source or source == 'Unknown':
+                logger.warning(f"Could not extract valid source for citation {i} (Agentic RAG). Chunk preview: {chunk_text[:100]}...")
+            
+            # Extract page number with confidence score
+            page, page_confidence = self._extract_page_number(doc, chunk_text)
+            
+            start_char = doc.metadata.get('start_char', None)
+            end_char = doc.metadata.get('end_char', None)
+            
+            image_ref = None
+            image_info = None
+            page_blocks = doc.metadata.get('page_blocks', [])
+            
+            if page_blocks:
+                for block in page_blocks:
+                    if isinstance(block, dict) and block.get('type') == 'image':
+                        if page and block.get('page') == page:
+                            image_ref = {
+                                'page': block.get('page'),
+                                'image_index': block.get('image_index'),
+                                'bbox': block.get('bbox'),
+                                'xref': block.get('xref')
+                            }
+                            image_info = f"Image {block.get('image_index', '?')} on Page {page}"
+                            break
+            
+            if not image_ref:
+                if doc.metadata.get('has_image') or doc.metadata.get('image_index') is not None:
+                    image_ref = {
+                        'page': page,
+                        'image_index': doc.metadata.get('image_index'),
+                        'bbox': doc.metadata.get('image_bbox')
+                    }
+                    image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference"
+            
+            # Generate context-aware snippet using original question
+            snippet_clean = self._generate_context_snippet(chunk_text, question, max_length=500)
+            
+            source_location_parts = []
+            if page:
+                source_location_parts.append(f"Page {page}")
+            if image_ref:
+                source_location_parts.append(f"Image {image_ref.get('image_index', '?')}")
+            elif doc.metadata.get('images_detected'):
+                source_location_parts.append("Image-based content")
+            
+            source_location = " | ".join(source_location_parts) if source_location_parts else "Text content"
+            
+            # Extract section/heading information from page_blocks if available
+            section = None
+            if page_blocks:
+                for block in page_blocks:
+                    if isinstance(block, dict) and block.get('type') == 'heading':
+                        section = block.get('text', '')
+                        break
+            
+            # Determine extraction method based on confidence scores
+            extraction_method = 'metadata' if source_confidence >= 0.7 else ('text_marker' if source_confidence >= 0.3 else 'fallback')
+            
+            citation = {
+                'id': i,
+                'source': source if source and source != 'Unknown' else 'Unknown',
+                'source_confidence': source_confidence,
+                'page': page,
+                'page_confidence': page_confidence,
+                'section': section,
+                'snippet': snippet_clean,
+                'full_text': chunk_text,
+                'start_char': start_char,
+                'end_char': end_char,
+                'chunk_index': doc.metadata.get('chunk_index', None),
+                'image_ref': image_ref,
+                'image_info': image_info,
+                'source_location': source_location,
+                'content_type': 'image' if image_ref else 'text',
+                'extraction_method': extraction_method
+            }
+            citations.append(citation)
+            logger.debug(f"Agentic RAG Citation {i}: source='{source}', page={page}, chunk_index={citation.get('chunk_index', 'N/A')}")
+            
+            page_info = f" (Page {page})" if page else ""
+            context_parts.append(f"[Source {i}: {source}{page_info}]\n{chunk_text}")
+        
+        context = "\n\n---\n\n".join(context_parts)
+        
+        # Count tokens
+        context_tokens = self.count_tokens(question + "\n\n" + context)
+        
+        # Generate answer using synthesis prompt
+        if self.use_cerebras:
+            answer, response_tokens = self._query_cerebras_agentic(question, sub_queries, context, relevant_docs)
+        else:
+            answer, response_tokens = self._query_openai_agentic(question, sub_queries, context, relevant_docs)
+        
+        response_time = time_module.time() - query_start_time
+        total_tokens = context_tokens + response_tokens
+        
+        # Deduplicate and rank citations
+        if citations:
+            citations = self._deduplicate_citations(citations)
+            citations = self._rank_citations_by_relevance(citations, question)
+        
+        # Record metrics
+        if self.metrics_collector:
+            self.metrics_collector.record_query(
+                question=question,
+                answer_length=len(answer),
+                response_time=response_time,
+                chunks_used=len(relevant_docs),
+                sources_count=len(set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs])),
+                api_used="cerebras" if self.use_cerebras else "openai",
+                success=True,
+                context_tokens=context_tokens,
+                response_tokens=response_tokens,
+                total_tokens=total_tokens
+            )
+        
+        return {
+            "answer": answer,
+            "sources": list(set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs])),
+            "context_chunks": [doc.page_content for doc in relevant_docs],
+            "citations": citations,
+            "num_chunks_used": len(relevant_docs),
+            "response_time": response_time,
+            "context_tokens": context_tokens,
+            "response_tokens": response_tokens,
+            "total_tokens": total_tokens,
+            "sub_queries": sub_queries  # Include sub-queries in response for UI display
+        }
+    
+    def _query_openai_agentic(
+        self,
+        question: str,
+        sub_queries: List[str],
+        context: str,
+        relevant_docs: List = None
+    ) -> tuple:
+        """
+        Query OpenAI with Agentic RAG synthesis prompt.
+        
+        Args:
+            question: Original question
+            sub_queries: List of sub-queries analyzed
+            context: Retrieved context from documents
+            relevant_docs: List of relevant documents (for metadata)
+        
+        Returns:
+            Tuple of (answer, response_tokens)
+        """
+        from openai import OpenAI
+        from config.settings import ARISConfig
+        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        
+        sub_queries_text = "\n".join([f"- {sq}" for sq in sub_queries])
+        
+        # Detect if this is a summary query
+        question_lower = question.lower()
+        is_summary_query = any(kw in question_lower for kw in 
+                              ['summary', 'summarize', 'overview', 'what is this document about',
+                               'what does this document contain', 'what is in this document',
+                               'tell me about', 'describe', 'explain this document'])
+        
+        if is_summary_query:
+            system_prompt = """You are a document summarization assistant. Synthesize information from multiple sources to create a comprehensive summary.
+
+CRITICAL RULES:
+- Synthesize information from ALL provided context chunks
+- Create a coherent summary even if chunks are from different sections
+- Address all sub-questions to build a complete picture
+- Include key points, main topics, and important information
+- Organize information logically
+- DO NOT say "context does not contain" - synthesize what IS available
+- Focus on main themes and important details
+- DO NOT add greetings, signatures, or closing statements"""
+            
+            user_prompt = f"""Original Question: {question}
+
+Sub-Questions Analyzed:
+{sub_queries_text}
+
+Context from documents:
+{context}
+
+Instructions:
+1. Analyze ALL retrieved context chunks
+2. Synthesize information from multiple sources to create a comprehensive summary
+3. Address all sub-questions to build a complete picture
+4. Include: overview, key points, main topics, important information
+5. Organize the summary logically
+6. Use information from the context - synthesize what is available
+7. DO NOT add greetings or closing statements
+
+Summary:"""
+        else:
+            system_prompt = """You are a precise technical assistant that provides comprehensive, accurate answers by synthesizing information from multiple sources.
+
+CRITICAL RULES:
+- Synthesize information from ALL provided context chunks
+- Work with the information that IS available in the context
+- If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
+- DO NOT say "context does not contain" unless you have thoroughly analyzed ALL chunks and found absolutely no relevant information
+- Address all relevant sub-questions if they relate to the original question
+- Be specific and cite exact values, measurements, and specifications when available
+- Include relevant details like dimensions, materials, standards, and procedures
+- Maintain technical accuracy and precision
+- DO NOT add greetings, signatures, or closing statements
+- DO NOT repeat phrases or sentences
+- DO NOT include "Best regards", "Thank you", or similar endings
+- DO NOT make up information not in the context
+- End your answer when you have provided the information - do not add unnecessary text"""
+            
+            user_prompt = f"""Original Question: {question}
+
+Sub-Questions Analyzed:
+{sub_queries_text}
+
+Context from documents:
+{context}
+
+Instructions:
+1. Analyze ALL retrieved context chunks carefully
+2. Synthesize information from multiple sources to answer the original question comprehensively
+3. If the context contains relevant information, use it to provide a comprehensive answer
+4. Address all sub-questions if they are relevant to the original question
+5. Provide specific details, numbers, and specifications when available
+6. Only say information is not available if you have thoroughly checked ALL chunks and found nothing relevant
+7. DO NOT add greetings, signatures, or closing statements
+8. DO NOT repeat information or phrases
+9. Stop immediately after providing the answer
+
+Answer:"""
+        
+        try:
+            # Get temperature and max_tokens from UI config or defaults
+            ui_temp = getattr(self, 'ui_config', {}).get('temperature', ARISConfig.DEFAULT_TEMPERATURE)
+            ui_max_tokens = getattr(self, 'ui_config', {}).get('max_tokens', ARISConfig.DEFAULT_MAX_TOKENS)
+            
+            response = client.chat.completions.create(
+                model=self.openai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=ui_temp,  # Use UI config
+                max_tokens=ui_max_tokens,  # Use UI config
+                stop=["Best regards", "Thank you", "Please let me know", "If you have any other questions"]
+            )
+            
+            if not response.choices or len(response.choices) == 0:
+                raise ValueError("OpenAI API returned no choices in response")
+            answer = response.choices[0].message.content
+            if answer is None:
+                raise ValueError("OpenAI API returned empty content in response")
+            
+            response_tokens = response.usage.completion_tokens if hasattr(response, 'usage') and response.usage else 0
+            if response_tokens == 0:
+                response_tokens = self.count_tokens(answer)
+            
+            answer = self._clean_answer(answer)
+            return answer, response_tokens
+        except Exception as e:
+            logger.error(f"Error in OpenAI Agentic RAG synthesis: {e}", exc_info=True)
+            # Fallback to standard generation
+            return self._query_openai(question, context, relevant_docs)
+    
+    def _query_cerebras_agentic(
+        self,
+        question: str,
+        sub_queries: List[str],
+        context: str,
+        relevant_docs: List = None
+    ) -> tuple:
+        """
+        Query Cerebras with Agentic RAG synthesis prompt.
+        
+        Args:
+            question: Original question
+            sub_queries: List of sub-queries analyzed
+            context: Retrieved context from documents
+            relevant_docs: List of relevant documents (for metadata)
+        
+        Returns:
+            Tuple of (answer, response_tokens)
+        """
+        # For now, fallback to standard Cerebras query
+        # TODO: Implement Cerebras-specific synthesis if needed
+        logger.warning("Cerebras Agentic RAG synthesis not fully implemented, using standard query")
+        return self._query_cerebras(question, context, relevant_docs)
     
     def save_vectorstore(self, path: str = "vectorstore"):
         """Save vector store to disk (FAISS only) or cloud (OpenSearch)"""
@@ -1591,7 +3423,7 @@ Answer:"""
                                     f"but current model is '{self.embedding_model}'. "
                                     f"Dimension mismatch may occur."
                                 )
-                        logger.info(f"✅ [STEP 1.2] RAGSystem: Document index loaded - {len(self.document_index)} documents, {self.total_tokens:,} tokens")
+                            logger.info(f"✅ [STEP 1.2] RAGSystem: Document index loaded - {len(self.document_index)} documents, {self.total_tokens:,} tokens")
                     logger.info(f"✅ [STEP 1] RAGSystem: Vectorstore loaded successfully")
                     return True
                 except Exception as e:
@@ -1625,21 +3457,41 @@ Answer:"""
                         return False
                 else:
                     logger.warning(f"⚠️ [STEP 1] RAGSystem: Vectorstore path does not exist: {model_specific_path}")
-                    return False
+            return False
         else:
             # OpenSearch loads from cloud index automatically
             logger.info("[STEP 1] RAGSystem: OpenSearch loads data from the cloud index automatically.")
             try:
-                logger.info(f"[STEP 1.1] RAGSystem: Connecting to OpenSearch domain: {self.opensearch_domain}, index: {self.opensearch_index}")
-                self.vectorstore = VectorStoreFactory.load_vector_store(
-                    store_type="opensearch",
-                    embeddings=self.embeddings,
-                    path=self.opensearch_index or "aris-rag-index",
-                    opensearch_domain=self.opensearch_domain,
-                    opensearch_index=self.opensearch_index
-                )
-                logger.info(f"✅ [STEP 1.1] RAGSystem: OpenSearch vectorstore connected successfully")
-                return True
+                # Load document index map
+                self._load_document_index_map()
+                
+                if self.document_index_map:
+                    # Initialize multi-index manager
+                    from vectorstores.opensearch_store import OpenSearchMultiIndexManager
+                    self.multi_index_manager = OpenSearchMultiIndexManager(
+                        embeddings=self.embeddings,
+                        domain=self.opensearch_domain,
+                        region=getattr(self, 'region', None)
+                    )
+                    
+                    # Pre-load all indexes
+                    for index_name in self.document_index_map.values():
+                        self.multi_index_manager.get_or_create_index_store(index_name)
+                    
+                    logger.info(f"✅ [STEP 1.1] RAGSystem: Loaded {len(self.document_index_map)} document indexes")
+                    return True
+                else:
+                    # Fallback to single index (backward compatibility)
+                    logger.info(f"[STEP 1.1] RAGSystem: No document index mappings found, using default index: {self.opensearch_index or 'aris-rag-index'}")
+                    self.vectorstore = VectorStoreFactory.load_vector_store(
+                        store_type="opensearch",
+                        embeddings=self.embeddings,
+                        path=self.opensearch_index or "aris-rag-index",
+                        opensearch_domain=self.opensearch_domain,
+                        opensearch_index=self.opensearch_index
+                    )
+                    logger.info(f"✅ [STEP 1.1] RAGSystem: OpenSearch vectorstore connected successfully")
+                    return True
             except Exception as e:
                 logger.error(f"❌ [STEP 1.1] RAGSystem: Failed to load OpenSearch vectorstore: {str(e)}")
                 return False
