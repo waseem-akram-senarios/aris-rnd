@@ -642,6 +642,12 @@ with st.sidebar:
                 help="Pick one document to load for Q&A."
             )
             selected_sources = [] if selected_single == "(None)" else [selected_single]
+            
+            # Auto-clear active_sources when "(None)" is selected
+            if selected_single == "(None)":
+                if st.session_state.rag_system:
+                    st.session_state.rag_system.active_sources = None  # Clear filter
+                st.session_state.active_sources = []
 
             # Buttons for per-document actions
             col_load, col_clear = st.columns(2)
@@ -705,7 +711,7 @@ with st.sidebar:
                                     st.error("❌ OpenSearch domain not found. Please ensure the document was processed with OpenSearch or configure OpenSearch settings.")
                                     st.stop()
 
-                                # Initialize RAG system if needed
+                                # Initialize RAG system if needed, or update OpenSearch index if it changed
                                 if st.session_state.rag_system is None:
                                     st.session_state.rag_system = RAGSystem(
                                         use_cerebras=use_cerebras,
@@ -719,6 +725,18 @@ with st.sidebar:
                                         chunk_size=current_chunk_size,
                                         chunk_overlap=current_chunk_overlap
                                     )
+                                elif current_vector_store == 'opensearch':
+                                    # Update OpenSearch index if it changed (e.g., from document metadata)
+                                    if opensearch_index and hasattr(st.session_state.rag_system, 'opensearch_index'):
+                                        if st.session_state.rag_system.opensearch_index != opensearch_index:
+                                            st.session_state.rag_system.opensearch_index = opensearch_index
+                                            # Reset vectorstore so it reconnects with new index
+                                            st.session_state.rag_system.vectorstore = None
+                                    if opensearch_domain and hasattr(st.session_state.rag_system, 'opensearch_domain'):
+                                        if st.session_state.rag_system.opensearch_domain != opensearch_domain:
+                                            st.session_state.rag_system.opensearch_domain = opensearch_domain
+                                            # Reset vectorstore so it reconnects with new domain
+                                            st.session_state.rag_system.vectorstore = None
 
                                 # Get the correct vectorstore path
                                 # Use the base vectorstore path (not model-specific) since load_selected_documents
@@ -783,8 +801,13 @@ with st.sidebar:
                         st.session_state.rag_system.active_sources = []
                     st.info("Selection cleared. Choose documents and load again to start Q&A.")
 
-            # Status of currently loaded docs
-            if st.session_state.active_loaded_docs:
+            # Status of currently loaded docs - Enhanced with active document indicator
+            if st.session_state.rag_system and st.session_state.rag_system.active_sources:
+                active_docs = st.session_state.rag_system.active_sources
+                if active_docs:
+                    st.info(f"📄 **Active Document:** {', '.join(active_docs)}\n\n"
+                            f"Queries will only search within this document. Select '(None)' to search all documents.")
+            elif st.session_state.active_loaded_docs:
                 st.success(f"✅ Loaded for Q&A: {', '.join(st.session_state.active_loaded_docs)}")
                 try:
                     vs = st.session_state.rag_system.vectorstore if st.session_state.rag_system else None
@@ -792,6 +815,10 @@ with st.sidebar:
                         st.caption(f"📊 {vs.index.ntotal:,} chunks loaded")
                 except Exception:
                     pass
+            elif st.session_state.rag_system and st.session_state.rag_system.vectorstore:
+                # Show status when all documents are active (no filter)
+                st.info("📚 **All Documents Active**\n\n"
+                        "Queries will search across all uploaded documents.")
 
             # Document review expander
             with st.expander("📖 Review Stored Documents", expanded=False):
@@ -1620,11 +1647,23 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                         page = citation.get('page')
                         snippet = citation.get('snippet', citation.get('full_text', ''))
                         source_location = citation.get('source_location', f"Page {page}" if page else "Text content")
+                        relevance_score = citation.get('relevance_score', 0)
                         
-                        # Display citation header
+                        # Display citation header with relevance ranking
                         citation_header = f"**[{citation_id}] {source_name}**"
                         if page:
                             citation_header += f" - **Page {page}**"
+                        
+                        # Show relevance score prominently
+                        if relevance_score > 0:
+                            if relevance_score >= 0.7:
+                                st.success(f"⭐ **Rank {citation_id} - High Relevance ({relevance_score:.0%})** - {source_name}")
+                            elif relevance_score >= 0.4:
+                                st.info(f"📊 **Rank {citation_id} - Medium Relevance ({relevance_score:.0%})** - {source_name}")
+                            else:
+                                st.caption(f"📋 **Rank {citation_id} - Low Relevance ({relevance_score:.0%})** - {source_name}")
+                        
+                        if page:
                             st.success(f"📍 **Source Location:** {source_location}")
                         else:
                             st.info(f"📍 **Source Location:** {source_location}")
@@ -1650,6 +1689,44 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                 with st.expander("📎 Sources"):
                     for source in sources:
                         st.write(f"- {source}")
+    
+    # Agentic RAG toggle
+    st.subheader("🤖 Agentic RAG")
+    use_agentic_rag = st.checkbox(
+        "Enable Agentic RAG",
+        value=st.session_state.get('use_agentic_rag', True),
+        help="Decompose complex queries into sub-queries for better retrieval accuracy. May increase response time."
+    )
+    st.session_state['use_agentic_rag'] = use_agentic_rag
+    
+    if use_agentic_rag:
+        st.info("💡 Agentic RAG will break down your question into multiple sub-queries for comprehensive retrieval.")
+    
+    # Generation Configuration - UI Controls
+    st.divider()
+    st.subheader("⚙️ Generation Settings")
+    
+    # Temperature control
+    temperature = st.slider(
+        "Temperature",
+        min_value=0.0,
+        max_value=2.0,
+        value=ARISConfig.DEFAULT_TEMPERATURE,
+        step=0.1,
+        help="Controls randomness in responses. Lower = more deterministic (0.0 = most accurate, 2.0 = more creative)"
+    )
+    st.session_state['temperature'] = temperature
+    
+    # Max Tokens control
+    max_tokens = st.slider(
+        "Max Tokens",
+        min_value=100,
+        max_value=4000,
+        value=ARISConfig.DEFAULT_MAX_TOKENS,
+        step=100,
+        help="Maximum number of tokens in the response. Higher = longer, more detailed answers"
+    )
+    st.session_state['max_tokens'] = max_tokens
     
     # Search mode selection (for hybrid search) - only show for OpenSearch
     if hasattr(st.session_state.rag_system, 'vector_store_type') and \
@@ -1687,6 +1764,13 @@ if st.session_state.documents_processed and st.session_state.rag_system:
     # Query input
     question = st.chat_input("Ask a question about your documents...")
     
+    # Info message if no document is selected for summary queries (less intrusive)
+    if question and question.lower().strip():
+        is_summary_like = any(kw in question.lower() for kw in ['summary', 'summarize', 'overview', 'what is this document about', 'what does this document contain'])
+        if is_summary_like:
+            if not st.session_state.rag_system or not st.session_state.rag_system.active_sources:
+                st.info("💡 **Tip:** Select a document from the sidebar to get a summary of that specific document. Currently searching all documents.")
+    
     if question:
         # Add user question to chat
         st.chat_message("user").write(question)
@@ -1717,13 +1801,25 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     question,
                     use_hybrid_search=(search_mode_param == "hybrid" or search_mode_param == "keyword"),
                     semantic_weight=semantic_weight,
-                    search_mode=search_mode_param
+                    search_mode=search_mode_param,
+                    use_agentic_rag=use_agentic_rag,
+                    temperature=temperature,  # NEW: Pass UI temperature
+                    max_tokens=max_tokens  # NEW: Pass UI max_tokens
                 )
                 answer = result["answer"]
                 sources = result.get("sources", [])
                 citations = result.get("citations", [])
                 num_chunks = result.get("num_chunks_used", 0)
                 context_chunks = result.get("context_chunks", [])
+                sub_queries = result.get("sub_queries", [])
+                
+                # Display sub-queries if Agentic RAG was used
+                if use_agentic_rag and sub_queries and len(sub_queries) > 1:
+                    with st.expander("🔍 Sub-Queries Analyzed", expanded=False):
+                        st.write("**Original Question:** " + question)
+                        st.write("**Sub-Questions:**")
+                        for i, sq in enumerate(sub_queries, 1):
+                            st.write(f"{i}. {sq}")
                 
                 # Ensure citations exist - create from sources if missing
                 # Also try to extract from context_chunks if available
@@ -1737,10 +1833,24 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                             page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
                             page = int(page_match.group(1)) if page_match else None
                             
-                            # Find matching source
-                            source = sources[0] if sources else 'Unknown'
-                            if len(sources) > idx - 1:
-                                source = sources[idx - 1]
+                            # Validate page number - page should be positive
+                            if page and page < 1:
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.warning(f"Invalid page number {page} extracted from chunk")
+                                page = None
+                            
+                            # Extract source from chunk text metadata markers if available
+                            # Look for [Source X: filename] pattern in chunk
+                            source_match = re.search(r'\[Source\s+\d+:\s*([^\]]+?)(?:\s*\(Page\s+\d+\))?\]', chunk_text)
+                            if source_match:
+                                source = source_match.group(1).strip()
+                                # Remove any trailing page info if captured
+                                source = re.sub(r'\s*\(Page\s+\d+\)', '', source)
+                            else:
+                                # Fallback: try to extract from sources list, but prefer first source
+                                # since we can't reliably match by index
+                                source = sources[0] if sources else 'Unknown'
                             
                             # Clean snippet
                             snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
@@ -1831,9 +1941,25 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                             page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
                             page = int(page_match.group(1)) if page_match else None
                             
-                            source = sources[0] if sources else 'Unknown'
-                            if len(sources) > idx - 1:
-                                source = sources[idx - 1]
+                            # Validate page number if document metadata is available
+                            # Basic validation - page should be positive
+                            if page and page < 1:
+                                import logging
+                                logger = logging.getLogger(__name__)
+                                logger.warning(f"Invalid page number {page} extracted from chunk")
+                                page = None
+                            
+                            # Extract source from chunk text metadata markers if available
+                            # Look for [Source X: filename] pattern in chunk
+                            source_match = re.search(r'\[Source\s+\d+:\s*([^\]]+?)(?:\s*\(Page\s+\d+\))?\]', chunk_text)
+                            if source_match:
+                                source = source_match.group(1).strip()
+                                # Remove any trailing page info if captured
+                                source = re.sub(r'\s*\(Page\s+\d+\)', '', source)
+                            else:
+                                # Fallback: try to extract from sources list, but prefer first source
+                                # since we can't reliably match by index
+                                source = sources[0] if sources else 'Unknown'
                             
                             # Extract more metadata from chunk text
                             snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
@@ -1877,6 +2003,61 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                             # Main citation header with source location (certification)
                             citation_header = f"**[{citation_id}] {source_name}**"
                             
+                            # Show confidence indicators and relevance score
+                            source_confidence = item.get('source_confidence', 0)
+                            page_confidence = item.get('page_confidence', 0)
+                            relevance_score = item.get('relevance_score', 0)
+                            extraction_method = item.get('extraction_method', 'unknown')
+                            
+                            # Show relevance ranking prominently at the top
+                            if relevance_score > 0:
+                                st.markdown("---")
+                                if relevance_score >= 0.7:
+                                    st.success(f"🏆 **Rank #{citation_id} - High Relevance Score: {relevance_score:.1%}** (Most relevant citation)")
+                                elif relevance_score >= 0.4:
+                                    st.info(f"📊 **Rank #{citation_id} - Medium Relevance Score: {relevance_score:.1%}**")
+                                else:
+                                    st.caption(f"📋 **Rank #{citation_id} - Low Relevance Score: {relevance_score:.1%}**")
+                                st.markdown("---")
+                            
+                            # Confidence badges
+                            confidence_cols = st.columns(3)
+                            with confidence_cols[0]:
+                                if source_confidence >= 0.7:
+                                    st.success(f"✓ High Source Confidence ({source_confidence:.0%})")
+                                elif source_confidence >= 0.3:
+                                    st.warning(f"⚠ Medium Source Confidence ({source_confidence:.0%})")
+                                else:
+                                    st.error(f"✗ Low Source Confidence ({source_confidence:.0%})")
+                            
+                            with confidence_cols[1]:
+                                if page_confidence >= 0.6:
+                                    st.success(f"✓ High Page Confidence ({page_confidence:.0%})")
+                                elif page_confidence >= 0.3:
+                                    st.warning(f"⚠ Medium Page Confidence ({page_confidence:.0%})")
+                                elif page_confidence > 0:
+                                    st.error(f"✗ Low Page Confidence ({page_confidence:.0%})")
+                                else:
+                                    st.info("No page number")
+                            
+                            with confidence_cols[2]:
+                                similarity_score = item.get('similarity_score')
+                                if similarity_score is not None:
+                                    st.info(f"🔍 Similarity: {similarity_score:.3f}")
+                                else:
+                                    st.caption("🔍 Similarity: N/A")
+                            
+                            # Show relevance ranking prominently
+                            if relevance_score > 0:
+                                st.markdown("---")
+                                if relevance_score >= 0.7:
+                                    st.success(f"🏆 **Rank #{citation_id} - High Relevance Score: {relevance_score:.1%}** (Most relevant citation)")
+                                elif relevance_score >= 0.4:
+                                    st.info(f"📊 **Rank #{citation_id} - Medium Relevance Score: {relevance_score:.1%}**")
+                                else:
+                                    st.caption(f"📋 **Rank #{citation_id} - Low Relevance Score: {relevance_score:.1%}**")
+                                st.markdown("---")
+                            
                             # Show source location prominently (certification field)
                             if source_location:
                                 if image_ref:
@@ -1895,6 +2076,15 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                             else:
                                 citation_header += " - Page number not available"
                                 st.warning(citation_header)
+                            
+                            # Show extraction method and section if available
+                            metadata_row = []
+                            if extraction_method and extraction_method != 'unknown':
+                                metadata_row.append(f"Extraction: {extraction_method}")
+                            if item.get('section'):
+                                metadata_row.append(f"Section: {item.get('section')}")
+                            if metadata_row:
+                                st.caption(" | ".join(metadata_row))
                             
                             # Show content type badge
                             if content_type == 'image':
@@ -2010,9 +2200,25 @@ if st.session_state.documents_processed and st.session_state.rag_system:
             for idx, chunk_text in enumerate(context_chunks, 1):
                 page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
                 page = int(page_match.group(1)) if page_match else None
-                source = sources[0] if sources else 'Unknown'
-                if len(sources) > idx - 1:
-                    source = sources[idx - 1]
+                
+                # Validate page number - page should be positive
+                if page and page < 1:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Invalid page number {page} extracted from chunk")
+                    page = None
+                
+                # Extract source from chunk text metadata markers if available
+                # Look for [Source X: filename] pattern in chunk
+                source_match = re.search(r'\[Source\s+\d+:\s*([^\]]+?)(?:\s*\(Page\s+\d+\))?\]', chunk_text)
+                if source_match:
+                    source = source_match.group(1).strip()
+                    # Remove any trailing page info if captured
+                    source = re.sub(r'\s*\(Page\s+\d+\)', '', source)
+                else:
+                    # Fallback: try to extract from sources list, but prefer first source
+                    # since we can't reliably match by index
+                    source = sources[0] if sources else 'Unknown'
                 
                 # Clean snippet
                 snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()

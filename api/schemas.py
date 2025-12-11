@@ -14,6 +14,7 @@ class QueryRequest(BaseModel):
     use_hybrid_search: Optional[bool] = Field(default=None, description="Use hybrid search combining semantic and keyword search")
     semantic_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Weight for semantic search in hybrid mode (0.0-1.0)")
     search_mode: Optional[str] = Field(default=None, description="Search mode: 'semantic', 'keyword', or 'hybrid'")
+    use_agentic_rag: Optional[bool] = Field(default=None, description="Use Agentic RAG with query decomposition and synthesis")
 
 
 class Citation(BaseModel):

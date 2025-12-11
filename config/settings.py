@@ -23,7 +23,7 @@ class ARISConfig:
     CEREBRAS_MODEL: str = os.getenv('CEREBRAS_MODEL', 'llama-3.3-70b')  # Best quality: 70B parameter model
     
     # Vector Store Configuration
-    VECTOR_STORE_TYPE: str = os.getenv('VECTOR_STORE_TYPE', 'faiss').lower()
+    VECTOR_STORE_TYPE: str = os.getenv('VECTOR_STORE_TYPE', 'opensearch').lower()
     VECTORSTORE_PATH: str = os.getenv('VECTORSTORE_PATH', 'vectorstore')
     AWS_OPENSEARCH_DOMAIN: Optional[str] = os.getenv('AWS_OPENSEARCH_DOMAIN', 'intelycx-waseem-os')
     AWS_OPENSEARCH_INDEX: str = os.getenv('AWS_OPENSEARCH_INDEX', 'aris-rag-index')
@@ -36,24 +36,36 @@ class ARISConfig:
     
     # Default chunking parameters - Optimized for retrieval accuracy
     # Smaller chunks = more precise retrieval, larger overlap = better context continuity
-    DEFAULT_CHUNK_SIZE: int = int(os.getenv('DEFAULT_CHUNK_SIZE', '384'))  # Reduced for precision
-    DEFAULT_CHUNK_OVERLAP: int = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '100'))  # Maintained for continuity
+    DEFAULT_CHUNK_SIZE: int = int(os.getenv('DEFAULT_CHUNK_SIZE', '384'))  # Optimal for precision
+    DEFAULT_CHUNK_OVERLAP: int = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '120'))  # Increased for better continuity
     
-    # Retrieval Configuration - Maximum accuracy settings
-    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '10'))  # More chunks = better coverage
-    DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '40'))  # Larger candidate pool
-    DEFAULT_MMR_LAMBDA: float = float(os.getenv('DEFAULT_MMR_LAMBDA', '0.3'))  # Prioritize relevance over diversity
+    # Retrieval Configuration - Optimized for best results and UX
+    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '12'))  # Increased for better coverage
+    DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '50'))  # Larger candidate pool
+    DEFAULT_MMR_LAMBDA: float = float(os.getenv('DEFAULT_MMR_LAMBDA', '0.35'))  # Balanced relevance/diversity
     DEFAULT_USE_MMR: bool = os.getenv('DEFAULT_USE_MMR', 'true').lower() == 'true'
     
-    # Generation Configuration - Maximum accuracy
+    # Generation Configuration - Optimized for comprehensive answers
     DEFAULT_TEMPERATURE: float = float(os.getenv('DEFAULT_TEMPERATURE', '0.0'))  # Maximum determinism
-    DEFAULT_MAX_TOKENS: int = int(os.getenv('DEFAULT_MAX_TOKENS', '1000'))  # More detailed answers
+    DEFAULT_MAX_TOKENS: int = int(os.getenv('DEFAULT_MAX_TOKENS', '1200'))  # Increased for detailed answers
     
-    # Hybrid Search Configuration
-    DEFAULT_USE_HYBRID_SEARCH: bool = os.getenv('DEFAULT_USE_HYBRID_SEARCH', 'false').lower() == 'true'
-    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.7'))
-    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.3'))
-    DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'semantic')  # 'semantic', 'keyword', 'hybrid'
+    # Hybrid Search Configuration - Enabled by default for better accuracy
+    DEFAULT_USE_HYBRID_SEARCH: bool = os.getenv('DEFAULT_USE_HYBRID_SEARCH', 'true').lower() == 'true'
+    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.75'))
+    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.25'))
+    DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'hybrid')  # 'semantic', 'keyword', 'hybrid'
+    
+    # Agentic RAG Configuration - Optimized for comprehensive synthesis
+    DEFAULT_USE_AGENTIC_RAG: bool = os.getenv('DEFAULT_USE_AGENTIC_RAG', 'true').lower() == 'true'
+    DEFAULT_MAX_SUB_QUERIES: int = int(os.getenv('DEFAULT_MAX_SUB_QUERIES', '4'))
+    DEFAULT_CHUNKS_PER_SUBQUERY: int = int(os.getenv('DEFAULT_CHUNKS_PER_SUBQUERY', '6'))  # Increased for better coverage
+    DEFAULT_MAX_TOTAL_CHUNKS: int = int(os.getenv('DEFAULT_MAX_TOTAL_CHUNKS', '25'))  # Increased for better synthesis
+    DEFAULT_DEDUPLICATION_THRESHOLD: float = float(os.getenv('DEFAULT_DEDUPLICATION_THRESHOLD', '0.95'))
+    
+    # Summary Query Configuration
+    DEFAULT_SUMMARY_QUERY_K_MULTIPLIER: float = float(os.getenv('DEFAULT_SUMMARY_QUERY_K_MULTIPLIER', '2.0'))
+    DEFAULT_SUMMARY_QUERY_MIN_K: int = int(os.getenv('DEFAULT_SUMMARY_QUERY_MIN_K', '20'))
+    DEFAULT_AUTO_ENABLE_AGENTIC_FOR_SUMMARIES: bool = os.getenv('DEFAULT_AUTO_ENABLE_AGENTIC_FOR_SUMMARIES', 'true').lower() == 'true'
     
     # Document Storage Configuration
     DOCUMENT_REGISTRY_PATH: str = os.getenv('DOCUMENT_REGISTRY_PATH', 'storage/document_registry.json')
@@ -120,5 +132,25 @@ class ARISConfig:
             'semantic_weight': semantic_weight,
             'keyword_weight': keyword_weight,
             'search_mode': cls.DEFAULT_SEARCH_MODE
+        }
+    
+    @classmethod
+    def get_agentic_rag_config(cls) -> dict:
+        """Get Agentic RAG configuration"""
+        return {
+            'use_agentic_rag': cls.DEFAULT_USE_AGENTIC_RAG,
+            'max_sub_queries': cls.DEFAULT_MAX_SUB_QUERIES,
+            'chunks_per_subquery': cls.DEFAULT_CHUNKS_PER_SUBQUERY,
+            'max_total_chunks': cls.DEFAULT_MAX_TOTAL_CHUNKS,
+            'deduplication_threshold': cls.DEFAULT_DEDUPLICATION_THRESHOLD
+        }
+    
+    @classmethod
+    def get_summary_query_config(cls) -> dict:
+        """Get summary query configuration"""
+        return {
+            'k_multiplier': cls.DEFAULT_SUMMARY_QUERY_K_MULTIPLIER,
+            'min_k': cls.DEFAULT_SUMMARY_QUERY_MIN_K,
+            'auto_enable_agentic': cls.DEFAULT_AUTO_ENABLE_AGENTIC_FOR_SUMMARIES
         }
 

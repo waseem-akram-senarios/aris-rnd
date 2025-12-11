@@ -1873,6 +1873,42 @@ class RAGSystem:
         context_parts = []
         citations = []  # Store citation information for each source
         
+        # Try to get similarity scores if available (for ranking)
+        doc_scores = {}
+        doc_order_scores = {}  # Use retrieval order as proxy for relevance when scores unavailable
+        
+        # First, try to get scores using similarity_search_with_score directly
+        try:
+            if hasattr(self.vectorstore, 'similarity_search_with_score'):
+                # Get more results to ensure we have scores for all retrieved docs
+                scored_docs = self.vectorstore.similarity_search_with_score(retrieval_question, k=max(len(relevant_docs) * 2, 20))
+                
+                # Create a mapping of document content to scores
+                for scored_doc, score in scored_docs:
+                    if hasattr(scored_doc, 'page_content'):
+                        # Use first 200 chars for better matching (more unique than 100)
+                        doc_content = scored_doc.page_content[:200]
+                        # Also try matching by full content hash
+                        import hashlib
+                        content_hash = hashlib.md5(scored_doc.page_content.encode('utf-8')).hexdigest()
+                        score_val = float(score) if score is not None else 0.0
+                        doc_scores[doc_content] = score_val
+                        doc_scores[content_hash] = score_val
+        except Exception as e:
+            logger.debug(f"Could not retrieve similarity scores: {e}")
+        
+        # Use retrieval order as a proxy for relevance (earlier = more relevant)
+        # This helps when similarity scores aren't available
+        for idx, doc in enumerate(relevant_docs):
+            # Normalize order score: first doc = 1.0, last = 0.0
+            order_score = 1.0 - (idx / max(len(relevant_docs), 1))
+            if hasattr(doc, 'page_content'):
+                doc_content = doc.page_content[:200]
+                import hashlib
+                content_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
+                doc_order_scores[doc_content] = order_score
+                doc_order_scores[content_hash] = order_score
+        
         for i, doc in enumerate(relevant_docs, 1):
             import re
             
@@ -1942,10 +1978,17 @@ class RAGSystem:
             source_location_parts = []
             if page:
                 source_location_parts.append(f"Page {page}")
+            
+            # Only add image info if this specific chunk has an image reference
             if image_ref:
-                source_location_parts.append(f"Image {image_ref.get('image_index', '?')}")
-            elif doc.metadata.get('images_detected'):
-                source_location_parts.append("Image-based content")
+                # This chunk is actually associated with an image
+                image_index = image_ref.get('image_index', '?')
+                source_location_parts.append(f"Image {image_index}")
+            elif doc.metadata.get('has_image') and doc.metadata.get('image_index') is not None:
+                # Chunk metadata indicates it has an image reference
+                image_index = doc.metadata.get('image_index', '?')
+                source_location_parts.append(f"Image {image_index}")
+            # REMOVED: Don't use document-level images_detected - it's too broad and misleading
             
             source_location = " | ".join(source_location_parts) if source_location_parts else "Text content"
             
@@ -1959,6 +2002,29 @@ class RAGSystem:
             
             # Determine extraction method based on confidence scores
             extraction_method = 'metadata' if source_confidence >= 0.7 else ('text_marker' if source_confidence >= 0.3 else 'fallback')
+            
+            # Get similarity score if available (for ranking)
+            similarity_score = None
+            doc_content_key = chunk_text[:200] if chunk_text else ""
+            import hashlib
+            content_hash = hashlib.md5(chunk_text.encode('utf-8')).hexdigest() if chunk_text else ""
+            
+            # Try multiple matching strategies
+            if doc_content_key in doc_scores:
+                similarity_score = doc_scores[doc_content_key]
+            elif content_hash in doc_scores:
+                similarity_score = doc_scores[content_hash]
+            # Use order-based score as fallback
+            elif doc_content_key in doc_order_scores:
+                # Convert order score to similarity-like score (0.5 to 1.0 range)
+                order_score = doc_order_scores[doc_content_key]
+                similarity_score = 0.5 + (order_score * 0.5)  # Map 0.0-1.0 order to 0.5-1.0 similarity
+            elif content_hash in doc_order_scores:
+                order_score = doc_order_scores[content_hash]
+                similarity_score = 0.5 + (order_score * 0.5)
+            # Also try to get from metadata if stored there
+            elif hasattr(doc, 'metadata') and 'similarity_score' in doc.metadata:
+                similarity_score = doc.metadata.get('similarity_score')
             
             # Build citation entry with enhanced metadata including confidence scores
             citation = {
@@ -1977,7 +2043,8 @@ class RAGSystem:
                 'image_info': image_info,  # Human-readable image info
                 'source_location': source_location,  # Certification field: exact location
                 'content_type': 'image' if image_ref else 'text',  # Type of content
-                'extraction_method': extraction_method  # How source was extracted
+                'extraction_method': extraction_method,  # How source was extracted
+                'similarity_score': similarity_score  # Vector similarity score for ranking
             }
             citations.append(citation)
             logger.debug(f"Citation {i}: source='{source}', page={page}, chunk_index={citation.get('chunk_index', 'N/A')}")
@@ -2635,6 +2702,9 @@ Answer:"""
         from scripts.setup_logging import get_logger
         logger = get_logger("aris_rag.rag_system")
         
+        # Get document's actual page count from metadata
+        doc_pages = doc.metadata.get('pages', None)
+        
         # Validate page number is within reasonable range
         def validate_page(page_num) -> bool:
             """Validate page number is within reasonable range (1-10000)."""
@@ -2644,47 +2714,70 @@ Answer:"""
             except (ValueError, TypeError):
                 return False
         
+        # Validate extracted page against document page count
+        def validate_against_doc(page_num) -> bool:
+            """Validate page number is within document's actual page range."""
+            if page_num is None:
+                return False
+            if not validate_page(page_num):  # Existing range check (1-10000)
+                return False
+            if doc_pages is not None and page_num > doc_pages:
+                source = doc.metadata.get('source', 'Unknown')
+                logger.warning(
+                    f"Page {page_num} exceeds document page count {doc_pages}. "
+                    f"Source: {source}"
+                )
+                return False
+            return True
+        
         # Try source_page metadata first (highest confidence: 1.0)
         page = doc.metadata.get('source_page', None)
         if page is not None:
-            if validate_page(page):
+            if validate_against_doc(page):
                 logger.debug(f"Page extracted from source_page metadata: {page}")
                 return int(page), 1.0
             else:
-                logger.warning(f"Invalid page number in source_page metadata: {page}")
+                logger.warning(f"Invalid page number in source_page metadata: {page} (doc has {doc_pages} pages)")
         
         # Try page metadata (confidence: 0.8)
         page = doc.metadata.get('page', None)
         if page is not None:
-            if validate_page(page):
+            if validate_against_doc(page):
                 logger.debug(f"Page extracted from page metadata: {page}")
                 return int(page), 0.8
             else:
-                logger.warning(f"Invalid page number in page metadata: {page}")
+                logger.warning(f"Invalid page number in page metadata: {page} (doc has {doc_pages} pages)")
         
         # Extract from text markers: "--- Page X ---" (confidence: 0.6)
+        # BUT validate against document pages
         page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
         if page_match:
             page_num = int(page_match.group(1))
-            if validate_page(page_num):
+            if validate_against_doc(page_num):
                 logger.debug(f"Page extracted from text marker (--- Page X ---): {page_num}")
                 return page_num, 0.6
+            else:
+                logger.warning(f"Page from text marker {page_num} exceeds document pages {doc_pages}")
         
         # Extract from text markers: "Page X" (confidence: 0.4)
         page_match = re.search(r'Page\s+(\d+)', chunk_text, re.IGNORECASE)
         if page_match:
             page_num = int(page_match.group(1))
-            if validate_page(page_num):
+            if validate_against_doc(page_num):
                 logger.debug(f"Page extracted from text marker (Page X): {page_num}")
                 return page_num, 0.4
+            else:
+                logger.warning(f"Page from text marker {page_num} exceeds document pages {doc_pages}")
         
         # Try page range patterns: "Page 5-7" or "Pages 10-12" (take first page, confidence: 0.4)
         page_range_match = re.search(r'Pages?\s+(\d+)[-\s]+(\d+)', chunk_text, re.IGNORECASE)
         if page_range_match:
             page_num = int(page_range_match.group(1))
-            if validate_page(page_num):
+            if validate_against_doc(page_num):
                 logger.debug(f"Page extracted from page range (first page): {page_num}")
                 return page_num, 0.4
+            else:
+                logger.warning(f"Page from page range {page_num} exceeds document pages {doc_pages}")
         
         # No valid page found
         return None, 0.0
@@ -2879,14 +2972,17 @@ Answer:"""
     
     def _rank_citations_by_relevance(self, citations: List[Dict], query: str) -> List[Dict]:
         """
-        Rank citations by relevance to query.
+        Rank citations by relevance to query using multiple metrics:
+        1. Vector similarity score (primary - most accurate)
+        2. Keyword matching (secondary - for text-based relevance)
+        3. Metadata confidence (tertiary - for quality)
         
         Args:
             citations: List of citation dictionaries
             query: User query string
         
         Returns:
-            Ranked list of citations with relevance_score added
+            Ranked list of citations with relevance_score added, sorted from highest to lowest
         """
         import re
         from scripts.setup_logging import get_logger
@@ -2897,53 +2993,118 @@ Answer:"""
         
         # Extract query keywords (simple word extraction, case-insensitive)
         query_words = re.findall(r'\b\w+\b', query.lower())
-        # Filter out common stop words
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can', 'what', 'when', 'where', 'who', 'why', 'how'}
+        # Filter out common stop words (but keep important technical terms)
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can', 'what', 'when', 'where', 'who', 'why', 'how', 'give', 'me', 'information', 'about'}
         query_keywords = [w for w in query_words if w not in stop_words and len(w) > 2]
         
+        # If no keywords after filtering, use all words longer than 3 chars (to catch technical terms)
         if not query_keywords:
-            # No meaningful keywords, return as-is with default relevance
-            for citation in citations:
-                citation['relevance_score'] = 0.5
-            return citations
+            query_keywords = [w for w in query_words if len(w) > 3]
         
-        # Calculate relevance score for each citation
+        # Normalize similarity scores to 0-1 range if needed
+        similarity_scores = [c.get('similarity_score') for c in citations if c.get('similarity_score') is not None]
+        if similarity_scores:
+            min_score = min(similarity_scores)
+            max_score = max(similarity_scores)
+            score_range = max_score - min_score if max_score != min_score else 1.0
+        else:
+            min_score = 0
+            score_range = 1.0
+        
+        # Calculate combined relevance score for each citation
         for citation in citations:
-            snippet = citation.get('snippet', '').lower()
-            full_text = citation.get('full_text', '').lower()
-            
-            # Count keyword matches in snippet and full text
-            snippet_matches = sum(1 for keyword in query_keywords if keyword in snippet)
-            full_text_matches = sum(1 for keyword in query_keywords if keyword in full_text)
-            
-            # Calculate relevance score (0.0 to 1.0)
-            # Weight snippet matches more heavily (2x) since it's what user sees
-            total_keywords = len(query_keywords)
-            if total_keywords > 0:
-                snippet_score = (snippet_matches / total_keywords) * 0.7
-                full_text_score = (full_text_matches / total_keywords) * 0.3
-                relevance_score = min(1.0, snippet_score + full_text_score)
+            # 1. Vector similarity score (primary - 60% weight)
+            similarity_score = citation.get('similarity_score')
+            if similarity_score is not None:
+                # Normalize similarity score to 0-1 range
+                # For distance-based scores (lower is better), invert: 1 - normalized
+                # For similarity-based scores (higher is better), use normalized directly
+                # Assume distance-based if score > 1.0, similarity-based if <= 1.0
+                if score_range > 0:
+                    if similarity_score > 1.0:
+                        # Distance-based: lower is better, so invert
+                        normalized_sim = 1.0 - ((similarity_score - min_score) / score_range)
+                    else:
+                        # Similarity-based: higher is better
+                        normalized_sim = (similarity_score - min_score) / score_range if score_range > 0 else 0.5
+                else:
+                    normalized_sim = 0.5
+                similarity_component = normalized_sim * 0.4  # Reduced to 0.4 (40% weight) - keyword matching is more important
             else:
-                relevance_score = 0.5
+                similarity_component = 0.0
             
-            # Boost score for high confidence citations
-            confidence_boost = (citation.get('source_confidence', 0) + citation.get('page_confidence', 0)) / 2 * 0.1
-            relevance_score = min(1.0, relevance_score + confidence_boost)
+            # 2. Keyword matching score (secondary - 50% weight, increased from 40%)
+            keyword_score = 0.0
+            if query_keywords:
+                snippet = citation.get('snippet', '').lower()
+                full_text = citation.get('full_text', '').lower()
+                source = citation.get('source', '').lower()
+                
+                # Extract important query terms (longer words are usually more important)
+                important_terms = [k for k in query_keywords if len(k) >= 5]  # Terms 5+ chars are likely important
+                if not important_terms:
+                    important_terms = query_keywords  # Fallback to all keywords
+                
+                # Count keyword matches in snippet, full text, and source
+                snippet_matches = sum(1 for keyword in query_keywords if keyword in snippet)
+                full_text_matches = sum(1 for keyword in query_keywords if keyword in full_text)
+                source_matches = sum(1 for keyword in query_keywords if keyword in source)
+                
+                # Special boost for important terms (like "kubernetes")
+                important_in_snippet = sum(1 for term in important_terms if term in snippet)
+                important_in_full = sum(1 for term in important_terms if term in full_text)
+                important_boost = ((important_in_snippet * 0.15) + (important_in_full * 0.10)) if important_terms else 0
+                
+                # Count exact phrase matches (higher weight)
+                query_lower = query.lower()
+                phrase_in_snippet = 1 if query_lower in snippet else 0
+                phrase_in_full = 1 if query_lower in full_text else 0
+                
+                # Count how many unique keywords appear (coverage)
+                unique_keywords_in_snippet = len([k for k in query_keywords if k in snippet])
+                unique_keywords_in_full = len([k for k in query_keywords if k in full_text])
+                
+                total_keywords = len(query_keywords)
+                if total_keywords > 0:
+                    # Weight: snippet (35%), full text (25%), source (5%), important terms boost (20%), phrase matches (10%), coverage bonus (5%)
+                    snippet_score = (snippet_matches / total_keywords) * 0.35
+                    full_text_score = (full_text_matches / total_keywords) * 0.25
+                    source_score = (source_matches / total_keywords) * 0.05
+                    phrase_bonus = (phrase_in_snippet * 0.06) + (phrase_in_full * 0.04)
+                    # Coverage bonus: reward citations that have more unique keywords
+                    coverage_bonus = ((unique_keywords_in_snippet + unique_keywords_in_full) / (total_keywords * 2)) * 0.05
+                    keyword_score = min(1.0, snippet_score + full_text_score + source_score + important_boost + phrase_bonus + coverage_bonus)
+            else:
+                keyword_score = 0.5  # Default if no keywords
+            
+            keyword_component = keyword_score * 0.5  # Increased to 0.5 (50% weight) - prioritize keyword matches
+            
+            # 3. Metadata confidence boost (tertiary - 10% weight, reduced from 10%)
+            confidence_avg = (citation.get('source_confidence', 0) + citation.get('page_confidence', 0)) / 2
+            confidence_component = confidence_avg * 0.1
+            
+            # Combine all components into final relevance score
+            relevance_score = similarity_component + keyword_component + confidence_component
+            
+            # Ensure score is in 0-1 range
+            relevance_score = max(0.0, min(1.0, relevance_score))
             
             citation['relevance_score'] = relevance_score
         
-        # Sort by relevance score (descending), then by confidence, then by original order
+        # Sort by relevance score (descending - highest first), then by similarity score, then by confidence
+        # Handle None similarity scores by putting them last (use -1 instead of 999 for proper sorting)
         citations.sort(key=lambda c: (
-            -c.get('relevance_score', 0),
-            -(c.get('source_confidence', 0) + c.get('page_confidence', 0)),
-            c.get('id', 0)
+            -c.get('relevance_score', 0),  # Primary: combined relevance (descending)
+            -c.get('similarity_score', -1) if c.get('similarity_score') is not None else 1,  # Secondary: similarity (descending, None goes last with value 1)
+            -(c.get('source_confidence', 0) + c.get('page_confidence', 0)),  # Tertiary: confidence (descending)
+            c.get('id', 0)  # Quaternary: original order (ascending)
         ))
         
-        # Re-number IDs after sorting
+        # Re-number IDs after sorting (1 = most relevant)
         for i, citation in enumerate(citations, 1):
             citation['id'] = i
         
-        logger.debug(f"Ranked {len(citations)} citations by relevance to query")
+        logger.debug(f"Ranked {len(citations)} citations by relevance (highest to lowest). Top 3 scores: {[c.get('relevance_score', 0) for c in citations[:3]]}")
         return citations
     
     def _deduplicate_chunks(self, chunks: List, threshold: float = 0.95) -> List:
@@ -3027,6 +3188,41 @@ Answer:"""
         context_parts = []
         citations = []
         
+        # Try to get similarity scores if available (for ranking)
+        doc_scores = {}
+        doc_order_scores = {}  # Use retrieval order as proxy for relevance when scores unavailable
+        
+        # First, try to get scores using similarity_search_with_score directly
+        try:
+            if hasattr(self.vectorstore, 'similarity_search_with_score'):
+                # Get more results to ensure we have scores for all retrieved docs
+                scored_docs = self.vectorstore.similarity_search_with_score(question, k=max(len(relevant_docs) * 2, 20))
+                
+                # Create a mapping of document content to scores
+                for scored_doc, score in scored_docs:
+                    if hasattr(scored_doc, 'page_content'):
+                        # Use first 200 chars for better matching (more unique than 100)
+                        doc_content = scored_doc.page_content[:200]
+                        # Also try matching by full content hash
+                        import hashlib
+                        content_hash = hashlib.md5(scored_doc.page_content.encode('utf-8')).hexdigest()
+                        score_val = float(score) if score is not None else 0.0
+                        doc_scores[doc_content] = score_val
+                        doc_scores[content_hash] = score_val
+        except Exception as e:
+            logger.debug(f"Could not retrieve similarity scores for agentic RAG: {e}")
+        
+        # Use retrieval order as a proxy for relevance (earlier = more relevant)
+        for idx, doc in enumerate(relevant_docs):
+            # Normalize order score: first doc = 1.0, last = 0.0
+            order_score = 1.0 - (idx / max(len(relevant_docs), 1))
+            if hasattr(doc, 'page_content'):
+                doc_content = doc.page_content[:200]
+                import hashlib
+                content_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
+                doc_order_scores[doc_content] = order_score
+                doc_order_scores[content_hash] = order_score
+        
         for i, doc in enumerate(relevant_docs, 1):
             import re
             
@@ -3090,10 +3286,17 @@ Answer:"""
             source_location_parts = []
             if page:
                 source_location_parts.append(f"Page {page}")
+            
+            # Only add image info if this specific chunk has an image reference
             if image_ref:
-                source_location_parts.append(f"Image {image_ref.get('image_index', '?')}")
-            elif doc.metadata.get('images_detected'):
-                source_location_parts.append("Image-based content")
+                # This chunk is actually associated with an image
+                image_index = image_ref.get('image_index', '?')
+                source_location_parts.append(f"Image {image_index}")
+            elif doc.metadata.get('has_image') and doc.metadata.get('image_index') is not None:
+                # Chunk metadata indicates it has an image reference
+                image_index = doc.metadata.get('image_index', '?')
+                source_location_parts.append(f"Image {image_index}")
+            # REMOVED: Don't use document-level images_detected - it's too broad and misleading
             
             source_location = " | ".join(source_location_parts) if source_location_parts else "Text content"
             
@@ -3108,6 +3311,29 @@ Answer:"""
             # Determine extraction method based on confidence scores
             extraction_method = 'metadata' if source_confidence >= 0.7 else ('text_marker' if source_confidence >= 0.3 else 'fallback')
             
+            # Get similarity score if available (for ranking)
+            similarity_score = None
+            doc_content_key = chunk_text[:200] if chunk_text else ""
+            import hashlib
+            content_hash = hashlib.md5(chunk_text.encode('utf-8')).hexdigest() if chunk_text else ""
+            
+            # Try multiple matching strategies
+            if doc_content_key in doc_scores:
+                similarity_score = doc_scores[doc_content_key]
+            elif content_hash in doc_scores:
+                similarity_score = doc_scores[content_hash]
+            # Use order-based score as fallback
+            elif doc_content_key in doc_order_scores:
+                # Convert order score to similarity-like score (0.5 to 1.0 range)
+                order_score = doc_order_scores[doc_content_key]
+                similarity_score = 0.5 + (order_score * 0.5)  # Map 0.0-1.0 order to 0.5-1.0 similarity
+            elif content_hash in doc_order_scores:
+                order_score = doc_order_scores[content_hash]
+                similarity_score = 0.5 + (order_score * 0.5)
+            # Also try to get from metadata if stored there
+            elif hasattr(doc, 'metadata') and 'similarity_score' in doc.metadata:
+                similarity_score = doc.metadata.get('similarity_score')
+            
             citation = {
                 'id': i,
                 'source': source if source and source != 'Unknown' else 'Unknown',
@@ -3117,6 +3343,7 @@ Answer:"""
                 'section': section,
                 'snippet': snippet_clean,
                 'full_text': chunk_text,
+                'similarity_score': similarity_score,  # Vector similarity score for ranking
                 'start_char': start_char,
                 'end_char': end_char,
                 'chunk_index': doc.metadata.get('chunk_index', None),

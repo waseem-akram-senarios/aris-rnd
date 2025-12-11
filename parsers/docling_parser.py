@@ -89,18 +89,38 @@ class DoclingParser(BaseParser):
             def run_docling_conversion():
                 """Run Docling conversion in thread."""
                 try:
-                    logger.info("Docling: [Phase 1/4] Initializing DocumentConverter...")
+                    logger.info("Docling: [Phase 1/4] Initializing DocumentConverter with OCR enabled...")
                     if progress_callback:
                         try:
-                            progress_callback("Docling: [Phase 1/4] Initializing DocumentConverter...", 0.1)
+                            progress_callback("Docling: [Phase 1/4] Initializing DocumentConverter with OCR enabled...", 0.1)
                         except Exception as e:
                             if "NoSessionContext" not in str(e):
                                 logger.warning(f"Docling: Progress callback error: {str(e)}")
-                    converter = self.DocumentConverter()
-                    logger.info("Docling: [Phase 2/4] DocumentConverter initialized, starting conversion...")
+                    
+                    # Enable OCR for image-based PDFs
+                    try:
+                        from docling.datamodel.pipeline_options import PipelineOptions
+                        from docling.datamodel.document_converter_config import DocumentConverterConfig
+                        
+                        pipeline_options = PipelineOptions()
+                        pipeline_options.do_ocr = True  # Enable OCR to extract text from images
+                        pipeline_options.do_table_structure = True  # Keep table extraction enabled
+                        pipeline_options.do_vision = True  # Enable vision model for better image understanding
+                        
+                        config = DocumentConverterConfig()
+                        config.pipeline_options = pipeline_options
+                        
+                        converter = self.DocumentConverter(config=config)
+                        logger.info("Docling: OCR enabled for image text extraction")
+                    except (ImportError, AttributeError) as e:
+                        # Fallback to default if configuration fails
+                        logger.warning(f"Docling: Could not enable OCR configuration: {e}. Using default converter.")
+                        converter = self.DocumentConverter()
+                    
+                    logger.info("Docling: [Phase 2/4] DocumentConverter initialized with OCR, starting conversion...")
                     if progress_callback:
                         try:
-                            progress_callback("Docling: [Phase 2/4] Starting document conversion...", 0.2)
+                            progress_callback("Docling: [Phase 2/4] Starting document conversion with OCR...", 0.2)
                         except Exception as e:
                             if "NoSessionContext" not in str(e):
                                 logger.warning(f"Docling: Progress callback error: {str(e)}")
@@ -372,6 +392,10 @@ class DoclingParser(BaseParser):
             logger.info("Docling: Exporting document to markdown...")
             page_blocks = []  # Store page-level blocks for citation support
             
+            # Get actual page count from document for validation
+            total_pages = len(doc.pages) if hasattr(doc, 'pages') else 0
+            logger.info(f"Docling: Document has {total_pages} pages")
+            
             try:
                 text = doc.export_to_markdown()
                 logger.info(f"Docling: Markdown export completed ({len(text):,} characters)")
@@ -380,22 +404,47 @@ class DoclingParser(BaseParser):
                 if hasattr(doc, 'pages'):
                     pages_dict = doc.pages
                     if isinstance(pages_dict, dict):
-                        for page_num, page_content in pages_dict.items():
+                        for page_key, page_content in pages_dict.items():
                             try:
-                                page_idx = int(page_num) if isinstance(page_num, (int, str)) and str(page_num).isdigit() else None
-                                if page_idx is not None:
-                                    page_text = str(page_content) if hasattr(page_content, '__str__') else ""
-                                    if page_text:
-                                        page_blocks.append({
-                                            'page': page_idx,
-                                            'text': page_text,
-                                            'blocks': [{'text': page_text, 'page': page_idx}]  # Simplified for Docling
-                                        })
-                            except Exception:
-                                pass
+                                # Try to extract page number from key
+                                if isinstance(page_key, int):
+                                    page_idx = page_key
+                                elif isinstance(page_key, str) and page_key.isdigit():
+                                    page_idx = int(page_key)
+                                else:
+                                    continue
+                                
+                                # Docling may use 0-based indexing, convert to 1-based for display
+                                if page_idx == 0 and total_pages > 0:
+                                    page_idx = 1  # First page should be 1
+                                elif page_idx < 0:
+                                    page_idx = abs(page_idx)  # Handle negative indices
+                                
+                                # Validate page is within document range
+                                if page_idx < 1 or (total_pages > 0 and page_idx > total_pages):
+                                    logger.warning(f"Docling: Page {page_idx} out of range [1, {total_pages}], skipping")
+                                    continue
+                                
+                                page_text = str(page_content) if hasattr(page_content, '__str__') else ""
+                                if page_text:
+                                    page_blocks.append({
+                                        'page': page_idx,
+                                        'text': page_text,
+                                        'blocks': [{'text': page_text, 'page': page_idx}]  # Simplified for Docling
+                                    })
+                            except Exception as e:
+                                logger.warning(f"Docling: Error processing page {page_key}: {e}")
                     elif isinstance(pages_dict, list):
-                        for page_idx, page_content in enumerate(pages_dict, 1):
+                        for idx, page_content in enumerate(pages_dict):
                             try:
+                                # Docling list indices are 0-based, convert to 1-based
+                                page_idx = idx + 1
+                                
+                                # Validate page is within document range
+                                if total_pages > 0 and page_idx > total_pages:
+                                    logger.warning(f"Docling: Page {page_idx} exceeds document pages {total_pages}")
+                                    break
+                                
                                 page_text = str(page_content) if hasattr(page_content, '__str__') else ""
                                 if page_text:
                                     page_blocks.append({
@@ -403,8 +452,8 @@ class DoclingParser(BaseParser):
                                         'text': page_text,
                                         'blocks': [{'text': page_text, 'page': page_idx}]
                                     })
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(f"Docling: Error processing page {idx}: {e}")
             except Exception as e:
                 logger.error(f"Docling: Error exporting to markdown: {str(e)}")
                 # Try alternative export methods
@@ -460,7 +509,7 @@ class DoclingParser(BaseParser):
                     f"Try using PyMuPDF parser instead."
                 )
             
-            # Get page count
+            # Get page count - ensure it matches actual document page count
             pages = 0
             if hasattr(doc, 'pages'):
                 pages_dict = doc.pages
@@ -468,6 +517,19 @@ class DoclingParser(BaseParser):
                     pages = len(pages_dict)
                 elif isinstance(pages_dict, list):
                     pages = len(pages_dict)
+                else:
+                    pages = total_pages  # Use calculated total_pages
+            else:
+                pages = total_pages
+            
+            # Validate pages count
+            if pages <= 0:
+                logger.warning(f"Docling: Invalid page count {pages}, using 1 as fallback")
+                pages = 1
+            elif total_pages > 0 and pages != total_pages:
+                logger.warning(f"Docling: Page count mismatch - calculated {total_pages} but got {pages} from pages structure")
+                # Use the higher value to be safe
+                pages = max(pages, total_pages)
             
             # Calculate metrics
             text_length = len(text.strip())

@@ -421,6 +421,10 @@ class TokenTextSplitter:
                 # Determine page number for this chunk and check for image references
                 chunk_page = None
                 chunk_image_ref = None
+                
+                # Get document's total pages for validation
+                doc_pages = chunk_metadata.get('pages', None)
+                
                 if page_blocks:
                     # Find which page this chunk belongs to based on character position
                     # Account for "--- Page X ---" markers in the text
@@ -429,6 +433,13 @@ class TokenTextSplitter:
                         page_text = page_block.get('text', '')
                         page_num = page_block.get('page', None)
                         block_type = page_block.get('type', 'text')
+                        
+                        # Validate page number is within document range
+                        if page_num and doc_pages and page_num > doc_pages:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"Tokenizer: Page {page_num} in page_blocks exceeds document pages {doc_pages}")
+                            continue
                         
                         # Check if this is an image block on the same page
                         if block_type == 'image' and page_num:
@@ -446,53 +457,80 @@ class TokenTextSplitter:
                             # Account for page marker in original text (if present)
                             page_marker = f"--- Page {page_num} ---\n"
                             page_start = cumulative_pos
-                            # Page end includes marker if text has markers
+                            # Check if text actually contains the marker
+                            # Look ahead a bit to see if marker exists
+                            if len(page_content) > cumulative_pos + len(page_marker):
+                                text_ahead = page_content[cumulative_pos:cumulative_pos+len(page_marker)+10]
+                                if page_marker.strip() in text_ahead:
+                                    page_start += len(page_marker)
                             page_end = cumulative_pos + len(page_text)
                             
                             # Check if chunk starts within this page
                             if chunk_start_char >= page_start and chunk_start_char < page_end:
                                 chunk_page = page_num
-                                # Check for images on this page
-                                if not chunk_image_ref:
-                                    for img_block in page_blocks:
-                                        if (isinstance(img_block, dict) and 
-                                            img_block.get('type') == 'image' and 
-                                            img_block.get('page') == page_num):
-                                            chunk_image_ref = {
-                                                'page': page_num,
-                                                'image_index': img_block.get('image_index'),
-                                                'bbox': img_block.get('bbox'),
-                                                'xref': img_block.get('xref'),
-                                                'type': 'image'
-                                            }
-                                            break
+                                # Validate page is within document range
+                                if doc_pages and chunk_page > doc_pages:
+                                    import logging
+                                    logger = logging.getLogger(__name__)
+                                    logger.warning(f"Tokenizer: Mapped page {chunk_page} exceeds document pages {doc_pages}")
+                                    chunk_page = None
+                                else:
+                                    # Check for images on this page
+                                    if not chunk_image_ref:
+                                        for img_block in page_blocks:
+                                            if (isinstance(img_block, dict) and 
+                                                img_block.get('type') == 'image' and 
+                                                img_block.get('page') == page_num):
+                                                chunk_image_ref = {
+                                                    'page': page_num,
+                                                    'image_index': img_block.get('image_index'),
+                                                    'bbox': img_block.get('bbox'),
+                                                    'xref': img_block.get('xref'),
+                                                    'type': 'image'
+                                                }
+                                                break
+                                    break  # Found the page, no need to continue
                             # Also check if chunk overlaps with this page
                             elif chunk_start_char < page_end and chunk_end_char > page_start:
                                 chunk_page = page_num
-                                # Check for images on this page
-                                if not chunk_image_ref:
-                                    for img_block in page_blocks:
-                                        if (isinstance(img_block, dict) and 
-                                            img_block.get('type') == 'image' and 
-                                            img_block.get('page') == page_num):
-                                            chunk_image_ref = {
-                                                'page': page_num,
-                                                'image_index': img_block.get('image_index'),
-                                                'bbox': img_block.get('bbox'),
-                                                'xref': img_block.get('xref'),
-                                                'type': 'image'
-                                            }
-                                            break
+                                # Validate page is within document range
+                                if doc_pages and chunk_page > doc_pages:
+                                    import logging
+                                    logger = logging.getLogger(__name__)
+                                    logger.warning(f"Tokenizer: Mapped page {chunk_page} exceeds document pages {doc_pages}")
+                                    chunk_page = None
+                                else:
+                                    # Check for images on this page
+                                    if not chunk_image_ref:
+                                        for img_block in page_blocks:
+                                            if (isinstance(img_block, dict) and 
+                                                img_block.get('type') == 'image' and 
+                                                img_block.get('page') == page_num):
+                                                chunk_image_ref = {
+                                                    'page': page_num,
+                                                    'image_index': img_block.get('image_index'),
+                                                    'bbox': img_block.get('bbox'),
+                                                    'xref': img_block.get('xref'),
+                                                    'type': 'image'
+                                                }
+                                                break
+                                    break  # Found the page, no need to continue
                             
                             cumulative_pos = page_end
                 
                 # If page not found from page_blocks, try to extract from text markers
                 if chunk_page is None:
                     import re
-                    # Look for "--- Page X ---" markers in chunk
                     page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
                     if page_match:
-                        chunk_page = int(page_match.group(1))
+                        extracted_page = int(page_match.group(1))
+                        # Validate against document pages
+                        if doc_pages and extracted_page > doc_pages:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.warning(f"Tokenizer: Page {extracted_page} from text marker exceeds document pages {doc_pages}")
+                        else:
+                            chunk_page = extracted_page
                 
                 # Create new document with metadata
                 chunk_metadata_copy = chunk_metadata.copy()
