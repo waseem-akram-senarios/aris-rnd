@@ -463,7 +463,13 @@ class TokenTextSplitter:
                                 text_ahead = page_content[cumulative_pos:cumulative_pos+len(page_marker)+10]
                                 if page_marker.strip() in text_ahead:
                                     page_start += len(page_marker)
+                            # Page end includes the page marker if present
                             page_end = cumulative_pos + len(page_text)
+                            # If marker exists in text, add its length to the end position
+                            if len(page_content) > cumulative_pos:
+                                check_text = page_content[cumulative_pos:cumulative_pos+50]
+                                if f"--- Page {page_num} ---" in check_text:
+                                    page_end += len(page_marker)
                             
                             # Check if chunk starts within this page
                             if chunk_start_char >= page_start and chunk_start_char < page_end:

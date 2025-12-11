@@ -388,22 +388,23 @@ class DoclingParser(BaseParser):
                 
                 raise ValueError(error_msg)
             
-            # Export to markdown (as shown in quickstart)
-            logger.info("Docling: Exporting document to markdown...")
+            # Extract page-by-page text with page markers to preserve original document structure
+            logger.info("Docling: Extracting page-by-page text with page markers...")
             page_blocks = []  # Store page-level blocks for citation support
+            text_parts = []  # Store text parts with page markers
             
             # Get actual page count from document for validation
             total_pages = len(doc.pages) if hasattr(doc, 'pages') else 0
             logger.info(f"Docling: Document has {total_pages} pages")
             
             try:
-                text = doc.export_to_markdown()
-                logger.info(f"Docling: Markdown export completed ({len(text):,} characters)")
-                
-                # Extract page-level structure if available
+                # Extract text page-by-page from doc.pages to preserve page structure
                 if hasattr(doc, 'pages'):
                     pages_dict = doc.pages
+                    sorted_pages = []
+                    
                     if isinstance(pages_dict, dict):
+                        # Sort pages by page number
                         for page_key, page_content in pages_dict.items():
                             try:
                                 # Try to extract page number from key
@@ -425,19 +426,17 @@ class DoclingParser(BaseParser):
                                     logger.warning(f"Docling: Page {page_idx} out of range [1, {total_pages}], skipping")
                                     continue
                                 
-                                page_text = str(page_content) if hasattr(page_content, '__str__') else ""
-                                if page_text:
-                                    page_blocks.append({
-                                        'page': page_idx,
-                                        'text': page_text,
-                                        'blocks': [{'text': page_text, 'page': page_idx}]  # Simplified for Docling
-                                    })
+                                sorted_pages.append((page_idx, page_content))
                             except Exception as e:
                                 logger.warning(f"Docling: Error processing page {page_key}: {e}")
+                        
+                        # Sort by page number
+                        sorted_pages.sort(key=lambda x: x[0])
+                        
                     elif isinstance(pages_dict, list):
+                        # List indices are 0-based, convert to 1-based
                         for idx, page_content in enumerate(pages_dict):
                             try:
-                                # Docling list indices are 0-based, convert to 1-based
                                 page_idx = idx + 1
                                 
                                 # Validate page is within document range
@@ -445,15 +444,116 @@ class DoclingParser(BaseParser):
                                     logger.warning(f"Docling: Page {page_idx} exceeds document pages {total_pages}")
                                     break
                                 
-                                page_text = str(page_content) if hasattr(page_content, '__str__') else ""
-                                if page_text:
-                                    page_blocks.append({
-                                        'page': page_idx,
-                                        'text': page_text,
-                                        'blocks': [{'text': page_text, 'page': page_idx}]
-                                    })
+                                sorted_pages.append((page_idx, page_content))
                             except Exception as e:
                                 logger.warning(f"Docling: Error processing page {idx}: {e}")
+                    
+                    # Extract text from each page and add page markers
+                    # First, get full document text as fallback
+                    full_text = ""
+                    try:
+                        full_text = doc.export_to_markdown()
+                    except:
+                        try:
+                            full_text = doc.export_to_text()
+                        except:
+                            pass
+                    
+                    # Try to extract page-specific content
+                    for page_idx, page_content in sorted_pages:
+                        try:
+                            # Try multiple methods to extract page text
+                            page_text = ""
+                            
+                            # Method 1: Try export methods on page object
+                            if hasattr(page_content, 'export_to_markdown'):
+                                try:
+                                    page_text = page_content.export_to_markdown()
+                                except:
+                                    pass
+                            
+                            if not page_text and hasattr(page_content, 'export_to_text'):
+                                try:
+                                    page_text = page_content.export_to_text()
+                                except:
+                                    pass
+                            
+                            if not page_text and hasattr(page_content, 'get_text'):
+                                try:
+                                    page_text = page_content.get_text()
+                                except:
+                                    pass
+                            
+                            # Method 2: Try string conversion
+                            if not page_text:
+                                try:
+                                    page_text = str(page_content)
+                                except:
+                                    pass
+                            
+                            # Method 3: Try accessing text attribute
+                            if not page_text and hasattr(page_content, 'text'):
+                                try:
+                                    page_text = str(page_content.text) if page_content.text else ""
+                                except:
+                                    pass
+                            
+                            # Method 4: If page_content is a dict/list, try to extract text from it
+                            if not page_text:
+                                if isinstance(page_content, dict):
+                                    # Try common text fields
+                                    for key in ['text', 'content', 'body', 'markdown']:
+                                        if key in page_content:
+                                            page_text = str(page_content[key])
+                                            break
+                                elif isinstance(page_content, list):
+                                    # Try to join list items
+                                    try:
+                                        page_text = "\n".join(str(item) for item in page_content if item)
+                                    except:
+                                        pass
+                            
+                            # Clean up page text
+                            if page_text:
+                                page_text = page_text.strip()
+                            
+                            if page_text:
+                                # Add page marker before page content
+                                page_marker = f"\n--- Page {page_idx} ---\n"
+                                text_parts.append(page_marker + page_text)
+                                
+                                page_blocks.append({
+                                    'page': page_idx,
+                                    'text': page_text,
+                                    'blocks': [{'text': page_text, 'page': page_idx}]
+                                })
+                                logger.debug(f"Docling: Extracted page {page_idx} ({len(page_text)} chars)")
+                            else:
+                                # Even if no text, add page marker to preserve page structure
+                                page_marker = f"\n--- Page {page_idx} ---\n"
+                                text_parts.append(page_marker)
+                                logger.debug(f"Docling: Page {page_idx} has no extractable text (may be image-only, will use OCR)")
+                                
+                        except Exception as e:
+                            logger.warning(f"Docling: Error extracting text from page {page_idx}: {e}")
+                            # Still add page marker to preserve structure
+                            page_marker = f"\n--- Page {page_idx} ---\n"
+                            text_parts.append(page_marker)
+                    
+                    # Combine all page text with markers
+                    if text_parts:
+                        text = "\n".join(text_parts)
+                        logger.info(f"Docling: Page-by-page extraction completed ({len(text):,} characters, {len(page_blocks)} pages with content)")
+                    else:
+                        # Fallback to full document export if page-by-page extraction failed
+                        logger.warning("Docling: Page-by-page extraction produced no text, falling back to full export")
+                        text = doc.export_to_markdown()
+                        logger.info(f"Docling: Fallback markdown export completed ({len(text):,} characters)")
+                else:
+                    # No pages structure, use full export
+                    logger.warning("Docling: No pages structure available, using full document export")
+                    text = doc.export_to_markdown()
+                    logger.info(f"Docling: Markdown export completed ({len(text):,} characters)")
             except Exception as e:
                 logger.error(f"Docling: Error exporting to markdown: {str(e)}")
                 # Try alternative export methods

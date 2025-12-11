@@ -1288,6 +1288,22 @@ class RAGSystem:
         
         return False, question, None
     
+    def _get_recent_documents(self, max_age_hours: int = 24) -> List[str]:
+        """
+        Get list of recently uploaded documents.
+        
+        Args:
+            max_age_hours: Maximum age in hours for a document to be considered "recent"
+        
+        Returns:
+            List of document names that were uploaded recently
+        """
+        # For now, if document_index_map exists, use all documents in it
+        # This can be enhanced later to check actual upload timestamps from registry
+        if hasattr(self, 'document_index_map') and self.document_index_map:
+            return list(self.document_index_map.keys())
+        return []
+    
     def query_with_rag(
         self,
         question: str,
@@ -1522,8 +1538,16 @@ class RAGSystem:
                         "context_chunks": []
                     }
             else:
-                # No filter - search all document indexes
-                indexes_to_search = list(self.document_index_map.values())
+                # No active_sources set - use recent documents for better isolation
+                recent_docs = self._get_recent_documents(max_age_hours=24)
+                if recent_docs:
+                    indexes_to_search = [self.document_index_map[doc] for doc in recent_docs if doc in self.document_index_map]
+                    logger.info(f"No active_sources set, using {len(indexes_to_search)} recent document indexes: {recent_docs}")
+                else:
+                    # Fallback: search all document indexes (but log warning)
+                    indexes_to_search = list(self.document_index_map.values()) if hasattr(self, 'document_index_map') else []
+                    logger.warning("No recent documents found, searching all indexes (may include old documents)")
+                
                 if not indexes_to_search:
                     # Fallback to default index if no mappings exist (backward compatibility)
                     indexes_to_search = [self.opensearch_index or "aris-rag-index"]
@@ -2970,6 +2994,47 @@ Answer:"""
         logger.info(f"Deduplicated citations: {len(citations)} -> {len(merged_citations)}")
         return merged_citations
     
+    def _count_flexible_keyword_matches(self, keywords: List[str], text: str) -> float:
+        """
+        Count keyword matches with flexible substring matching.
+        
+        Handles abbreviations automatically:
+        - "kube" matches "kubernetes" (substring match)
+        - "k8s" matches "kubernetes" (if k8s appears in text)
+        - Exact matches get full weight (1.0)
+        - Substring matches get partial weight (0.7)
+        
+        Args:
+            keywords: List of query keywords
+            text: Text to search in
+        
+        Returns:
+            Weighted match score
+        """
+        import re
+        matches = 0.0
+        text_lower = text.lower()
+        
+        # Extract all words from text for substring checking
+        text_words = set(re.findall(r'\b\w+\b', text_lower))
+        
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            
+            # Exact word match (highest priority)
+            # Check for word boundaries to ensure exact match
+            if re.search(r'\b' + re.escape(keyword_lower) + r'\b', text_lower):
+                matches += 1.0
+            # Substring match for short keywords (3-5 chars) in longer words
+            elif 3 <= len(keyword_lower) <= 5:
+                # Check if keyword appears as substring in any word
+                for word in text_words:
+                    if keyword_lower in word and len(word) > len(keyword_lower):
+                        matches += 0.7  # Partial credit for substring match
+                        break  # Count once per keyword
+        
+        return matches
+    
     def _rank_citations_by_relevance(self, citations: List[Dict], query: str) -> List[Dict]:
         """
         Rank citations by relevance to query using multiple metrics:
@@ -3007,9 +3072,18 @@ Answer:"""
             min_score = min(similarity_scores)
             max_score = max(similarity_scores)
             score_range = max_score - min_score if max_score != min_score else 1.0
+            
+            # If all scores are the same, use a default normalized value
+            if score_range == 0:
+                # All scores identical - they'll get equal normalized value of 0.5
+                default_normalized = 0.5
+            else:
+                default_normalized = None
         else:
             min_score = 0
+            max_score = 1.0
             score_range = 1.0
+            default_normalized = 0.5
         
         # Calculate combined relevance score for each citation
         for citation in citations:
@@ -3029,57 +3103,68 @@ Answer:"""
                         normalized_sim = (similarity_score - min_score) / score_range if score_range > 0 else 0.5
                 else:
                     normalized_sim = 0.5
-                similarity_component = normalized_sim * 0.4  # Reduced to 0.4 (40% weight) - keyword matching is more important
+                similarity_component = normalized_sim * 0.3  # Reduced to 0.3 (30% weight) - keyword matching is much more important
             else:
                 similarity_component = 0.0
             
-            # 2. Keyword matching score (secondary - 50% weight, increased from 40%)
+            # 2. Keyword matching score (secondary - 60% weight, increased from 50%)
             keyword_score = 0.0
             if query_keywords:
                 snippet = citation.get('snippet', '').lower()
                 full_text = citation.get('full_text', '').lower()
                 source = citation.get('source', '').lower()
                 
-                # Extract important query terms (longer words are usually more important)
-                important_terms = [k for k in query_keywords if len(k) >= 5]  # Terms 5+ chars are likely important
-                if not important_terms:
-                    important_terms = query_keywords  # Fallback to all keywords
+                # All query keywords are important (especially technical terms)
+                important_terms = query_keywords  # All keywords are important
                 
-                # Count keyword matches in snippet, full text, and source
-                snippet_matches = sum(1 for keyword in query_keywords if keyword in snippet)
-                full_text_matches = sum(1 for keyword in query_keywords if keyword in full_text)
+                # Count keyword matches using flexible substring matching
+                snippet_matches = self._count_flexible_keyword_matches(query_keywords, snippet)
+                full_text_matches = self._count_flexible_keyword_matches(query_keywords, full_text)
+                # Source matches use simple exact matching
                 source_matches = sum(1 for keyword in query_keywords if keyword in source)
                 
-                # Special boost for important terms (like "kubernetes")
+                # Use flexible matches for scoring (includes both exact 1.0 and substring 0.7 matches)
+                flexible_snippet_matches = snippet_matches  # Already weighted: exact=1.0, substring=0.7
+                flexible_full_matches = full_text_matches   # Already weighted: exact=1.0, substring=0.7
+                
+                # Keep original exact matches for important boost calculation
+                original_snippet_matches = sum(1 for keyword in query_keywords if keyword in snippet)
+                original_full_matches = sum(1 for keyword in query_keywords if keyword in full_text)
+                
+                # Special boost for important terms found in snippet (very high weight)
                 important_in_snippet = sum(1 for term in important_terms if term in snippet)
                 important_in_full = sum(1 for term in important_terms if term in full_text)
-                important_boost = ((important_in_snippet * 0.15) + (important_in_full * 0.10)) if important_terms else 0
+                # Increased boost for snippet matches (where user sees the result)
+                important_boost = ((important_in_snippet * 0.35) + (important_in_full * 0.15)) if important_terms else 0
+                # Increased from 0.30 to 0.35 for snippet to ensure exact matches rank higher
                 
                 # Count exact phrase matches (higher weight)
                 query_lower = query.lower()
                 phrase_in_snippet = 1 if query_lower in snippet else 0
                 phrase_in_full = 1 if query_lower in full_text else 0
                 
-                # Count how many unique keywords appear (coverage)
-                unique_keywords_in_snippet = len([k for k in query_keywords if k in snippet])
-                unique_keywords_in_full = len([k for k in query_keywords if k in full_text])
+                # Count how many unique keywords appear (coverage) using flexible matching
+                unique_keywords_in_snippet = sum(1 for k in query_keywords if self._count_flexible_keyword_matches([k], snippet) > 0)
+                unique_keywords_in_full = sum(1 for k in query_keywords if self._count_flexible_keyword_matches([k], full_text) > 0)
                 
                 total_keywords = len(query_keywords)
                 if total_keywords > 0:
-                    # Weight: snippet (35%), full text (25%), source (5%), important terms boost (20%), phrase matches (10%), coverage bonus (5%)
-                    snippet_score = (snippet_matches / total_keywords) * 0.35
-                    full_text_score = (full_text_matches / total_keywords) * 0.25
-                    source_score = (source_matches / total_keywords) * 0.05
-                    phrase_bonus = (phrase_in_snippet * 0.06) + (phrase_in_full * 0.04)
+                    # Higher weight for snippet matches (where user sees results)
+                    # Weight: snippet (40%), full text (20%), source (3%), important terms boost (30%), phrase matches (5%), coverage bonus (2%)
+                    # FIXED: Use flexible matches in scoring (includes both exact and substring matches)
+                    snippet_score = (flexible_snippet_matches / total_keywords) * 0.40  # Use flexible, not original
+                    full_text_score = (flexible_full_matches / total_keywords) * 0.20   # Use flexible, not original
+                    source_score = (source_matches / total_keywords) * 0.03
+                    phrase_bonus = (phrase_in_snippet * 0.03) + (phrase_in_full * 0.02)
                     # Coverage bonus: reward citations that have more unique keywords
-                    coverage_bonus = ((unique_keywords_in_snippet + unique_keywords_in_full) / (total_keywords * 2)) * 0.05
+                    coverage_bonus = ((unique_keywords_in_snippet + unique_keywords_in_full) / (total_keywords * 2)) * 0.02
                     keyword_score = min(1.0, snippet_score + full_text_score + source_score + important_boost + phrase_bonus + coverage_bonus)
             else:
                 keyword_score = 0.5  # Default if no keywords
             
-            keyword_component = keyword_score * 0.5  # Increased to 0.5 (50% weight) - prioritize keyword matches
+            keyword_component = keyword_score * 0.6  # Increased to 0.6 (60% weight) - prioritize keyword matches heavily
             
-            # 3. Metadata confidence boost (tertiary - 10% weight, reduced from 10%)
+            # 3. Metadata confidence boost (tertiary - 10% weight)
             confidence_avg = (citation.get('source_confidence', 0) + citation.get('page_confidence', 0)) / 2
             confidence_component = confidence_avg * 0.1
             
@@ -3091,20 +3176,42 @@ Answer:"""
             
             citation['relevance_score'] = relevance_score
         
+        # Filter out citations with very low relevance scores (likely irrelevant)
+        MIN_RELEVANCE_THRESHOLD = 0.20  # Citations below 20% relevance are filtered out
+        filtered_citations = [c for c in citations if c.get('relevance_score', 0) >= MIN_RELEVANCE_THRESHOLD]
+        
+        if len(filtered_citations) < len(citations):
+            logger.info(f"Filtered out {len(citations) - len(filtered_citations)} citations below relevance threshold {MIN_RELEVANCE_THRESHOLD:.0%}")
+            citations = filtered_citations
+        
         # Sort by relevance score (descending - highest first), then by similarity score, then by confidence
         # Handle None similarity scores by putting them last (use -1 instead of 999 for proper sorting)
         citations.sort(key=lambda c: (
-            -c.get('relevance_score', 0),  # Primary: combined relevance (descending)
-            -c.get('similarity_score', -1) if c.get('similarity_score') is not None else 1,  # Secondary: similarity (descending, None goes last with value 1)
+            -c.get('relevance_score', 0),  # Primary: combined relevance (descending - highest first)
+            -c.get('similarity_score', -1) if c.get('similarity_score') is not None else 1,  # Secondary: similarity (descending, None goes last)
             -(c.get('source_confidence', 0) + c.get('page_confidence', 0)),  # Tertiary: confidence (descending)
             c.get('id', 0)  # Quaternary: original order (ascending)
         ))
         
-        # Re-number IDs after sorting (1 = most relevant)
+        # Validate sorting is correct (highest relevance first)
+        if citations:
+            relevance_scores = [c.get('relevance_score', 0) for c in citations]
+            is_sorted = all(relevance_scores[i] >= relevance_scores[i+1] for i in range(len(relevance_scores)-1))
+            if not is_sorted:
+                logger.warning("Citations not properly sorted by relevance! Re-sorting...")
+                citations.sort(key=lambda c: -c.get('relevance_score', 0), reverse=False)  # Explicit descending sort
+        
+        # Re-number IDs after sorting (1 = most relevant, highest score)
         for i, citation in enumerate(citations, 1):
             citation['id'] = i
+            # Log top 3 for debugging
+            if i <= 3:
+                logger.debug(f"Rank {i}: relevance={citation.get('relevance_score', 0):.2%}, "
+                            f"similarity={citation.get('similarity_score', 'N/A')}, "
+                            f"source={citation.get('source', 'Unknown')[:50]}")
         
-        logger.debug(f"Ranked {len(citations)} citations by relevance (highest to lowest). Top 3 scores: {[c.get('relevance_score', 0) for c in citations[:3]]}")
+        top_3_scores = [f'{c.get("relevance_score", 0):.2%}' for c in citations[:3]]
+        logger.info(f"Ranked {len(citations)} citations by relevance (highest to lowest). Top 3 scores: {top_3_scores}")
         return citations
     
     def _deduplicate_chunks(self, chunks: List, threshold: float = 0.95) -> List:
