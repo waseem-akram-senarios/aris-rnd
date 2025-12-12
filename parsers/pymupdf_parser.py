@@ -81,7 +81,8 @@ class PyMuPDFParser(BaseParser):
                         images_detected=False,
                         parser_used=self.name,
                         confidence=0.0,
-                        extraction_percentage=0.0
+                        extraction_percentage=0.0,
+                        image_count=0
                     )
                 
                 # Extract text from all pages with page-level metadata
@@ -294,10 +295,11 @@ class PyMuPDFParser(BaseParser):
                 metadata = {
                     "source": file_path,
                     "pages": total_pages,
-                    "images_count": total_images,
+                    "image_count": total_images,  # Store image count for queries (standardized name)
                     "pages_with_text": pages_with_text,
                     "file_size": file_size,
-                    "page_blocks": page_blocks  # Store page-level text blocks with bboxes
+                    "page_blocks": page_blocks,  # Store page-level text blocks with bboxes
+                    "images_detected": images_detected  # Store boolean flag
                 }
                 
                 # Add skipped pages info to metadata
@@ -312,7 +314,8 @@ class PyMuPDFParser(BaseParser):
                     images_detected=images_detected,
                     parser_used=self.name,
                     confidence=confidence,
-                    extraction_percentage=extraction_percentage
+                    extraction_percentage=extraction_percentage,
+                    image_count=total_images
                 )
                 
             except Exception as e:

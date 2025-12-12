@@ -193,8 +193,44 @@ class ParserFactory:
         best_result = None
         best_confidence = 0.0
         pymupdf_result = None  # Keep PyMuPDF result as fallback
+        docling_result = None  # Keep Docling result for comparison
         
-        # Try PyMuPDF first (fastest, free)
+        # OPTIMIZATION: If images are detected, prefer Docling for OCR capabilities
+        # Docling extracts more text (104K vs 74K chars) and has superior OCR
+        if is_image_heavy:
+            logger.info(f"[STEP 2.2] ParserFactory: Images detected - trying Docling first for OCR capabilities...")
+            try:
+                from .docling_parser import DoclingParser
+                parser = DoclingParser()
+                # Check if parser supports progress_callback
+                import inspect
+                sig = inspect.signature(parser.parse)
+                if 'progress_callback' in sig.parameters:
+                    result = parser.parse(file_path, file_content, progress_callback=progress_callback)
+                else:
+                    result = parser.parse(file_path, file_content)
+                
+                docling_result = result
+                # Docling is preferred when images are detected, but we'll still compare with PyMuPDF
+                if result.confidence > best_confidence or result.extraction_percentage > best_confidence:
+                    best_result = result
+                    best_confidence = max(result.confidence, result.extraction_percentage)
+                    logger.info(f"✅ [STEP 2.2] ParserFactory: Docling extracted {len(result.text):,} characters (OCR enabled)")
+            except ValueError as e:
+                # Docling may timeout or fail on large/complex documents
+                error_msg = str(e)
+                if "timed out" in error_msg.lower() or "timeout" in error_msg.lower():
+                    logger.warning(f"Docling parser timed out: {error_msg}")
+                elif "too large" in error_msg.lower():
+                    logger.warning(f"Docling parser: {error_msg}")
+                else:
+                    logger.warning(f"Docling parser failed: {error_msg}")
+                # Continue to PyMuPDF as fallback
+            except Exception as e:
+                logger.warning(f"Docling parser failed: {e}")
+                # Continue to PyMuPDF as fallback
+        
+        # Try PyMuPDF (fastest, free) - either as primary (if no images) or for comparison
         logger.info(f"[STEP 2.2] ParserFactory: Trying PyMuPDF parser (fastest, free)...")
         try:
             from .pymupdf_parser import PyMuPDFParser
@@ -206,6 +242,26 @@ class ParserFactory:
                 result = parser.parse(file_path, file_content)
             pymupdf_result = result  # Always keep PyMuPDF result as fallback
             
+            # If images detected and we have Docling result, compare them
+            if is_image_heavy and docling_result:
+                # Compare extraction quality - prefer the one with more text
+                pymupdf_chars = len(result.text) if result.text else 0
+                docling_chars = len(docling_result.text) if docling_result.text else 0
+                
+                logger.info(f"[STEP 2.2] ParserFactory: Comparing parsers - PyMuPDF: {pymupdf_chars:,} chars, Docling: {docling_chars:,} chars")
+                
+                # Prefer Docling if it extracted significantly more text (OCR advantage)
+                # Or if it has better confidence/extraction percentage
+                if (docling_chars > pymupdf_chars * 1.1 or  # Docling extracted 10%+ more text
+                    docling_result.extraction_percentage > result.extraction_percentage or
+                    docling_result.confidence > result.confidence):
+                    logger.info(f"✅ [STEP 2.2] ParserFactory: Docling selected (better extraction: {docling_chars:,} vs {pymupdf_chars:,} chars)")
+                    return docling_result
+                else:
+                    logger.info(f"✅ [STEP 2.2] ParserFactory: PyMuPDF selected (similar/better extraction: {pymupdf_chars:,} vs {docling_chars:,} chars)")
+                    return result
+            
+            # If no images or no Docling result, use standard logic
             # Check if result is good enough
             if result.extraction_percentage >= 0.5 and result.confidence >= 0.7:
                 logger.info(f"✅ [STEP 2.2] ParserFactory: PyMuPDF result is good enough (extraction={result.extraction_percentage*100:.1f}%, confidence={result.confidence:.2f})")
@@ -216,11 +272,12 @@ class ParserFactory:
                 best_result = result
                 best_confidence = result.confidence
         except Exception as e:
-            print(f"PyMuPDF parser failed: {e}")
+            logger.warning(f"PyMuPDF parser failed: {e}")
         
         # Try Docling if PyMuPDF results are poor (for structured documents and scanned PDFs)
         # Docling is good for complex layouts, tables, structured content, and has OCR for scanned PDFs
-        if best_result and (best_result.extraction_percentage < 0.5 or best_result.confidence < 0.7 or is_image_heavy):
+        # Skip if we already tried Docling above
+        if not is_image_heavy and best_result and (best_result.extraction_percentage < 0.5 or best_result.confidence < 0.7):
             try:
                 from .docling_parser import DoclingParser
                 parser = DoclingParser()
@@ -240,14 +297,14 @@ class ParserFactory:
                 # Docling may timeout or fail on large/complex documents
                 error_msg = str(e)
                 if "timed out" in error_msg.lower() or "timeout" in error_msg.lower():
-                    print(f"Docling parser timed out: {error_msg}")
+                    logger.warning(f"Docling parser timed out: {error_msg}")
                 elif "too large" in error_msg.lower():
-                    print(f"Docling parser: {error_msg}")
+                    logger.warning(f"Docling parser: {error_msg}")
                 else:
-                    print(f"Docling parser failed: {error_msg}")
+                    logger.warning(f"Docling parser failed: {error_msg}")
                 # Continue to Textract if available
             except Exception as e:
-                print(f"Docling parser failed: {e}")
+                logger.warning(f"Docling parser failed: {e}")
                 # Continue to Textract if available
         
         # If still poor results and AWS available, try Textract

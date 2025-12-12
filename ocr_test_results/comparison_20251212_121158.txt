@@ -1,0 +1,68 @@
+======================================================================
+OCR EXTRACTION COMPARISON REPORT
+======================================================================
+
+Document: FL10.11 SPECIFIC8 (1).pdf
+Test Date: 2025-12-12 12:13:12
+
+Non-OCR (PyMuPDF): 74,699 characters
+OCR (Docling): 3,704 characters
+Difference: -70,995 characters (-95.0%)
+
+======================================================================
+UNIQUE WORDS IN OCR (not in non-OCR):
+======================================================================
+height=612.0)
+height=792.0)
+image=none
+page_no=1
+page_no=10
+page_no=11
+page_no=12
+page_no=13
+page_no=14
+page_no=15
+page_no=16
+page_no=17
+page_no=18
+page_no=19
+page_no=2
+page_no=20
+page_no=21
+page_no=22
+page_no=23
+page_no=24
+page_no=25
+page_no=26
+page_no=27
+page_no=28
+page_no=29
+page_no=3
+page_no=30
+page_no=31
+page_no=32
+page_no=33
+page_no=34
+page_no=35
+page_no=36
+page_no=37
+page_no=38
+page_no=39
+page_no=4
+page_no=40
+page_no=41
+page_no=42
+page_no=43
+page_no=44
+page_no=45
+page_no=46
+page_no=47
+page_no=48
+page_no=49
+page_no=5
+page_no=6
+page_no=7
+page_no=8
+page_no=9
+size=size(width=612.0,
+size=size(width=792.0,

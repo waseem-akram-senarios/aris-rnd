@@ -1639,6 +1639,8 @@ class RAGSystem:
             # Skip the old search logic below - we already have relevant_docs
             # Continue with citation creation below (skip to line ~1736)
             skip_retriever_logic = True
+            # Initialize opensearch_filter even in per-doc path (may be used in error handling)
+            opensearch_filter = None
         else:
             skip_retriever_logic = False
             # FAISS or OpenSearch without per-document indexes: Use existing filter logic
@@ -1691,6 +1693,10 @@ class RAGSystem:
                     relevant_docs = None
             else:
                 relevant_docs = None
+        
+        # Initialize opensearch_filter if not already set (safety check for all code paths)
+        if 'opensearch_filter' not in locals():
+            opensearch_filter = None
         
         # If hybrid search didn't work or wasn't used, use standard search
         # Skip if we already have relevant_docs from per-document index path
@@ -2079,6 +2085,203 @@ class RAGSystem:
         
         context = "\n\n---\n\n".join(context_parts)
         
+        # Detect if question mentions a specific document name and prioritize it
+        question_lower = question.lower()
+        mentioned_documents = []
+        all_document_names = set()
+        
+        # First, collect all document names from retrieved docs
+        for doc in relevant_docs:
+            if hasattr(doc, 'metadata') and doc.metadata:
+                source = doc.metadata.get('source', '')
+                if source:
+                    all_document_names.add(source)
+        
+        # Check if question mentions any document name
+        for source in all_document_names:
+            source_name = os.path.basename(source).lower()
+            source_name_no_ext = source_name.replace('.pdf', '').replace('.docx', '').replace('.txt', '')
+            
+            # Check various ways document might be mentioned
+            if (source_name in question_lower or 
+                source_name_no_ext in question_lower or
+                any(word in question_lower for word in source_name_no_ext.split('_') if len(word) > 3) or
+                any(word in question_lower for word in source_name_no_ext.split('-') if len(word) > 3) or
+                any(word in question_lower for word in source_name_no_ext.split() if len(word) > 3)):
+                mentioned_documents.append(source)
+        
+        # If a specific document is mentioned, prioritize chunks from that document
+        if mentioned_documents:
+            # Re-sort relevant_docs to put mentioned documents first
+            prioritized_docs = []
+            other_docs = []
+            for doc in relevant_docs:
+                if hasattr(doc, 'metadata') and doc.metadata:
+                    source = doc.metadata.get('source', '')
+                    if source in mentioned_documents:
+                        prioritized_docs.append(doc)
+                    else:
+                        other_docs.append(doc)
+                else:
+                    other_docs.append(doc)
+            relevant_docs = prioritized_docs + other_docs
+            logger.info(f"Prioritized {len(prioritized_docs)} chunks from mentioned document(s): {[os.path.basename(d) for d in mentioned_documents]}")
+        
+        # Extract image content from chunks for image-related questions
+        image_content_map = {}  # Map: (source, image_index) -> content
+        is_image_question = any(keyword in question_lower for keyword in ['image', 'picture', 'figure', 'diagram', 'photo', 'what.*image', 'information.*image', 'content.*image', 'drawer'])
+        
+        if is_image_question:
+            for doc in relevant_docs:
+                if hasattr(doc, 'page_content') and hasattr(doc, 'metadata') and doc.metadata:
+                    chunk_text = doc.page_content
+                    source = doc.metadata.get('source', '')
+                    page = doc.metadata.get('page', 0)
+                    
+                    # Look for image markers and extract surrounding text (OCR content from images)
+                    if '<!-- image -->' in chunk_text:
+                        # Split by image markers and extract text around each
+                        parts = chunk_text.split('<!-- image -->')
+                        for idx, part in enumerate(parts[1:], 1):  # Skip first part (before first image)
+                            # Get text before and after image marker (OCR text extracted from image)
+                            # The text AFTER the marker is usually the OCR content from the image
+                            before_text = parts[idx] if idx < len(parts) else ''
+                            after_text = parts[idx + 1] if idx + 1 < len(parts) else ''
+                            
+                            # For image content, prioritize text AFTER the marker (OCR text from image)
+                            # Also include text BEFORE for context (what the image is about)
+                            # Combine: context before + OCR content after (up to 1500 chars total)
+                            image_ocr_content = after_text[:1200].strip() if after_text else ''
+                            image_context_before = before_text[-200:].strip() if before_text else ''
+                            
+                            # Combine context (OCR text is primary, context before is secondary)
+                            if image_ocr_content:
+                                image_context = f"[IMAGE {idx} OCR CONTENT]\n{image_ocr_content}"
+                                if image_context_before:
+                                    image_context = f"Context: {image_context_before}\n{image_context}"
+                            elif image_context_before:
+                                # Fallback: use text before if no OCR after
+                                image_context = f"[IMAGE {idx} - Text near image]\n{image_context_before}"
+                            else:
+                                continue  # Skip if no content
+                            
+                            if image_context:
+                                key = (source, idx)
+                                if key not in image_content_map:
+                                    image_content_map[key] = []
+                                image_content_map[key].append({
+                                    'content': image_context,
+                                    'page': page,
+                                    'full_chunk': chunk_text[:2000],  # More context for better understanding
+                                    'ocr_text': image_ocr_content  # Store OCR text separately
+                                })
+                    
+                    # Also check if chunk contains drawer/image-related content even without markers
+                    # This helps find content that might be from images but not marked
+                    if any(keyword in question_lower for keyword in ['drawer', 'tool', 'wrench', 'socket']):
+                        # Check if chunk has relevant content
+                        if any(keyword in chunk_text.lower() for keyword in ['drawer', 'tool', 'wrench', 'socket', 'allen']):
+                            # This might be image content, include it
+                            if source not in image_content_map:
+                                image_content_map[source] = []
+                            # Check if this looks like image content (has part numbers, tool lists, etc.)
+                            if any(indicator in chunk_text for indicator in ['___', 'MM', 'SS ALLEN', 'Part', 'Quantity:']):
+                                image_content_map[source].append({
+                                    'content': f"[POSSIBLE IMAGE CONTENT - Tool/Drawer Information]\n{chunk_text[:1500]}",
+                                    'page': page,
+                                    'full_chunk': chunk_text,
+                                    'ocr_text': chunk_text
+                                })
+        
+        # Add image content section to context if available and question is about images
+        if image_content_map:
+            image_content_section = "\n\n=== Image Content (OCR Text Extracted from Images) ===\n"
+            image_content_section += "IMPORTANT: This section contains OCR text extracted from images. Use this to answer questions about image content.\n"
+            image_content_section += "When asked about 'what information is in image X', check this section for the OCR text from that image.\n"
+            for (source, img_idx), contents in image_content_map.items():
+                source_name = os.path.basename(source) if source else source
+                image_content_section += f"\nImage {img_idx} in document '{source_name}':\n"
+                for content_info in contents:
+                    if content_info.get('page'):
+                        image_content_section += f"  [Page {content_info['page']}]\n"
+                    image_content_section += f"  OCR Content: {content_info['content']}\n"
+                    if len(content_info.get('full_chunk', '')) > len(content_info.get('content', '')):
+                        image_content_section += f"  Additional context: {content_info['full_chunk'][:600]}...\n"
+            image_content_section += "\n"
+            context = image_content_section + context
+        
+        # Collect document-level metadata (image counts, etc.) from all retrieved documents
+        document_metadata = {}
+        for doc in relevant_docs:
+            if hasattr(doc, 'metadata') and doc.metadata:
+                source = doc.metadata.get('source', 'Unknown')
+                if source and source != 'Unknown':
+                    # Count images in chunk text as fallback if metadata not available
+                    chunk_text = doc.page_content if hasattr(doc, 'page_content') else ''
+                    image_markers_in_chunk = chunk_text.count('<!-- image -->')
+                    
+                    if source not in document_metadata:
+                        image_count_from_metadata = doc.metadata.get('image_count', 0)
+                        # If metadata has image_count, use it; otherwise count markers in chunks
+                        image_count = image_count_from_metadata if image_count_from_metadata > 0 else image_markers_in_chunk
+                        
+                        document_metadata[source] = {
+                            'image_count': image_count,
+                            'images_detected': doc.metadata.get('images_detected', False) or image_markers_in_chunk > 0,
+                            'pages': doc.metadata.get('pages', 0),
+                            'parser_used': doc.metadata.get('parser_used', 'unknown'),
+                            'image_markers_found': image_markers_in_chunk  # Track markers found in chunks
+                        }
+                    else:
+                        # Use maximum values if multiple chunks from same document
+                        existing = document_metadata[source]
+                        existing_image_count = existing.get('image_count', 0)
+                        existing_markers = existing.get('image_markers_found', 0)
+                        
+                        # Update image count: use metadata value if available, otherwise sum markers
+                        if doc.metadata.get('image_count', 0) > 0:
+                            existing['image_count'] = max(existing_image_count, doc.metadata.get('image_count', 0))
+                        else:
+                            # Sum up image markers from all chunks
+                            existing['image_markers_found'] = existing_markers + image_markers_in_chunk
+                            # Use marker count if metadata count is 0
+                            if existing_image_count == 0:
+                                existing['image_count'] = existing['image_markers_found']
+                        
+                        existing['images_detected'] = existing.get('images_detected', False) or doc.metadata.get('images_detected', False) or image_markers_in_chunk > 0
+                        existing['pages'] = max(existing.get('pages', 0), doc.metadata.get('pages', 0))
+        
+        # Add document metadata summary to context if available
+        if document_metadata:
+            # os is already imported at module level, no need to import again
+            metadata_summary = "\n\n=== Document Metadata ===\n"
+            metadata_summary += "IMPORTANT: Use this section to answer questions about document properties like image counts, page counts, etc.\n"
+            metadata_summary += "When asked about images, always check this section first.\n"
+            for source, meta in document_metadata.items():
+                source_name = os.path.basename(source) if source else source
+                metadata_summary += f"\nDocument: {source_name}\n"
+                
+                # Image information - prioritize metadata, fallback to markers
+                image_count = meta.get('image_count', 0)
+                image_markers = meta.get('image_markers_found', 0)
+                
+                if image_count > 0:
+                    metadata_summary += f"  - Images: {image_count} image(s) detected"
+                    if image_markers > 0 and image_count != image_markers:
+                        metadata_summary += f" (also found {image_markers} image markers in text)"
+                    metadata_summary += "\n"
+                elif image_markers > 0:
+                    metadata_summary += f"  - Images: {image_markers} image marker(s) found in text (estimated count)\n"
+                elif meta.get('images_detected', False):
+                    metadata_summary += f"  - Images: Yes (exact count not available)\n"
+                
+                if meta.get('pages', 0) > 0:
+                    metadata_summary += f"  - Pages: {meta['pages']}\n"
+                if meta.get('parser_used'):
+                    metadata_summary += f"  - Parser: {meta['parser_used']}\n"
+            metadata_summary += "\n"
+            context = metadata_summary + context
+        
         # Count tokens in context (question + context)
         context_tokens = self.count_tokens(question + "\n\n" + context)
         
@@ -2174,6 +2377,8 @@ Summary:"""
         else:
             # Synthesis-friendly prompt for all queries - encourages working with available information
             system_prompt = """You are a precise technical assistant that provides accurate, detailed answers by synthesizing information from the provided context. 
+
+IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first.
 
 CRITICAL RULES:
 - Synthesize information from ALL provided context chunks to answer the question
@@ -2617,7 +2822,7 @@ Answer:"""
             confidence: 1.0 (metadata) > 0.7 (alt_metadata) > 0.5 (text_marker) > 0.3 (document_index) > 0.1 (fallback)
         """
         import re
-        import os
+        # os is already imported at module level, no need to import again
         from scripts.setup_logging import get_logger
         logger = get_logger("aris_rag.rag_system")
         
@@ -3817,15 +4022,15 @@ Answer:"""
                 else:
                     # Fallback to single index (backward compatibility)
                     logger.info(f"[STEP 1.1] RAGSystem: No document index mappings found, using default index: {self.opensearch_index or 'aris-rag-index'}")
-                    self.vectorstore = VectorStoreFactory.load_vector_store(
-                        store_type="opensearch",
-                        embeddings=self.embeddings,
-                        path=self.opensearch_index or "aris-rag-index",
-                        opensearch_domain=self.opensearch_domain,
-                        opensearch_index=self.opensearch_index
-                    )
-                    logger.info(f"✅ [STEP 1.1] RAGSystem: OpenSearch vectorstore connected successfully")
-                    return True
+                self.vectorstore = VectorStoreFactory.load_vector_store(
+                    store_type="opensearch",
+                    embeddings=self.embeddings,
+                    path=self.opensearch_index or "aris-rag-index",
+                    opensearch_domain=self.opensearch_domain,
+                    opensearch_index=self.opensearch_index
+                )
+                logger.info(f"✅ [STEP 1.1] RAGSystem: OpenSearch vectorstore connected successfully")
+                return True
             except Exception as e:
                 logger.error(f"❌ [STEP 1.1] RAGSystem: Failed to load OpenSearch vectorstore: {str(e)}")
                 return False

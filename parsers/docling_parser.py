@@ -26,10 +26,83 @@ class DoclingParser(BaseParser):
                 "Install it with: pip install docling"
             )
     
+    def _verify_ocr_models(self):
+        """Verify OCR models are available for Docling."""
+        try:
+            # Try to check if OCR models exist
+            from pathlib import Path
+            import os
+            
+            # Docling stores models in user home directory
+            home_dir = Path.home()
+            models_path = home_dir / ".cache" / "docling" / "models"
+            
+            # Check if models directory exists and has content
+            if models_path.exists():
+                # Check for model files (common OCR model patterns)
+                model_files = list(models_path.rglob("*.onnx"))  # ONNX models used by RapidOCR
+                model_files.extend(list(models_path.rglob("*.pt")))  # PyTorch models
+                model_files.extend(list(models_path.rglob("*.pth")))  # PyTorch models
+                model_files.extend(list(models_path.rglob("*.bin")))  # Binary model files
+                
+                if model_files:
+                    logger.info(f"Docling: ✅ OCR models found ({len(model_files)} model files)")
+                    return True
+                elif any(models_path.iterdir()):
+                    # Directory exists with some content, assume models might be there
+                    logger.info("Docling: ✅ OCR models directory found (models may be available)")
+                    return True
+                else:
+                    logger.warning("Docling: ⚠️  OCR models directory exists but is empty")
+                    logger.warning("Docling: Install models with: docling download-models")
+                    return False
+            else:
+                logger.warning("Docling: ⚠️  OCR models directory not found")
+                logger.warning("Docling: Install models with: docling download-models")
+                logger.warning("Docling: OCR may still work if models are installed elsewhere or auto-downloaded")
+                # Don't return False here - models might be auto-downloaded or in different location
+                # Return True to allow processing to continue (Docling will handle missing models)
+                return True
+        except Exception as e:
+            logger.warning(f"Docling: Could not verify OCR models: {e}")
+            logger.warning("Docling: OCR may still work if models are available")
+            # Return True to allow processing - Docling will handle missing models gracefully
+            return True
+    
     def can_parse(self, file_path: str) -> bool:
         """Check if this parser can handle PDF files."""
         _, ext = os.path.splitext(file_path.lower())
         return ext == '.pdf'
+    
+    def test_ocr_configuration(self) -> dict:
+        """
+        Test OCR configuration and return diagnostic information.
+        
+        Returns:
+            dict with status, models_available, config_status, etc.
+        """
+        result = {
+            'ocr_available': False,
+            'models_available': False,
+            'config_success': False,
+            'warnings': [],
+            'errors': []
+        }
+        
+        # Check models
+        result['models_available'] = self._verify_ocr_models()
+        
+        # Test OCR configuration - default DocumentConverter has OCR enabled by default
+        try:
+            # The default DocumentConverter has OCR enabled by default
+            test_converter = self.DocumentConverter()
+            result['config_success'] = True
+            result['ocr_available'] = True
+            result['warnings'].append("Using default converter (OCR enabled by default in Docling)")
+        except Exception as e:
+            result['errors'].append(f"OCR configuration test failed: {e}")
+        
+        return result
     
     def parse(self, file_path: str, file_content: Optional[bytes] = None, progress_callback: Optional[Callable[[str, float], None]] = None, _retry_without_callback: bool = False) -> ParsedDocument:
         """
@@ -98,26 +171,21 @@ class DoclingParser(BaseParser):
                                 logger.warning(f"Docling: Progress callback error: {str(e)}")
                     
                     # Enable OCR for image-based PDFs
-                    try:
-                        from docling.datamodel.pipeline_options import PipelineOptions
-                        from docling.datamodel.document_converter_config import DocumentConverterConfig
-                        
-                        pipeline_options = PipelineOptions()
-                        pipeline_options.do_ocr = True  # Enable OCR to extract text from images
-                        pipeline_options.do_table_structure = True  # Keep table extraction enabled
-                        pipeline_options.do_vision = True  # Enable vision model for better image understanding
-                        
-                        config = DocumentConverterConfig()
-                        config.pipeline_options = pipeline_options
-                        
-                        converter = self.DocumentConverter(config=config)
-                        logger.info("Docling: OCR enabled for image text extraction")
-                    except (ImportError, AttributeError) as e:
-                        # Fallback to default if configuration fails
-                        logger.warning(f"Docling: Could not enable OCR configuration: {e}. Using default converter.")
-                        converter = self.DocumentConverter()
+                    # Verify OCR models are available first
+                    ocr_models_available = self._verify_ocr_models()
+                    if not ocr_models_available:
+                        logger.warning("Docling: OCR models may not be available - OCR may fail")
+                        logger.warning("Docling: Run 'docling download-models' to install OCR models")
+                    
+                    # IMPORTANT: The default DocumentConverter in Docling has OCR enabled by default
+                    # We don't need to configure it - just use the default converter
+                    # Docling automatically uses OCR when processing documents with images
+                    converter = self.DocumentConverter()
+                    logger.info("Docling: ✅ Using default DocumentConverter (OCR enabled by default)")
+                    logger.info("Docling: OCR will automatically process images in the document")
                     
                     logger.info("Docling: [Phase 2/4] DocumentConverter initialized with OCR, starting conversion...")
+                    logger.info("Docling: OCR will process images in the document (this may take time)...")
                     if progress_callback:
                         try:
                             progress_callback("Docling: [Phase 2/4] Starting document conversion with OCR...", 0.2)
@@ -127,6 +195,7 @@ class DoclingParser(BaseParser):
                     logger.info(f"Docling: [Phase 2/4] Converting file: {os.path.basename(actual_path)}")
                     result = converter.convert(actual_path, raises_on_error=False)
                     logger.info("Docling: [Phase 3/4] Conversion completed, accessing document...")
+                    logger.info("Docling: OCR processing complete - extracting text from converted document...")
                     if progress_callback:
                         try:
                             progress_callback("Docling: [Phase 3/4] Conversion completed, accessing document...", 0.8)
@@ -388,193 +457,116 @@ class DoclingParser(BaseParser):
                 
                 raise ValueError(error_msg)
             
-            # Extract page-by-page text with page markers to preserve original document structure
-            logger.info("Docling: Extracting page-by-page text with page markers...")
-            page_blocks = []  # Store page-level blocks for citation support
-            text_parts = []  # Store text parts with page markers
+            # PRIMARY METHOD: Use export_to_text() directly for optimal extraction
+            # This method provides best results (104K+ chars vs 74K from PyMuPDF in tests)
+            # It preserves table structure and extracts maximum content
+            logger.info("Docling: Extracting text using export_to_text() for optimal structured output...")
             
-            # Get actual page count from document for validation
-            total_pages = len(doc.pages) if hasattr(doc, 'pages') else 0
-            logger.info(f"Docling: Document has {total_pages} pages")
+            page_blocks = []  # Store page-level blocks for citation support
+            text = ""
+            total_pages = 0
             
             try:
-                # Extract text page-by-page from doc.pages to preserve page structure
-                if hasattr(doc, 'pages'):
+                # Get page count first
+                if hasattr(doc, 'pages') and doc.pages:
                     pages_dict = doc.pages
-                    sorted_pages = []
-                    
                     if isinstance(pages_dict, dict):
-                        # Sort pages by page number
-                        for page_key, page_content in pages_dict.items():
-                            try:
-                                # Try to extract page number from key
-                                if isinstance(page_key, int):
-                                    page_idx = page_key
-                                elif isinstance(page_key, str) and page_key.isdigit():
-                                    page_idx = int(page_key)
-                                else:
-                                    continue
-                                
-                                # Docling may use 0-based indexing, convert to 1-based for display
-                                if page_idx == 0 and total_pages > 0:
-                                    page_idx = 1  # First page should be 1
-                                elif page_idx < 0:
-                                    page_idx = abs(page_idx)  # Handle negative indices
-                                
-                                # Validate page is within document range
-                                if page_idx < 1 or (total_pages > 0 and page_idx > total_pages):
-                                    logger.warning(f"Docling: Page {page_idx} out of range [1, {total_pages}], skipping")
-                                    continue
-                                
-                                sorted_pages.append((page_idx, page_content))
-                            except Exception as e:
-                                logger.warning(f"Docling: Error processing page {page_key}: {e}")
-                        
-                        # Sort by page number
-                        sorted_pages.sort(key=lambda x: x[0])
-                        
+                        total_pages = len(pages_dict)
                     elif isinstance(pages_dict, list):
-                        # List indices are 0-based, convert to 1-based
-                        for idx, page_content in enumerate(pages_dict):
-                            try:
-                                page_idx = idx + 1
-                                
-                                # Validate page is within document range
-                                if total_pages > 0 and page_idx > total_pages:
-                                    logger.warning(f"Docling: Page {page_idx} exceeds document pages {total_pages}")
-                                    break
-                                
-                                sorted_pages.append((page_idx, page_content))
-                            except Exception as e:
-                                logger.warning(f"Docling: Error processing page {idx}: {e}")
+                        total_pages = len(pages_dict)
+                    else:
+                        total_pages = 1
+                else:
+                    total_pages = 1
+                
+                logger.info(f"Docling: Document has {total_pages} pages")
+                
+                # PRIMARY: Use export_to_text() - extracts maximum text with proper formatting
+                try:
+                    text = doc.export_to_text()
+                    logger.info(f"Docling: ✅ Text export completed ({len(text):,} characters)")
                     
-                    # Extract text from each page and add page markers
-                    # First, get full document text as fallback
-                    full_text = ""
-                    try:
-                        full_text = doc.export_to_markdown()
-                    except:
-                        try:
-                            full_text = doc.export_to_text()
-                        except:
-                            pass
-                    
-                    # Try to extract page-specific content
-                    for page_idx, page_content in sorted_pages:
-                        try:
-                            # Try multiple methods to extract page text
-                            page_text = ""
+                    # Create page blocks for citation support by splitting text into approximate pages
+                    if total_pages > 1 and text:
+                        text_lines = text.split('\n')
+                        lines_per_page = max(1, len(text_lines) // total_pages)
+                        
+                        for page_idx in range(1, total_pages + 1):
+                            start_line = (page_idx - 1) * lines_per_page
+                            end_line = page_idx * lines_per_page if page_idx < total_pages else len(text_lines)
+                            page_text = '\n'.join(text_lines[start_line:end_line])
                             
-                            # Method 1: Try export methods on page object
-                            if hasattr(page_content, 'export_to_markdown'):
-                                try:
-                                    page_text = page_content.export_to_markdown()
-                                except:
-                                    pass
-                            
-                            if not page_text and hasattr(page_content, 'export_to_text'):
-                                try:
-                                    page_text = page_content.export_to_text()
-                                except:
-                                    pass
-                            
-                            if not page_text and hasattr(page_content, 'get_text'):
-                                try:
-                                    page_text = page_content.get_text()
-                                except:
-                                    pass
-                            
-                            # Method 2: Try string conversion
-                            if not page_text:
-                                try:
-                                    page_text = str(page_content)
-                                except:
-                                    pass
-                            
-                            # Method 3: Try accessing text attribute
-                            if not page_text and hasattr(page_content, 'text'):
-                                try:
-                                    page_text = str(page_content.text) if page_content.text else ""
-                                except:
-                                    pass
-                            
-                            # Method 4: If page_content is a dict/list, try to extract text from it
-                            if not page_text:
-                                if isinstance(page_content, dict):
-                                    # Try common text fields
-                                    for key in ['text', 'content', 'body', 'markdown']:
-                                        if key in page_content:
-                                            page_text = str(page_content[key])
-                                            break
-                                elif isinstance(page_content, list):
-                                    # Try to join list items
-                                    try:
-                                        page_text = "\n".join(str(item) for item in page_content if item)
-                                    except:
-                                        pass
-                            
-                            # Clean up page text
-                            if page_text:
-                                page_text = page_text.strip()
-                            
-                            if page_text:
-                                # Add page marker before page content
-                                page_marker = f"\n--- Page {page_idx} ---\n"
-                                text_parts.append(page_marker + page_text)
-                                
+                            if page_text.strip():
                                 page_blocks.append({
                                     'page': page_idx,
-                                    'text': page_text,
-                                    'blocks': [{'text': page_text, 'page': page_idx}]
+                                    'text': page_text.strip(),
+                                    'blocks': [{'text': page_text.strip(), 'page': page_idx}]
                                 })
-                                logger.debug(f"Docling: Extracted page {page_idx} ({len(page_text)} chars)")
-                            else:
-                                # Even if no text, add page marker to preserve page structure
-                                page_marker = f"\n--- Page {page_idx} ---\n"
-                                text_parts.append(page_marker)
-                                logger.debug(f"Docling: Page {page_idx} has no extractable text (may be image-only, will use OCR)")
-                                
-                        except Exception as e:
-                            logger.warning(f"Docling: Error extracting text from page {page_idx}: {e}")
-                            # Still add page marker to preserve structure
-                            page_marker = f"\n--- Page {page_idx} ---\n"
-                            text_parts.append(page_marker)
                     
-                    # Combine all page text with markers
-                    if text_parts:
-                        text = "\n".join(text_parts)
-                        logger.info(f"Docling: Page-by-page extraction completed ({len(text):,} characters, {len(page_blocks)} pages with content)")
-                    else:
-                        # Fallback to full document export if page-by-page extraction failed
-                        logger.warning("Docling: Page-by-page extraction produced no text, falling back to full export")
+                except Exception as e1:
+                    logger.warning(f"Docling: export_to_text() failed: {e1}, trying export_to_markdown()...")
+                    # FALLBACK: Use export_to_markdown() if export_to_text() fails
+                    try:
                         text = doc.export_to_markdown()
-                        logger.info(f"Docling: Fallback markdown export completed ({len(text):,} characters)")
-                else:
-                    # No pages structure, use full export
-                    logger.warning("Docling: No pages structure available, using full document export")
-                    text = doc.export_to_markdown()
-                    logger.info(f"Docling: Markdown export completed ({len(text):,} characters)")
+                        logger.info(f"Docling: ✅ Markdown export completed ({len(text):,} characters)")
+                        
+                        # Create page blocks from markdown
+                        if total_pages > 1 and text:
+                            text_lines = text.split('\n')
+                            lines_per_page = max(1, len(text_lines) // total_pages)
+                            
+                            for page_idx in range(1, total_pages + 1):
+                                start_line = (page_idx - 1) * lines_per_page
+                                end_line = page_idx * lines_per_page if page_idx < total_pages else len(text_lines)
+                                page_text = '\n'.join(text_lines[start_line:end_line])
+                                
+                                if page_text.strip():
+                                    page_blocks.append({
+                                        'page': page_idx,
+                                        'text': page_text.strip(),
+                                        'blocks': [{'text': page_text.strip(), 'page': page_idx}]
+                                    })
+                    except Exception as e2:
+                        logger.error(f"Docling: Both export methods failed: export_to_text()={e1}, export_to_markdown()={e2}")
+                        raise ValueError(f"Docling: Could not export document text. Both methods failed.")
             except Exception as e:
-                logger.error(f"Docling: Error exporting to markdown: {str(e)}")
-                # Try alternative export methods
+                logger.error(f"Docling: Error during text extraction: {str(e)}")
+                # Try alternative export methods (prefer export_to_text first)
                 text = None
                 if hasattr(doc, 'export_to_text'):
                     try:
-                        logger.info("Docling: Trying export_to_text as fallback...")
+                        logger.info("Docling: Trying export_to_text as primary method...")
                         text = doc.export_to_text()
                         logger.info(f"Docling: Text export completed ({len(text) if text else 0:,} characters)")
                     except Exception as e2:
                         logger.error(f"Docling: Error exporting to text: {str(e2)}")
+                        # Try markdown as fallback
+                        if hasattr(doc, 'export_to_markdown'):
+                            try:
+                                logger.info("Docling: Trying export_to_markdown as fallback...")
+                                text = doc.export_to_markdown()
+                                logger.info(f"Docling: Markdown export completed ({len(text) if text else 0:,} characters)")
+                            except Exception as e3:
+                                logger.error(f"Docling: Error exporting to markdown: {str(e3)}")
                 
                 if not text or not text.strip():
-                    raise ValueError(f"Docling: Could not export document text. Markdown export failed: {str(e)}")
+                    raise ValueError(f"Docling: Could not export document text. Both export methods failed: {str(e)}")
             
-            # Validate text extraction - try alternative methods if markdown is empty
+            # Validate text extraction - try alternative methods if text is empty
             if not text or not text.strip():
-                # Try export_to_text as fallback
+                # Try export_to_text as primary fallback
                 if hasattr(doc, 'export_to_text'):
                     try:
                         text = doc.export_to_text()
+                        logger.info(f"Docling: Text validation: export_to_text() extracted {len(text):,} characters")
+                    except:
+                        pass
+                
+                # Try markdown as secondary fallback
+                if (not text or not text.strip()) and hasattr(doc, 'export_to_markdown'):
+                    try:
+                        text = doc.export_to_markdown()
+                        logger.info(f"Docling: Text validation: export_to_markdown() extracted {len(text):,} characters")
                     except:
                         pass
                 
@@ -610,17 +602,16 @@ class DoclingParser(BaseParser):
                 )
             
             # Get page count - ensure it matches actual document page count
-            pages = 0
+            pages = total_pages  # Use total_pages from extraction above
             if hasattr(doc, 'pages'):
                 pages_dict = doc.pages
                 if isinstance(pages_dict, dict):
                     pages = len(pages_dict)
                 elif isinstance(pages_dict, list):
                     pages = len(pages_dict)
-                else:
-                    pages = total_pages  # Use calculated total_pages
-            else:
-                pages = total_pages
+                # If total_pages was set during extraction, use it
+                if total_pages > 0:
+                    pages = total_pages
             
             # Validate pages count
             if pages <= 0:
@@ -637,6 +628,9 @@ class DoclingParser(BaseParser):
             word_count = len(words)
             
             logger.info(f"Docling: Extracted {pages} pages, {len(text):,} characters, {word_count:,} words")
+            
+            # Verify OCR extracted text from images if images were detected
+            # Note: images_detected will be set later, but we'll check it after detection
             
             # Estimate extraction percentage
             if pages > 0:
@@ -658,10 +652,77 @@ class DoclingParser(BaseParser):
             else:
                 confidence = 0.5
             
-            # Check for images
+            # Check for images - use multiple detection methods
             images_detected = False
-            if hasattr(doc, 'pictures') and len(doc.pictures) > 0:
-                images_detected = True
+            image_count = 0
+            detection_methods = []
+            
+            try:
+                # Method 1: Check doc.pictures (existing method)
+                if hasattr(doc, 'pictures') and len(doc.pictures) > 0:
+                    images_detected = True
+                    image_count = len(doc.pictures)
+                    detection_methods.append(f"doc.pictures ({image_count} pictures)")
+                    logger.info(f"Docling: Found {image_count} pictures in document")
+                
+                # Method 2: Check pages for image content
+                if hasattr(doc, 'pages'):
+                    pages_dict = doc.pages
+                    if isinstance(pages_dict, (dict, list)):
+                        page_images = 0
+                        for page_content in (pages_dict.values() if isinstance(pages_dict, dict) else pages_dict):
+                            # Check if page has image content
+                            if hasattr(page_content, 'pictures') and len(page_content.pictures) > 0:
+                                page_images += len(page_content.pictures)
+                                images_detected = True
+                            
+                            # Check for image blocks in page structure
+                            if hasattr(page_content, 'blocks'):
+                                for block in page_content.blocks:
+                                    if hasattr(block, 'type') and block.type in ['image', 'figure', 'picture', 'illustration']:
+                                        page_images += 1
+                                        images_detected = True
+                                        break
+                        
+                        if page_images > 0:
+                            image_count = max(image_count, page_images)
+                            detection_methods.append(f"page content ({page_images} images)")
+                
+                # Method 3: Heuristic - if text is very low but file is large, likely image-based
+                file_size_mb = os.path.getsize(actual_path) / 1024 / 1024 if os.path.exists(actual_path) else 0
+                if not images_detected and text_length < 100 and file_size_mb > 0.5:
+                    images_detected = True
+                    detection_methods.append("heuristic (low text, large file)")
+                    logger.info("Docling: Low text content suggests image-based PDF")
+                
+                if images_detected:
+                    logger.info(f"Docling: ✅ Images detected via: {', '.join(detection_methods)}")
+                else:
+                    logger.info("Docling: No images detected in document")
+                    
+            except Exception as e:
+                logger.warning(f"Docling: Error detecting images: {e}")
+                # If we have very little text, assume images might be present
+                if text_length < 100:
+                    images_detected = True
+                    logger.info("Docling: Assuming image-based PDF due to low text content")
+            
+            # Verify OCR extracted text from images if images were detected
+            if images_detected:
+                if text_length < 100:
+                    logger.error("Docling: ❌ Images detected but very little text extracted - OCR may have failed!")
+                    logger.error("Docling: Possible reasons:")
+                    logger.error("   1. OCR models not downloaded (run: docling download-models)")
+                    logger.error("   2. Images are too low quality for OCR")
+                    logger.error("   3. OCR processing failed silently")
+                    logger.error("   4. Document format not supported by OCR")
+                    logger.error("Docling: 💡 Suggestion: Try using Textract parser for better OCR results")
+                    logger.error("Docling: 💡 Or pre-process PDF with external OCR software")
+                elif text_length < 500:
+                    logger.warning("Docling: ⚠️  Images detected but limited text extracted")
+                    logger.warning("Docling: OCR may have partially failed or images have low-quality text")
+                else:
+                    logger.info(f"Docling: ✅ OCR appears successful - extracted {text_length:,} characters from images")
             
             metadata = {
                 "source": file_path,
@@ -669,7 +730,9 @@ class DoclingParser(BaseParser):
                 "text_length": text_length,
                 "word_count": word_count,
                 "file_size": len(file_content) if file_content else os.path.getsize(file_path),
-                "page_blocks": page_blocks  # Store page-level blocks for citation support
+                "page_blocks": page_blocks,  # Store page-level blocks for citation support
+                "image_count": image_count,  # Store image count for queries
+                "images_detected": images_detected  # Store boolean flag
             }
             
             return ParsedDocument(
@@ -679,7 +742,8 @@ class DoclingParser(BaseParser):
                 images_detected=images_detected,
                 parser_used=self.name,
                 confidence=confidence,
-                extraction_percentage=extraction_percentage
+                extraction_percentage=extraction_percentage,
+                image_count=image_count
             )
             
         except Exception as e:

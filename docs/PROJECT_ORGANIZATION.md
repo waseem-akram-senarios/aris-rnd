@@ -8,7 +8,7 @@ The root directory contains only essential project files:
 
 - **Core Application Files:**
   - `app.py` - Streamlit main application
-  - `rag_system.py` - RAG system core
+- `rag_system.py` - RAG system core
   - `start.sh` - Startup script
   - `Dockerfile` - Docker configuration
   - `docker-compose.yml` - Docker Compose configuration

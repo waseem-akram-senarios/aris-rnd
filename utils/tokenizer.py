@@ -488,13 +488,13 @@ class TokenTextSplitter:
                                                 img_block.get('type') == 'image' and 
                                                 img_block.get('page') == page_num):
                                                 chunk_image_ref = {
-                                                    'page': page_num,
-                                                    'image_index': img_block.get('image_index'),
-                                                    'bbox': img_block.get('bbox'),
-                                                    'xref': img_block.get('xref'),
-                                                    'type': 'image'
-                                                }
-                                                break
+                                                'page': page_num,
+                                                'image_index': img_block.get('image_index'),
+                                                'bbox': img_block.get('bbox'),
+                                                'xref': img_block.get('xref'),
+                                                'type': 'image'
+                                            }
+                                            break
                                     break  # Found the page, no need to continue
                             # Also check if chunk overlaps with this page
                             elif chunk_start_char < page_end and chunk_end_char > page_start:
@@ -513,13 +513,13 @@ class TokenTextSplitter:
                                                 img_block.get('type') == 'image' and 
                                                 img_block.get('page') == page_num):
                                                 chunk_image_ref = {
-                                                    'page': page_num,
-                                                    'image_index': img_block.get('image_index'),
-                                                    'bbox': img_block.get('bbox'),
-                                                    'xref': img_block.get('xref'),
-                                                    'type': 'image'
-                                                }
-                                                break
+                                                'page': page_num,
+                                                'image_index': img_block.get('image_index'),
+                                                'bbox': img_block.get('bbox'),
+                                                'xref': img_block.get('xref'),
+                                                'type': 'image'
+                                            }
+                                            break
                                     break  # Found the page, no need to continue
                             
                             cumulative_pos = page_end

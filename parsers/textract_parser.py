@@ -177,7 +177,8 @@ class TextractParser(BaseParser):
                 images_detected=images_detected,
                 parser_used=self.name,
                 confidence=confidence,
-                extraction_percentage=extraction_percentage
+                extraction_percentage=extraction_percentage,
+                image_count=0  # Textract processes images but doesn't count them separately
             )
             
         except ClientError as e:

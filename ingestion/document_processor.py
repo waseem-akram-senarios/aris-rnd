@@ -163,7 +163,7 @@ class DocumentProcessor:
                         estimated_time = "10-20 minutes"
                     else:
                         estimated_time = "5-15 minutes"
-                    # Update status to show Docling is processing
+                        # Update status to show Docling is processing
                     logger.info(f"[STEP 2.2] Docling: Processing {doc_name} ({file_size_mb:.2f} MB) - Estimated time: {estimated_time}")
                 
                 # Parse document (this will block for Docling, but that's expected)
@@ -325,6 +325,7 @@ class DocumentProcessor:
                     'parser_used': getattr(parsed_doc, 'parser_used', 'unknown'),
                     'pages': getattr(parsed_doc, 'pages', 0),
                     'images_detected': getattr(parsed_doc, 'images_detected', False),
+                    'image_count': getattr(parsed_doc, 'image_count', 0),  # Store image count for queries
                     'extraction_percentage': getattr(parsed_doc, 'extraction_percentage', 0.0)
                 }
                 

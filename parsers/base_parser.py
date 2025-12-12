@@ -16,6 +16,7 @@ class ParsedDocument:
     parser_used: str
     confidence: float = 1.0
     extraction_percentage: float = 0.0  # Percentage of pages with text extracted
+    image_count: int = 0  # Number of images detected in the document
     
     def __post_init__(self):
         """Validate parsed document data."""
