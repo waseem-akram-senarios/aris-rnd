@@ -104,6 +104,203 @@ class DoclingParser(BaseParser):
         
         return result
     
+    def _insert_image_markers(self, text: str, image_positions: list = None) -> str:
+        """
+        Insert <!-- image --> markers into text at specified positions or before image-related content.
+        
+        Args:
+            text: Text content
+            image_positions: Optional list of character positions where images should be marked
+        
+        Returns:
+            Text with image markers inserted
+        """
+        if not text or not text.strip():
+            return text
+        
+        # If image positions provided, insert markers at those positions
+        if image_positions:
+            # Sort positions in reverse order to maintain indices when inserting
+            sorted_positions = sorted(image_positions, reverse=True)
+            result_text = text
+            for pos in sorted_positions:
+                if 0 <= pos <= len(result_text):
+                    result_text = result_text[:pos] + "<!-- image -->\n" + result_text[pos:]
+            return result_text
+        
+        # Otherwise, return text as-is (markers should be inserted by parser logic)
+        return text
+    
+    def _extract_text_per_page(self, doc, total_pages: int, progress_callback: Optional[Callable[[str, float], None]] = None):
+        """
+        Extract text per page from Docling document structure.
+        
+        Args:
+            doc: Docling document object
+            total_pages: Total number of pages in document
+            progress_callback: Optional progress callback
+        
+        Returns:
+            Tuple of (full_text_with_markers, page_blocks, success_flag)
+            success_flag: True if per-page extraction succeeded, False if fallback needed
+        """
+        text_parts = []
+        page_blocks = []
+        cumulative_pos = 0
+        per_page_extraction_success = False
+        
+        try:
+            # Try to access pages structure
+            if not hasattr(doc, 'pages') or not doc.pages:
+                logger.warning("Docling: No pages structure available, will use fallback")
+                return "", [], False
+            
+            pages_dict = doc.pages
+            pages_iterable = None
+            
+            # Handle both dict and list formats
+            if isinstance(pages_dict, dict):
+                # Dict format: keys might be page numbers or indices
+                # Try to get pages in order
+                try:
+                    # Try numeric keys first (1, 2, 3...)
+                    sorted_keys = sorted([k for k in pages_dict.keys() if isinstance(k, (int, str))], 
+                                        key=lambda x: int(x) if str(x).isdigit() else 0)
+                    if sorted_keys:
+                        pages_iterable = [(int(k) if str(k).isdigit() else 0, pages_dict[k]) for k in sorted_keys]
+                    else:
+                        # Fallback: use values directly
+                        pages_iterable = enumerate(pages_dict.values(), 1)
+                except Exception:
+                    # Fallback: use values directly
+                    pages_iterable = enumerate(pages_dict.values(), 1)
+            elif isinstance(pages_dict, list):
+                pages_iterable = enumerate(pages_dict, 1)
+            else:
+                logger.warning("Docling: Pages structure format not recognized, will use fallback")
+                return "", [], False
+            
+            # Try to extract text from each page
+            pages_with_text = 0
+            for page_idx, page_obj in pages_iterable:
+                page_num = page_idx if isinstance(page_idx, int) else page_idx[0] if isinstance(page_idx, tuple) else 1
+                page_content = page_obj if not isinstance(page_idx, tuple) else page_idx[1]
+                
+                page_text = ""
+                
+                # Try multiple methods to extract text from page
+                # Method 1: page.export_to_text()
+                if hasattr(page_content, 'export_to_text'):
+                    try:
+                        page_text = page_content.export_to_text()
+                        if page_text and page_text.strip():
+                            per_page_extraction_success = True
+                    except Exception as e:
+                        logger.debug(f"Docling: Page {page_num} export_to_text() failed: {e}")
+                
+                # Method 2: page.get_text()
+                if not page_text and hasattr(page_content, 'get_text'):
+                    try:
+                        page_text = page_content.get_text()
+                        if page_text and page_text.strip():
+                            per_page_extraction_success = True
+                    except Exception as e:
+                        logger.debug(f"Docling: Page {page_num} get_text() failed: {e}")
+                
+                # Method 3: Extract from page.blocks
+                if not page_text and hasattr(page_content, 'blocks'):
+                    try:
+                        block_texts = []
+                        image_blocks_found = []
+                        for block_idx, block in enumerate(page_content.blocks):
+                            # Check if this is an image block
+                            is_image_block = False
+                            if hasattr(block, 'type') and block.type in ['image', 'figure', 'picture', 'illustration']:
+                                is_image_block = True
+                                image_blocks_found.append(block_idx)
+                            
+                            # Extract text from block
+                            block_text = ""
+                            if hasattr(block, 'text') and block.text:
+                                block_text = block.text
+                            elif hasattr(block, 'get_text'):
+                                try:
+                                    block_text = block.get_text()
+                                except:
+                                    pass
+                            
+                            if block_text:
+                                # If this is an image block, insert marker before its text
+                                if is_image_block:
+                                    block_texts.append("<!-- image -->\n" + block_text)
+                                else:
+                                    block_texts.append(block_text)
+                        
+                        if block_texts:
+                            page_text = '\n'.join(block_texts)
+                            if page_text.strip():
+                                per_page_extraction_success = True
+                    except Exception as e:
+                        logger.debug(f"Docling: Page {page_num} blocks extraction failed: {e}")
+                
+                # Check for images on this page (pictures attribute)
+                page_has_images = False
+                if hasattr(page_content, 'pictures') and len(page_content.pictures) > 0:
+                    page_has_images = True
+                    # If we have text but no image markers yet, insert them
+                    # Insert marker at the start if this page has images and text was extracted
+                    if page_text and '<!-- image -->' not in page_text:
+                        # Check if text looks like OCR content (short lines, structured)
+                        # Insert marker before text if images are present
+                        page_text = "<!-- image -->\n" + page_text
+                
+                # If we got text from this page, add it with marker
+                if page_text and page_text.strip():
+                    pages_with_text += 1
+                    
+                    # Add page marker (matching PyMuPDF format)
+                    page_marker = f"--- Page {page_num} ---\n"
+                    page_text_with_marker = page_marker + page_text
+                    
+                    # Track character positions for accurate page boundaries
+                    page_start = cumulative_pos
+                    page_end = cumulative_pos + len(page_text_with_marker)
+                    
+                    # Create page block with accurate boundaries
+                    page_blocks.append({
+                        'page': page_num,
+                        'text': page_text,
+                        'start_char': page_start,
+                        'end_char': page_end,
+                        'blocks': [{'text': page_text, 'page': page_num}]
+                    })
+                    
+                    # Add to full text with marker
+                    text_parts.append(page_text_with_marker)
+                    cumulative_pos = page_end
+                    
+                    # Update progress
+                    if progress_callback and total_pages > 0:
+                        try:
+                            progress = 0.9 + (page_num / total_pages) * 0.05  # 90-95% range
+                            progress_callback(f"Docling: Extracted page {page_num}/{total_pages}...", progress)
+                        except:
+                            pass
+            
+            if per_page_extraction_success and pages_with_text > 0:
+                full_text = "\n\n".join(text_parts)
+                logger.info(f"Docling: ✅ Per-page extraction successful - {pages_with_text}/{total_pages} pages extracted")
+                return full_text, page_blocks, True
+            else:
+                logger.warning(f"Docling: Per-page extraction failed or extracted 0 pages, will use fallback")
+                return "", [], False
+                
+        except Exception as e:
+            logger.warning(f"Docling: Error in per-page extraction: {e}, will use fallback")
+            import traceback
+            logger.debug(f"Docling: Per-page extraction traceback: {traceback.format_exc()}")
+            return "", [], False
+    
     def parse(self, file_path: str, file_content: Optional[bytes] = None, progress_callback: Optional[Callable[[str, float], None]] = None, _retry_without_callback: bool = False) -> ParsedDocument:
         """
         Parse PDF using Docling - simple quickstart pattern.
@@ -457,10 +654,9 @@ class DoclingParser(BaseParser):
                 
                 raise ValueError(error_msg)
             
-            # PRIMARY METHOD: Use export_to_text() directly for optimal extraction
-            # This method provides best results (104K+ chars vs 74K from PyMuPDF in tests)
-            # It preserves table structure and extracts maximum content
-            logger.info("Docling: Extracting text using export_to_text() for optimal structured output...")
+            # PRIMARY METHOD: Extract text per page for accurate page numbers
+            # This ensures page markers and accurate page_blocks for citation support
+            logger.info("Docling: Extracting text per page for accurate page numbers...")
             
             page_blocks = []  # Store page-level blocks for citation support
             text = ""
@@ -481,39 +677,25 @@ class DoclingParser(BaseParser):
                 
                 logger.info(f"Docling: Document has {total_pages} pages")
                 
-                # PRIMARY: Use export_to_text() - extracts maximum text with proper formatting
-                try:
-                    text = doc.export_to_text()
-                    logger.info(f"Docling: ✅ Text export completed ({len(text):,} characters)")
-                    
-                    # Create page blocks for citation support by splitting text into approximate pages
-                    if total_pages > 1 and text:
-                        text_lines = text.split('\n')
-                        lines_per_page = max(1, len(text_lines) // total_pages)
-                        
-                        for page_idx in range(1, total_pages + 1):
-                            start_line = (page_idx - 1) * lines_per_page
-                            end_line = page_idx * lines_per_page if page_idx < total_pages else len(text_lines)
-                            page_text = '\n'.join(text_lines[start_line:end_line])
-                            
-                            if page_text.strip():
-                                page_blocks.append({
-                                    'page': page_idx,
-                                    'text': page_text.strip(),
-                                    'blocks': [{'text': page_text.strip(), 'page': page_idx}]
-                                })
-                    
-                except Exception as e1:
-                    logger.warning(f"Docling: export_to_text() failed: {e1}, trying export_to_markdown()...")
-                    # FALLBACK: Use export_to_markdown() if export_to_text() fails
+                # PRIMARY: Try per-page extraction first for accurate page numbers
+                text, page_blocks, per_page_success = self._extract_text_per_page(doc, total_pages, progress_callback)
+                
+                if per_page_success and text:
+                    logger.info(f"Docling: ✅ Per-page text extraction completed ({len(text):,} characters with page markers)")
+                else:
+                    # FALLBACK: Use export_to_text() if per-page extraction failed
+                    logger.info("Docling: Per-page extraction not available, using export_to_text() with fallback page markers...")
                     try:
-                        text = doc.export_to_markdown()
-                        logger.info(f"Docling: ✅ Markdown export completed ({len(text):,} characters)")
+                        text = doc.export_to_text()
+                        logger.info(f"Docling: ✅ Text export completed ({len(text):,} characters)")
                         
-                        # Create page blocks from markdown
+                        # Add page markers to text and create page_blocks as fallback
                         if total_pages > 1 and text:
+                            # Split text into approximate pages and add markers
                             text_lines = text.split('\n')
                             lines_per_page = max(1, len(text_lines) // total_pages)
+                            text_parts = []
+                            cumulative_pos = 0
                             
                             for page_idx in range(1, total_pages + 1):
                                 start_line = (page_idx - 1) * lines_per_page
@@ -521,14 +703,75 @@ class DoclingParser(BaseParser):
                                 page_text = '\n'.join(text_lines[start_line:end_line])
                                 
                                 if page_text.strip():
+                                    # Add page marker (matching PyMuPDF format)
+                                    page_marker = f"--- Page {page_idx} ---\n"
+                                    page_text_with_marker = page_marker + page_text
+                                    
+                                    # Track character positions
+                                    page_start = cumulative_pos
+                                    page_end = cumulative_pos + len(page_text_with_marker)
+                                    
+                                    # Create page block with boundaries
                                     page_blocks.append({
                                         'page': page_idx,
                                         'text': page_text.strip(),
+                                        'start_char': page_start,
+                                        'end_char': page_end,
                                         'blocks': [{'text': page_text.strip(), 'page': page_idx}]
                                     })
-                    except Exception as e2:
-                        logger.error(f"Docling: Both export methods failed: export_to_text()={e1}, export_to_markdown()={e2}")
-                        raise ValueError(f"Docling: Could not export document text. Both methods failed.")
+                                    
+                                    text_parts.append(page_text_with_marker)
+                                    cumulative_pos = page_end
+                            
+                            # Rebuild text with page markers
+                            text = "\n\n".join(text_parts)
+                            logger.info(f"Docling: ✅ Added page markers to text ({len(text):,} characters)")
+                    
+                    except Exception as e1:
+                        logger.warning(f"Docling: export_to_text() failed: {e1}, trying export_to_markdown()...")
+                        # FALLBACK: Use export_to_markdown() if export_to_text() fails
+                        try:
+                            text = doc.export_to_markdown()
+                            logger.info(f"Docling: ✅ Markdown export completed ({len(text):,} characters)")
+                            
+                            # Add page markers to markdown and create page_blocks
+                            if total_pages > 1 and text:
+                                text_lines = text.split('\n')
+                                lines_per_page = max(1, len(text_lines) // total_pages)
+                                text_parts = []
+                                cumulative_pos = 0
+                                
+                                for page_idx in range(1, total_pages + 1):
+                                    start_line = (page_idx - 1) * lines_per_page
+                                    end_line = page_idx * lines_per_page if page_idx < total_pages else len(text_lines)
+                                    page_text = '\n'.join(text_lines[start_line:end_line])
+                                    
+                                    if page_text.strip():
+                                        # Add page marker
+                                        page_marker = f"--- Page {page_idx} ---\n"
+                                        page_text_with_marker = page_marker + page_text
+                                        
+                                        # Track character positions
+                                        page_start = cumulative_pos
+                                        page_end = cumulative_pos + len(page_text_with_marker)
+                                        
+                                        page_blocks.append({
+                                            'page': page_idx,
+                                            'text': page_text.strip(),
+                                            'start_char': page_start,
+                                            'end_char': page_end,
+                                            'blocks': [{'text': page_text.strip(), 'page': page_idx}]
+                                        })
+                                        
+                                        text_parts.append(page_text_with_marker)
+                                        cumulative_pos = page_end
+                                
+                                # Rebuild text with page markers
+                                text = "\n\n".join(text_parts)
+                                logger.info(f"Docling: ✅ Added page markers to markdown text ({len(text):,} characters)")
+                        except Exception as e2:
+                            logger.error(f"Docling: Both export methods failed: export_to_text()={e1}, export_to_markdown()={e2}")
+                            raise ValueError(f"Docling: Could not export document text. Both methods failed.")
             except Exception as e:
                 logger.error(f"Docling: Error during text extraction: {str(e)}")
                 # Try alternative export methods (prefer export_to_text first)

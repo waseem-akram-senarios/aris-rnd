@@ -207,6 +207,39 @@ class PyMuPDFParser(BaseParser):
                                                 })
                                 
                                 page_blocks.append(page_blocks_data)
+                                
+                                # Check for images on this page BEFORE adding to text_parts
+                                page_has_images = False
+                                try:
+                                    image_list = page.get_images()
+                                    if image_list:
+                                        page_has_images = True
+                                        total_images += len(image_list)
+                                        images_detected = True
+                                        # Store image metadata for citation
+                                        for img_idx, img_info in enumerate(image_list):
+                                            try:
+                                                # Get image bounding box if available
+                                                img_rects = page.get_image_rects(img_info[7])  # xref number
+                                                if img_rects:
+                                                    for rect in img_rects:
+                                                        page_blocks.append({
+                                                            'page': page_num + 1,
+                                                            'type': 'image',
+                                                            'image_index': img_idx,
+                                                            'bbox': [rect.x0, rect.y0, rect.x1, rect.y1],
+                                                            'xref': img_info[7]
+                                                        })
+                                            except Exception:
+                                                pass  # Skip if image metadata extraction fails
+                                except Exception as e:
+                                    logger.warning(f"PyMuPDF: Failed to get images from page {page_num + 1}: {str(e)[:100]}")
+                                
+                                # Insert image marker if images are present on this page
+                                if page_has_images and '<!-- image -->' not in page_text:
+                                    # Insert marker before page text to indicate images are present
+                                    page_text = "<!-- image -->\n" + page_text
+                                
                                 text_parts.append(f"--- Page {page_num + 1} ---\n{page_text}")
                                 pages_with_text += 1
                         except Exception as e:
@@ -216,32 +249,6 @@ class PyMuPDFParser(BaseParser):
                                 f"(took {page_elapsed:.1f}s): {str(e)[:100]} - skipping page"
                             )
                             skipped_pages.append(page_num + 1)
-                            # Continue with next page
-                        
-                        # Check for images (with timeout protection)
-                        try:
-                            image_list = page.get_images()
-                            if image_list:
-                                total_images += len(image_list)
-                                images_detected = True
-                                # Store image metadata for citation
-                                for img_idx, img_info in enumerate(image_list):
-                                    try:
-                                        # Get image bounding box if available
-                                        img_rects = page.get_image_rects(img_info[7])  # xref number
-                                        if img_rects:
-                                            for rect in img_rects:
-                                                page_blocks.append({
-                                                    'page': page_num + 1,
-                                                    'type': 'image',
-                                                    'image_index': img_idx,
-                                                    'bbox': [rect.x0, rect.y0, rect.x1, rect.y1],
-                                                    'xref': img_info[7]
-                                                })
-                                    except Exception:
-                                        pass  # Skip if image metadata extraction fails
-                        except Exception as e:
-                            logger.warning(f"PyMuPDF: Failed to get images from page {page_num + 1}: {str(e)[:100]}")
                             # Continue with next page
                     
                     except Exception as e:

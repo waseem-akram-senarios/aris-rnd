@@ -141,15 +141,31 @@ class TextractParser(BaseParser):
             # Extract text from response
             text_parts = []
             pages = set()
+            image_blocks = []
+            current_page = 1
             
             for block in response.get('Blocks', []):
                 if block['BlockType'] == 'PAGE':
-                    pages.add(block.get('Page', 1))
+                    current_page = block.get('Page', 1)
+                    pages.add(current_page)
                 elif block['BlockType'] == 'LINE':
                     text_parts.append(block.get('Text', ''))
+                elif block['BlockType'] in ['IMAGE', 'FIGURE', 'TABLE']:
+                    # Track image blocks for marker insertion
+                    image_blocks.append({
+                        'page': current_page,
+                        'block_id': block.get('Id'),
+                        'geometry': block.get('Geometry', {})
+                    })
             
             full_text = '\n'.join(text_parts)
             total_pages = len(pages) if pages else 1
+            
+            # Insert image markers if images were detected
+            if image_blocks and full_text:
+                # Insert marker at the start of text if images are present
+                if '<!-- image -->' not in full_text:
+                    full_text = "<!-- image -->\n" + full_text
             
             # Textract is good at OCR, so high confidence
             confidence = 0.95 if len(full_text.strip()) > 100 else 0.7

@@ -42,6 +42,27 @@ class TokenTextSplitter:
             # Fallback to cl100k_base encoding (used by GPT-3.5/GPT-4)
             self.encoding = tiktoken.get_encoding("cl100k_base")
     
+    def _safe_encode(self, text: str):
+        """
+        Safely encode text handling special tokens that might be in the text.
+        
+        Args:
+            text: Text to encode
+        
+        Returns:
+            Encoded tokens as list
+        """
+        try:
+            # Try encoding with special tokens allowed
+            return self.encoding.encode(text, disallowed_special=())
+        except Exception:
+            try:
+                # Fallback: allow all special tokens
+                return self.encoding.encode(text, allowed_special="all")
+            except Exception:
+                # Last resort: encode without special token checks
+                return self.encoding.encode(text, disallowed_special=())
+    
     def count_tokens(self, text: str) -> int:
         """
         Count tokens in text using the same encoding as split_text.
@@ -60,11 +81,81 @@ class TokenTextSplitter:
             return 0
         try:
             # Use the exact same encoding method as split_text for consistency
-            encoded = self.encoding.encode(text)
+            encoded = self._safe_encode(text)
             return len(encoded)
         except Exception:
             # Fallback: estimate based on character count (rough approximation)
             return len(text) // 4
+    
+    def _force_split_text(self, text: str) -> List[str]:
+        """
+        Force split text into chunks without sentence boundary detection.
+        Used as fallback when normal splitting fails.
+        
+        Args:
+            text: Text to split
+        
+        Returns:
+            List of text chunks (guaranteed to be within chunk_size)
+        """
+        logger = logging.getLogger(__name__)
+        
+        if not text or not text.strip():
+            return []
+        
+        try:
+            # Encode to tokens (handle special tokens that might be in text)
+            tokens = self._safe_encode(text)
+            total_tokens = len(tokens)
+            
+            if total_tokens <= self.chunk_size:
+                return [text]
+            
+            chunks = []
+            start_idx = 0
+            
+            while start_idx < len(tokens):
+                # Get chunk of exactly chunk_size tokens
+                end_idx = min(start_idx + self.chunk_size, len(tokens))
+                chunk_tokens = tokens[start_idx:end_idx]
+                
+                # Decode to text
+                chunk_text = self.encoding.decode(chunk_tokens)
+                
+                if chunk_text.strip():
+                    chunks.append(chunk_text)
+                
+                # Move to next chunk with overlap
+                start_idx = end_idx - self.chunk_overlap
+                
+                # Prevent infinite loop
+                if start_idx >= len(tokens):
+                    break
+                if start_idx < 0:
+                    start_idx = 0
+                # If we're at the end, add remaining tokens
+                if start_idx >= len(tokens) - self.chunk_overlap:
+                    if start_idx < len(tokens):
+                        remaining_tokens = tokens[start_idx:]
+                        remaining_text = self.encoding.decode(remaining_tokens)
+                        if remaining_text.strip():
+                            chunks.append(remaining_text)
+                    break
+            
+            logger.info(f"TokenTextSplitter: Force split created {len(chunks)} chunks from {total_tokens:,} tokens")
+            return chunks if chunks else [text]  # Fallback to single chunk if all else fails
+            
+        except Exception as e:
+            logger.error(f"TokenTextSplitter: Force split failed: {e}")
+            # Last resort: split by character count (rough approximation)
+            # Estimate ~4 chars per token
+            char_chunk_size = self.chunk_size * 4
+            chunks = []
+            for i in range(0, len(text), char_chunk_size - (self.chunk_overlap * 4)):
+                chunk = text[i:i + char_chunk_size]
+                if chunk.strip():
+                    chunks.append(chunk)
+            return chunks if chunks else [text]
     
     def split_text(self, text: str, progress_callback: Optional[Callable] = None) -> List[str]:
         """
@@ -84,7 +175,8 @@ class TokenTextSplitter:
         
         # Encode text to tokens
         logger.debug(f"TokenTextSplitter: Encoding text ({len(text):,} chars)...")
-        tokens = self.encoding.encode(text)
+        # Handle special tokens that might be in the text (like <|endoftext|>)
+        tokens = self._safe_encode(text)
         total_tokens = len(tokens)
         logger.debug(f"TokenTextSplitter: Encoded to {total_tokens:,} tokens")
         
@@ -92,8 +184,17 @@ class TokenTextSplitter:
             return [text]
         
         # Estimate number of chunks for progress tracking
-        estimated_chunks = (total_tokens + self.chunk_size - 1) // self.chunk_size
+        estimated_chunks = max(1, (total_tokens + self.chunk_size - 1) // self.chunk_size)
         logger.info(f"TokenTextSplitter: Splitting {total_tokens:,} tokens into ~{estimated_chunks} chunks (chunk_size={self.chunk_size})")
+        
+        # CRITICAL: For large documents, we MUST create multiple chunks
+        # If estimated_chunks is 1 but tokens > chunk_size, something is wrong
+        if total_tokens > self.chunk_size and estimated_chunks == 1:
+            logger.error(f"TokenTextSplitter: ERROR - Document has {total_tokens:,} tokens (> {self.chunk_size}) but estimated_chunks=1!")
+            logger.error(f"TokenTextSplitter: This indicates a calculation error. Forcing proper split...")
+            # Recalculate correctly
+            estimated_chunks = (total_tokens + self.chunk_size - 1) // self.chunk_size
+            logger.info(f"TokenTextSplitter: Corrected estimated_chunks to {estimated_chunks}")
         
         chunks = []
         start_idx = 0
@@ -202,7 +303,7 @@ class TokenTextSplitter:
                             chunk_text = ''.join(complete_sentences)
                             # Re-encode to get actual end index
                             try:
-                                chunk_tokens = self.encoding.encode(chunk_text)
+                                chunk_tokens = self._safe_encode(chunk_text)
                                 new_end_idx = start_idx + len(chunk_tokens)
                                 # CRITICAL: Ensure chunk never exceeds chunk_size
                                 max_end_idx = start_idx + self.chunk_size
@@ -217,7 +318,7 @@ class TokenTextSplitter:
                                 chunk_text = self.encoding.decode(chunk_tokens)
                                 
                                 # Final verification: re-encode and check
-                                final_tokens = self.encoding.encode(chunk_text)
+                                final_tokens = self._safe_encode(chunk_text)
                                 if len(final_tokens) > self.chunk_size:
                                     # If still too large, truncate more aggressively
                                     chunk_tokens = tokens[start_idx:start_idx + self.chunk_size]
@@ -237,7 +338,7 @@ class TokenTextSplitter:
             # For large documents, use simpler validation to avoid multiple encode/decode cycles
             if use_sentence_boundaries:
                 try:
-                    final_encoded = self.encoding.encode(chunk_text)
+                    final_encoded = self._safe_encode(chunk_text)
                     final_token_count = len(final_encoded)
                     
                     if final_token_count > self.chunk_size:
@@ -247,7 +348,7 @@ class TokenTextSplitter:
                         end_idx = start_idx + self.chunk_size
                         
                         # Verify one more time after truncation
-                        verify_encoded = self.encoding.encode(chunk_text)
+                        verify_encoded = self._safe_encode(chunk_text)
                         if len(verify_encoded) > self.chunk_size:
                             # Last resort: take exact token slice from original
                             chunk_tokens = tokens[start_idx:start_idx + self.chunk_size]
@@ -268,10 +369,10 @@ class TokenTextSplitter:
                 # Final safety check before adding to chunks list (only for smaller docs)
                 if use_sentence_boundaries:
                     try:
-                        safety_check = len(self.encoding.encode(chunk_text))
+                        safety_check = len(self._safe_encode(chunk_text))
                         if safety_check > self.chunk_size:
                             # Force truncate one more time
-                            encoded = self.encoding.encode(chunk_text)
+                            encoded = self._safe_encode(chunk_text)
                             encoded = encoded[:self.chunk_size]
                             chunk_text = self.encoding.decode(encoded)
                     except Exception:
@@ -284,23 +385,46 @@ class TokenTextSplitter:
             if total_tokens > 100000 and chunk_count % 50 == 0:
                 logger.info(f"TokenTextSplitter: Created {chunk_count} chunks so far, {len(tokens) - start_idx:,} tokens remaining")
             
-            # Move start index with overlap
-            start_idx = end_idx - self.chunk_overlap
+            # Move start index with overlap for next chunk
+            # CRITICAL: Ensure we actually move forward, not backward
+            new_start_idx = end_idx - self.chunk_overlap
             
-            # Ensure start_idx doesn't go negative or exceed bounds
-            if start_idx < 0:
-                start_idx = 0
+            # Ensure start_idx doesn't go negative
+            if new_start_idx < 0:
+                new_start_idx = 0
+            
+            # CRITICAL: Ensure we're making progress (not stuck in same position)
+            if new_start_idx <= start_idx:
+                # If overlap calculation would keep us in same place, move forward by at least 1 token
+                new_start_idx = start_idx + 1
+                logger.warning(f"TokenTextSplitter: Overlap calculation would cause no progress, adjusting start_idx from {start_idx} to {new_start_idx}")
+            
+            start_idx = new_start_idx
+            
+            # Check if we've reached the end
             if start_idx >= len(tokens):
                 break
             
-            # Prevent infinite loop
+            # Prevent infinite loop - if we're very close to the end, add remaining and exit
             if start_idx >= len(tokens) - self.chunk_overlap:
-                # Add remaining text
+                # Add remaining text if there's any
                 if start_idx < len(tokens):
                     remaining_tokens = tokens[start_idx:]
-                    remaining_text = self.encoding.decode(remaining_tokens)
-                    if remaining_text.strip():
-                        chunks.append(remaining_text)
+                    if remaining_tokens:
+                        remaining_text = self.encoding.decode(remaining_tokens)
+                        if remaining_text.strip():
+                            chunks.append(remaining_text)
+                break
+            
+            # Safety check: if we haven't made progress after many iterations, force exit
+            if chunk_count > 10000:  # Prevent infinite loops
+                logger.error(f"TokenTextSplitter: Safety limit reached (10000 chunks), forcing exit")
+                if start_idx < len(tokens):
+                    remaining_tokens = tokens[start_idx:]
+                    if remaining_tokens:
+                        remaining_text = self.encoding.decode(remaining_tokens)
+                        if remaining_text.strip():
+                            chunks.append(remaining_text)
                 break
         
         # Calculate completion metrics
@@ -308,6 +432,70 @@ class TokenTextSplitter:
         total_time = chunking_end_time - chunking_start_time
         chunks_per_sec = len(chunks) / total_time if total_time > 0 else 0
         tokens_per_sec = total_tokens / total_time if total_time > 0 else 0
+        
+        # CRITICAL: Validate chunks are within size limits
+        oversized_chunks = []
+        for idx, chunk in enumerate(chunks):
+            chunk_tokens = len(self._safe_encode(chunk))
+            if chunk_tokens > self.chunk_size:
+                oversized_chunks.append((idx, chunk_tokens))
+        
+        if oversized_chunks:
+            logger.warning(f"TokenTextSplitter: Found {len(oversized_chunks)} oversized chunks after splitting!")
+            for idx, token_count in oversized_chunks:
+                logger.warning(f"TokenTextSplitter: Chunk {idx} has {token_count} tokens (exceeds {self.chunk_size})")
+            # Fix oversized chunks
+            fixed_chunks = []
+            for idx, chunk in enumerate(chunks):
+                if idx in [i for i, _ in oversized_chunks]:
+                    # Re-split this chunk
+                    tokens = self._safe_encode(chunk)
+                    sub_chunks = []
+                    sub_start = 0
+                    while sub_start < len(tokens):
+                        sub_end = min(sub_start + self.chunk_size, len(tokens))
+                        sub_chunk_tokens = tokens[sub_start:sub_end]
+                        sub_chunk_text = self.encoding.decode(sub_chunk_tokens)
+                        if sub_chunk_text.strip():
+                            fixed_chunks.append(sub_chunk_text)
+                        sub_start = sub_end - self.chunk_overlap
+                        if sub_start < 0:
+                            sub_start = 0
+                        if sub_start >= len(tokens):
+                            break
+                else:
+                    fixed_chunks.append(chunk)
+            chunks = fixed_chunks
+            logger.info(f"TokenTextSplitter: Fixed oversized chunks, now have {len(chunks)} chunks")
+        
+        # CRITICAL: Verify we actually created multiple chunks for large documents
+        if total_tokens > self.chunk_size and len(chunks) == 1:
+            logger.error(f"TokenTextSplitter: ERROR - Large document ({total_tokens:,} tokens) resulted in only 1 chunk!")
+            if chunks:
+                single_chunk_tokens = len(self._safe_encode(chunks[0]))
+                logger.error(f"TokenTextSplitter: Single chunk has {single_chunk_tokens} tokens (should be <= {self.chunk_size})")
+                logger.error(f"TokenTextSplitter: This indicates the while loop exited too early or an exception occurred")
+            # Force re-split
+            logger.warning(f"TokenTextSplitter: Attempting force split as fallback...")
+            try:
+                chunks = self._force_split_text(text)
+                logger.info(f"TokenTextSplitter: Force split resulted in {len(chunks)} chunks")
+                if len(chunks) == 1:
+                    logger.error(f"TokenTextSplitter: CRITICAL - Force split also resulted in 1 chunk! This is a serious bug.")
+                    # Last resort: manual split by character count
+                    logger.warning(f"TokenTextSplitter: Using character-based fallback split...")
+                    char_chunk_size = self.chunk_size * 4  # Rough estimate: 4 chars per token
+                    manual_chunks = []
+                    for i in range(0, len(text), char_chunk_size - (self.chunk_overlap * 4)):
+                        chunk = text[i:i + char_chunk_size]
+                        if chunk.strip():
+                            manual_chunks.append(chunk)
+                    if len(manual_chunks) > 1:
+                        chunks = manual_chunks
+                        logger.info(f"TokenTextSplitter: Character-based split created {len(chunks)} chunks")
+            except Exception as e:
+                logger.error(f"TokenTextSplitter: Force split failed: {e}")
+                # Keep original chunks (even if wrong) to avoid complete failure
         
         logger.info(
             f"TokenTextSplitter: Chunking completed - {len(chunks)} chunks created from {total_tokens:,} tokens | "
@@ -329,6 +517,7 @@ class TokenTextSplitter:
         Returns:
             List of Document chunks with token count metadata
         """
+        logger = logging.getLogger(__name__)  # Initialize logger at method level
         all_chunks = []
         
         if not documents:
@@ -371,13 +560,54 @@ class TokenTextSplitter:
                 
                 text_chunks = self.split_text(page_content, progress_callback=progress_callback)
                 
+                # CRITICAL: Verify chunks were actually created and are within size limits
+                if not text_chunks or len(text_chunks) == 0:
+                    # If no chunks created, force split even if it failed
+                    logger.warning(f"TokenTextSplitter: split_text returned no chunks, forcing split for document {doc_idx + 1}")
+                    # Force split by manually chunking
+                    text_chunks = self._force_split_text(page_content)
+                
+                # Verify chunk sizes - if any chunk exceeds limit, re-split
+                oversized_chunks = []
+                for idx, chunk in enumerate(text_chunks):
+                    chunk_tokens = self.count_tokens(chunk)
+                    if chunk_tokens > self.chunk_size:
+                        logger.warning(f"TokenTextSplitter: Chunk {idx} has {chunk_tokens} tokens (exceeds {self.chunk_size}), will re-split")
+                        oversized_chunks.append(idx)
+                
+                # Re-split oversized chunks
+                if oversized_chunks:
+                    logger.warning(f"TokenTextSplitter: Found {len(oversized_chunks)} oversized chunks, re-splitting...")
+                    new_chunks = []
+                    for idx, chunk in enumerate(text_chunks):
+                        if idx in oversized_chunks:
+                            # Re-split this chunk
+                            sub_chunks = self._force_split_text(chunk)
+                            new_chunks.extend(sub_chunks)
+                        else:
+                            new_chunks.append(chunk)
+                    text_chunks = new_chunks
+                    logger.info(f"TokenTextSplitter: Re-split resulted in {len(text_chunks)} chunks")
+                
                 # Update progress after splitting
                 if progress_callback:
                     progress_callback('chunking', 0.1 + ((doc_idx + 1) / total_docs) * 0.2,
                                     detailed_message=f"Document {doc_idx + 1}/{total_docs} split into {len(text_chunks)} chunks")
             except Exception as e:
-                # If splitting fails, create a single chunk with the original text
-                text_chunks = [page_content] if page_content else []
+                # If splitting fails, try force split instead of single chunk
+                logger.error(f"TokenTextSplitter: Error splitting document {doc_idx + 1}: {e}")
+                import traceback
+                logger.debug(f"TokenTextSplitter: Traceback: {traceback.format_exc()}")
+                try:
+                    # Try force split as fallback
+                    text_chunks = self._force_split_text(page_content)
+                    if not text_chunks:
+                        # Last resort: create single chunk but warn
+                        logger.warning(f"TokenTextSplitter: Force split also failed, creating single chunk (may exceed size limit)")
+                        text_chunks = [page_content] if page_content else []
+                except Exception as e2:
+                    logger.error(f"TokenTextSplitter: Force split also failed: {e2}")
+                    text_chunks = [page_content] if page_content else []
             
             if not text_chunks:
                 continue
@@ -388,21 +618,54 @@ class TokenTextSplitter:
             except Exception:
                 chunk_metadata = {}
             
+            # First pass: Check for oversized chunks and collect them for re-splitting
+            oversized_indices = []
+            for chunk_idx, chunk_text in enumerate(text_chunks):
+                try:
+                    token_count = len(self._safe_encode(chunk_text))
+                    if token_count > self.chunk_size:
+                        oversized_indices.append(chunk_idx)
+                except:
+                    # If encoding fails, check with count_tokens
+                    token_count = self.count_tokens(chunk_text)
+                    if token_count > self.chunk_size:
+                        oversized_indices.append(chunk_idx)
+            
+            # Re-split oversized chunks
+            if oversized_indices:
+                logger.warning(f"TokenTextSplitter: Found {len(oversized_indices)} oversized chunks, re-splitting...")
+                fixed_chunks = []
+                for chunk_idx, chunk_text in enumerate(text_chunks):
+                    if chunk_idx in oversized_indices:
+                        # Re-split this chunk
+                        sub_chunks = self._force_split_text(chunk_text)
+                        if sub_chunks:
+                            fixed_chunks.extend(sub_chunks)
+                            logger.info(f"TokenTextSplitter: Chunk {chunk_idx} re-split into {len(sub_chunks)} sub-chunks")
+                        else:
+                            # If re-split failed, truncate as last resort
+                            encoded = self._safe_encode(chunk_text)
+                            if len(encoded) > self.chunk_size:
+                                encoded = encoded[:self.chunk_size]
+                                chunk_text = self.encoding.decode(encoded)
+                            fixed_chunks.append(chunk_text)
+                    else:
+                        fixed_chunks.append(chunk_text)
+                text_chunks = fixed_chunks
+                logger.info(f"TokenTextSplitter: After re-splitting, document has {len(text_chunks)} chunks")
+            
             # Track character positions in original text for citation support
             text_start_pos = 0
             for chunk_idx, chunk_text in enumerate(text_chunks):
                 # Count tokens in chunk (use actual encoding for accuracy)
                 try:
                     # Use the same encoding method as split_text for consistency
-                    token_count = len(self.encoding.encode(chunk_text))
-                    # Verify it doesn't exceed chunk_size (safety check)
+                    token_count = len(self._safe_encode(chunk_text))
+                    # Final verification - should not exceed chunk_size after re-splitting
                     if token_count > self.chunk_size:
-                        # This shouldn't happen, but if it does, log and truncate
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.warning(f"Chunk token count ({token_count}) exceeds chunk_size ({self.chunk_size}). Truncating.")
-                        # Re-encode and truncate
-                        encoded = self.encoding.encode(chunk_text)
+                        # This should not happen after re-splitting, but if it does, truncate
+                        logger.error(f"Chunk {chunk_idx} still exceeds size after re-split ({token_count} > {self.chunk_size}). Truncating.")
+                        encoded = self._safe_encode(chunk_text)
                         if len(encoded) > self.chunk_size:
                             encoded = encoded[:self.chunk_size]
                             chunk_text = self.encoding.decode(encoded)
@@ -411,7 +674,8 @@ class TokenTextSplitter:
                     # Fallback to count_tokens method
                     token_count = self.count_tokens(chunk_text)
                     if token_count > self.chunk_size:
-                        token_count = self.chunk_size  # Cap at chunk_size
+                        # Last resort truncation
+                        token_count = min(token_count, self.chunk_size)
                 
                 # Calculate character offsets for citation support
                 chunk_start_char = text_start_pos
@@ -436,8 +700,7 @@ class TokenTextSplitter:
                         
                         # Validate page number is within document range
                         if page_num and doc_pages and page_num > doc_pages:
-                            import logging
-                            logger = logging.getLogger(__name__)
+                            # Use module-level logger
                             logger.warning(f"Tokenizer: Page {page_num} in page_blocks exceeds document pages {doc_pages}")
                             continue
                         
@@ -476,8 +739,6 @@ class TokenTextSplitter:
                                 chunk_page = page_num
                                 # Validate page is within document range
                                 if doc_pages and chunk_page > doc_pages:
-                                    import logging
-                                    logger = logging.getLogger(__name__)
                                     logger.warning(f"Tokenizer: Mapped page {chunk_page} exceeds document pages {doc_pages}")
                                     chunk_page = None
                                 else:
@@ -501,8 +762,6 @@ class TokenTextSplitter:
                                 chunk_page = page_num
                                 # Validate page is within document range
                                 if doc_pages and chunk_page > doc_pages:
-                                    import logging
-                                    logger = logging.getLogger(__name__)
                                     logger.warning(f"Tokenizer: Mapped page {chunk_page} exceeds document pages {doc_pages}")
                                     chunk_page = None
                                 else:
@@ -532,8 +791,7 @@ class TokenTextSplitter:
                         extracted_page = int(page_match.group(1))
                         # Validate against document pages
                         if doc_pages and extracted_page > doc_pages:
-                            import logging
-                            logger = logging.getLogger(__name__)
+                            # Use module-level logger
                             logger.warning(f"Tokenizer: Page {extracted_page} from text marker exceeds document pages {doc_pages}")
                         else:
                             chunk_page = extracted_page
