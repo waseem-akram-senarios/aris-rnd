@@ -5033,6 +5033,12 @@ Answer:"""
             from vectorstores.opensearch_images_store import OpenSearchImagesStore
             from langchain_openai import OpenAIEmbeddings
             
+            # Import image logger
+            try:
+                from utils.image_extraction_logger import image_logger
+            except ImportError:
+                image_logger = None
+            
             # Log storage start
             if image_logger:
                 total_images = sum(len(contents) for contents in image_content_map.values())
