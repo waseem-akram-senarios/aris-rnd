@@ -235,6 +235,14 @@ class PyMuPDFParser(BaseParser):
                                 except Exception as e:
                                     logger.warning(f"PyMuPDF: Failed to get images from page {page_num + 1}: {str(e)[:100]}")
                                 
+                                # Log image detection
+                                if image_logger and page_has_images:
+                                    image_logger.log_image_detected(
+                                        source=file_path,
+                                        image_count=len(image_list),
+                                        page=page_num + 1
+                                    )
+                                
                                 # Insert image marker if images are present on this page
                                 if page_has_images and '<!-- image -->' not in page_text:
                                     # Insert marker before page text to indicate images are present

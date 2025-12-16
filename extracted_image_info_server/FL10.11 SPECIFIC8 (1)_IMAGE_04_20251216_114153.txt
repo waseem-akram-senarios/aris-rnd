@@ -1,0 +1,21 @@
+IMAGE 4 - OCR CONTENT EXTRACTED BY DOCLING
+======================================================================
+
+OCR Text Length: 2,586 characters
+
+FULL OCR TEXT FROM IMAGE:
+----------------------------------------------------------------------
+| Line 11 Batch Change Standard Work                      | RPF 1 and 2 Handler                                                             | p. 14                                                  |
+| Line 11 Batch Change Standard Work                      | DAY Shift LPF/RPF Operator& Day Shift Manual Belt Operators                     | p. 15                                                  |
+| Line 11 Batch Change Standard Work                      | Manual Belt Handler                                                             | p. 16                                                  |
+| Line 11 Batch Change Standard Work                      | Tank Room Prep                                                                  | p. 17                                                  |
+| Line 11 Batch Change with Sanitization Standard Work    | Lead / Tank Room Handler                                                        | p. 18                                                  |
+|                                                         | Night Lead/Tank Room Handler                                                    | p. 19                                                  |
+|                                                         | LPF 5, 6 and 7 Handler                                                          | p. 20                                                  |
+|                                                         | RPF 1 and 2 Handler Day Shift LPF/RPF Operator& DAY Shift Manual Belt Operators | p. 21 p. 22                                            |
+|                                                         | Night Manual Belt Handler                                                       | p. 23                                                  |
+|                                                         | Manual Belt Handler                                                             | p. 24                                                  |
+|                                                         | Tank Room Prep                                                                  | p. 25                                                  |
+| Line 10 Tool Crib Std. Work                             | Line 10 Tool Crib Std. Work                                                     | p.                                                     |
+| Line 11 Tool Crib Std. Work                             | Line 11 Tool Crib Std. Work                                                     | 27-33                                                  |
+----------------------------------------------------------------------

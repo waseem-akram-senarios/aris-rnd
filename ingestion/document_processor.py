@@ -5,7 +5,7 @@ import os
 import time
 import logging
 from dataclasses import dataclass
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any, Any
 from parsers.parser_factory import ParserFactory
 from rag_system import RAGSystem
 
@@ -201,6 +201,20 @@ class DocumentProcessor:
                     )
                     text_preview = parsed_doc.text[:200] if parsed_doc.text else 'EMPTY'
                     logger.info(f"[STEP 2.3] Text preview (first 200 chars): {text_preview}...")
+                    
+                    # Store images in OpenSearch if available
+                    if (hasattr(parsed_doc, 'metadata') and 
+                        isinstance(parsed_doc.metadata, dict) and 
+                        parsed_doc.metadata.get('extracted_images')):
+                        try:
+                            self._store_images_in_opensearch(
+                                parsed_doc.metadata.get('extracted_images', []),
+                                doc_name,
+                                parsed_doc.parser_used
+                            )
+                        except Exception as e:
+                            logger.warning(f"⚠️ [STEP 2.4] Failed to store images in OpenSearch: {str(e)}")
+                            # Don't fail processing if image storage fails
                 else:
                     logger.error("❌ [STEP 2.3] DocumentProcessor: Parser returned None!")
                     raise ValueError("Parser returned None - document could not be parsed")
@@ -587,4 +601,80 @@ class DocumentProcessor:
             self.processing_state.pop(doc_id, None)
         else:
             self.processing_state.clear()
+    
+    def _store_images_in_opensearch(
+        self,
+        extracted_images: List[Dict[str, Any]],
+        doc_name: str,
+        parser_used: str
+    ):
+        """
+        Store extracted images in OpenSearch images index.
+        
+        Args:
+            extracted_images: List of image dictionaries from parser
+            doc_name: Document name
+            parser_used: Parser that extracted the images
+        """
+        if not extracted_images:
+            return
+        
+        # Only store if OpenSearch is configured
+        if (not hasattr(self.rag_system, 'vector_store_type') or 
+            self.rag_system.vector_store_type.lower() != 'opensearch'):
+            logger.debug("OpenSearch not configured - skipping image storage")
+            return
+        
+        try:
+            from vectorstores.opensearch_images_store import OpenSearchImagesStore
+            from langchain_openai import OpenAIEmbeddings
+            from utils.image_extraction_logger import image_logger
+            
+            # Log storage start
+            if image_logger:
+                image_logger.log_storage_start(
+                    source=doc_name,
+                    image_count=len(extracted_images),
+                    storage_method="opensearch"
+                )
+            
+            # Initialize images store
+            embeddings = OpenAIEmbeddings(
+                openai_api_key=os.getenv('OPENAI_API_KEY'),
+                model=self.rag_system.embedding_model
+            )
+            
+            images_store = OpenSearchImagesStore(
+                embeddings=embeddings,
+                domain=self.rag_system.opensearch_domain,
+                region=self.rag_system.region if hasattr(self.rag_system, 'region') else None
+            )
+            
+            # Store images in batch
+            image_ids = images_store.store_images_batch(extracted_images)
+            
+            # Log storage success
+            if image_logger:
+                image_logger.log_storage_success(
+                    source=doc_name,
+                    images_stored=len(image_ids),
+                    image_ids=image_ids
+                )
+            
+            logger.info(f"✅ Stored {len(image_ids)} images in OpenSearch for document: {doc_name}")
+        except ImportError as e:
+            logger.warning(f"OpenSearch images store not available: {str(e)}")
+        except Exception as e:
+            # Log storage failure
+            try:
+                from utils.image_extraction_logger import image_logger
+                if image_logger:
+                    image_logger.log_storage_failure(
+                        source=doc_name,
+                        error=str(e),
+                        images_attempted=len(extracted_images)
+                    )
+            except:
+                pass
+            raise
 

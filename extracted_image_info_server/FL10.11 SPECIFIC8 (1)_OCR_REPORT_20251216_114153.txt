@@ -1,0 +1,165 @@
+======================================================================
+DOCLING OCR EXTRACTION TEST REPORT
+======================================================================
+
+Test Date: 2025-12-16 11:43:14
+Document: FL10.11 SPECIFIC8 (1).pdf
+Server: Production Server (High Processing Power)
+
+DOCLING EXTRACTION RESULTS:
+----------------------------------------------------------------------
+Pages: 49
+Images Detected: 22
+Image Markers Inserted: 13
+Marker Coverage: 59.1%
+Total Text Extracted: 105,895 characters
+Words Extracted: 12,634
+Confidence: 95.0%
+Extraction Percentage: 100.0%
+
+======================================================================
+IMAGE-BY-IMAGE BREAKDOWN
+======================================================================
+
+Image 1:
+  OCR Text Length: 596 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: False
+
+Image 2:
+  OCR Text Length: 596 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: False
+
+Image 3:
+  OCR Text Length: 596 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: False
+
+Image 4:
+  OCR Text Length: 2,586 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: True
+
+Image 5:
+  OCR Text Length: 84,798 characters
+  Has Part Numbers: True
+  Has Drawer References: False
+  Has Tool Names: True
+  Tools Found: extension
+  Part Numbers: 39000
+
+Image 6:
+  OCR Text Length: 305 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: False
+
+Image 7:
+  OCR Text Length: 1,558 characters
+  Has Part Numbers: True
+  Has Drawer References: True
+  Has Tool Names: True
+  Tools Found: wrench, socket, ratchet, extension, allen, snips, cutter
+  Part Numbers: 65300128, 65300134, 65300084, 65300077, 65300132, 65300124, 65300122, 65300109, 65300091, 65300053
+  Drawer References: 1, 2, 5, 4, 3
+
+Image 8:
+  OCR Text Length: 132 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: True
+
+Image 9:
+  OCR Text Length: 8,138 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: False
+
+Image 10:
+  OCR Text Length: 410 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: False
+
+Image 11:
+  OCR Text Length: 663 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: False
+
+Image 12:
+  OCR Text Length: 1,362 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: False
+
+Image 13:
+  OCR Text Length: 3,927 characters
+  Has Part Numbers: False
+  Has Drawer References: False
+  Has Tool Names: True
+
+======================================================================
+SEARCH FOR SPECIFIC ITEMS
+======================================================================
+
+'mallet': 0 occurrence(s)
+
+'wrench': 25 occurrence(s)
+  Found in images: [7]
+
+'socket': 6 occurrence(s)
+  Found in images: [7]
+
+'ratchet': 1 occurrence(s)
+  Found in images: [7]
+
+'drawer': 5 occurrence(s)
+  Found in images: [7]
+
+'tool': 13 occurrence(s)
+  Found in images: [4, 5, 7, 8, 9, 13]
+
+'part': 21 occurrence(s)
+  Found in images: [5, 9, 13]
+
+======================================================================
+DETAILED 'MALLET' SEARCH
+======================================================================
+
+❌ 'mallet' NOT found in marked image sections
+
+❌ 'mallet' NOT found anywhere in extracted text
+
+Possible reasons:
+  1. OCR didn't recognize it (image quality issue)
+  2. It's spelled differently in the image
+  3. It's in an image that returned empty OCR result
+
+======================================================================
+HOW RAG SYSTEM PROCESSES THIS
+======================================================================
+
+1. Docling extracts text and inserts <!-- image --> markers
+   → 13 markers inserted for 22 images (59.1% coverage)
+
+2. RAG system finds chunks with <!-- image --> markers
+   → Will find 13 image sections
+
+3. RAG extracts OCR text after each marker
+   → Total OCR text available: 105,667 characters
+
+4. RAG creates image_content_map structure
+   → Maps (source, image_num) to OCR content
+
+5. RAG adds Image Content section to LLM context
+   → LLM can search this section for tool/item names
+
+6. When user asks 'Where can I find the Mallet?':
+   → ❌ Mallet NOT in Image Content section (not in marked images)
+   → Need to improve marker insertion or search all text

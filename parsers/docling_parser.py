@@ -4,12 +4,24 @@ Uses ThreadPoolExecutor to prevent UI blocking during long processing.
 """
 import os
 import logging
-from typing import Optional, Callable
+import warnings
+import re
+from typing import Optional, Callable, List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from .base_parser import BaseParser, ParsedDocument
 
 # Set up logging
 logger = logging.getLogger(__name__)
+
+# Suppress Streamlit ScriptRunContext warnings from background threads
+warnings.filterwarnings('ignore', message='.*missing ScriptRunContext.*', category=UserWarning)
+
+# Import image extraction logger
+try:
+    from utils.image_extraction_logger import image_logger
+except ImportError:
+    # Fallback if logger not available
+    image_logger = None
 
 
 class DoclingParser(BaseParser):
@@ -130,6 +142,329 @@ class DoclingParser(BaseParser):
         
         # Otherwise, return text as-is (markers should be inserted by parser logic)
         return text
+    
+    def _insert_image_markers_in_text(self, text: str, image_count: int, image_positions_by_page: dict = None) -> str:
+        """
+        Insert <!-- image --> markers into text by detecting image-like content patterns.
+        Enhanced with better pattern detection and fallback distribution.
+        Can use actual image positions from Docling for more accurate placement.
+        
+        Args:
+            text: Text content
+            image_count: Expected number of images
+            image_positions_by_page: Optional dict mapping page_num -> list of image indices
+        
+        Returns:
+            Text with image markers inserted
+        """
+        if not text or not text.strip() or image_count == 0:
+            return text
+        
+        import re
+        
+        # Strategy: Look for patterns that indicate OCR text from images
+        # and insert markers before them
+        
+        lines = text.split('\n')
+        result_lines = []
+        markers_inserted = 0
+        last_marker_line = -10  # Track last line where marker was inserted
+        
+        # Strategy 0: Use image positions from Docling if available (most accurate)
+        if image_positions_by_page:
+            logger.info(f"Docling: Using image positions from Docling for marker insertion ({len(image_positions_by_page)} pages with images)")
+            # Map page numbers to line numbers in text
+            page_to_lines = {}
+            current_page = None
+            for i, line in enumerate(lines):
+                # Check for page markers
+                page_match = re.search(r'---\s*Page\s+(\d+)', line, re.IGNORECASE)
+                if page_match:
+                    current_page = int(page_match.group(1))
+                    if current_page not in page_to_lines:
+                        page_to_lines[current_page] = []
+                    page_to_lines[current_page].append(i)
+                elif current_page is not None:
+                    if current_page not in page_to_lines:
+                        page_to_lines[current_page] = []
+                    page_to_lines[current_page].append(i)
+            
+            # Insert markers at pages that have images
+            for page_num, image_indices in image_positions_by_page.items():
+                if page_num in page_to_lines:
+                    # Insert marker at start of page (first line after page marker)
+                    page_lines = page_to_lines[page_num]
+                    if page_lines:
+                        insert_line = page_lines[0] + 1  # After page marker
+                        if insert_line < len(lines):
+                            # Insert marker for each image on this page
+                            for img_idx in image_indices:
+                                if insert_line <= len(result_lines):
+                                    result_lines.insert(insert_line, '<!-- image -->')
+                                    markers_inserted += 1
+                                    insert_line += 1  # Space markers for multiple images on same page
+                                else:
+                                    result_lines.append('<!-- image -->')
+                                    markers_inserted += 1
+            
+            # If we inserted markers using positions, continue with pattern detection for remaining
+            if markers_inserted > 0:
+                logger.info(f"Docling: Inserted {markers_inserted} markers using image positions from Docling")
+        
+        # Enhanced pattern detection
+        for i, line in enumerate(lines):
+            # Check if this line looks like image content
+            is_image_content = False
+            
+            # Check for part numbers (6+ digits followed by dash and text) - more flexible
+            if re.search(r'\d{6,}[-]\s*[A-Za-z]', line) or re.search(r'\d{5,}-\s*\w+', line):
+                is_image_content = True
+            
+            # Check for drawer references (more patterns)
+            if (re.search(r'DRAWER\s+\d+', line, re.IGNORECASE) or
+                re.search(r'Drawer\s+\d+', line) or
+                re.search(r'drawer\s+\d+', line, re.IGNORECASE)):
+                is_image_content = True
+            
+            # Check for tool sizes (numbers followed by MM/INCH and text)
+            if (re.search(r'\d+\s*MM\s+[A-Z]', line) or
+                re.search(r'\d+\s*INCH', line, re.IGNORECASE) or
+                re.search(r'\d+["\']\s+[A-Z]', line)):  # Inches with quotes
+                is_image_content = True
+            
+            # Check for structured lists with underscores (OCR pattern) - more patterns
+            if ('___' in line or '____' in line or '_____' in line or
+                re.search(r'_+\s*$', line)):  # Underscores at end of line
+                is_image_content = True
+            
+            # Check for quantity patterns
+            if re.search(r'Quantity:\s*\d+', line, re.IGNORECASE):
+                is_image_content = True
+            
+            # Check for tool reorder patterns
+            if re.search(r'Tool\s+Re.*order', line, re.IGNORECASE):
+                is_image_content = True
+            
+            # Check for table patterns (YES/NO checkboxes)
+            if re.search(r'\|\s*YES\s*\|\s*NO\s*\|', line, re.IGNORECASE):
+                is_image_content = True
+            
+            # Check for socket/wrench patterns
+            if re.search(r'\d+["\']\s+Socket', line, re.IGNORECASE) or re.search(r'\d+MM\s+Wrench', line, re.IGNORECASE):
+                is_image_content = True
+            
+            # If this looks like image content and we haven't inserted a marker recently
+            # CRITICAL FIX: Reduced spacing from 2 to 1 for better coverage
+            if is_image_content and (i - last_marker_line) > 1:  # Reduced from 2 to 1 for maximum coverage
+                # Check if previous lines don't already have marker
+                if i == 0 or '<!-- image -->' not in '\n'.join(result_lines[-5:]):
+                    result_lines.append('<!-- image -->')
+                    markers_inserted += 1
+                    last_marker_line = i
+            
+            result_lines.append(line)
+        
+        # Enhanced fallback: If we didn't insert enough markers, try multiple strategies
+        if markers_inserted < image_count and len(lines) > image_count:
+            additional_markers = image_count - markers_inserted
+            if additional_markers > 0:
+                insertion_points = []
+                
+                # Strategy 1: Find good insertion points (after page markers, before structured content)
+                for i, line in enumerate(lines):
+                    if line.startswith('--- Page') and i + 1 < len(lines):
+                        # Check if next few lines have image-like content
+                        next_lines = '\n'.join(lines[i+1:min(i+20, len(lines))])  # Increased window
+                        if (re.search(r'\d{6,}-\s*[A-Z]', next_lines) or 
+                            re.search(r'DRAWER', next_lines, re.IGNORECASE) or
+                            re.search(r'___+', next_lines) or
+                            re.search(r'\|\s*YES\s*\|\s*NO\s*\|', next_lines) or
+                            re.search(r'Quantity:', next_lines, re.IGNORECASE) or
+                            re.search(r'Tool\s+Re', next_lines, re.IGNORECASE)):
+                            insertion_points.append(i + 1)
+                
+                # Strategy 2: Find pages with structured content (tables, lists)
+                if len(insertion_points) < additional_markers:
+                    for i, line in enumerate(lines):
+                        if (re.search(r'\|.*\|', line) or  # Table rows
+                            re.search(r'^[\s]*[-•]\s+', line) or  # List items
+                            re.search(r'^[\s]*\d+[\.)]\s+', line)):  # Numbered lists
+                            if i > 0 and '<!-- image -->' not in result_lines[max(0, i-5):i]:
+                                insertion_points.append(i)
+                                if len(insertion_points) >= additional_markers:
+                                    break
+                
+                # Strategy 3: Even distribution across document if still not enough
+                if len(insertion_points) < additional_markers:
+                    # Calculate spacing for even distribution
+                    total_lines = len(lines)
+                    remaining_markers = additional_markers - len(insertion_points)
+                    if remaining_markers > 0 and total_lines > remaining_markers:
+                        spacing = max(1, total_lines // (remaining_markers + 1))
+                        for i in range(spacing, total_lines, spacing):
+                            if i < len(result_lines):
+                                # Check if marker already nearby
+                                nearby_markers = sum(1 for j in range(max(0, i-5), min(len(result_lines), i+5)) 
+                                                   if j < len(result_lines) and '<!-- image -->' in result_lines[j])
+                                if nearby_markers == 0:
+                                    insertion_points.append(i)
+                                    if len(insertion_points) >= additional_markers:
+                                        break
+                
+                # Strategy 4: Use page boundaries for even distribution
+                if len(insertion_points) < additional_markers:
+                    # Find all page markers
+                    page_marker_lines = []
+                    for i, line in enumerate(lines):
+                        if line.startswith('--- Page') or re.search(r'---\s*Page\s+\d+', line, re.IGNORECASE):
+                            page_marker_lines.append(i)
+                    
+                    # Distribute markers after page markers
+                    if page_marker_lines and additional_markers > len(insertion_points):
+                        remaining = additional_markers - len(insertion_points)
+                        markers_per_page = max(1, remaining // len(page_marker_lines)) if page_marker_lines else 0
+                        for page_line in page_marker_lines:
+                            if len(insertion_points) >= additional_markers:
+                                break
+                            insert_after = page_line + 1
+                            if insert_after < len(result_lines):
+                                for _ in range(markers_per_page):
+                                    if len(insertion_points) >= additional_markers:
+                                        break
+                                    if '<!-- image -->' not in result_lines[max(0, insert_after-3):insert_after+1]:
+                                        insertion_points.append(insert_after)
+                                        insert_after += 2  # Space markers
+                
+                # Insert markers at found points
+                for point in sorted(set(insertion_points))[:additional_markers]:
+                    if point < len(result_lines) and '<!-- image -->' not in result_lines[max(0, point-3):point+1]:
+                        result_lines.insert(point, '<!-- image -->')
+                        markers_inserted += 1
+                        if markers_inserted >= image_count:
+                            break
+        
+        result_text = '\n'.join(result_lines)
+        
+        # Log statistics
+        marker_coverage = (markers_inserted / image_count * 100) if image_count > 0 else 0
+        logger.info(f"Docling: Inserted {markers_inserted}/{image_count} image markers ({marker_coverage:.1f}% coverage)")
+        
+        if markers_inserted < image_count * 0.8:  # Less than 80% coverage
+            logger.warning(f"Docling: ⚠️  Only {markers_inserted}/{image_count} markers inserted. Some image content may not be marked.")
+        
+        return result_text
+    
+    def _extract_individual_images(
+        self,
+        text: str,
+        image_count: int,
+        source: str,
+        page_blocks: List[Dict] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Extract individual images from text with markers.
+        
+        Args:
+            text: Text with image markers
+            image_count: Total number of images detected
+            source: Document source name
+            page_blocks: List of page blocks for page number mapping
+            
+        Returns:
+            List of image dictionaries with OCR text and metadata
+        """
+        if not image_logger:
+            # If logger not available, still extract but without logging
+            pass
+        
+        extracted_images = []
+        
+        if not text or '<!-- image -->' not in text:
+            return extracted_images
+        
+        # Split by markers
+        marker_pattern = '<!-- image -->'
+        parts = text.split(marker_pattern)
+        
+        # Create page mapping from page_blocks
+        page_map = {}
+        if page_blocks:
+            current_char = 0
+            for block in page_blocks:
+                if block.get('type') == 'page':
+                    page_num = block.get('page', 1)
+                    start_char = block.get('start_char', current_char)
+                    page_map[start_char] = page_num
+        
+        # Process each image (parts after first marker)
+        image_counter = 0
+        current_char_pos = 0
+        
+        for idx in range(1, len(parts)):  # Skip first part (before first marker)
+            image_counter += 1
+            
+            # Get text before this marker (for context)
+            before_text = parts[idx - 1].strip() if idx > 0 else ''
+            
+            # Get text after marker (OCR content)
+            # If there's another marker, only take text up to next marker
+            if idx + 1 < len(parts):
+                after_text = parts[idx].strip()
+            else:
+                after_text = parts[idx].strip()
+            
+            # Extract OCR text (limit to reasonable size)
+            ocr_text = after_text[:10000] if after_text else ''  # Limit to 10K chars per image
+            
+            # Estimate page number from character position
+            page_num = 1  # Default
+            if page_map:
+                # Find closest page marker before this position
+                for char_pos, page in sorted(page_map.items()):
+                    if char_pos <= current_char_pos:
+                        page_num = page
+                    else:
+                        break
+            
+            # Update character position
+            current_char_pos += len(before_text) + len(marker_pattern) + len(after_text)
+            
+            # Log text extraction for this image
+            if image_logger:
+                image_logger.log_text_extraction(
+                    source=source,
+                    image_number=image_counter,
+                    ocr_text_length=len(ocr_text),
+                    page=page_num,
+                    has_marker=True
+                )
+            
+            # Create image data structure
+            image_data = {
+                'source': source,
+                'image_number': image_counter,
+                'page': page_num,
+                'ocr_text': ocr_text,
+                'ocr_text_length': len(ocr_text),
+                'marker_detected': True,
+                'extraction_method': 'docling_ocr',
+                'full_chunk': f"{before_text[-500:]}{marker_pattern}{after_text[:500]}",  # Sample chunk
+                'context_before': before_text[-500:] if before_text else None
+            }
+            
+            extracted_images.append(image_data)
+        
+        # Log OCR completion for all images
+        if image_logger and extracted_images:
+            total_ocr_length = sum(img.get('ocr_text_length', 0) for img in extracted_images)
+            image_logger.log_ocr_complete(
+                source=source,
+                ocr_text_length=total_ocr_length,
+                extraction_method='docling',
+                success=True
+            )
+        
+        return extracted_images
     
     def _extract_text_per_page(self, doc, total_pages: int, progress_callback: Optional[Callable[[str, float], None]] = None):
         """
@@ -337,6 +672,15 @@ class DoclingParser(BaseParser):
             if not os.path.exists(actual_path):
                 raise ValueError(f"File not found: {actual_path}")
             
+            # Initialize image detection variables early (before text extraction uses them)
+            images_detected = False
+            image_count = 0
+            detection_methods = []
+            
+            # Log image detection start
+            if image_logger:
+                image_logger.log_image_detection_start(source=file_path, method="docling")
+            
             # Log start of processing
             file_size = os.path.getsize(actual_path)
             file_size_mb = file_size / 1024 / 1024
@@ -441,6 +785,15 @@ class DoclingParser(BaseParser):
                 def log_progress():
                     """Log detailed progress every 15 seconds while processing."""
                     nonlocal last_progress_value, last_progress_change_time, stuck_warning_logged
+                    
+                    # Suppress Streamlit ScriptRunContext warnings in background thread
+                    # These warnings are harmless when running in background threads and can be safely ignored
+                    import warnings
+                    warnings.filterwarnings('ignore', message='.*missing ScriptRunContext.*')
+                    warnings.filterwarnings('ignore', message='.*ScriptRunContext.*')
+                    # Suppress UserWarning category that Streamlit uses for ScriptRunContext
+                    warnings.filterwarnings('ignore', category=UserWarning, message='.*ScriptRunContext.*')
+                    
                     check_interval = 15  # Log every 15 seconds (more frequent)
                     last_log_time = start_time
                     
@@ -689,6 +1042,56 @@ class DoclingParser(BaseParser):
                         text = doc.export_to_text()
                         logger.info(f"Docling: ✅ Text export completed ({len(text):,} characters)")
                         
+                        # Check if images were detected - if so, insert image markers
+                        # We'll insert markers at strategic points in the text
+                        if images_detected and image_count > 0 and text:
+                            # Try to find image-related content patterns and insert markers
+                            # Look for patterns that might indicate OCR text from images
+                            import re
+                            
+                            # Pattern 1: Look for structured lists (common in OCR from images)
+                            # Pattern 2: Look for part numbers (e.g., 65300001-, 65300-)
+                            # Pattern 3: Look for drawer/tool references
+                            
+                            # Insert markers before likely image content
+                            # Split by page markers first if they exist
+                            if '--- Page' in text:
+                                # Text already has page markers, insert image markers strategically
+                                parts = re.split(r'(--- Page \d+ ---)', text)
+                                result_parts = []
+                                for i, part in enumerate(parts):
+                                    result_parts.append(part)
+                                    # After page markers, check if next part looks like image content
+                                    if part.startswith('--- Page') and i + 1 < len(parts):
+                                        next_part = parts[i + 1]
+                                        # Check if next part has image-like patterns
+                                        if (re.search(r'\d{6,}-\s*[A-Z]', next_part) or  # Part numbers
+                                            re.search(r'DRAWER\s+\d+', next_part, re.IGNORECASE) or  # Drawer references
+                                            re.search(r'\d+\s*MM\s+[A-Z]', next_part) or  # Tool sizes
+                                            (len(next_part) > 50 and len(next_part.split('\n')) > 5 and 
+                                             all(len(line.strip()) < 100 for line in next_part.split('\n')[:10]))):  # Short lines (OCR pattern)
+                                            # Insert image marker before this content
+                                            if '<!-- image -->' not in next_part[:100]:
+                                                result_parts.append('<!-- image -->\n')
+                                text = ''.join(result_parts)
+                            else:
+                                # No page markers, insert image markers at strategic points
+                                # Insert markers before lines that look like image content
+                                lines = text.split('\n')
+                                result_lines = []
+                                for i, line in enumerate(lines):
+                                    # Check if this line looks like image content
+                                    if (re.search(r'\d{6,}-\s*[A-Z]', line) or  # Part numbers
+                                        re.search(r'DRAWER\s+\d+', line, re.IGNORECASE) or  # Drawer references
+                                        (i > 0 and re.search(r'\d+\s*MM\s+[A-Z]', line))):  # Tool sizes
+                                        # Check if previous line doesn't already have marker
+                                        if i == 0 or '<!-- image -->' not in result_lines[-1]:
+                                            result_lines.append('<!-- image -->')
+                                    result_lines.append(line)
+                                text = '\n'.join(result_lines)
+                            
+                            logger.info(f"Docling: Inserted image markers in fallback text (images detected: {image_count})")
+                        
                         # Add page markers to text and create page_blocks as fallback
                         if total_pages > 1 and text:
                             # Split text into approximate pages and add markers
@@ -726,6 +1129,9 @@ class DoclingParser(BaseParser):
                             # Rebuild text with page markers
                             text = "\n\n".join(text_parts)
                             logger.info(f"Docling: ✅ Added page markers to text ({len(text):,} characters)")
+                            
+                            # After adding page markers, check if we need to insert image markers
+                            # (images_detected will be set later, so we'll check it after image detection)
                     
                     except Exception as e1:
                         logger.warning(f"Docling: export_to_text() failed: {e1}, trying export_to_markdown()...")
@@ -772,6 +1178,15 @@ class DoclingParser(BaseParser):
                         except Exception as e2:
                             logger.error(f"Docling: Both export methods failed: export_to_text()={e1}, export_to_markdown()={e2}")
                             raise ValueError(f"Docling: Could not export document text. Both methods failed.")
+                    
+                    # After text extraction, check if we need to insert image markers
+                    # (This happens after images_detected is set, so we check it here)
+                    if images_detected and image_count > 0 and text and '<!-- image -->' not in text:
+                        # Images were detected but markers not inserted - insert them now
+                        logger.info(f"Docling: Images detected ({image_count}) but no markers in text, inserting markers...")
+                        # Use image positions if available (will be empty dict if not extracted)
+                        text = self._insert_image_markers_in_text(text, image_count, image_positions_by_page=image_positions_by_page if 'image_positions_by_page' in locals() else None)
+                        logger.info(f"Docling: ✅ Inserted image markers in extracted text")
             except Exception as e:
                 logger.error(f"Docling: Error during text extraction: {str(e)}")
                 # Try alternative export methods (prefer export_to_text first)
@@ -895,18 +1310,50 @@ class DoclingParser(BaseParser):
             else:
                 confidence = 0.5
             
-            # Check for images - use multiple detection methods
-            images_detected = False
-            image_count = 0
-            detection_methods = []
+            # Extract image positions from Docling for accurate marker insertion
+            image_positions = []  # List of (page_num, char_offset) tuples
+            image_positions_by_page = {}  # Map: page_num -> list of char_offsets
             
+            # Check for images - use multiple detection methods
+            # (variables already initialized above, now we detect images)
             try:
-                # Method 1: Check doc.pictures (existing method)
+                # Method 1: Check doc.pictures (existing method) and extract positions
                 if hasattr(doc, 'pictures') and len(doc.pictures) > 0:
                     images_detected = True
                     image_count = len(doc.pictures)
                     detection_methods.append(f"doc.pictures ({image_count} pictures)")
                     logger.info(f"Docling: Found {image_count} pictures in document")
+                    
+                    # Extract image positions from doc.pictures
+                    try:
+                        for pic_idx, picture in enumerate(doc.pictures):
+                            # Try to get page number from picture
+                            page_num = None
+                            if hasattr(picture, 'page'):
+                                page_num = picture.page
+                            elif hasattr(picture, 'page_num'):
+                                page_num = picture.page_num
+                            elif hasattr(picture, 'page_number'):
+                                page_num = picture.page_number
+                            
+                            # Try to get position/bbox
+                            char_offset = None
+                            if hasattr(picture, 'bbox') and picture.bbox:
+                                # Estimate character offset from bbox (approximate)
+                                # This is a rough estimate - we'll refine with page markers
+                                char_offset = None  # Will be calculated from page markers
+                            
+                            if page_num is not None:
+                                if page_num not in image_positions_by_page:
+                                    image_positions_by_page[page_num] = []
+                                image_positions_by_page[page_num].append(pic_idx)
+                                image_positions.append((page_num, pic_idx))
+                        
+                        if image_positions:
+                            logger.info(f"Docling: Extracted image positions: {len(image_positions)} images across {len(image_positions_by_page)} pages")
+                    except Exception as e:
+                        logger.debug(f"Docling: Could not extract detailed image positions: {e}")
+                        # Continue with image count only
                 
                 # Method 2: Check pages for image content
                 if hasattr(doc, 'pages'):
@@ -940,6 +1387,13 @@ class DoclingParser(BaseParser):
                 
                 if images_detected:
                     logger.info(f"Docling: ✅ Images detected via: {', '.join(detection_methods)}")
+                    # Log image detection completion
+                    if image_logger:
+                        image_logger.log_image_detected(
+                            source=file_path,
+                            image_count=image_count,
+                            detection_methods=detection_methods
+                        )
                 else:
                     logger.info("Docling: No images detected in document")
                     
@@ -966,6 +1420,56 @@ class DoclingParser(BaseParser):
                     logger.warning("Docling: OCR may have partially failed or images have low-quality text")
                 else:
                     logger.info(f"Docling: ✅ OCR appears successful - extracted {text_length:,} characters from images")
+                    # Log OCR completion
+                    if image_logger:
+                        image_logger.log_ocr_complete(
+                            source=file_path,
+                            ocr_text_length=text_length,
+                            extraction_method='docling',
+                            success=True
+                        )
+            
+            # Insert image markers if images were detected but markers not present
+            if images_detected and image_count > 0 and text:
+                markers_in_text = text.count('<!-- image -->')
+                if markers_in_text == 0:
+                    logger.info(f"Docling: Images detected ({image_count}) but no markers in text, inserting markers...")
+                    # Use image positions if available for more accurate marker insertion
+                    text = self._insert_image_markers_in_text(text, image_count, image_positions_by_page=image_positions_by_page)
+                    logger.info(f"Docling: ✅ Inserted image markers in extracted text")
+                else:
+                    # Markers already exist, but validate count
+                    logger.info(f"Docling: Found {markers_in_text} existing image markers in text")
+                    if markers_in_text < image_count * 0.8:  # Less than 80% coverage
+                        logger.warning(f"Docling: ⚠️  Only {markers_in_text}/{image_count} markers found. Inserting additional markers...")
+                        # Use image positions if available
+                        text = self._insert_image_markers_in_text(text, image_count, image_positions_by_page=image_positions_by_page)
+            
+            # Validation: Check marker count matches image count (within tolerance)
+            final_markers = text.count('<!-- image -->') if text else 0
+            if images_detected and image_count > 0:
+                marker_coverage = (final_markers / image_count * 100) if image_count > 0 else 0
+                if marker_coverage >= 80:
+                    logger.info(f"Docling: ✅ Marker validation passed: {final_markers}/{image_count} markers ({marker_coverage:.1f}% coverage)")
+                elif marker_coverage >= 50:
+                    logger.warning(f"Docling: ⚠️  Marker validation: {final_markers}/{image_count} markers ({marker_coverage:.1f}% coverage) - some images may not be marked")
+                else:
+                    logger.error(f"Docling: ❌ Marker validation failed: {final_markers}/{image_count} markers ({marker_coverage:.1f}% coverage) - most images not marked")
+            
+            # Extract individual images for storage
+            extracted_images = []
+            if images_detected and image_count > 0 and text and final_markers > 0:
+                try:
+                    extracted_images = self._extract_individual_images(
+                        text=text,
+                        image_count=image_count,
+                        source=file_path,
+                        page_blocks=page_blocks
+                    )
+                    logger.info(f"Docling: Extracted {len(extracted_images)} individual images for storage")
+                except Exception as e:
+                    logger.warning(f"Docling: Failed to extract individual images: {str(e)}")
+                    # Continue without extracted images - they can be extracted at query time
             
             metadata = {
                 "source": file_path,
@@ -975,7 +1479,8 @@ class DoclingParser(BaseParser):
                 "file_size": len(file_content) if file_content else os.path.getsize(file_path),
                 "page_blocks": page_blocks,  # Store page-level blocks for citation support
                 "image_count": image_count,  # Store image count for queries
-                "images_detected": images_detected  # Store boolean flag
+                "images_detected": images_detected,  # Store boolean flag
+                "extracted_images": extracted_images  # Store extracted image data for OpenSearch storage
             }
             
             return ParsedDocument(

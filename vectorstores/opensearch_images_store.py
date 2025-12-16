@@ -1,0 +1,453 @@
+"""
+OpenSearch Images Store for storing image OCR content separately from document chunks.
+Uses a dedicated index (aris-rag-images-index) for image information.
+"""
+import os
+import re
+import logging
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+from dotenv import load_dotenv
+
+try:
+    from langchain.docstore.document import Document
+except ImportError:
+    from langchain_core.documents import Document
+
+from langchain_openai import OpenAIEmbeddings
+from vectorstores.opensearch_store import OpenSearchVectorStore
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+class OpenSearchImagesStore:
+    """
+    OpenSearch store specifically for image OCR content.
+    Uses separate index from document chunks for better organization.
+    """
+    
+    def __init__(
+        self,
+        embeddings: OpenAIEmbeddings,
+        domain: str = "intelycx-os-dev",
+        index_name: str = None,
+        region: Optional[str] = None,
+        endpoint: Optional[str] = None
+    ):
+        """
+        Initialize OpenSearch images store.
+        
+        Args:
+            embeddings: Embeddings model to use (same as main RAG system)
+            domain: OpenSearch domain name
+            index_name: Name of the OpenSearch index (defaults to aris-rag-images-index)
+            region: AWS region
+            endpoint: Optional OpenSearch endpoint URL
+        """
+        self.embeddings = embeddings
+        self.domain = domain
+        self.index_name = index_name or os.getenv('OPENSEARCH_IMAGES_INDEX', 'aris-rag-images-index')
+        self.region = region or os.getenv('AWS_OPENSEARCH_REGION', 'us-east-2')
+        
+        # Initialize underlying OpenSearchVectorStore
+        self.vectorstore = OpenSearchVectorStore(
+            embeddings=embeddings,
+            domain=domain,
+            index_name=self.index_name,
+            region=region,
+            endpoint=endpoint
+        )
+        
+        logger.info(f"OpenSearchImagesStore initialized with index: {self.index_name}")
+    
+    def _create_image_id(self, source: str, image_number: int) -> str:
+        """
+        Create unique image ID from source and image number.
+        
+        Args:
+            source: Document source name
+            image_number: Image number within document
+            
+        Returns:
+            Unique image ID string
+        """
+        # Sanitize source name for ID
+        sanitized_source = re.sub(r'[^a-zA-Z0-9_-]', '_', os.path.basename(source))
+        return f"{sanitized_source}_image_{image_number}"
+    
+    def _extract_image_metadata(self, ocr_text: str) -> Dict[str, Any]:
+        """
+        Extract metadata from OCR text (drawer refs, part numbers, tools, etc.).
+        
+        Args:
+            ocr_text: OCR text from image
+            
+        Returns:
+            Dictionary with extracted metadata
+        """
+        metadata = {
+            'drawer_references': [],
+            'part_numbers': [],
+            'tools_found': [],
+            'has_structured_content': False
+        }
+        
+        if not ocr_text:
+            return metadata
+        
+        # Extract drawer references
+        drawer_pattern = r'DRAWER\s+(\d+)'
+        drawer_matches = re.findall(drawer_pattern, ocr_text, re.IGNORECASE)
+        metadata['drawer_references'] = list(set(drawer_matches))
+        
+        # Extract part numbers (5+ digits)
+        part_number_pattern = r'\b\d{5,}\b'
+        part_numbers = re.findall(part_number_pattern, ocr_text)
+        metadata['part_numbers'] = list(set(part_numbers))[:50]  # Limit to 50
+        
+        # Extract tool names
+        tool_keywords = ['mallet', 'wrench', 'socket', 'ratchet', 'extension', 'allen', 
+                        'snips', 'cutter', 'hammer', 'pliers', 'drill', 'screwdriver']
+        found_tools = [tool for tool in tool_keywords if tool.lower() in ocr_text.lower()]
+        metadata['tools_found'] = list(set(found_tools))
+        
+        # Check for structured content patterns
+        has_structured = any([
+            '___' in ocr_text or '____' in ocr_text,
+            '|' in ocr_text and 'YES' in ocr_text and 'NO' in ocr_text,
+            re.search(r'Quantity:\s*\d+', ocr_text, re.IGNORECASE),
+            re.search(r'DRAWER', ocr_text, re.IGNORECASE)
+        ])
+        metadata['has_structured_content'] = has_structured
+        
+        return metadata
+    
+    def store_image(
+        self,
+        source: str,
+        image_number: int,
+        ocr_text: str,
+        page: int = 0,
+        marker_detected: bool = True,
+        extraction_method: str = "unknown",
+        full_chunk: str = None,
+        context_before: str = None
+    ) -> str:
+        """
+        Store a single image in OpenSearch.
+        
+        Args:
+            source: Document source name
+            image_number: Image number within document
+            ocr_text: OCR text extracted from image
+            page: Page number where image appears
+            marker_detected: Whether image marker was detected
+            extraction_method: Method used (docling_ocr, pymupdf, textract, query_time)
+            full_chunk: Full chunk text containing image marker
+            context_before: Text before image marker
+            
+        Returns:
+            Image ID of stored image
+        """
+        image_id = self._create_image_id(source, image_number)
+        
+        # Extract metadata from OCR text
+        metadata = self._extract_image_metadata(ocr_text)
+        
+        # Create document for OpenSearch
+        # Use OCR text as the main content for embedding
+        doc_content = ocr_text if ocr_text else f"Image {image_number} from {os.path.basename(source)}"
+        
+        # Create document with image-specific structure
+        doc_metadata = {
+            'source': source,
+            'image_number': image_number,
+            'page': page,
+            'ocr_text_length': len(ocr_text) if ocr_text else 0,
+            'marker_detected': marker_detected,
+            'extraction_method': extraction_method,
+            'extraction_timestamp': datetime.utcnow().isoformat() + 'Z',
+            'metadata': metadata,
+            'full_chunk': full_chunk[:5000] if full_chunk else None,  # Limit size
+            'context_before': context_before[:1000] if context_before else None  # Limit size
+        }
+        
+        # Create LangChain Document
+        doc = Document(
+            page_content=doc_content,
+            metadata=doc_metadata
+        )
+        
+        try:
+            # Store in OpenSearch (will create index if needed)
+            # Use add_documents which handles duplicates by updating
+            self.vectorstore.add_documents([doc])
+            logger.info(f"✅ Stored image {image_number} from {os.path.basename(source)} in OpenSearch (ID: {image_id})")
+            return image_id
+        except Exception as e:
+            logger.error(f"❌ Failed to store image {image_number} from {os.path.basename(source)}: {str(e)}")
+            raise
+    
+    def store_images_batch(self, images: List[Dict[str, Any]]) -> List[str]:
+        """
+        Store multiple images in batch.
+        
+        Args:
+            images: List of image dictionaries with keys:
+                - source: Document source name
+                - image_number: Image number
+                - ocr_text: OCR text
+                - page: Page number (optional)
+                - marker_detected: Whether marker detected (optional)
+                - extraction_method: Extraction method (optional)
+                - full_chunk: Full chunk text (optional)
+                - context_before: Context before marker (optional)
+        
+        Returns:
+            List of image IDs
+        """
+        if not images:
+            logger.warning("No images to store in batch")
+            return []
+        
+        logger.info(f"Storing {len(images)} images in batch...")
+        
+        # Convert to Document objects
+        documents = []
+        image_ids = []
+        
+        for img_data in images:
+            source = img_data.get('source', 'unknown')
+            image_number = img_data.get('image_number', 0)
+            ocr_text = img_data.get('ocr_text', '')
+            
+            image_id = self._create_image_id(source, image_number)
+            image_ids.append(image_id)
+            
+            # Extract metadata
+            metadata = self._extract_image_metadata(ocr_text)
+            
+            # Create document
+            doc_content = ocr_text if ocr_text else f"Image {image_number} from {os.path.basename(source)}"
+            
+            doc_metadata = {
+                'source': source,
+                'image_number': image_number,
+                'page': img_data.get('page', 0),
+                'ocr_text_length': len(ocr_text) if ocr_text else 0,
+                'marker_detected': img_data.get('marker_detected', True),
+                'extraction_method': img_data.get('extraction_method', 'unknown'),
+                'extraction_timestamp': datetime.utcnow().isoformat() + 'Z',
+                'metadata': metadata,
+                'full_chunk': (img_data.get('full_chunk', '') or '')[:5000],
+                'context_before': (img_data.get('context_before', '') or '')[:1000]
+            }
+            
+            doc = Document(
+                page_content=doc_content,
+                metadata=doc_metadata
+            )
+            documents.append(doc)
+        
+        try:
+            # Store all in batch
+            self.vectorstore.add_documents(documents)
+            logger.info(f"✅ Stored {len(images)} images in batch")
+            return image_ids
+        except Exception as e:
+            logger.error(f"❌ Failed to store images batch: {str(e)}")
+            raise
+    
+    def get_images_by_source(self, source: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Retrieve all images for a specific document source.
+        
+        Args:
+            source: Document source name
+            limit: Maximum number of images to return
+            
+        Returns:
+            List of image dictionaries
+        """
+        if not self.vectorstore or not self.vectorstore.vectorstore:
+            logger.warning("Vector store not initialized")
+            return []
+        
+        try:
+            client = self.vectorstore.vectorstore.client
+            
+            # Search for images from this source
+            query = {
+                "size": limit,
+                "query": {
+                    "term": {
+                        "metadata.source": source
+                    }
+                },
+                "sort": [
+                    {"metadata.image_number": {"order": "asc"}}
+                ]
+            }
+            
+            response = client.search(index=self.index_name, body=query)
+            hits = response.get("hits", {}).get("hits", [])
+            
+            images = []
+            for hit in hits:
+                source_data = hit.get("_source", {})
+                images.append({
+                    'image_id': hit.get("_id"),
+                    'source': source_data.get('metadata', {}).get('source'),
+                    'image_number': source_data.get('metadata', {}).get('image_number'),
+                    'page': source_data.get('metadata', {}).get('page'),
+                    'ocr_text': source_data.get('text', ''),
+                    'ocr_text_length': source_data.get('metadata', {}).get('ocr_text_length', 0),
+                    'metadata': source_data.get('metadata', {}).get('metadata', {}),
+                    'extraction_method': source_data.get('metadata', {}).get('extraction_method'),
+                    'extraction_timestamp': source_data.get('metadata', {}).get('extraction_timestamp')
+                })
+            
+            logger.info(f"Retrieved {len(images)} images for source: {os.path.basename(source)}")
+            return images
+        except Exception as e:
+            logger.error(f"Failed to retrieve images for source {source}: {str(e)}")
+            return []
+    
+    def get_image_by_id(self, image_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a specific image by ID.
+        
+        Args:
+            image_id: Image ID
+            
+        Returns:
+            Image dictionary or None if not found
+        """
+        if not self.vectorstore or not self.vectorstore.vectorstore:
+            logger.warning("Vector store not initialized")
+            return None
+        
+        try:
+            client = self.vectorstore.vectorstore.client
+            
+            response = client.get(index=self.index_name, id=image_id)
+            source_data = response.get("_source", {})
+            
+            return {
+                'image_id': response.get("_id"),
+                'source': source_data.get('metadata', {}).get('source'),
+                'image_number': source_data.get('metadata', {}).get('image_number'),
+                'page': source_data.get('metadata', {}).get('page'),
+                'ocr_text': source_data.get('text', ''),
+                'ocr_text_length': source_data.get('metadata', {}).get('ocr_text_length', 0),
+                'metadata': source_data.get('metadata', {}).get('metadata', {}),
+                'extraction_method': source_data.get('metadata', {}).get('extraction_method'),
+                'extraction_timestamp': source_data.get('metadata', {}).get('extraction_timestamp'),
+                'full_chunk': source_data.get('metadata', {}).get('full_chunk'),
+                'context_before': source_data.get('metadata', {}).get('context_before')
+            }
+        except Exception as e:
+            logger.warning(f"Image {image_id} not found: {str(e)}")
+            return None
+    
+    def search_images(
+        self,
+        query: str,
+        source: Optional[str] = None,
+        k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Perform semantic search in images.
+        
+        Args:
+            query: Search query text
+            source: Optional source filter
+            k: Number of results to return
+            
+        Returns:
+            List of matching image dictionaries
+        """
+        if not self.vectorstore or not self.vectorstore.vectorstore:
+            logger.warning("Vector store not initialized")
+            return []
+        
+        try:
+            # Use similarity search from underlying vectorstore
+            search_kwargs = {'k': k}
+            if source:
+                # Add source filter
+                search_kwargs['filter'] = {'term': {'metadata.source': source}}
+            
+            results = self.vectorstore.vectorstore.similarity_search(
+                query,
+                k=k,
+                **search_kwargs
+            )
+            
+            images = []
+            for doc in results:
+                metadata = doc.metadata
+                images.append({
+                    'image_id': self._create_image_id(
+                        metadata.get('source', 'unknown'),
+                        metadata.get('image_number', 0)
+                    ),
+                    'source': metadata.get('source'),
+                    'image_number': metadata.get('image_number'),
+                    'page': metadata.get('page'),
+                    'ocr_text': doc.page_content,
+                    'ocr_text_length': metadata.get('ocr_text_length', 0),
+                    'metadata': metadata.get('metadata', {}),
+                    'extraction_method': metadata.get('extraction_method'),
+                    'score': getattr(doc, 'score', None)  # Similarity score if available
+                })
+            
+            logger.info(f"Found {len(images)} images matching query: {query[:50]}")
+            return images
+        except Exception as e:
+            logger.error(f"Failed to search images: {str(e)}")
+            return []
+    
+    def update_image(self, image_id: str, updates: Dict[str, Any]) -> bool:
+        """
+        Update an existing image document.
+        
+        Args:
+            image_id: Image ID to update
+            updates: Dictionary of fields to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.vectorstore or not self.vectorstore.vectorstore:
+            logger.warning("Vector store not initialized")
+            return False
+        
+        try:
+            client = self.vectorstore.vectorstore.client
+            
+            # Get existing document
+            existing = client.get(index=self.index_name, id=image_id)
+            source_data = existing.get("_source", {})
+            
+            # Update metadata
+            if 'metadata' in source_data:
+                source_data['metadata'].update(updates)
+            else:
+                source_data['metadata'] = updates
+            
+            # Update document
+            client.index(
+                index=self.index_name,
+                id=image_id,
+                body=source_data
+            )
+            
+            logger.info(f"Updated image {image_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update image {image_id}: {str(e)}")
+            return False
+

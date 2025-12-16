@@ -163,6 +163,20 @@ class TextractParser(BaseParser):
             
             # Insert image markers if images were detected
             if image_blocks and full_text:
+                # Log OCR completion for images
+                if image_logger:
+                    image_logger.log_ocr_complete(
+                        source=file_path,
+                        ocr_text_length=len(full_text),
+                        extraction_method='textract',
+                        success=True
+                    )
+                    image_logger.log_image_detected(
+                        source=file_path,
+                        image_count=len(image_blocks),
+                        detection_methods=['textract_blocks']
+                    )
+                
                 # Insert marker at the start of text if images are present
                 if '<!-- image -->' not in full_text:
                     full_text = "<!-- image -->\n" + full_text

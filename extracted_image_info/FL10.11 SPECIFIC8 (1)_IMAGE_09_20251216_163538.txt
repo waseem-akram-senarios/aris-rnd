@@ -1,0 +1,168 @@
+IMAGE 9 - OCR CONTENT EXTRACTED BY DOCLING
+======================================================================
+
+Length: 8,138 characters
+
+FULL OCR TEXT:
+----------------------------------------------------------------------
+Week: ____________
+
+|       | Monday   | Tuesday   | Wednesday   | Thursday   | Friday   | Saturday   | Sunday   |
+|-------|----------|-----------|-------------|------------|----------|------------|----------|
+| Day   |          |           |             |            |          |            |          |
+| Night |          |           |             |            |          |            |          |
+
+**Sign in Each block at end of shift to verify all tools are in proper location
+
+For Information Only                                             Return Completed Form to Tim Marini - May Be Discarded After Review
+
+EFFECTIVE DATE: 04/24/18
+
+Print 'DWH :
+
+## Line 10 Parts Kanban Standard Work
+
+
+--- Page 41 ---
+The parts Kanban has been provided to allow easier access to replacement parts that are the most commonly used on LPFs. This will enable Mechanics and PT/ Handlers to avoid downtime associated with searching for parts. This Kanban has been clearly labeled with part names and numbers and organized such that parts can be found, used, and replaced easily. Handler has been assigned days of the week that they are responsible for checking the Kanban parts cabinet and restocking. It is the responsibility of that PT/SR handler to check for needed parts and replace as needed.
+
+-  Saturdays: 5 th and 7 th
+
+will check and replace parts as needed.
+
+-  Wednesdays: 6 th and 8 th will check and replace parts as needed.
+-  All Shifts are responsible to receive parts from South Maintenance
+
+FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+PAGE 37 OF 49
+
+Print 'DWH :
+
+1 Copy Posted in L10 Material Exchange Room
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+
+--- Page 42 ---
+EFFECTIVE DATE: 04/24/18
+
+## How to Use:
+
+Whenever you are replacing tubing on an enhanced closure feeder bowl, select what you believe to be the correct tubing from the material exchange room.
+
+Place the gauge in to the enhanced closure tubing.
+
+-  If the gauge fits easily, you have the manual machine enhanced closure tubing.
+-  If you have to struggle to fit the gauge in to the tubing, or it will not fit at all, you have LPF/RPF enhanced closure tubing.
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+
+## Go/No Go Gauge for Manual Machines Enhanced Closure Tubing
+
+On Fill Lines 10 and 11, there are LPFs, RPFs, and Manual Fill Machines. On these machines, there are enhanced closure feeder bowls and tubing runs from the feeder bowl to the plugging station. The manual machines use tubing stock #655-00-107 which has an inner diameter of 0.380'. The LPFs and RPFs use tubing stock #655-00-080 with an inner diameter of 0.375'. Because the ID for both types of tubing is so similar and both tubes are clear in color, it is very easy to mix up the two. A go/no go gauge has been made to improve this problem.
+
+The gauge is labeled with the 'Manual EC Tubing'
+
+
+--- Page 43 ---
+If your first tubing choice doesn't match the machine that you want to put it on, test another roll of tubing until you find the correct one.
+
+*Note: If this gauge is ever lost or damaged, it will be set up as a stock item and can be found in the stock room.
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+
+## Lockout for Solution Pump Standard Work
+
+Description: To allow the Solution Transmission System to be safely opened when a break in fill line occurs behind the shut off valve or the break affects the shut off valve itself.
+
+This is not a lockout procedure to be used for making any kind of electrical repairs. Lockout /Tagout per plant safety procedures should be followed and lockout/ tagout should be performed by authorized individuals only .
+
+When to Lockout Pump: The pump should be locked out anytime solution cannot be shut off with a divert valve or cutoff valve that is a part of the Solution Transmission System or for pump repairs.
+
+Why: Solution pump lockout is performed to prevent the solution pump from being accidentally turned back on while the solution transmission system is open.
+
+## How:
+
+1. Stop the solution pump by pressing the red stop button located on the control panel that houses the tank controls.
+
+--- Page 44 ---
+2. Place the switch located at the pump plug receptacle to the OFF position.
+3. Once the switch is in the OFF position, place a lock on the switch assuring the lock is closed completely. (Locks can be attained from the Maintenance Department).
+4. The solution line can now be safely opened. Always follow correct procedures in the applicable Standard Operating Procedure for the type of break in fill line that is performed. Reference the applicable SOP for solution flushes and sampling required.
+5. Once repairs are completed and the solution line is closed, the person who placed the lock on the switch may now remove the lock and turn the switch back to the ON position and restart the solution pump.
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+
+## Standard Work for Rework % Reduction
+
+1. Record at start of shift the filling, plugging, and rework percentages on LPF/RPF Report Worksheet
+2. Continue to record data approximately every 2 hours (i.e. Quality Check).
+3. If any filling, plugging, and/or rework percentages are not moving toward the goal of filling / plugging at or above 99% and rework at 3.00%, notify Line Supervisor and/or Maintenance immediately.
+4. If percentages continue to not meet goal notify Line Supervisor and they will notify Maintenance Supervisor and Manufacturing Superintendent.
+5. During the shift, if the filling, plugging, and/or rework percentage does not drive a favorable movement toward goal the issue will be escalated to the Shift Superintendent/Focus Force Team.
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+FL10.11 SPECIFIC8
+
+
+--- Page 45 ---
+EFFECTIVE DATE: 04/24/18
+
+## Cyclohex Dispensing Standard Work
+
+PPE Available At Point Of Use
+
+Pump Drum Before Dispensing
+
+Employee wearing PPE and properly dispensing cyclohex
+
+EFFECTIVE DATE: 04/24/18
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC PAGE 43 OF 49 FL10.11 SPECIFIC8 FOR INFORMATION ONLY-MAY BE DISCARDED                                                                                             DOCUMENT OWNER: TIM MARINI 1 COPY POSTED IN SOUTH GARB ROOM
+
+## Line 11 Piping Verification Talley Sheet Print 'DWH :
+
+| Mix Tank to Surge Tank                         | A-B              | B-C            |                 |          |          |
+|------------------------------------------------|------------------|----------------|-----------------|----------|----------|
+| Totals Surge Tank to Filter Leg 1 (P1)         | I-Z (3')         | Z-(P1 In) (3') | (P1 Out)-N (2') | R-S (3') | S-X (3') |
+| Totals                                         |                  |                |                 |          |          |
+| Surge Tank to Filter Leg 2 (P1)                | I-Z (3')         | Z-(P1 In) (3') | (P1 Out)-O (2') | P-W (3') |          |
+| Totals                                         |                  |                |                 |          |          |
+| Filter Leg 1: LPF5, LPF7& Manual Filler E-belt | LPF5 U-LPF5 (2') |                |                 |          |          |
+
+--- Page 46 ---
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+
+| Print 'DWH :                   |                               |                |
+|--------------------------------|-------------------------------|----------------|
+| Total                          |                               |                |
+|                                | LPF7 S-Y (2')                 | Y- LPF7 (1.5') |
+| Total                          | Manual Belt X-Filler E (1.5') |                |
+| Total                          |                               |                |
+| Filter Leg 2: LPF6, RPF2& RPF1 | LPF6 Q-V (2')                 | V-LPF6 (1.5')  |
+| Total                          |                               |                |
+|                                | RPF2 T-RPF2 (2')              |                |
+----------------------------------------------------------------------

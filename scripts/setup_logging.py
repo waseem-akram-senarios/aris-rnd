@@ -102,3 +102,26 @@ def get_logger(name: str = None) -> logging.Logger:
     
     return logger
 
+
+def setup_image_extraction_logging(
+    level: int = logging.INFO,
+    log_file: str = "logs/image_extraction.log"
+) -> logging.Logger:
+    """
+    Set up specialized logging for image extraction operations.
+    
+    Args:
+        level: Logging level
+        log_file: Log file path
+    
+    Returns:
+        Configured logger for image extraction
+    """
+    logger = setup_logging(
+        name="aris_rag.image_extraction",
+        level=level,
+        log_file=log_file
+    )
+    
+    return logger
+

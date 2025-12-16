@@ -6,7 +6,7 @@ import time as time_module
 import math
 import logging
 import traceback
-from typing import List, Dict, Optional, Callable
+from typing import List, Dict, Optional, Callable, Any
 import numpy as np
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
@@ -1304,6 +1304,23 @@ class RAGSystem:
             return list(self.document_index_map.keys())
         return []
     
+    def _extract_document_number(self, filename: str) -> Optional[int]:
+        """
+        Extract document number from filename like 'file (1).pdf' -> 1
+        
+        Args:
+            filename: Document filename (with or without path)
+        
+        Returns:
+            Document number if found, None otherwise
+        """
+        import re
+        # Extract just the filename if path is included
+        basename = os.path.basename(filename) if filename else ""
+        # Look for pattern like "(1)", "(2)", etc.
+        match = re.search(r'\((\d+)\)', basename)
+        return int(match.group(1)) if match else None
+    
     def query_with_rag(
         self,
         question: str,
@@ -2097,11 +2114,40 @@ class RAGSystem:
                 if source:
                     all_document_names.add(source)
         
+        # Extract document number from question if mentioned (e.g., "(1)", "(2)")
+        import re
+        question_doc_number = None
+        question_number_match = re.search(r'\((\d+)\)', question)
+        if question_number_match:
+            question_doc_number = int(question_number_match.group(1))
+            logger.info(f"Question mentions document number: ({question_doc_number})")
+        
         # Check if question mentions any document name
         for source in all_document_names:
             source_name = os.path.basename(source).lower()
             source_name_no_ext = source_name.replace('.pdf', '').replace('.docx', '').replace('.txt', '')
             
+            # Extract document number from source filename
+            source_doc_number = self._extract_document_number(source)
+            
+            # If question mentions a specific document number, require exact match
+            if question_doc_number is not None:
+                if source_doc_number == question_doc_number:
+                    # Exact number match - check if base name also matches
+                    # Remove number from both for comparison
+                    base_name_question = re.sub(r'\s*\(\d+\)', '', question_lower)
+                    base_name_source = re.sub(r'\s*\(\d+\)', '', source_name_no_ext)
+                    
+                    # Check if base names match (allowing for partial matches)
+                    if (base_name_source in base_name_question or 
+                        base_name_question in base_name_source or
+                        any(word in base_name_question for word in base_name_source.split() if len(word) > 3)):
+                        mentioned_documents.append(source)
+                        logger.info(f"Exact document number match: {os.path.basename(source)} (number: {source_doc_number})")
+                # If numbers don't match, skip this document
+                continue
+            
+            # No specific number mentioned - use original matching logic
             # Check various ways document might be mentioned
             if (source_name in question_lower or 
                 source_name_no_ext in question_lower or
@@ -2131,8 +2177,232 @@ class RAGSystem:
         image_content_map = {}  # Map: (source, image_index) -> content
         is_image_question = any(keyword in question_lower for keyword in ['image', 'picture', 'figure', 'diagram', 'photo', 'what.*image', 'information.*image', 'content.*image', 'drawer'])
         
-        # Expand search: If image question and document mentioned, search for additional image chunks
+        # Phase 1: Detect tool/item names in questions
+        tool_item_keywords = [
+            'mallet', 'wrench', 'socket', 'screwdriver', 'hammer', 'pliers', 
+            'drill', 'cutter', 'snips', 'ratchet', 'extension', 'allen',
+            'tool', 'part', 'item', 'drawer', 'find', 'where', 'location'
+        ]
+        is_tool_item_question = any(keyword in question_lower for keyword in tool_item_keywords)
+        
+        # Also detect part number patterns (e.g., "65300", "65300122")
+        import re
+        part_number_pattern = r'\b\d{5,}\b'  # 5+ digit numbers (likely part numbers)
+        has_part_number = bool(re.search(part_number_pattern, question))
+        
+        # Combine with image question detection
+        should_extract_image_content = is_image_question or is_tool_item_question or has_part_number
+        
+        # Extract tool/item names from question for targeted search
+        tool_item_names = []
+        for keyword in tool_item_keywords:
+            if keyword in question_lower:
+                tool_item_names.append(keyword)
+        
+        # Also extract potential tool names (capitalized words, part numbers)
+        words = question.split()
+        capitalized_words = [w for w in words if w and w[0].isupper() and len(w) > 3]
+        tool_item_names.extend([w.lower() for w in capitalized_words])
+        
+        # Extract part numbers from question
+        part_numbers = re.findall(part_number_pattern, question)
+        tool_item_names.extend(part_numbers)
+        
+        # Remove duplicates and log
+        tool_item_names = list(set(tool_item_names))
+        if is_tool_item_question or has_part_number:
+            logger.info(f"🔧 Tool/item question detected: {tool_item_names}")
+            logger.info(f"🔍 Will expand search for tool/item names in image content")
+        
+        # CRITICAL: Check if any documents have images detected - if so, ALWAYS search for image chunks
+        # This ensures image content is retrieved even if similarity search doesn't return those chunks
+        documents_with_images = set()
+        # #region agent log
+        try:
+            with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"rag_system.py:2136","message":"Checking document metadata for images","data":{"total_docs":len(relevant_docs)},"timestamp":int(time_module.time()*1000)})+"\n")
+        except: pass
+        # #endregion
+        for doc in relevant_docs:
+            if hasattr(doc, 'metadata') and doc.metadata:
+                # #region agent log
+                try:
+                    with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                        import json
+                        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"rag_system.py:2140","message":"Document metadata check","data":{"has_metadata":True,"images_detected":doc.metadata.get('images_detected',False),"image_count":doc.metadata.get('image_count',0),"source":doc.metadata.get('source','')[:50]},"timestamp":int(time_module.time()*1000)})+"\n")
+                except: pass
+                # #endregion
+                if (doc.metadata.get('images_detected', False) or 
+                    doc.metadata.get('image_count', 0) > 0):
+                    source = doc.metadata.get('source', '')
+                    if source:
+                        documents_with_images.add(source)
+                        # #region agent log
+                        try:
+                            with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                                import json
+                                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"A","location":"rag_system.py:2143","message":"Document added to images set","data":{"source":source[:50],"total_with_images":len(documents_with_images)},"timestamp":int(time_module.time()*1000)})+"\n")
+                        except: pass
+                        # #endregion
+        
+        # Also check mentioned documents for image metadata
+        for mentioned_source in mentioned_documents:
+            # Try to find chunks from this document to check metadata
+            for doc in relevant_docs:
+                if hasattr(doc, 'metadata') and doc.metadata:
+                    doc_source = doc.metadata.get('source', '')
+                    if doc_source == mentioned_source:
+                        if (doc.metadata.get('images_detected', False) or 
+                            doc.metadata.get('image_count', 0) > 0):
+                            documents_with_images.add(mentioned_source)
+                            break
+        
+        # IMPORTANT: Always check for image markers in retrieved chunks, not just for image questions
+        # This ensures image content is extracted even if question doesn't explicitly mention "image"
+        # Also expand search to find chunks with image markers if documents have images OR it's an image question OR tool/item question
         additional_image_docs = []
+        should_search_for_images = should_extract_image_content or len(documents_with_images) > 0
+        
+        if should_search_for_images and self.vectorstore is not None:
+            logger.info(f"Searching for image chunks: image_question={is_image_question}, documents_with_images={len(documents_with_images)}")
+            # #region agent log
+            try:
+                with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                    import json
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"rag_system.py:2163","message":"Starting image chunk search","data":{"should_search":True,"has_vectorstore":True,"image_question":is_image_question,"documents_with_images_count":len(documents_with_images)},"timestamp":int(time_module.time()*1000)})+"\n")
+            except: pass
+            # #endregion
+            # Search for chunks with image markers from ALL documents (not just mentioned ones)
+            # This ensures we find image content even if similarity search didn't return those chunks
+            try:
+                # Strategy 1: Search for chunks with image markers using multiple queries
+                image_queries = [
+                    "image diagram figure picture",
+                    "drawer tool wrench socket",
+                    "part number quantity tool list"
+                ]
+                
+                for image_query in image_queries:
+                    try:
+                        if hasattr(self.vectorstore, 'similarity_search_with_score'):
+                            search_results = self.vectorstore.similarity_search_with_score(
+                                image_query,
+                                k=100  # Increased to get more chunks
+                            )
+                            for doc_result, score in search_results:
+                                if hasattr(doc_result, 'page_content'):
+                                    # Check for image markers OR image metadata
+                                    has_marker = '<!-- image -->' in doc_result.page_content
+                                    has_metadata = False
+                                    if hasattr(doc_result, 'metadata') and doc_result.metadata:
+                                        has_metadata = (
+                                            doc_result.metadata.get('images_detected', False) or
+                                            doc_result.metadata.get('image_count', 0) > 0 or
+                                            doc_result.metadata.get('has_image', False)
+                                        )
+                                    
+                                    if (has_marker or has_metadata) and doc_result not in relevant_docs:
+                                        # Check if it's from a document with images
+                                        doc_source = doc_result.metadata.get('source', '') if hasattr(doc_result, 'metadata') and doc_result.metadata else ''
+                                        if not documents_with_images or doc_source in documents_with_images or not doc_source:
+                                            additional_image_docs.append(doc_result)
+                        elif hasattr(self.vectorstore, 'similarity_search'):
+                            search_results = self.vectorstore.similarity_search(image_query, k=100)
+                            for doc_result in search_results:
+                                if hasattr(doc_result, 'page_content'):
+                                    has_marker = '<!-- image -->' in doc_result.page_content
+                                    has_metadata = False
+                                    if hasattr(doc_result, 'metadata') and doc_result.metadata:
+                                        has_metadata = (
+                                            doc_result.metadata.get('images_detected', False) or
+                                            doc_result.metadata.get('image_count', 0) > 0 or
+                                            doc_result.metadata.get('has_image', False)
+                                        )
+                                    
+                                    if (has_marker or has_metadata) and doc_result not in relevant_docs:
+                                        doc_source = doc_result.metadata.get('source', '') if hasattr(doc_result, 'metadata') and doc_result.metadata else ''
+                                        if not documents_with_images or doc_source in documents_with_images or not doc_source:
+                                            additional_image_docs.append(doc_result)
+                    except Exception as e:
+                        logger.debug(f"Could not search for image chunks with query '{image_query}': {e}")
+                        continue
+                
+                # Remove duplicates
+                seen = set()
+                unique_additional_docs = []
+                for doc in additional_image_docs:
+                    doc_id = id(doc)  # Use object id for comparison
+                    if doc_id not in seen:
+                        seen.add(doc_id)
+                        unique_additional_docs.append(doc)
+                additional_image_docs = unique_additional_docs
+                
+                if additional_image_docs:
+                    logger.info(f"Found {len(additional_image_docs)} chunks with image markers/metadata from expanded search")
+                    # #region agent log
+                    try:
+                        with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                            import json
+                            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"rag_system.py:2232","message":"Image chunks found in expanded search","data":{"found_count":len(additional_image_docs),"total_relevant_before":len(relevant_docs)},"timestamp":int(time_module.time()*1000)})+"\n")
+                    except: pass
+                    # #endregion
+                    relevant_docs = relevant_docs + additional_image_docs
+                else:
+                    logger.info("No additional image chunks found in expanded search")
+                    # #region agent log
+                    try:
+                        with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                            import json
+                            f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"rag_system.py:2236","message":"No image chunks found in expanded search","data":{"queries_tried":len(image_queries)},"timestamp":int(time_module.time()*1000)})+"\n")
+                    except: pass
+                    # #endregion
+            except Exception as e:
+                logger.warning(f"Error in image chunk search: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+        
+        # Phase 2: Expand search for tool/item names in image content
+        if should_extract_image_content and tool_item_names and self.vectorstore is not None:
+            logger.info(f"🔍 Expanding search for tool/item names: {tool_item_names}")
+            try:
+                # Search for chunks containing these items in image content
+                for item_name in tool_item_names:
+                    try:
+                        # Search with item name + image-related terms
+                        search_query = f"{item_name} image drawer tool part"
+                        if hasattr(self.vectorstore, 'similarity_search_with_score'):
+                            search_results = self.vectorstore.similarity_search_with_score(
+                                search_query,
+                                k=min(10, k * 2) if k else 10
+                            )
+                            for doc_result, score in search_results:
+                                # Filter for chunks with image markers
+                                if hasattr(doc_result, 'page_content') and '<!-- image -->' in doc_result.page_content:
+                                    if doc_result not in relevant_docs:
+                                        relevant_docs.append(doc_result)
+                                        logger.debug(f"Found chunk with '{item_name}' in image content")
+                        elif hasattr(self.vectorstore, 'similarity_search'):
+                            search_results = self.vectorstore.similarity_search(
+                                search_query,
+                                k=min(10, k * 2) if k else 10
+                            )
+                            for doc_result in search_results:
+                                if hasattr(doc_result, 'page_content') and '<!-- image -->' in doc_result.page_content:
+                                    if doc_result not in relevant_docs:
+                                        relevant_docs.append(doc_result)
+                                        logger.debug(f"Found chunk with '{item_name}' in image content")
+                    except Exception as e:
+                        logger.debug(f"Error searching for {item_name}: {e}")
+                        continue
+                
+                if tool_item_names:
+                    logger.info(f"✅ Expanded search completed for {len(tool_item_names)} tool/item name(s)")
+            except Exception as e:
+                logger.warning(f"Error in tool/item name search: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+        
         if is_image_question and mentioned_documents and self.vectorstore is not None:
             try:
                 # Query for chunks with image metadata from mentioned documents
@@ -2192,8 +2462,44 @@ class RAGSystem:
                 logger.debug(f"Error expanding image search: {e}")
                 # Continue with normal flow
         
-        if is_image_question:
-            for doc in relevant_docs:
+        # CRITICAL: Always extract image content from ALL retrieved chunks
+        # This ensures image content is available even if question phrasing doesn't trigger is_image_question
+        # Extract for ALL chunks, not just image questions
+        chunks_to_check = relevant_docs
+        
+        # Enhanced logging for image content extraction
+        # Phase 3: Always extract image content for tool/item questions
+        if should_extract_image_content:
+            if is_tool_item_question or has_part_number:
+                logger.info(f"🔧 Tool/item question detected - extracting image content from {len(relevant_docs)} chunks")
+            elif is_image_question:
+                logger.info(f"🔍 Image question detected - extracting image content from {len(relevant_docs)} chunks")
+            elif len(documents_with_images) > 0:
+                logger.info(f"🔍 Documents with images detected ({len(documents_with_images)} docs) - extracting image content from {len(relevant_docs)} chunks")
+            else:
+                logger.debug(f"Checking {len(relevant_docs)} chunks for image content (standard extraction)")
+        else:
+            logger.debug(f"Checking {len(relevant_docs)} chunks for image content (standard extraction)")
+        
+        # Count chunks with image markers before extraction
+        chunks_with_markers = sum(1 for doc in chunks_to_check 
+                                 if hasattr(doc, 'page_content') and '<!-- image -->' in doc.page_content)
+        # #region agent log
+        try:
+            with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"rag_system.py:2314","message":"Chunks with markers count","data":{"chunks_with_markers":chunks_with_markers,"total_chunks":len(chunks_to_check)},"timestamp":int(time_module.time()*1000)})+"\n")
+        except: pass
+        # #endregion
+        if chunks_with_markers > 0:
+            logger.info(f"📷 Found {chunks_with_markers} chunk(s) with image markers out of {len(chunks_to_check)} total chunks")
+        
+        # CRITICAL FIX: Use global sequential image numbering per document
+        # This ensures "Image 1", "Image 2", etc. are sequential across all chunks
+        # Previous bug: images were numbered per-chunk, making it impossible to find specific images
+        image_counter_per_doc = {}  # Map: source -> current_image_number
+        
+        for doc in chunks_to_check:
                 if hasattr(doc, 'page_content') and hasattr(doc, 'metadata') and doc.metadata:
                     chunk_text = doc.page_content
                     source = doc.metadata.get('source', '')
@@ -2209,25 +2515,59 @@ class RAGSystem:
                     
                     # Look for image markers and extract surrounding text (OCR content from images)
                     if '<!-- image -->' in chunk_text:
+                        # #region agent log
+                        try:
+                            with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                                import json
+                                marker_count = chunk_text.count('<!-- image -->')
+                                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"rag_system.py:2334","message":"Found image marker in chunk","data":{"source":source[:50],"page":page,"markers_in_chunk":marker_count,"chunk_length":len(chunk_text)},"timestamp":int(time_module.time()*1000)})+"\n")
+                        except: pass
+                        # #endregion
                         # Improved splitting: Handle multiple markers and edge cases
                         # Split by image markers while preserving marker positions
                         marker_pattern = '<!-- image -->'
                         parts = chunk_text.split(marker_pattern)
                         
                         # Process each image marker occurrence
+                        # CRITICAL FIX: Use global sequential numbering per document
                         for idx in range(len(parts) - 1):  # Last part has no marker after it
-                            image_num = idx + 1
+                            # Initialize counter for this document if not exists
+                            if source not in image_counter_per_doc:
+                                image_counter_per_doc[source] = 0
+                            
+                            # Increment and use global counter for this document
+                            image_counter_per_doc[source] += 1
+                            image_num = image_counter_per_doc[source]
+                            
+                            # #region agent log
+                            try:
+                                with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                                    import json
+                                    after_text_len = len(parts[idx + 1].strip()) if (idx + 1) < len(parts) else 0
+                                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"rag_system.py:2400","message":"Processing image marker with global numbering","data":{"source":source[:30],"image_num":image_num,"global_counter":image_counter_per_doc[source],"after_text_length":after_text_len},"timestamp":int(time_module.time()*1000)})+"\n")
+                            except: pass
+                            # #endregion
                             
                             # Get text before this marker (context)
                             before_text = parts[idx].strip() if idx < len(parts) else ''
                             
                             # Get text after this marker (OCR content from image)
-                            after_text = parts[idx + 1].strip() if (idx + 1) < len(parts) else ''
+                            # CRITICAL FIX: For multiple markers in same chunk, split content to avoid overlap
+                            # If this is not the last marker, only take text up to next marker
+                            if idx + 2 < len(parts):
+                                # There's another marker after this one - only take text up to next marker
+                                after_text = parts[idx + 1].strip()
+                                # Content ends at start of next marker section (no overlap)
+                            else:
+                                # Last marker in chunk - take all remaining text
+                                after_text = parts[idx + 1].strip() if (idx + 1) < len(parts) else ''
                             
                             # Improved extraction: Get more context and OCR content
-                            # Increased context window: 300 chars before, 1500 chars after
-                            image_context_before = before_text[-300:].strip() if before_text else ''
-                            image_ocr_content = after_text[:1500].strip() if after_text else ''
+                            # CRITICAL FIX: Extract FULL remaining chunk content, not limited to 10K chars
+                            # Extract entire remaining chunk to capture complete image OCR text
+                            image_context_before = before_text[-500:].strip() if before_text else ''
+                            # Extract full remaining text after marker (no limit) - image content may span entire chunk
+                            image_ocr_content = after_text.strip() if after_text else ''  # Removed 10000 char limit
                             
                             # Handle edge cases:
                             # 1. Marker at start of chunk (no before_text)
@@ -2237,7 +2577,8 @@ class RAGSystem:
                             # If marker is at start, look for OCR content after
                             if not before_text and image_ocr_content:
                                 # Marker at start - this is likely OCR content
-                                image_ocr_content = after_text[:1500].strip()
+                                # Extract full remaining chunk (no limit)
+                                image_ocr_content = after_text.strip()  # Removed 10000 char limit
                             
                             # If marker is at end, use text before as context
                             if not after_text and image_context_before:
@@ -2250,9 +2591,23 @@ class RAGSystem:
                                 image_context = f"[IMAGE {image_num} OCR CONTENT]\n{image_ocr_content}"
                                 if image_context_before:
                                     image_context = f"Context: {image_context_before}\n{image_context}"
+                                # #region agent log
+                                try:
+                                    with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                                        import json
+                                        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"rag_system.py:2366","message":"Extracted OCR content","data":{"image_num":image_num,"ocr_length":len(image_ocr_content),"context_length":len(image_context)},"timestamp":int(time_module.time()*1000)})+"\n")
+                                except: pass
+                                # #endregion
                             elif image_context_before:
                                 # Fallback: use text before if no OCR after
                                 image_context = f"[IMAGE {image_num} - Text near image]\n{image_context_before}"
+                                # #region agent log
+                                try:
+                                    with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                                        import json
+                                        f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"D","location":"rag_system.py:2372","message":"Using fallback context","data":{"image_num":image_num,"context_length":len(image_context_before)},"timestamp":int(time_module.time()*1000)})+"\n")
+                                except: pass
+                                # #endregion
                             else:
                                 # Skip if no content at all
                                 continue
@@ -2261,12 +2616,22 @@ class RAGSystem:
                                 key = (source, image_num)
                                 if key not in image_content_map:
                                     image_content_map[key] = []
+                                
+                                # CRITICAL FIX: Validate OCR text completeness
+                                ocr_text_length = len(image_ocr_content) if image_ocr_content else 0
+                                if ocr_text_length < 50:
+                                    logger.warning(f"⚠️  Image {image_num} from {os.path.basename(source)} has very short OCR text ({ocr_text_length} chars) - may be incomplete")
+                                
                                 image_content_map[key].append({
                                     'content': image_context,
                                     'page': page,
-                                    'full_chunk': chunk_text[:2500],  # Increased context window
-                                    'ocr_text': image_ocr_content  # Store OCR text separately
+                                    'full_chunk': chunk_text,  # Store FULL chunk (no truncation) - contains all OCR text
+                                    'ocr_text': image_ocr_content,  # Store FULL OCR text (no limit)
+                                    'ocr_text_length': ocr_text_length  # Store length for validation
                                 })
+                                
+                                # Log OCR text completeness per image
+                                logger.debug(f"📷 Image {image_num} from {os.path.basename(source)}: Extracted {ocr_text_length:,} OCR characters")
                     
                     # Enhanced detection: Extract content from chunks with image metadata even without markers
                     elif has_image_metadata:
@@ -2299,35 +2664,148 @@ class RAGSystem:
                             if key not in image_content_map:
                                 image_content_map[key] = []
                             image_content_map[key].append({
-                                'content': f"[IMAGE {image_index} OCR CONTENT - Detected from metadata]\n{chunk_text[:1500]}",
+                                'content': f"[IMAGE {image_index} OCR CONTENT - Detected from metadata]\n{chunk_text}",
                                 'page': page,
-                                'full_chunk': chunk_text[:2000],
-                                'ocr_text': chunk_text
+                                'full_chunk': chunk_text,  # Store FULL chunk
+                                'ocr_text': chunk_text  # Store FULL OCR text
                             })
                     
-                    # Also check if chunk contains drawer/image-related content even without markers
+                    # ALWAYS check if chunk contains drawer/image-related content even without markers
                     # This helps find content that might be from images but not marked
-                    if any(keyword in question_lower for keyword in ['drawer', 'tool', 'wrench', 'socket']):
-                        # Check if chunk has relevant content
-                        if any(keyword in chunk_text.lower() for keyword in ['drawer', 'tool', 'wrench', 'socket', 'allen']):
-                            # This might be image content, include it
-                            if source not in image_content_map:
-                                image_content_map[source] = []
-                            # Check if this looks like image content (has part numbers, tool lists, etc.)
-                            if any(indicator in chunk_text for indicator in ['___', 'MM', 'SS ALLEN', 'Part', 'Quantity:']):
-                                image_content_map[source].append({
-                                    'content': f"[POSSIBLE IMAGE CONTENT - Tool/Drawer Information]\n{chunk_text[:1500]}",
-                                    'page': page,
-                                    'full_chunk': chunk_text,
-                                    'ocr_text': chunk_text
-                                })
+                    # Check this for ALL chunks, regardless of question type
+                    # Check if chunk has relevant content patterns
+                    has_image_patterns = any(keyword in chunk_text.lower() for keyword in ['drawer', 'tool', 'wrench', 'socket', 'allen'])
+                    has_image_indicators = any(indicator in chunk_text for indicator in ['___', 'MM', 'SS ALLEN', 'Part', 'Quantity:', '65300', 'Wire Stripper', 'Snips', 'Socket'])
+                    
+                    # If chunk has image-like patterns, include it as potential image content
+                    if has_image_patterns or has_image_indicators:
+                        # Use a default image index if not specified
+                        image_index = 1
+                        key = (source, image_index)
+                        if key not in image_content_map:
+                            image_content_map[key] = []
+                        
+                        # Check if this looks like image content (has part numbers, tool lists, etc.)
+                        if has_image_indicators:
+                            image_content_map[key].append({
+                                'content': f"[POSSIBLE IMAGE CONTENT - Tool/Drawer Information]\n{chunk_text}",
+                                'page': page,
+                                'full_chunk': chunk_text,  # Store FULL chunk
+                                'ocr_text': chunk_text  # Store FULL OCR text
+                            })
         
-        # Add image content section to context if available and question is about images
+        # Enhanced logging for image content extraction results
         if image_content_map:
-            image_content_section = "\n\n=== Image Content (OCR Text Extracted from Images) ===\n"
-            image_content_section += "IMPORTANT: This section contains OCR text extracted from images. Use this to answer questions about image content.\n"
-            image_content_section += "When asked about 'what information is in image X' or 'what's inside image X', check this section for the OCR text from that specific image.\n"
-            image_content_section += "Each image is numbered and associated with a document. Match the image number from the question to the image number in this section.\n\n"
+            total_images = sum(len(contents) for contents in image_content_map.values())
+            total_ocr_chars = sum(
+                len(content_info.get('ocr_text', '')) 
+                for contents in image_content_map.values() 
+                for content_info in contents
+            )
+            # Validate completeness per image
+            short_ocr_count = 0
+            for (source, img_idx), contents in image_content_map.items():
+                for content_info in contents:
+                    ocr_length = content_info.get('ocr_text_length', len(content_info.get('ocr_text', '')))
+                    if ocr_length < 50:
+                        short_ocr_count += 1
+            
+            logger.info(f"✅ Extracted image content from {len(image_content_map)} image(s), {total_images} total content entries")
+            logger.info(f"📊 Image content statistics: {total_ocr_chars:,} OCR characters extracted")
+            if short_ocr_count > 0:
+                logger.warning(f"⚠️  {short_ocr_count} image(s) have very short OCR text (< 50 chars) - may indicate incomplete extraction")
+            else:
+                logger.info(f"✅ All images have substantial OCR text extracted (>= 50 chars)")
+            
+            # Log which documents contributed image content
+            contributing_docs = set(source for (source, _) in image_content_map.keys())
+            if contributing_docs:
+                logger.info(f"📄 Documents with image content: {[os.path.basename(d) for d in contributing_docs]}")
+            
+            # Store images in OpenSearch at query time
+            try:
+                self._store_extracted_images(image_content_map, contributing_docs)
+            except Exception as e:
+                logger.warning(f"⚠️  Failed to store images in OpenSearch at query time: {str(e)}")
+                # Don't fail query if storage fails
+            
+            # CRITICAL FIX: Filter image content by mentioned document if specific document is queried
+            if mentioned_documents and len(mentioned_documents) == 1:
+                # Only one document mentioned - filter image content to only that document
+                mentioned_source = mentioned_documents[0]
+                filtered_image_content_map = {}
+                for (source, img_idx), contents in image_content_map.items():
+                    if source == mentioned_source:
+                        filtered_image_content_map[(source, img_idx)] = contents
+                
+                if filtered_image_content_map:
+                    removed_count = len(image_content_map) - len(filtered_image_content_map)
+                    if removed_count > 0:
+                        logger.info(f"🔍 Filtered image content: Kept {len(filtered_image_content_map)} images from {os.path.basename(mentioned_source)}, removed {removed_count} images from other documents")
+                        image_content_map = filtered_image_content_map
+                else:
+                    logger.warning(f"⚠️  No image content found for mentioned document: {os.path.basename(mentioned_source)}")
+        elif is_image_question or len(documents_with_images) > 0:
+            logger.warning(f"⚠️  Image question/documents detected but no image content extracted from {len(relevant_docs)} chunks")
+            # Debug: Check if any chunks have image markers
+            markers_found = sum(1 for doc in relevant_docs if hasattr(doc, 'page_content') and '<!-- image -->' in doc.page_content)
+            logger.warning(f"🔍 Debug: Found {markers_found} chunk(s) with image markers out of {len(relevant_docs)} total chunks")
+            if markers_found > 0:
+                logger.error("❌ Image markers found but content not extracted - this indicates an extraction issue!")
+                # Log sample of chunks with markers for debugging
+                sample_chunks = [doc for doc in relevant_docs if hasattr(doc, 'page_content') and '<!-- image -->' in doc.page_content][:3]
+                for i, doc in enumerate(sample_chunks, 1):
+                    chunk_preview = doc.page_content[:200].replace('\n', ' ')
+                    logger.debug(f"   Sample chunk {i} with marker: {chunk_preview}...")
+            else:
+                logger.warning("⚠️  No image markers found in retrieved chunks - chunks may not have been retrieved by similarity search")
+        
+        # CRITICAL: Always add Image Content section when available
+        # Add it for ALL queries if image content was extracted (not just image questions)
+        # This ensures LLM can use image content even if question doesn't explicitly mention images
+        # #region agent log
+        try:
+            with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                import json
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"rag_system.py:2467","message":"Checking if Image Content section should be added","data":{"has_image_content":len(image_content_map)>0,"image_count":len(image_content_map)},"timestamp":int(time_module.time()*1000)})+"\n")
+        except: pass
+        # #endregion
+        if image_content_map:
+            logger.info(f"✅ Adding Image Content section to context with {len(image_content_map)} image(s)")
+            # Make Image Content section more prominent - add at the beginning of context
+            # Use very prominent markers to ensure LLM notices it
+            image_content_section = "\n\n" + "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "⚠️⚠️⚠️  IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)  ⚠️⚠️⚠️\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "\n🚨 CRITICAL: This section contains OCR text extracted from images.\n"
+            image_content_section += "🚨 This is the PRIMARY and ONLY source for answering questions about image content.\n"
+            image_content_section += "🚨 YOU MUST USE THIS SECTION to answer questions about images, drawers, tools, or part numbers.\n"
+            image_content_section += "\nWhen asked about:\n"
+            image_content_section += "  - 'what information is in image X'\n"
+            image_content_section += "  - 'what's inside image X'\n"
+            image_content_section += "  - 'what tools are in DRAWER X'\n"
+            image_content_section += "  - 'what part numbers are listed'\n"
+            image_content_section += "  - 'give me information about images'\n"
+            image_content_section += "\n🚨 When asked about specific tools, items, or part numbers:\n"
+            image_content_section += "  - 'where can I find [tool name]'\n"
+            image_content_section += "  - 'what drawer has [item]'\n"
+            image_content_section += "  - 'location of [part number]'\n"
+            image_content_section += "\n🚨 Search the OCR text in this section for the tool/item name or part number.\n"
+            image_content_section += "🚨 The OCR text contains tool lists, drawer contents, and part numbers.\n"
+            image_content_section += "\n🚨 ALWAYS check this section FIRST and provide detailed information from the OCR text.\n"
+            image_content_section += "🚨 DO NOT say 'context does not contain' if this section has relevant information.\n"
+            image_content_section += "🚨 DO NOT ignore this section - it contains the actual OCR text from images.\n"
+            image_content_section += "\nEach image is numbered and associated with a document.\n"
+            image_content_section += "Match the image number from the question to the image number in this section.\n"
+            image_content_section += "\n" + "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "START OF IMAGE CONTENT - READ THIS SECTION CAREFULLY\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n\n"
             
             # Group by document for better organization
             documents_images = {}
@@ -2352,24 +2830,55 @@ class RAGSystem:
                             image_content_section += f"    Location: Page {content_info['page']}\n"
                         
                         # Add OCR content with clear formatting
+                        # CRITICAL FIX: Include FULL OCR text, not truncated
                         ocr_text = content_info.get('ocr_text', '')
                         if ocr_text:
-                            image_content_section += f"    OCR Text: {ocr_text[:2000]}\n"  # Increased from 600
+                            # Include full OCR text (no truncation) - LLM can handle long text
+                            image_content_section += f"    OCR Text: {ocr_text}\n"
                         else:
                             # Use content if OCR text not available
                             content = content_info.get('content', '')
                             if content:
-                                image_content_section += f"    Content: {content[:2000]}\n"
+                                # Include full content (no truncation)
+                                image_content_section += f"    Content: {content}\n"
                         
-                        # Add additional context if available
+                        # Add additional context if available (full_chunk might have more than ocr_text)
                         full_chunk = content_info.get('full_chunk', '')
-                        if full_chunk and len(full_chunk) > len(ocr_text or content_info.get('content', '')):
-                            image_content_section += f"    Additional Context: {full_chunk[:800]}...\n"
+                        if full_chunk:
+                            # Only add if full_chunk has significantly more content
+                            ocr_or_content = ocr_text or content_info.get('content', '')
+                            if len(full_chunk) > len(ocr_or_content) * 1.2:  # 20% more content
+                                # Include the additional content (no truncation)
+                                additional = full_chunk[len(ocr_or_content):] if ocr_or_content else full_chunk
+                                if additional.strip():
+                                    image_content_section += f"    Additional Context: {additional}\n"
                     
                     image_content_section += "\n"
             
-            image_content_section += "\n"
+            image_content_section += "\n" + "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "END OF IMAGE CONTENT SECTION\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "⚠️⚠️⚠️  REMEMBER: Use the Image Content section above for image questions  ⚠️⚠️⚠️\n"
+            image_content_section += "=" * 80 + "\n"
+            image_content_section += "=" * 80 + "\n\n"
+            
+            # Add Image Content section at the BEGINNING of context for maximum visibility
             context = image_content_section + context
+            logger.info(f"✅ Image Content section added to context ({len(image_content_section):,} characters, {len(image_content_map)} images)")
+            # #region agent log
+            try:
+                with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                    import json
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"rag_system.py:2551","message":"Image Content section added to context","data":{"section_length":len(image_content_section),"context_length_after":len(context),"images_in_section":len(image_content_map)},"timestamp":int(time_module.time()*1000)})+"\n")
+            except: pass
+            # #endregion
+            
+            # Debug: Log a preview of the Image Content section (first 500 chars)
+            import logging
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Image Content section preview: {image_content_section[:500]}...")
         
         # Collect document-level metadata (image counts, etc.) from all retrieved documents
         document_metadata = {}
@@ -2469,6 +2978,18 @@ class RAGSystem:
         # Count tokens in context (question + context)
         context_tokens = self.count_tokens(question + "\n\n" + context)
         
+        # #region agent log
+        try:
+            with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                import json
+                has_image_section = 'IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)' in context
+                image_section_start = context.find('IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)')
+                image_section_end = context.find('END OF IMAGE CONTENT SECTION', image_section_start) if image_section_start >= 0 else -1
+                image_section_length = (image_section_end - image_section_start) if image_section_start >= 0 and image_section_end >= 0 else 0
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"rag_system.py:2747","message":"Context before LLM query","data":{"context_length":len(context),"context_tokens":context_tokens,"has_image_section":has_image_section,"image_section_start":image_section_start,"image_section_length":image_section_length,"context_preview":context[:200]},"timestamp":int(time_module.time()*1000)})+"\n")
+        except: pass
+        # #endregion
+        
         # Generate answer using LLM with improved prompt
         if self.use_cerebras:
             answer, response_tokens = self._query_cerebras(question, context, relevant_docs)
@@ -2523,6 +3044,16 @@ class RAGSystem:
         from config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
+        # #region agent log
+        try:
+            with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                import json
+                context_has_image_section = 'IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)' in context
+                image_section_start = context.find('IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)') if context_has_image_section else -1
+                f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"rag_system.py:2819","message":"_query_openai called","data":{"context_length":len(context),"context_has_image_section":context_has_image_section,"image_section_start":image_section_start,"question":question[:100]},"timestamp":int(time_module.time()*1000)})+"\n")
+        except: pass
+        # #endregion
+        
         # Detect if this is a summary query
         question_lower = question.lower()
         is_summary_query = any(kw in question_lower for kw in 
@@ -2564,6 +3095,34 @@ Summary:"""
 
 IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first. If the metadata shows "exact count not available" but images are detected, state that images are present but the exact count requires re-processing the document.
 
+CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content. The section is marked with prominent warning symbols (⚠️⚠️⚠️) to make it highly visible. 
+
+When asked:
+- "what is in image X" or "what information is in image X"
+- "what tools are in DRAWER X" or "what's in drawer X"
+- "what part numbers are listed" or "what tools are listed"
+- "give me information about images" or "what content is in the images"
+- "where can I find [tool name]" or "where is [item]"
+- "what drawer has [item]" or "location of [part number]"
+- Any question mentioning images, drawers, tools, part numbers, or visual content
+
+You MUST:
+1. Look in the Image Content section FIRST (before checking other context)
+2. Find the relevant image number or content
+3. Search the OCR text for the specific tool/item name or part number mentioned in the question
+4. Provide detailed, specific information from the OCR text
+5. Include exact part numbers, tool names, quantities, drawer numbers, and other details from the OCR text
+6. Do NOT say "context does not contain" if the Image Content section has relevant information
+
+IMPORTANT: When asked about specific tools, items, or part numbers (e.g., "Where can I find the Mallet?"):
+1. FIRST check the "=== IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES) ===" section
+2. Search the OCR text for the tool/item name or part number (try variations: lowercase, uppercase, partial matches)
+3. Look for drawer numbers, locations, or quantities associated with the item
+4. Provide specific information from the OCR text, including drawer numbers, page numbers, and quantities
+5. DO NOT say "context does not contain" if you haven't thoroughly searched the Image Content section
+
+Each image is numbered - match the image number from the question to the image number in the Image Content section. If the question asks about "image 1" or "first image", look for "Image 1:" in the Image Content section.
+
 CRITICAL RULES:
 - Synthesize information from ALL provided context chunks to answer the question
 - Work with the information that IS available in the context
@@ -2585,14 +3144,18 @@ CRITICAL RULES:
 Question: {question}
 
 Instructions:
-1. Read ALL context chunks carefully
-2. Synthesize information from the context to answer the question
-3. If the context contains relevant information, use it to provide a comprehensive answer
-4. Include specific details, numbers, and specifications when available
-5. Only say information is not available if you have thoroughly checked ALL chunks and found nothing relevant
-6. DO NOT add greetings, signatures, or closing statements
-7. DO NOT repeat information or phrases
-8. Stop immediately after providing the answer
+1. If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), check it FIRST for questions about images, drawers, tools, or part numbers
+2. For questions about specific tools, items, or part numbers (e.g., "Where can I find the Mallet?"), search the Image Content section OCR text for the tool/item name or part number
+3. Read ALL context chunks carefully
+4. Synthesize information from the context to answer the question
+5. If the context contains relevant information, use it to provide a comprehensive answer
+6. Include specific details, numbers, and specifications when available
+7. For image-related questions, prioritize information from the Image Content section
+8. When searching for tools/items, look for drawer numbers, locations, quantities, and part numbers in the OCR text
+9. Only say information is not available if you have thoroughly checked ALL chunks AND the Image Content section (if present) and found nothing relevant
+10. DO NOT add greetings, signatures, or closing statements
+11. DO NOT repeat information or phrases
+12. Stop immediately after providing the answer
 
 Answer:"""
         
@@ -2618,6 +3181,16 @@ Answer:"""
             if answer is None:
                 raise ValueError("OpenAI API returned empty content in response")
             
+            # #region agent log
+            try:
+                with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                    import json
+                    # Check if answer mentions image content keywords
+                    has_image_keywords = any(kw in answer.lower() for kw in ['image', 'drawer', 'tool', 'part number', 'ocr', '65300'])
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"rag_system.py:2943","message":"LLM response received","data":{"answer_length":len(answer),"has_image_keywords":has_image_keywords,"answer_preview":answer[:300]},"timestamp":int(time_module.time()*1000)})+"\n")
+            except: pass
+            # #endregion
+            
             # Get token usage from response
             response_tokens = response.usage.completion_tokens if hasattr(response, 'usage') and response.usage else 0
             if response_tokens == 0:
@@ -2626,6 +3199,16 @@ Answer:"""
             
             # Clean up any repetitive or unwanted endings
             answer = self._clean_answer(answer)
+            
+            # #region agent log
+            try:
+                with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
+                    import json
+                    has_image_keywords_after = any(kw in answer.lower() for kw in ['image', 'drawer', 'tool', 'part number', 'ocr', '65300'])
+                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"F","location":"rag_system.py:2955","message":"LLM response after cleaning","data":{"answer_length":len(answer),"has_image_keywords":has_image_keywords_after,"answer_preview":answer[:300]},"timestamp":int(time_module.time()*1000)})+"\n")
+            except: pass
+            # #endregion
+            
             return answer, response_tokens
         except Exception as e:
             error_msg = str(e)
@@ -3968,6 +4551,24 @@ Summary:"""
         else:
             system_prompt = """You are a precise technical assistant that provides comprehensive, accurate answers by synthesizing information from multiple sources.
 
+CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content. The section is marked with prominent warning symbols (⚠️⚠️⚠️) to make it highly visible. 
+
+When asked:
+- "what is in image X" or "what information is in image X"
+- "what tools are in DRAWER X" or "what's in drawer X"
+- "what part numbers are listed" or "what tools are listed"
+- "give me information about images" or "what content is in the images"
+- Any question mentioning images, drawers, tools, part numbers, or visual content
+
+You MUST:
+1. Look in the Image Content section FIRST (before checking other context)
+2. Find the relevant image number or content
+3. Provide detailed, specific information from the OCR text
+4. Include exact part numbers, tool names, quantities, and other details from the OCR text
+5. Do NOT say "context does not contain" if the Image Content section has relevant information
+
+Each image is numbered - match the image number from the question to the image number in the Image Content section. If the question asks about "image 1" or "first image", look for "Image 1:" in the Image Content section.
+
 CRITICAL RULES:
 - Synthesize information from ALL provided context chunks
 - Work with the information that IS available in the context
@@ -4360,3 +4961,155 @@ Answer:"""
             'configured_chunk_overlap': self.chunk_overlap
         }
 
+
+    def _store_extracted_images(
+        self,
+        image_content_map: Dict,
+        contributing_docs: set
+    ):
+        """
+        Store extracted images in OpenSearch at query time.
+        
+        Args:
+            image_content_map: Dictionary mapping (source, image_index) to content list
+            contributing_docs: Set of document sources that contributed images
+        """
+        if not image_content_map:
+            return
+        
+        # Only store if OpenSearch is configured
+        if (not hasattr(self, 'vector_store_type') or 
+            self.vector_store_type.lower() != 'opensearch'):
+            return
+        
+        try:
+            from vectorstores.opensearch_images_store import OpenSearchImagesStore
+            from langchain_openai import OpenAIEmbeddings
+            
+            # Log storage start
+            if image_logger:
+                total_images = sum(len(contents) for contents in image_content_map.values())
+                image_logger.log_storage_start(
+                    source="query_time",
+                    image_count=total_images,
+                    storage_method="opensearch"
+                )
+            
+            # Initialize images store
+            embeddings = OpenAIEmbeddings(
+                openai_api_key=os.getenv('OPENAI_API_KEY'),
+                model=self.embedding_model
+            )
+            
+            images_store = OpenSearchImagesStore(
+                embeddings=embeddings,
+                domain=self.opensearch_domain,
+                region=getattr(self, 'region', None)
+            )
+            
+            # Convert image_content_map to list of image dictionaries
+            images_to_store = []
+            for (source, img_idx), contents in image_content_map.items():
+                for content_info in contents:
+                    image_data = {
+                        'source': source,
+                        'image_number': img_idx,
+                        'page': content_info.get('page', 0),
+                        'ocr_text': content_info.get('ocr_text', ''),
+                        'marker_detected': True,
+                        'extraction_method': 'query_time',
+                        'full_chunk': content_info.get('full_chunk', ''),
+                        'context_before': content_info.get('context_before', '')
+                    }
+                    images_to_store.append(image_data)
+                    
+                    # Log query extraction
+                    if image_logger:
+                        image_logger.log_query_extraction(
+                            source=source,
+                            image_number=img_idx,
+                            ocr_text_length=len(content_info.get('ocr_text', '')),
+                            extraction_method='query_time',
+                            page=content_info.get('page')
+                        )
+            
+            # Store images in batch
+            if images_to_store:
+                image_ids = images_store.store_images_batch(images_to_store)
+                
+                # Log storage success
+                if image_logger:
+                    image_logger.log_storage_success(
+                        source="query_time",
+                        images_stored=len(image_ids),
+                        image_ids=image_ids
+                    )
+                
+                logger.info(f"✅ Stored {len(image_ids)} images in OpenSearch at query time")
+        except ImportError as e:
+            logger.debug(f"OpenSearch images store not available: {str(e)}")
+        except Exception as e:
+            # Log storage failure
+            if image_logger:
+                total_images = sum(len(contents) for contents in image_content_map.values())
+                image_logger.log_storage_failure(
+                    source="query_time",
+                    error=str(e),
+                    images_attempted=total_images
+                )
+            logger.warning(f"⚠️  Failed to store images in OpenSearch: {str(e)}")
+    
+    def query_images(
+        self,
+        question: str,
+        source: Optional[str] = None,
+        k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Search images directly in OpenSearch images index.
+        
+        Args:
+            question: Search query
+            source: Optional document source to filter by
+            k: Number of results to return
+            
+        Returns:
+            List of image dictionaries with OCR text
+        """
+        # Only search if OpenSearch is configured
+        if (not hasattr(self, 'vector_store_type') or 
+            self.vector_store_type.lower() != 'opensearch'):
+            logger.warning("OpenSearch not configured - cannot search images")
+            return []
+        
+        try:
+            from vectorstores.opensearch_images_store import OpenSearchImagesStore
+            from langchain_openai import OpenAIEmbeddings
+            
+            # Initialize images store
+            embeddings = OpenAIEmbeddings(
+                openai_api_key=os.getenv('OPENAI_API_KEY'),
+                model=self.embedding_model
+            )
+            
+            images_store = OpenSearchImagesStore(
+                embeddings=embeddings,
+                domain=self.opensearch_domain,
+                region=getattr(self, 'region', None)
+            )
+            
+            # Search images
+            results = images_store.search_images(
+                query=question,
+                source=source,
+                k=k
+            )
+            
+            logger.info(f"Found {len(results)} images matching query: {question[:50]}")
+            return results
+        except ImportError as e:
+            logger.warning(f"OpenSearch images store not available: {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"Failed to search images: {str(e)}")
+            return []
