@@ -1387,7 +1387,14 @@ class RAGSystem:
         if self.vectorstore is None:
             return {
                 "answer": "No documents have been uploaded yet. Please upload documents first.",
-                "sources": []
+                "sources": [],
+                "context_chunks": [],
+                "citations": [],
+                "num_chunks_used": 0,
+                "response_time": 0.0,
+                "context_tokens": 0,
+                "response_tokens": 0,
+                "total_tokens": 0
             }
         
         # Log active document filter status
