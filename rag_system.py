@@ -3169,10 +3169,16 @@ CRITICAL RULES:
 - DO NOT make up information not in the context
 - End your answer when you have provided the information - do not add unnecessary text"""
         
-        user_prompt = f"""Context from documents:
+            # Add document filtering instruction to user prompt if specific document mentioned
+            user_doc_filter_instruction = ""
+            if mentioned_documents and question_doc_number is not None:
+                mentioned_doc_name = os.path.basename(mentioned_documents[0]) if mentioned_documents else ""
+                user_doc_filter_instruction = f"\n\nCRITICAL: The question asks specifically about \"{mentioned_doc_name}\". Only use information from this document. Ignore information from other documents."
+            
+            user_prompt = f"""Context from documents:
 {context}
 
-Question: {question}
+Question: {question}{user_doc_filter_instruction}
 
 Instructions:
 1. If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), check it FIRST for questions about images, drawers, tools, or part numbers
