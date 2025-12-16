@@ -4707,7 +4707,7 @@ Answer:"""
         # For now, fallback to standard Cerebras query
         # TODO: Implement Cerebras-specific synthesis if needed
         logger.warning("Cerebras Agentic RAG synthesis not fully implemented, using standard query")
-        return self._query_cerebras(question, context, relevant_docs)
+        return self._query_cerebras(question, context, relevant_docs, None, None)
     
     def save_vectorstore(self, path: str = "vectorstore"):
         """Save vector store to disk (FAISS only) or cloud (OpenSearch)"""
