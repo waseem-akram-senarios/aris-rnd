@@ -3010,9 +3010,9 @@ class RAGSystem:
         
         # Generate answer using LLM with improved prompt
         if self.use_cerebras:
-            answer, response_tokens = self._query_cerebras(question, context, relevant_docs)
+            answer, response_tokens = self._query_cerebras(question, context, relevant_docs, mentioned_documents, question_doc_number)
         else:
-            answer, response_tokens = self._query_openai(question, context, relevant_docs)
+            answer, response_tokens = self._query_openai(question, context, relevant_docs, mentioned_documents, question_doc_number)
         
         response_time = time_module.time() - query_start_time
         total_tokens = context_tokens + response_tokens
@@ -3049,7 +3049,7 @@ class RAGSystem:
             "total_tokens": total_tokens
         }
     
-    def _query_openai(self, question: str, context: str, relevant_docs: List = None) -> tuple:
+    def _query_openai(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None) -> tuple:
         """
         Query OpenAI with maximum accuracy settings.
         
@@ -3057,6 +3057,8 @@ class RAGSystem:
             question: The question to answer
             context: Retrieved context from documents
             relevant_docs: List of relevant documents (for metadata)
+            mentioned_documents: List of documents mentioned in the question (for filtering)
+            question_doc_number: Document number extracted from question (e.g., 1, 2)
         """
         from openai import OpenAI
         from config.settings import ARISConfig
@@ -3265,8 +3267,16 @@ Answer:"""
                 error_answer = f"Error querying OpenAI: {error_msg}"
             return error_answer, self.count_tokens(error_answer)
     
-    def _query_cerebras(self, question: str, context: str, relevant_docs: List = None) -> tuple:
-        """Query Cerebras API with maximum accuracy settings"""
+    def _query_cerebras(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None) -> tuple:
+        """Query Cerebras API with maximum accuracy settings
+        
+        Args:
+            question: The question to answer
+            context: Retrieved context from documents
+            relevant_docs: List of relevant documents (for metadata)
+            mentioned_documents: List of documents mentioned in the question (for filtering)
+            question_doc_number: Document number extracted from question (e.g., 1, 2)
+        """
         from config.settings import ARISConfig
         # Synthesis-friendly prompt for Cerebras
         prompt = f"""You are a precise technical assistant. Synthesize information from the provided context to answer the question. Be specific and accurate.
