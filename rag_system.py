@@ -3122,7 +3122,7 @@ CRITICAL DOCUMENT FILTERING: The question specifically asks about "{mentioned_do
 - Only answer based on the specified document: {mentioned_doc_name}
 - If the specified document is not in the context, state that clearly"""
             
-            system_prompt = """You are a precise technical assistant that provides accurate, detailed answers by synthesizing information from the provided context. 
+            system_prompt = f"""You are a precise technical assistant that provides accurate, detailed answers by synthesizing information from the provided context. 
 
 IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first. If the metadata shows "exact count not available" but images are detected, state that images are present but the exact count requires re-processing the document.{document_filter_instruction}
 
