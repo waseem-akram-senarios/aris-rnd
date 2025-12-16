@@ -2157,21 +2157,39 @@ class RAGSystem:
                 mentioned_documents.append(source)
         
         # If a specific document is mentioned, prioritize chunks from that document
+        # CRITICAL FIX: If a specific document NUMBER is mentioned (e.g., "(2)"), STRICTLY filter to only that document
         if mentioned_documents:
-            # Re-sort relevant_docs to put mentioned documents first
-            prioritized_docs = []
-            other_docs = []
-            for doc in relevant_docs:
-                if hasattr(doc, 'metadata') and doc.metadata:
-                    source = doc.metadata.get('source', '')
-                    if source in mentioned_documents:
-                        prioritized_docs.append(doc)
+            # Check if question mentions a specific document number
+            if question_doc_number is not None:
+                # STRICT FILTERING: Only include chunks from the mentioned document
+                filtered_docs = []
+                for doc in relevant_docs:
+                    if hasattr(doc, 'metadata') and doc.metadata:
+                        source = doc.metadata.get('source', '')
+                        if source in mentioned_documents:
+                            filtered_docs.append(doc)
+                    # Skip documents not in mentioned_documents
+                
+                if filtered_docs:
+                    relevant_docs = filtered_docs
+                    logger.info(f"🔍 STRICT FILTER: Filtered to {len(filtered_docs)} chunks from mentioned document: {[os.path.basename(d) for d in mentioned_documents]}")
+                else:
+                    logger.warning(f"⚠️  No chunks found for mentioned document: {[os.path.basename(d) for d in mentioned_documents]}")
+            else:
+                # No specific number - just prioritize (original behavior)
+                prioritized_docs = []
+                other_docs = []
+                for doc in relevant_docs:
+                    if hasattr(doc, 'metadata') and doc.metadata:
+                        source = doc.metadata.get('source', '')
+                        if source in mentioned_documents:
+                            prioritized_docs.append(doc)
+                        else:
+                            other_docs.append(doc)
                     else:
                         other_docs.append(doc)
-                else:
-                    other_docs.append(doc)
-            relevant_docs = prioritized_docs + other_docs
-            logger.info(f"Prioritized {len(prioritized_docs)} chunks from mentioned document(s): {[os.path.basename(d) for d in mentioned_documents]}")
+                relevant_docs = prioritized_docs + other_docs
+                logger.info(f"Prioritized {len(prioritized_docs)} chunks from mentioned document(s): {[os.path.basename(d) for d in mentioned_documents]}")
         
         # Extract image content from chunks for image-related questions
         image_content_map = {}  # Map: (source, image_index) -> content
@@ -3091,9 +3109,22 @@ Instructions:
 Summary:"""
         else:
             # Synthesis-friendly prompt for all queries - encourages working with available information
+            # Add document filtering instruction if specific document mentioned
+            document_filter_instruction = ""
+            if mentioned_documents and question_doc_number is not None:
+                mentioned_doc_name = os.path.basename(mentioned_documents[0]) if mentioned_documents else ""
+                document_filter_instruction = f"""
+
+CRITICAL DOCUMENT FILTERING: The question specifically asks about "{mentioned_doc_name}". 
+- You MUST ONLY use information from this specific document
+- DO NOT use information from other documents, even if they have similar names
+- If the context contains information from other documents, IGNORE it
+- Only answer based on the specified document: {mentioned_doc_name}
+- If the specified document is not in the context, state that clearly"""
+            
             system_prompt = """You are a precise technical assistant that provides accurate, detailed answers by synthesizing information from the provided context. 
 
-IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first. If the metadata shows "exact count not available" but images are detected, state that images are present but the exact count requires re-processing the document.
+IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first. If the metadata shows "exact count not available" but images are detected, state that images are present but the exact count requires re-processing the document.{document_filter_instruction}
 
 CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content. The section is marked with prominent warning symbols (⚠️⚠️⚠️) to make it highly visible. 
 
