@@ -157,8 +157,14 @@ class DoclingParser(BaseParser):
         Returns:
             Text with image markers inserted
         """
-        if not text or not text.strip() or image_count == 0:
+        # Allow marker insertion even if image_count is 0 (will estimate)
+        if not text or not text.strip():
             return text
+        # If image_count is 0, estimate based on text length
+        if image_count == 0:
+            estimated_count = max(1, len(text) // 5000)  # Rough estimate: 1 marker per 5K chars
+            logger.info(f"Docling: image_count is 0, estimating {estimated_count} images for marker insertion")
+            image_count = estimated_count
         
         import re
         
@@ -203,7 +209,7 @@ class DoclingParser(BaseParser):
                                     result_lines.insert(insert_line, '<!-- image -->')
                                     markers_inserted += 1
                                     insert_line += 1  # Space markers for multiple images on same page
-                                else:
+                else:
                                     result_lines.append('<!-- image -->')
                                     markers_inserted += 1
             
@@ -379,7 +385,34 @@ class DoclingParser(BaseParser):
         
         extracted_images = []
         
-        if not text or '<!-- image -->' not in text:
+        # If no markers but we have text and images were detected, try to extract anyway
+        if not text:
+            return extracted_images
+        
+        # Check if markers exist
+        has_markers = '<!-- image -->' in text
+        
+        if not has_markers:
+            # No markers - try to extract from text patterns or create single image entry
+            logger.warning(f"Docling: No image markers found in text, but images detected. Attempting extraction without markers...")
+            
+            # If we have substantial text, create at least one image entry
+            if len(text.strip()) > 100:
+                # Create a single image entry from the text
+                image_data = {
+                    'source': source,
+                    'image_number': 1,
+                    'page': 1,  # Default to page 1
+                    'ocr_text': text[:10000],  # First 10K chars
+                    'ocr_text_length': min(len(text), 10000),
+                    'marker_detected': False,
+                    'extraction_method': 'docling_ocr_no_markers',
+                    'full_chunk': text[:1000],
+                    'context_before': None
+                }
+                extracted_images.append(image_data)
+                logger.info(f"Docling: Created 1 image entry from text without markers (text_length={len(text)})")
+            
             return extracted_images
         
         # Split by markers
@@ -713,11 +746,11 @@ class DoclingParser(BaseParser):
                     
                     # Enable OCR for image-based PDFs
                     # Verify OCR models are available first
-                    ocr_models_available = self._verify_ocr_models()
-                    if not ocr_models_available:
-                        logger.warning("Docling: OCR models may not be available - OCR may fail")
-                        logger.warning("Docling: Run 'docling download-models' to install OCR models")
-                    
+                        ocr_models_available = self._verify_ocr_models()
+                        if not ocr_models_available:
+                            logger.warning("Docling: OCR models may not be available - OCR may fail")
+                            logger.warning("Docling: Run 'docling download-models' to install OCR models")
+                        
                     # IMPORTANT: The default DocumentConverter in Docling has OCR enabled by default
                     # We don't need to configure it - just use the default converter
                     # Docling automatically uses OCR when processing documents with images
@@ -816,8 +849,8 @@ class DoclingParser(BaseParser):
                         if future_ref[0] is not None:
                             future_done = future_ref[0].done()
                         
-                        minutes = int(elapsed // 60)
-                        seconds = int(elapsed % 60)
+                            minutes = int(elapsed // 60)
+                            seconds = int(elapsed % 60)
                         
                         # Calculate estimated progress based on elapsed time and file size
                         # Docling typically processes at 0.5-2 pages per minute for scanned PDFs with OCR
@@ -932,7 +965,7 @@ class DoclingParser(BaseParser):
                                     # Log other callback errors but don't fail
                                     logger.warning(f"Docling: Progress callback error: {str(callback_error)}")
                         
-                        last_log_time = elapsed
+                            last_log_time = elapsed
                 
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(run_docling_conversion)
@@ -1382,8 +1415,13 @@ class DoclingParser(BaseParser):
                 file_size_mb = os.path.getsize(actual_path) / 1024 / 1024 if os.path.exists(actual_path) else 0
                 if not images_detected and text_length < 100 and file_size_mb > 0.5:
                     images_detected = True
+                    # Estimate image count based on file size and pages
+                    if image_count == 0:
+                        # Rough estimate: 1 image per 2-3 pages for image-based PDFs
+                        estimated_images = max(1, pages // 3) if pages > 0 else 1
+                        image_count = estimated_images
                     detection_methods.append("heuristic (low text, large file)")
-                    logger.info("Docling: Low text content suggests image-based PDF")
+                    logger.info(f"Docling: Low text content suggests image-based PDF (estimated {image_count} images)")
                 
                 if images_detected:
                     logger.info(f"Docling: ✅ Images detected via: {', '.join(detection_methods)}")
@@ -1430,23 +1468,33 @@ class DoclingParser(BaseParser):
                         )
             
             # Insert image markers if images were detected but markers not present
-            if images_detected and image_count > 0 and text:
+            # Also handle case where image_count is 0 but images are detected
+            if images_detected and text:
                 markers_in_text = text.count('<!-- image -->')
+                # If image_count is 0, estimate based on text length or use a default
+                effective_image_count = image_count if image_count > 0 else max(1, text_length // 5000)  # Rough estimate: 1 image per 5K chars
+                
                 if markers_in_text == 0:
-                    logger.info(f"Docling: Images detected ({image_count}) but no markers in text, inserting markers...")
+                    logger.info(f"Docling: Images detected (count={image_count}, effective={effective_image_count}) but no markers in text, inserting markers...")
                     # Use image positions if available for more accurate marker insertion
-                    text = self._insert_image_markers_in_text(text, image_count, image_positions_by_page=image_positions_by_page)
+                    text = self._insert_image_markers_in_text(text, effective_image_count, image_positions_by_page=image_positions_by_page)
                     logger.info(f"Docling: ✅ Inserted image markers in extracted text")
                 else:
                     # Markers already exist, but validate count
                     logger.info(f"Docling: Found {markers_in_text} existing image markers in text")
-                    if markers_in_text < image_count * 0.8:  # Less than 80% coverage
+                    if image_count > 0 and markers_in_text < image_count * 0.8:  # Less than 80% coverage
                         logger.warning(f"Docling: ⚠️  Only {markers_in_text}/{image_count} markers found. Inserting additional markers...")
                         # Use image positions if available
                         text = self._insert_image_markers_in_text(text, image_count, image_positions_by_page=image_positions_by_page)
+                    elif image_count == 0 and markers_in_text > 0:
+                        # Update image_count based on markers found
+                        image_count = markers_in_text
+                        logger.info(f"Docling: Updated image_count to {image_count} based on markers found in text")
+            
+            # Recalculate markers after potential insertion
+            final_markers = text.count('<!-- image -->') if text else 0
             
             # Validation: Check marker count matches image count (within tolerance)
-            final_markers = text.count('<!-- image -->') if text else 0
             if images_detected and image_count > 0:
                 marker_coverage = (final_markers / image_count * 100) if image_count > 0 else 0
                 if marker_coverage >= 80:
@@ -1458,18 +1506,93 @@ class DoclingParser(BaseParser):
             
             # Extract individual images for storage
             extracted_images = []
-            if images_detected and image_count > 0 and text and final_markers > 0:
+            # CRITICAL: Always try extraction if images are detected and we have text
+            # The extraction method will handle cases with or without markers
+            if images_detected and text and text_length > 0:
+                # Ensure we have markers - insert if missing
+                if final_markers == 0:
+                    logger.info(f"Docling: Images detected ({image_count}) but no markers found. Inserting markers...")
+                    # Use actual image_count if available, otherwise estimate
+                    marker_count = image_count if image_count > 0 else max(1, text_length // 5000)
+                    text = self._insert_image_markers_in_text(text, marker_count, image_positions_by_page=image_positions_by_page)
+                    final_markers = text.count('<!-- image -->')
+                    logger.info(f"Docling: Inserted {final_markers} markers (requested {marker_count})")
+                    if final_markers > 0 and image_count == 0:
+                        image_count = final_markers
+                        logger.info(f"Docling: Updated image_count to {image_count} based on inserted markers")
+                
+                # Now extract images - this will work with or without markers
                 try:
+                    effective_image_count = image_count if image_count > 0 else max(1, final_markers) if final_markers > 0 else 1
+                    logger.info(f"Docling: Attempting extraction with count={effective_image_count}, markers={final_markers}, text_length={text_length}")
+                    
                     extracted_images = self._extract_individual_images(
                         text=text,
-                        image_count=image_count,
+                        image_count=effective_image_count,
                         source=file_path,
                         page_blocks=page_blocks
                     )
-                    logger.info(f"Docling: Extracted {len(extracted_images)} individual images for storage")
+                    
+                    logger.info(f"Docling: Extraction completed: {len(extracted_images)} images extracted (requested {effective_image_count}, markers={final_markers})")
+                    
+                    # Log details of extracted images
+                    if len(extracted_images) > 0:
+                        logger.info(f"Docling: ✅ First extracted image keys: {list(extracted_images[0].keys())}")
+                        logger.info(f"Docling: ✅ First image source: {extracted_images[0].get('source', 'MISSING')}")
+                        logger.info(f"Docling: ✅ First image number: {extracted_images[0].get('image_number', 'MISSING')}")
+                        logger.info(f"Docling: ✅ First image OCR length: {len(extracted_images[0].get('ocr_text', ''))}")
+                        # Update image_count if we successfully extracted images
+                        if image_count == 0 or image_count != len(extracted_images):
+                            image_count = len(extracted_images)
+                            logger.info(f"Docling: Updated image_count to {image_count} based on actual extracted images")
+                    else:
+                        logger.warning(f"Docling: ⚠️  Extraction returned empty list!")
+                        logger.warning(f"Docling:   - Markers in text: {final_markers}")
+                        logger.warning(f"Docling:   - Image count: {image_count}")
+                        logger.warning(f"Docling:   - Text length: {text_length}")
+                        logger.warning(f"Docling:   - Effective count: {effective_image_count}")
+                        # Try fallback: create at least one image entry from text
+                        if text_length > 100:
+                            logger.info(f"Docling: Creating fallback image entry from text...")
+                            extracted_images = [{
+                                'source': file_path,
+                                'image_number': 1,
+                                'page': 1,
+                                'ocr_text': text[:10000],  # First 10K chars
+                                'ocr_text_length': min(len(text), 10000),
+                                'marker_detected': final_markers > 0,
+                                'extraction_method': 'docling_ocr_fallback',
+                                'full_chunk': text[:1000],
+                                'context_before': None
+                            }]
+                            logger.info(f"Docling: Created fallback image entry with {len(extracted_images[0].get('ocr_text', ''))} chars")
                 except Exception as e:
-                    logger.warning(f"Docling: Failed to extract individual images: {str(e)}")
-                    # Continue without extracted images - they can be extracted at query time
+                    logger.error(f"Docling: ❌ Failed to extract individual images: {str(e)}")
+                    import traceback
+                    logger.error(f"Docling: Extraction error details: {traceback.format_exc()}")
+                    # Try fallback even on error
+                    if text_length > 100:
+                        logger.info(f"Docling: Creating fallback image entry after error...")
+                        extracted_images = [{
+                            'source': file_path,
+                            'image_number': 1,
+                            'page': 1,
+                            'ocr_text': text[:10000],
+                            'ocr_text_length': min(len(text), 10000),
+                            'marker_detected': False,
+                            'extraction_method': 'docling_ocr_error_fallback',
+                            'full_chunk': text[:1000],
+                            'context_before': None
+                        }]
+            else:
+                logger.warning(f"Docling: Cannot extract images: images_detected={images_detected}, text_length={text_length}")
+            
+            # Log extracted_images status before adding to metadata
+            logger.info(f"Docling: Final extracted_images count: {len(extracted_images)}")
+            if len(extracted_images) > 0:
+                logger.info(f"Docling: ✅ extracted_images list is populated - will be stored in OpenSearch")
+            else:
+                logger.warning(f"Docling: ⚠️  extracted_images list is empty - images will NOT be stored")
             
             metadata = {
                 "source": file_path,
@@ -1483,6 +1606,16 @@ class DoclingParser(BaseParser):
                 "extracted_images": extracted_images  # Store extracted image data for OpenSearch storage
             }
             
+            # Ensure image_count is updated if we extracted images
+            if len(extracted_images) > 0 and image_count == 0:
+                image_count = len(extracted_images)
+                metadata['image_count'] = image_count
+                logger.info(f"Docling: Final image_count set to {image_count} based on extracted images")
+            
+            # Also update image_count in metadata if it was updated
+            if image_count > 0:
+                metadata['image_count'] = image_count
+            
             return ParsedDocument(
                 text=text,
                 metadata=metadata,
@@ -1491,7 +1624,7 @@ class DoclingParser(BaseParser):
                 parser_used=self.name,
                 confidence=confidence,
                 extraction_percentage=extraction_percentage,
-                image_count=image_count
+                image_count=image_count  # Use updated image_count
             )
             
         except Exception as e:

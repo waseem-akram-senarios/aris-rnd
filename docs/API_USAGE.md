@@ -200,6 +200,12 @@ Query the RAG system with a natural language question.
 - `question` (string, required): The question to answer
 - `k` (integer, optional): Number of chunks to retrieve (1-20, default: 6)
 - `use_mmr` (boolean, optional): Use Maximum Marginal Relevance for diverse results (default: true)
+- `use_hybrid_search` (boolean, optional): Use hybrid search combining semantic and keyword search
+- `semantic_weight` (float, optional): Weight for semantic search in hybrid mode (0.0-1.0)
+- `search_mode` (string, optional): Search mode - 'semantic', 'keyword', or 'hybrid'
+- `use_agentic_rag` (boolean, optional): Use Agentic RAG with query decomposition
+- `temperature` (float, optional): Temperature for LLM response (0.0-2.0)
+- `max_tokens` (integer, optional): Maximum tokens for LLM response (1-4000)
 
 **Response (200 OK):**
 ```json
@@ -230,6 +236,171 @@ Query the RAG system with a natural language question.
 **Error Responses:**
 - `400`: No documents processed yet
 - `500`: Query processing error
+
+### Update Document
+
+**PUT** `/documents/{document_id}`
+
+Update document metadata.
+
+**Request Body:**
+```json
+{
+  "document_name": "updated_name.pdf",
+  "status": "success",
+  "error": null
+}
+```
+
+**Parameters:**
+- `document_name` (string, optional): Updated document name
+- `status` (string, optional): Updated status
+- `error` (string, optional): Updated error message
+
+**Response (200 OK):**
+```json
+{
+  "document_id": "uuid-here",
+  "document_name": "updated_name.pdf",
+  "status": "success",
+  "chunks_created": 15,
+  "tokens_extracted": 5000,
+  "parser_used": "docling",
+  "processing_time": 120.5,
+  "extraction_percentage": 0.95,
+  "images_detected": false,
+  "pages": 10,
+  "error": null
+}
+```
+
+**Error Responses:**
+- `404`: Document not found
+- `400`: No update fields provided
+- `500`: Update error
+
+### Delete Document
+
+**DELETE** `/documents/{document_id}`
+
+Delete a document completely from the system. This removes:
+- Document metadata from registry
+- Document chunks from vectorstore (FAISS or OpenSearch)
+- Document images from images index (OpenSearch only)
+
+**Response (204 No Content):**
+
+**Error Responses:**
+- `404`: Document not found
+- `500`: Deletion error
+
+### Get Document Images
+
+**GET** `/documents/{document_id}/images?limit=100`
+
+Get all images for a specific document (OpenSearch only).
+
+**Parameters:**
+- `limit` (integer, optional): Maximum number of images to return (default: 100)
+
+**Response (200 OK):**
+```json
+{
+  "document_id": "uuid-here",
+  "document_name": "example.pdf",
+  "images": [
+    {
+      "image_id": "example_pdf_image_1",
+      "source": "example.pdf",
+      "image_number": 1,
+      "page": 5,
+      "ocr_text": "Extracted text from image...",
+      "metadata": {
+        "drawer_references": ["D1", "D2"],
+        "part_numbers": ["PN123"],
+        "tools_found": ["screwdriver"]
+      },
+      "score": null
+    }
+  ],
+  "total": 1
+}
+```
+
+**Error Responses:**
+- `404`: Document not found
+- `400`: OpenSearch not configured or document has no name
+- `500`: Retrieval error
+
+### Query Images
+
+**POST** `/query/images`
+
+Query images directly in the images index (OpenSearch only).
+
+**Request Body:**
+```json
+{
+  "question": "Find images with part numbers",
+  "source": "example.pdf",
+  "k": 5
+}
+```
+
+**Parameters:**
+- `question` (string, required): Search query for images
+- `source` (string, optional): Document source to filter by
+- `k` (integer, optional): Number of images to retrieve (1-50, default: 5)
+
+**Response (200 OK):**
+```json
+{
+  "images": [
+    {
+      "image_id": "example_pdf_image_1",
+      "source": "example.pdf",
+      "image_number": 1,
+      "page": 5,
+      "ocr_text": "Extracted text...",
+      "metadata": {...},
+      "score": 0.95
+    }
+  ],
+  "total": 1
+}
+```
+
+**Error Responses:**
+- `400`: OpenSearch not configured
+- `500`: Query error
+
+### Get Single Image
+
+**GET** `/images/{image_id}`
+
+Get a single image by ID (OpenSearch only).
+
+**Response (200 OK):**
+```json
+{
+  "image_id": "example_pdf_image_1",
+  "source": "example.pdf",
+  "image_number": 1,
+  "page": 5,
+  "ocr_text": "Extracted text from image...",
+  "metadata": {
+    "drawer_references": ["D1"],
+    "part_numbers": ["PN123"],
+    "tools_found": []
+  },
+  "score": null
+}
+```
+
+**Error Responses:**
+- `404`: Image not found
+- `400`: OpenSearch not configured
+- `500`: Retrieval error
 
 ### Get Statistics
 
@@ -264,6 +435,31 @@ Get system statistics and metrics.
 }
 ```
 
+### Get Chunk Statistics
+
+**GET** `/stats/chunks`
+
+Get chunk token statistics.
+
+**Response (200 OK):**
+```json
+{
+  "total_chunks": 75,
+  "chunk_size_stats": {
+    "min": 100,
+    "max": 500,
+    "mean": 300,
+    "median": 320
+  },
+  "token_stats": {
+    "min_tokens": 50,
+    "max_tokens": 250,
+    "mean_tokens": 150,
+    "median_tokens": 160
+  }
+}
+```
+
 ## Examples
 
 ### Using cURL
@@ -284,8 +480,57 @@ curl -X POST "http://localhost:8000/query" \
   -d '{
     "question": "What is the main topic?",
     "k": 6,
-    "use_mmr": true
+    "use_mmr": true,
+    "temperature": 0.7,
+    "max_tokens": 1000
   }'
+```
+
+#### Update Document
+
+```bash
+curl -X PUT "http://localhost:8000/documents/{document_id}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "success",
+    "document_name": "updated_name.pdf"
+  }'
+```
+
+#### Delete Document
+
+```bash
+curl -X DELETE "http://localhost:8000/documents/{document_id}"
+```
+
+#### Get Document Images
+
+```bash
+curl -X GET "http://localhost:8000/documents/{document_id}/images?limit=50"
+```
+
+#### Query Images
+
+```bash
+curl -X POST "http://localhost:8000/query/images" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "Find images with part numbers",
+    "source": "example.pdf",
+    "k": 5
+  }'
+```
+
+#### Get Single Image
+
+```bash
+curl -X GET "http://localhost:8000/images/{image_id}"
+```
+
+#### Get Chunk Statistics
+
+```bash
+curl -X GET "http://localhost:8000/stats/chunks"
 ```
 
 #### List Documents

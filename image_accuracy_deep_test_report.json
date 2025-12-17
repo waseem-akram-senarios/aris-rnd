@@ -1,0 +1,24 @@
+{
+  "timestamp": "2025-12-17 20:51:52",
+  "document": "FL10.11 SPECIFIC8 (1).pdf",
+  "images_found": 0,
+  "issues_found": 1,
+  "fixes_applied": 1,
+  "accuracy_metrics": null,
+  "search_accuracy": null,
+  "retrieval_accuracy": null,
+  "issues": [
+    {
+      "type": "no_images_retrieved",
+      "severity": "critical",
+      "message": "Images not found in index after processing",
+      "details": {
+        "document_id": "3605da73-348e-44df-9c72-3756442e9c5f",
+        "document_name": "FL10.11 SPECIFIC8 (1).pdf"
+      }
+    }
+  ],
+  "fixes": [
+    "image_storage_verification"
+  ]
+}

@@ -1,0 +1,422 @@
+{
+	"info": {
+		"name": "ARIS RAG FastAPI",
+		"description": "Complete API collection for ARIS RAG System with all CRUD operations, queries, and image endpoints",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "aris-rag-api"
+	},
+	"item": [
+		{
+			"name": "Health & Info",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": ["{{base_url}}"],
+							"path": ["health"]
+						},
+						"description": "Check if the API is running and healthy"
+					},
+					"response": []
+				},
+				{
+					"name": "Root - API Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/",
+							"host": ["{{base_url}}"],
+							"path": [""]
+						},
+						"description": "Get API information and version"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Documents - CRUD",
+			"item": [
+				{
+					"name": "Upload Document",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": [],
+									"description": "Document file to upload (PDF, TXT, DOCX, DOC)"
+								},
+								{
+									"key": "parser",
+									"value": "docling",
+									"type": "text",
+									"description": "Parser to use: docling, pymupdf, textract, auto"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{base_url}}/documents",
+							"host": ["{{base_url}}"],
+							"path": ["documents"]
+						},
+						"description": "Upload and process a document. Returns document_id which should be saved to {{document_id}} variable."
+					},
+					"response": []
+				},
+				{
+					"name": "List All Documents",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/documents",
+							"host": ["{{base_url}}"],
+							"path": ["documents"]
+						},
+						"description": "List all processed documents"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Document by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/documents/{{document_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["documents", "{{document_id}}"]
+						},
+						"description": "Get metadata for a specific document"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Document",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"document_name\": \"updated_name.pdf\",\n    \"status\": \"success\",\n    \"error\": null\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/documents/{{document_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["documents", "{{document_id}}"]
+						},
+						"description": "Update document metadata. All fields are optional."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete Document",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/documents/{{document_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["documents", "{{document_id}}"]
+						},
+						"description": "Delete a document completely (removes from vectorstore and images index)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Document Images",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/documents/{{document_id}}/images?limit=100",
+							"host": ["{{base_url}}"],
+							"path": ["documents", "{{document_id}}", "images"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "100",
+									"description": "Maximum number of images to return",
+									"disabled": false
+								}
+							]
+						},
+						"description": "Get all images for a specific document (OpenSearch only)"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Query Endpoints",
+			"item": [
+				{
+					"name": "Query with RAG (Basic)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"What is the main topic of the document?\",\n    \"k\": 6,\n    \"use_mmr\": true,\n    \"document_id\": \"{{document_id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/query",
+							"host": ["{{base_url}}"],
+							"path": ["query"]
+						},
+						"description": "Basic RAG query with default parameters. Query searches all documents by default. Add optional \"document_id\" to filter query to a specific document only."
+					},
+					"response": []
+				},
+				{
+					"name": "Query with Enhanced Parameters",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"What is the main topic of the document?\",\n    \"k\": 6,\n    \"use_mmr\": true,\n    \"use_hybrid_search\": true,\n    \"semantic_weight\": 0.7,\n    \"search_mode\": \"hybrid\",\n    \"use_agentic_rag\": false,\n    \"temperature\": 0.7,\n    \"max_tokens\": 1000,\n    \"document_id\": \"{{document_id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/query",
+							"host": ["{{base_url}}"],
+							"path": ["query"]
+						},
+						"description": "RAG query with all enhanced parameters including temperature and max_tokens. Query searches all documents by default. Add optional \"document_id\" to filter query to a specific document only."
+					},
+					"response": []
+				},
+				{
+					"name": "Query Specific Document by ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"What information is in this document?\",\n    \"k\": 6,\n    \"use_mmr\": true,\n    \"document_id\": \"{{document_id}}\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/query",
+							"host": ["{{base_url}}"],
+							"path": ["query"]
+						},
+						"description": "Query a specific document by document_id. Only searches within the specified document. Set {{document_id}} variable after uploading a document."
+					},
+					"response": []
+				},
+				{
+					"name": "Query Images",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"Find images with part numbers\",\n    \"source\": \"example.pdf\",\n    \"k\": 5\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{base_url}}/query/images",
+							"host": ["{{base_url}}"],
+							"path": ["query", "images"]
+						},
+						"description": "Query images directly in the images index (OpenSearch only). source is optional."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Images",
+			"item": [
+				{
+					"name": "Get Single Image by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/images/{{image_id}}",
+							"host": ["{{base_url}}"],
+							"path": ["images", "{{image_id}}"]
+						},
+						"description": "Get a single image by its ID (OpenSearch only). Set {{image_id}} from image query response."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Statistics",
+			"item": [
+				{
+					"name": "Get System Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/stats",
+							"host": ["{{base_url}}"],
+							"path": ["stats"]
+						},
+						"description": "Get comprehensive system statistics and metrics"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Chunk Statistics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/stats/chunks",
+							"host": ["{{base_url}}"],
+							"path": ["stats", "chunks"]
+						},
+						"description": "Get chunk token statistics including min, max, mean, and median"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Synchronization",
+			"item": [
+				{
+					"name": "Get Sync Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/sync/status",
+							"host": ["{{base_url}}"],
+							"path": ["sync", "status"]
+						},
+						"description": "Get synchronization status between FastAPI and Streamlit"
+					},
+					"response": []
+				},
+				{
+					"name": "Reload Vectorstore",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/sync/reload-vectorstore",
+							"host": ["{{base_url}}"],
+							"path": ["sync", "reload-vectorstore"]
+						},
+						"description": "Manually reload vectorstore from disk (useful when updated by Streamlit)"
+					},
+					"response": []
+				},
+				{
+					"name": "Save Vectorstore",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/sync/save-vectorstore",
+							"host": ["{{base_url}}"],
+							"path": ["sync", "save-vectorstore"]
+						},
+						"description": "Manually save vectorstore to disk (FAISS only)"
+					},
+					"response": []
+				},
+				{
+					"name": "Reload Registry",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/sync/reload-registry",
+							"host": ["{{base_url}}"],
+							"path": ["sync", "reload-registry"]
+						},
+						"description": "Manually reload document registry from disk"
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://44.221.84.58:8500",
+			"type": "string",
+			"description": "Base URL for FastAPI server"
+		},
+		{
+			"key": "document_id",
+			"value": "",
+			"type": "string",
+			"description": "Document ID from upload response - set this after uploading a document"
+		},
+		{
+			"key": "image_id",
+			"value": "",
+			"type": "string",
+			"description": "Image ID from image query response - set this after querying images"
+		}
+	]
+}
+

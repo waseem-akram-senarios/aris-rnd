@@ -15,6 +15,9 @@ class QueryRequest(BaseModel):
     semantic_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Weight for semantic search in hybrid mode (0.0-1.0)")
     search_mode: Optional[str] = Field(default=None, description="Search mode: 'semantic', 'keyword', or 'hybrid'")
     use_agentic_rag: Optional[bool] = Field(default=None, description="Use Agentic RAG with query decomposition and synthesis")
+    temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperature for LLM response generation (0.0-2.0)")
+    max_tokens: Optional[int] = Field(default=None, ge=1, le=4000, description="Maximum tokens for LLM response (1-4000)")
+    document_id: Optional[str] = Field(default=None, description="Optional document ID to filter query to specific document. If not provided, queries all documents in the RAG system.")
 
 
 class Citation(BaseModel):
@@ -53,6 +56,7 @@ class DocumentMetadata(BaseModel):
     processing_time: float = 0.0
     extraction_percentage: float = 0.0
     images_detected: bool = False
+    image_count: int = 0  # Number of images extracted
     pages: Optional[int] = None
     error: Optional[str] = None
 
@@ -73,4 +77,35 @@ class ErrorResponse(BaseModel):
     """Error response model"""
     error: str
     detail: Optional[str] = None
+
+
+class ImageQueryRequest(BaseModel):
+    """Request model for querying images"""
+    question: str = Field(..., description="The search query for images")
+    source: Optional[str] = Field(default=None, description="Optional document source to filter by")
+    k: int = Field(default=5, ge=1, le=50, description="Number of images to retrieve")
+
+
+class ImageResult(BaseModel):
+    """Image search result model"""
+    image_id: str
+    source: str
+    image_number: int
+    page: Optional[int] = None
+    ocr_text: str
+    metadata: Dict[str, Any]
+    score: Optional[float] = None
+
+
+class ImageQueryResponse(BaseModel):
+    """Response model for image queries"""
+    images: List[ImageResult]
+    total: int
+
+
+class DocumentUpdateRequest(BaseModel):
+    """Request model for updating document metadata"""
+    document_name: Optional[str] = Field(default=None, description="Updated document name")
+    status: Optional[str] = Field(default=None, description="Updated status")
+    error: Optional[str] = Field(default=None, description="Updated error message")
 

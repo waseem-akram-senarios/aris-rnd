@@ -607,7 +607,7 @@ class TokenTextSplitter:
                         text_chunks = [page_content] if page_content else []
                 except Exception as e2:
                     logger.error(f"TokenTextSplitter: Force split also failed: {e2}")
-                    text_chunks = [page_content] if page_content else []
+                text_chunks = [page_content] if page_content else []
             
             if not text_chunks:
                 continue

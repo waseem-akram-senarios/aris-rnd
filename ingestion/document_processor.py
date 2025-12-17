@@ -30,6 +30,7 @@ class ProcessingResult:
     processing_time: float = 0.0
     extraction_percentage: float = 0.0
     images_detected: bool = False
+    image_count: int = 0  # Number of images extracted
 
 
 class DocumentProcessor:
@@ -203,18 +204,30 @@ class DocumentProcessor:
                     logger.info(f"[STEP 2.3] Text preview (first 200 chars): {text_preview}...")
                     
                     # Store images in OpenSearch if available
+                    extracted_images_list = None
                     if (hasattr(parsed_doc, 'metadata') and 
-                        isinstance(parsed_doc.metadata, dict) and 
-                        parsed_doc.metadata.get('extracted_images')):
+                        isinstance(parsed_doc.metadata, dict)):
+                        extracted_images_list = parsed_doc.metadata.get('extracted_images', [])
+                        logger.info(f"[STEP 2.4] Checking for extracted_images: found {len(extracted_images_list) if extracted_images_list else 0} images")
+                    
+                    if extracted_images_list and len(extracted_images_list) > 0:
+                        logger.info(f"[STEP 2.4] Storing {len(extracted_images_list)} images in OpenSearch...")
                         try:
                             self._store_images_in_opensearch(
-                                parsed_doc.metadata.get('extracted_images', []),
+                                extracted_images_list,
                                 doc_name,
                                 parsed_doc.parser_used
                             )
+                            logger.info(f"✅ [STEP 2.4] Successfully stored {len(extracted_images_list)} images in OpenSearch")
                         except Exception as e:
                             logger.warning(f"⚠️ [STEP 2.4] Failed to store images in OpenSearch: {str(e)}")
+                            import traceback
+                            logger.debug(f"[STEP 2.4] Storage error details: {traceback.format_exc()}")
                             # Don't fail processing if image storage fails
+                    elif extracted_images_list is not None and len(extracted_images_list) == 0:
+                        logger.warning(f"⚠️ [STEP 2.4] extracted_images list is empty - no images to store")
+                    else:
+                        logger.info(f"[STEP 2.4] No extracted_images in metadata - images may not have been extracted")
                 else:
                     logger.error("❌ [STEP 2.3] DocumentProcessor: Parser returned None!")
                     raise ValueError("Parser returned None - document could not be parsed")
@@ -391,7 +404,8 @@ class DocumentProcessor:
                 parser_used=parsed_doc.parser_used,
                 processing_time=processing_time,
                 extraction_percentage=parsed_doc.extraction_percentage,
-                images_detected=parsed_doc.images_detected
+                images_detected=parsed_doc.images_detected,
+                image_count=getattr(parsed_doc, 'image_count', 0)  # Get image_count from parsed document
             )
             
             # Ensure document is ALWAYS saved to registry for long-term storage
@@ -617,12 +631,28 @@ class DocumentProcessor:
             parser_used: Parser that extracted the images
         """
         if not extracted_images:
+            logger.info(f"_store_images_in_opensearch: No images to store (list is empty or None)")
             return
         
-        # Only store if OpenSearch is configured
-        if (not hasattr(self.rag_system, 'vector_store_type') or 
-            self.rag_system.vector_store_type.lower() != 'opensearch'):
-            logger.debug("OpenSearch not configured - skipping image storage")
+        logger.info(f"_store_images_in_opensearch: Attempting to store {len(extracted_images)} images for document: {doc_name}")
+        # Log first image format for debugging
+        if extracted_images and len(extracted_images) > 0:
+            first_img = extracted_images[0]
+            logger.info(f"_store_images_in_opensearch: First image keys: {list(first_img.keys())}")
+            logger.info(f"_store_images_in_opensearch: First image source: {first_img.get('source', 'MISSING')}")
+            logger.info(f"_store_images_in_opensearch: First image number: {first_img.get('image_number', 'MISSING')}")
+            logger.info(f"_store_images_in_opensearch: First image OCR length: {len(first_img.get('ocr_text', ''))}")
+        
+        # Store images in OpenSearch if domain is configured (regardless of main vector store type)
+        # Images can be stored in OpenSearch even if main vector store is FAISS
+        opensearch_domain = getattr(self.rag_system, 'opensearch_domain', None)
+        if not opensearch_domain:
+            # Check if OpenSearch is configured via environment variables
+            opensearch_domain = os.getenv('OPENSEARCH_DOMAIN') or os.getenv('AWS_OPENSEARCH_DOMAIN')
+        
+        if not opensearch_domain:
+            logger.debug("OpenSearch domain not configured - skipping image storage")
+            logger.debug("To enable image storage, set OPENSEARCH_DOMAIN or AWS_OPENSEARCH_DOMAIN environment variable")
             return
         
         try:
@@ -644,14 +674,34 @@ class DocumentProcessor:
                 model=self.rag_system.embedding_model
             )
             
+            # Use OpenSearch domain from rag_system or environment
+            opensearch_domain = getattr(self.rag_system, 'opensearch_domain', None) or os.getenv('AWS_OPENSEARCH_DOMAIN') or os.getenv('OPENSEARCH_DOMAIN')
+            opensearch_region = getattr(self.rag_system, 'region', None) or os.getenv('AWS_OPENSEARCH_REGION', 'us-east-2')
+            
+            if not opensearch_domain:
+                logger.warning("OpenSearch domain not found - cannot store images")
+                return
+            
             images_store = OpenSearchImagesStore(
                 embeddings=embeddings,
-                domain=self.rag_system.opensearch_domain,
-                region=self.rag_system.region if hasattr(self.rag_system, 'region') else None
+                domain=opensearch_domain,
+                region=opensearch_region
             )
             
             # Store images in batch
-            image_ids = images_store.store_images_batch(extracted_images)
+            logger.info(f"_store_images_in_opensearch: Calling store_images_batch with {len(extracted_images)} images")
+            try:
+                image_ids = images_store.store_images_batch(extracted_images)
+                logger.info(f"_store_images_in_opensearch: store_images_batch returned {len(image_ids) if image_ids else 0} image IDs")
+                if image_ids:
+                    logger.info(f"_store_images_in_opensearch: ✅ Successfully stored images: {image_ids[:5]}...")
+                else:
+                    logger.warning(f"_store_images_in_opensearch: ⚠️  store_images_batch returned empty list")
+            except Exception as e:
+                logger.error(f"_store_images_in_opensearch: ❌ Error in store_images_batch: {str(e)}")
+                import traceback
+                logger.error(f"_store_images_in_opensearch: Error details: {traceback.format_exc()}")
+                raise
             
             # Log storage success
             if image_logger:

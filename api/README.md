@@ -27,14 +27,34 @@ uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 4
 
 ## Endpoints
 
+### Core Endpoints
 - `GET /` - API information
 - `GET /health` - Health check
+
+### Document Management (CRUD)
 - `POST /documents` - Upload and process document
 - `GET /documents` - List all documents
 - `GET /documents/{id}` - Get document by ID
-- `DELETE /documents/{id}` - Delete document
-- `POST /query` - Query documents
+- `PUT /documents/{id}` - Update document metadata
+- `DELETE /documents/{id}` - Delete document (removes from vectorstore and images)
+- `GET /documents/{id}/images` - Get all images for a document
+
+### Query Endpoints
+- `POST /query` - Query documents with natural language
+- `POST /query/images` - Query images directly
+
+### Image Endpoints
+- `GET /images/{image_id}` - Get single image by ID
+
+### Statistics Endpoints
 - `GET /stats` - Get system statistics
+- `GET /stats/chunks` - Get chunk token statistics
+
+### Synchronization Endpoints
+- `GET /sync/status` - Get sync status
+- `POST /sync/reload-vectorstore` - Reload vectorstore
+- `POST /sync/save-vectorstore` - Save vectorstore
+- `POST /sync/reload-registry` - Reload document registry
 
 ## Configuration
 
