@@ -278,12 +278,29 @@ class OpenSearchImagesStore:
         try:
             client = self.vectorstore.vectorstore.client
             
-            # Search for images from this source
+            # Build flexible source match (handles basename, lowercase, keyword fields)
+            source_variants = {
+                source,
+                os.path.basename(source or ""),
+                (source or "").lower(),
+                os.path.basename(source or "").lower()
+            }
+            should_clauses = []
+            for variant in source_variants:
+                if not variant:
+                    continue
+                should_clauses.extend([
+                    {"term": {"metadata.source.keyword": variant}},
+                    {"term": {"metadata.source": variant}},
+                    {"match_phrase": {"metadata.source": variant}}
+                ])
+            
             query = {
                 "size": limit,
                 "query": {
-                    "term": {
-                        "metadata.source": source
+                    "bool": {
+                        "should": should_clauses or [{"match_all": {}}],
+                        "minimum_should_match": 1
                     }
                 },
                 "sort": [
@@ -291,22 +308,29 @@ class OpenSearchImagesStore:
                 ]
             }
             
-            response = client.search(index=self.index_name, body=query)
+            try:
+                response = client.search(index=self.index_name, body=query)
+            except Exception as e:
+                logger.warning(f"Search with sort by metadata.image_number failed ({e}); retrying without sort")
+                query_no_sort = dict(query)
+                query_no_sort.pop("sort", None)
+                response = client.search(index=self.index_name, body=query_no_sort)
             hits = response.get("hits", {}).get("hits", [])
             
             images = []
             for hit in hits:
                 source_data = hit.get("_source", {})
+                meta = source_data.get('metadata', {}) or {}
                 images.append({
                     'image_id': hit.get("_id"),
-                    'source': source_data.get('metadata', {}).get('source'),
-                    'image_number': source_data.get('metadata', {}).get('image_number'),
-                    'page': source_data.get('metadata', {}).get('page'),
-                    'ocr_text': source_data.get('text', ''),
-                    'ocr_text_length': source_data.get('metadata', {}).get('ocr_text_length', 0),
-                    'metadata': source_data.get('metadata', {}).get('metadata', {}),
-                    'extraction_method': source_data.get('metadata', {}).get('extraction_method'),
-                    'extraction_timestamp': source_data.get('metadata', {}).get('extraction_timestamp')
+                    'source': meta.get('source'),
+                    'image_number': meta.get('image_number') or 0,
+                    'page': meta.get('page'),
+                    'ocr_text': source_data.get('text', '') or '',
+                    'ocr_text_length': meta.get('ocr_text_length', 0),
+                    'metadata': meta.get('metadata', {}) or {},
+                    'extraction_method': meta.get('extraction_method'),
+                    'extraction_timestamp': meta.get('extraction_timestamp')
                 })
             
             logger.info(f"Retrieved {len(images)} images for source: {os.path.basename(source)}")
@@ -334,19 +358,20 @@ class OpenSearchImagesStore:
             
             response = client.get(index=self.index_name, id=image_id)
             source_data = response.get("_source", {})
+            meta = source_data.get('metadata', {}) or {}
             
             return {
                 'image_id': response.get("_id"),
-                'source': source_data.get('metadata', {}).get('source'),
-                'image_number': source_data.get('metadata', {}).get('image_number'),
-                'page': source_data.get('metadata', {}).get('page'),
-                'ocr_text': source_data.get('text', ''),
-                'ocr_text_length': source_data.get('metadata', {}).get('ocr_text_length', 0),
-                'metadata': source_data.get('metadata', {}).get('metadata', {}),
-                'extraction_method': source_data.get('metadata', {}).get('extraction_method'),
-                'extraction_timestamp': source_data.get('metadata', {}).get('extraction_timestamp'),
-                'full_chunk': source_data.get('metadata', {}).get('full_chunk'),
-                'context_before': source_data.get('metadata', {}).get('context_before')
+                'source': meta.get('source'),
+                'image_number': meta.get('image_number') or 0,
+                'page': meta.get('page'),
+                'ocr_text': source_data.get('text', '') or '',
+                'ocr_text_length': meta.get('ocr_text_length', 0),
+                'metadata': meta.get('metadata', {}) or {},
+                'extraction_method': meta.get('extraction_method'),
+                'extraction_timestamp': meta.get('extraction_timestamp'),
+                'full_chunk': meta.get('full_chunk'),
+                'context_before': meta.get('context_before')
             }
         except Exception as e:
             logger.warning(f"Image {image_id} not found: {str(e)}")
@@ -377,8 +402,27 @@ class OpenSearchImagesStore:
             # Use similarity search from underlying vectorstore
             search_kwargs = {'k': k}
             if source:
-                # Add source filter
-                search_kwargs['filter'] = {'term': {'metadata.source': source}}
+                source_variants = {
+                    source,
+                    os.path.basename(source or ""),
+                    (source or "").lower(),
+                    os.path.basename(source or "").lower()
+                }
+                should_clauses = []
+                for variant in source_variants:
+                    if not variant:
+                        continue
+                    should_clauses.extend([
+                        {"term": {"metadata.source.keyword": variant}},
+                        {"term": {"metadata.source": variant}},
+                        {"match_phrase": {"metadata.source": variant}}
+                    ])
+                search_kwargs['filter'] = {
+                    "bool": {
+                        "should": should_clauses or [{"match_all": {}}],
+                        "minimum_should_match": 1
+                    }
+                }
             
             results = self.vectorstore.vectorstore.similarity_search(
                 query,
@@ -392,14 +436,14 @@ class OpenSearchImagesStore:
                 images.append({
                     'image_id': self._create_image_id(
                         metadata.get('source', 'unknown'),
-                        metadata.get('image_number', 0)
+                        metadata.get('image_number') or 0
                     ),
                     'source': metadata.get('source'),
-                    'image_number': metadata.get('image_number'),
+                    'image_number': metadata.get('image_number') or 0,
                     'page': metadata.get('page'),
-                    'ocr_text': doc.page_content,
+                    'ocr_text': doc.page_content or '',
                     'ocr_text_length': metadata.get('ocr_text_length', 0),
-                    'metadata': metadata.get('metadata', {}),
+                    'metadata': metadata.get('metadata', {}) or {},
                     'extraction_method': metadata.get('extraction_method'),
                     'score': getattr(doc, 'score', None)  # Similarity score if available
                 })

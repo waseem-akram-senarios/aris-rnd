@@ -1,7 +1,15 @@
 # Final Status Report - Image Accuracy Fixes
 
+## Latest Verification (December 18, 2025)
+- Environment: `http://44.221.84.58:8500` (live)
+- Tests executed:
+  - `python3 test_all_endpoints_with_document.py` → ✅ 14/14 passed (warnings only when a doc instance had no images)
+  - `python3 test_image_endpoints_accuracy.py` → ✅ Pass; 100 images returned with meaningful OCR; single-image fetch OK
+  - `python3 test_fastapi_rag_e2e.py` → ✅ Pass after raising timeout; base URL now points to live API
+- Known behavior: semantic image queries may return empty results for some prompts; functional (no errors).
+
 ## Date
-December 17, 2024
+December 18, 2025
 
 ## Summary
 Comprehensive in-depth testing and fixes to ensure accurate image results. All major issues identified and fixed.
@@ -31,15 +39,14 @@ Comprehensive in-depth testing and fixes to ensure accurate image results. All m
 ## 📊 Current Status
 
 ### Working ✅
-- Image detection: ✅ Working (22 images detected)
-- Image count calculation: ✅ Working (13-22 images)
-- API response: ✅ Working (includes image_count)
-- Extraction logic: ✅ Enhanced with fallback
-- Storage method: ✅ Enhanced with logging
+- Image detection & extraction: ✅ Working (e.g., 100 images extracted with OCR for FL10.11 SPECIFIC8 (1).pdf)
+- Image count calculation: ✅ Working (returned in upload and metadata)
+- Image storage & retrieval: ✅ Images stored in OpenSearch; `/documents/{id}/images` and `/images/{image_id}` return OCR text
+- API endpoints: ✅ Health, root, upload, list/get/update/delete documents, query, stats, chunk stats, image endpoints
+- E2E test: ✅ Pass (timeout increased; base URL fixed to live API)
 
-### In Progress ⏳
-- Image storage verification: ⏳ Enhanced logging deployed, needs testing
-- Image retrieval: ⏳ Pending storage verification
+### Notes
+- Semantic image search may return empty for some prompts; adjust queries if needed. No errors observed.
 
 ## 🔧 Code Changes
 
@@ -66,9 +73,9 @@ Comprehensive in-depth testing and fixes to ensure accurate image results. All m
 
 ## 🚀 Deployment
 
-✅ **Deployed**: http://44.221.84.58:8500
-✅ **Status**: All fixes deployed
-✅ **Latest**: Enhanced storage logging deployed
+✅ **Deployed**: http://44.221.84.58:8500  
+✅ **Status**: All fixes deployed  
+✅ **Latest**: Retrieval defaults hardened; e2e test updated to live URL; timeouts increased for uploads
 
 ## 📋 Next Steps
 

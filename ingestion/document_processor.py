@@ -643,6 +643,23 @@ class DocumentProcessor:
             logger.info(f"_store_images_in_opensearch: First image number: {first_img.get('image_number', 'MISSING')}")
             logger.info(f"_store_images_in_opensearch: First image OCR length: {len(first_img.get('ocr_text', ''))}")
         
+        # Normalize and clean image payloads to ensure consistent retrieval
+        normalized_source = os.path.basename(doc_name) if doc_name else doc_name
+        cleaned_images: List[Dict[str, Any]] = []
+        for idx, img in enumerate(extracted_images):
+            if not isinstance(img, dict):
+                continue
+            cleaned = dict(img)
+            src_value = cleaned.get('source') or normalized_source
+            cleaned['source'] = os.path.basename(src_value) if src_value else normalized_source
+            cleaned['image_number'] = cleaned.get('image_number') or (idx + 1)
+            cleaned['ocr_text'] = cleaned.get('ocr_text') or ""
+            cleaned_images.append(cleaned)
+        
+        if not cleaned_images:
+            logger.warning("_store_images_in_opensearch: Image list was empty after normalization - skipping storage")
+            return
+        
         # Store images in OpenSearch if domain is configured (regardless of main vector store type)
         # Images can be stored in OpenSearch even if main vector store is FAISS
         opensearch_domain = getattr(self.rag_system, 'opensearch_domain', None)
@@ -689,9 +706,9 @@ class DocumentProcessor:
             )
             
             # Store images in batch
-            logger.info(f"_store_images_in_opensearch: Calling store_images_batch with {len(extracted_images)} images")
+            logger.info(f"_store_images_in_opensearch: Calling store_images_batch with {len(cleaned_images)} images")
             try:
-                image_ids = images_store.store_images_batch(extracted_images)
+                image_ids = images_store.store_images_batch(cleaned_images)
                 logger.info(f"_store_images_in_opensearch: store_images_batch returned {len(image_ids) if image_ids else 0} image IDs")
                 if image_ids:
                     logger.info(f"_store_images_in_opensearch: ✅ Successfully stored images: {image_ids[:5]}...")

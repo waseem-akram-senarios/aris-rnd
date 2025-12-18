@@ -1555,12 +1555,14 @@ class RAGSystem:
                         logger.warning(f"Document '{doc_name}' not found in index map. Available: {list(self.document_index_map.keys())}")
                 
                 if not indexes_to_search:
-                    return {
-                        "answer": "No indexes found for selected documents. Please reprocess the documents.",
-                        "sources": [],
-                        "citations": [],
-                        "context_chunks": []
-                    }
+                    # Simple fallback: use default index or all indexes
+                    if self.opensearch_index:
+                        indexes_to_search = [self.opensearch_index]
+                    else:
+                        # Clear filter and search all
+                        self.active_sources = None
+                        indexes_to_search = list(self.document_index_map.values()) if self.document_index_map else []
+                    logger.info(f"Document filter not available, using fallback: {len(indexes_to_search)} index(es)")
             else:
                 # No active_sources set - use recent documents for better isolation
                 recent_docs = self._get_recent_documents(max_age_hours=24)
@@ -1569,13 +1571,22 @@ class RAGSystem:
                     logger.info(f"No active_sources set, using {len(indexes_to_search)} recent document indexes: {recent_docs}")
                 else:
                     # Fallback: search all document indexes (but log warning)
-                    indexes_to_search = list(self.document_index_map.values()) if hasattr(self, 'document_index_map') else []
-                    logger.warning("No recent documents found, searching all indexes (may include old documents)")
+                    indexes_to_search = list(self.document_index_map.values()) if hasattr(self, 'document_index_map') and self.document_index_map else []
+                    if indexes_to_search:
+                        logger.info(f"Searching all {len(indexes_to_search)} document indexes")
+                    else:
+                        logger.warning("No recent documents found, no document indexes available")
                 
                 if not indexes_to_search:
                     # Fallback to default index if no mappings exist (backward compatibility)
                     indexes_to_search = [self.opensearch_index or "aris-rag-index"]
                     logger.info(f"No document index mappings found, using default index: {indexes_to_search[0]}")
+            
+            # Final safety check: ensure we have at least one index to search
+            if not indexes_to_search:
+                default_index = self.opensearch_index or "aris-rag-index"
+                indexes_to_search = [default_index]
+                logger.warning(f"⚠️ No indexes determined, using default index as last resort: {default_index}")
             
             # Initialize multi-index manager if needed
             if not hasattr(self, 'multi_index_manager'):
@@ -2015,15 +2026,46 @@ class RAGSystem:
                             image_info = f"Image {block.get('image_index', '?')} on Page {page}"
                             break
             
-            # Also check if chunk metadata has image reference
+            # Also check if chunk metadata has image reference (CRITICAL: This is where image content chunks are marked)
             if not image_ref:
                 if doc.metadata.get('has_image') or doc.metadata.get('image_index') is not None:
+                    # Use metadata image_ref if available (set during image content extraction)
+                    if doc.metadata.get('image_ref'):
+                        image_ref = doc.metadata.get('image_ref')
+                        image_info = doc.metadata.get('image_info', f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference")
+                    else:
+                        # Fallback to basic image reference
+                        image_ref = {
+                            'page': page,
+                            'image_index': doc.metadata.get('image_index'),
+                            'bbox': doc.metadata.get('image_bbox')
+                        }
+                        image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference"
+            
+            # CRITICAL: Also check if chunk text contains image markers (image content chunks)
+            # These chunks should be marked as image content even if metadata doesn't have image_ref
+            if not image_ref and '<!-- image -->' in chunk_text:
+                # This is an image content chunk - extract image number from context if possible
+                # Try to find image number in the chunk text or use a default
+                import re
+                image_match = re.search(r'IMAGE\s+(\d+)', chunk_text, re.IGNORECASE)
+                if image_match:
+                    image_num = int(image_match.group(1))
                     image_ref = {
                         'page': page,
-                        'image_index': doc.metadata.get('image_index'),
-                        'bbox': doc.metadata.get('image_bbox')
+                        'image_index': image_num,
+                        'source': source
                     }
-                    image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference"
+                    image_info = f"Image {image_num} on Page {page}" if page else f"Image {image_num}"
+                else:
+                    # Default to image_index from metadata or 1
+                    image_num = doc.metadata.get('image_index', 1)
+                    image_ref = {
+                        'page': page,
+                        'image_index': image_num,
+                        'source': source
+                    }
+                    image_info = f"Image {image_num} on Page {page}" if page else f"Image {image_num}"
             
             # Generate context-aware snippet using query
             snippet_clean = self._generate_context_snippet(chunk_text, question, max_length=500)
@@ -5166,6 +5208,8 @@ Answer:"""
             )
             
             logger.info(f"Found {len(results)} images matching query: {question[:50]}")
+            if len(results) == 0:
+                logger.debug(f"No images found for query: '{question}'. Source filter: {source}")
             return results
         except ImportError as e:
             logger.warning(f"OpenSearch images store not available: {str(e)}")

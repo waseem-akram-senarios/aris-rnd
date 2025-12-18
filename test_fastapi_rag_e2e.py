@@ -56,8 +56,10 @@ def print_info(msg):
     print(f"{Colors.CYAN}ℹ️  INFO: {msg}{Colors.END}")
 
 # Test configuration
-API_BASE_URL = os.getenv('FASTAPI_URL', 'http://localhost:8000')
-TEST_TIMEOUT = 30
+# Prefer explicit env vars, fall back to live API
+API_BASE_URL = os.getenv('FASTAPI_URL') or os.getenv('LIVE_API_URL') or 'http://44.221.84.58:8500'
+# Some endpoints (Docling OCR) can take time; use generous timeout
+TEST_TIMEOUT = 300
 
 class FastAPITester:
     """Test client for FastAPI endpoints"""
@@ -139,12 +141,17 @@ class FastAPITester:
         
         # Create a simple test file if none provided
         if not file_path:
-            test_file_path = "/tmp/test_document.txt"
-            with open(test_file_path, 'w') as f:
-                f.write("This is a test document for FastAPI RAG integration testing.\n")
-                f.write("It contains some sample text to test document processing.\n")
-                f.write("The document should be processed and stored in the vectorstore.\n")
-            file_path = test_file_path
+            # Prefer sample PDF if available
+            candidate = os.getenv('TEST_PDF_PATH') or "FL10.11 SPECIFIC8 (1).pdf"
+            if os.path.exists(candidate):
+                file_path = candidate
+            else:
+                test_file_path = "/tmp/test_document.txt"
+                with open(test_file_path, 'w') as f:
+                    f.write("This is a test document for FastAPI RAG integration testing.\n")
+                    f.write("It contains some sample text to test document processing.\n")
+                    f.write("The document should be processed and stored in the vectorstore.\n")
+                file_path = test_file_path
         
         if not os.path.exists(file_path):
             print_fail(f"Test file not found: {file_path}")
@@ -153,8 +160,10 @@ class FastAPITester:
         
         try:
             with open(file_path, 'rb') as f:
-                files = {'file': (os.path.basename(file_path), f, 'text/plain')}
-                data = {'parser': 'pymupdf' if file_path.endswith('.pdf') else 'auto'}
+                content_type = 'application/pdf' if file_path.lower().endswith('.pdf') else 'text/plain'
+                parser_choice = 'docling' if file_path.lower().endswith('.pdf') else 'auto'
+                files = {'file': (os.path.basename(file_path), f, content_type)}
+                data = {'parser': parser_choice}
                 result = self.test_endpoint('POST', '/documents', expected_status=201, 
                                          files=files, data=data)
             

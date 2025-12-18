@@ -48,9 +48,21 @@ async def lifespan(app: FastAPI):
     service_container = create_service_container()
     logger.info(f"✅ [STEP 2] Service container initialized: vector_store={service_container.rag_system.vector_store_type}")
     
-    # Try to load existing vectorstore if FAISS
-    logger.info("[STEP 3] Checking for existing vectorstore...")
-    if service_container.rag_system.vector_store_type.lower() == 'faiss':
+    # Initialize vectorstore based on type
+    logger.info("[STEP 3] Initializing vectorstore...")
+    if service_container.rag_system.vector_store_type.lower() == 'opensearch':
+        # For OpenSearch, try to load/connect to existing indexes
+        logger.info("[STEP 3.1] Initializing OpenSearch vectorstore...")
+        try:
+            loaded = service_container.rag_system.load_vectorstore(service_container.rag_system.opensearch_index or "aris-rag-index")
+            if loaded:
+                logger.info("✅ [STEP 3.1] OpenSearch vectorstore initialized successfully")
+            else:
+                logger.info("ℹ️ [STEP 3.1] OpenSearch vectorstore will be created on first document upload")
+        except Exception as e:
+            logger.warning(f"⚠️ [STEP 3.1] Could not initialize OpenSearch vectorstore: {e}")
+            logger.info("ℹ️ [STEP 3.1] OpenSearch vectorstore will be created on first document upload")
+    elif service_container.rag_system.vector_store_type.lower() == 'faiss':
         # Use model-specific path
         vectorstore_path = ARISConfig.get_vectorstore_path()
         model_specific_path = ARISConfig.get_vectorstore_path(service_container.rag_system.embedding_model)
@@ -279,242 +291,11 @@ async def list_documents(service: ServiceContainer = Depends(get_service)):
     )
 
 
-@app.get("/documents/{document_id}", response_model=DocumentMetadata)
-async def get_document(
-    document_id: str,
-    service: ServiceContainer = Depends(get_service)
-):
-    """
-    Get document metadata by ID.
-    
-    Args:
-        document_id: Document ID
-    
-    Returns:
-        Document metadata
-    """
-    logger.info(f"[STEP 1] GET /documents/{document_id} - Retrieving document")
-    doc = service.get_document(document_id)
-    if doc is None:
-        logger.warning(f"⚠️ [STEP 1] Document not found: {document_id}")
-        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
-    
-    logger.info(f"✅ [STEP 2] Document retrieved: {document_id}")
-    return DocumentMetadata(**doc)
-
-
-@app.put("/documents/{document_id}", response_model=DocumentMetadata)
-async def update_document(
-    document_id: str,
-    request: DocumentUpdateRequest,
-    service: ServiceContainer = Depends(get_service)
-):
-    """
-    Update document metadata.
-    
-    Args:
-        document_id: Document ID
-        request: Update request with optional fields
-    
-    Returns:
-        Updated document metadata
-    """
-    logger.info(f"[STEP 1] PUT /documents/{document_id} - Updating document")
-    
-    # Get existing document
-    doc = service.get_document(document_id)
-    if doc is None:
-        logger.warning(f"⚠️ [STEP 1] Document not found: {document_id}")
-        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
-    
-    # Update fields if provided
-    updates = {}
-    if request.document_name is not None:
-        updates['document_name'] = request.document_name
-        logger.info(f"[STEP 2] Updating document_name: {request.document_name}")
-    if request.status is not None:
-        updates['status'] = request.status
-        logger.info(f"[STEP 2] Updating status: {request.status}")
-    if request.error is not None:
-        updates['error'] = request.error
-        logger.info(f"[STEP 2] Updating error: {request.error}")
-    
-    if not updates:
-        logger.warning(f"⚠️ [STEP 2] No updates provided for document: {document_id}")
-        raise HTTPException(status_code=400, detail="No update fields provided")
-    
-    # Merge updates with existing document
-    updated_doc = {**doc, **updates}
-    
-    # Update in registry
-    try:
-        logger.info(f"[STEP 3] Saving updated document to registry")
-        service.add_document(document_id, updated_doc)
-        logger.info(f"✅ [STEP 4] Document updated: {document_id}")
-        return DocumentMetadata(**updated_doc)
-    except Exception as e:
-        logger.error(f"❌ [STEP 3] Error updating document: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error updating document: {str(e)}")
-
-
-@app.get("/documents/{document_id}/images")
-async def get_document_images(
-    document_id: str,
-    limit: int = 100,
-    service: ServiceContainer = Depends(get_service)
-):
-    """
-    Get all images for a specific document.
-    
-    Args:
-        document_id: Document ID
-        limit: Maximum number of images to return (default: 100)
-    
-    Returns:
-        List of images for the document
-    """
-    logger.info(f"[STEP 1] GET /documents/{document_id}/images - Retrieving document images")
-    
-    # Get document metadata to find document name
-    doc = service.get_document(document_id)
-    if doc is None:
-        logger.warning(f"⚠️ [STEP 1] Document not found: {document_id}")
-        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
-    
-    document_name = doc.get('document_name', '')
-    if not document_name:
-        logger.warning(f"⚠️ [STEP 1] Document name not found for: {document_id}")
-        raise HTTPException(status_code=400, detail=f"Document {document_id} has no document name")
-    
-    # Check if OpenSearch is configured
-    if (not hasattr(service.rag_system, 'vector_store_type') or 
-        service.rag_system.vector_store_type.lower() != 'opensearch'):
-        logger.warning("⚠️ [STEP 1] Image retrieval attempted but OpenSearch not configured")
-        raise HTTPException(
-            status_code=400,
-            detail="Image retrieval requires OpenSearch vector store. Current vector store type: " + 
-                   getattr(service.rag_system, 'vector_store_type', 'unknown')
-        )
-    
-    try:
-        from vectorstores.opensearch_images_store import OpenSearchImagesStore
-        from langchain_openai import OpenAIEmbeddings
-        
-        logger.info(f"[STEP 2] Initializing OpenSearchImagesStore for document: {document_name}")
-        # Initialize images store
-        embeddings = OpenAIEmbeddings(
-            openai_api_key=os.getenv('OPENAI_API_KEY'),
-            model=service.rag_system.embedding_model
-        )
-        
-        images_store = OpenSearchImagesStore(
-            embeddings=embeddings,
-            domain=service.rag_system.opensearch_domain,
-            region=getattr(service.rag_system, 'region', None)
-        )
-        
-        logger.info(f"[STEP 3] Retrieving images for source: {document_name}")
-        images = images_store.get_images_by_source(document_name, limit=limit)
-        
-        # Convert to ImageResult models
-        image_results = []
-        for img in images:
-            image_results.append(ImageResult(
-                image_id=img.get('image_id', ''),
-                source=img.get('source', ''),
-                image_number=img.get('image_number', 0),
-                page=img.get('page'),
-                ocr_text=img.get('ocr_text', ''),
-                metadata=img.get('metadata', {}),
-                score=None
-            ))
-        
-        logger.info(f"✅ [STEP 4] Retrieved {len(image_results)} images for document: {document_id}")
-        return {
-            "document_id": document_id,
-            "document_name": document_name,
-            "images": image_results,
-            "total": len(image_results)
-        }
-    except ImportError as e:
-        logger.error(f"❌ [STEP 2] OpenSearch images store not available: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"OpenSearch images store not available: {str(e)}")
-    except Exception as e:
-        logger.error(f"❌ [STEP 2] Error retrieving document images: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error retrieving document images: {str(e)}")
-
-
-@app.get("/images/{image_id}")
-async def get_image(
-    image_id: str,
-    service: ServiceContainer = Depends(get_service)
-):
-    """
-    Get a single image by ID.
-    
-    Args:
-        image_id: Image ID
-    
-    Returns:
-        Image details
-    """
-    logger.info(f"[STEP 1] GET /images/{image_id} - Retrieving image")
-    
-    # Check if OpenSearch is configured
-    if (not hasattr(service.rag_system, 'vector_store_type') or 
-        service.rag_system.vector_store_type.lower() != 'opensearch'):
-        logger.warning("⚠️ [STEP 1] Image retrieval attempted but OpenSearch not configured")
-        raise HTTPException(
-            status_code=400,
-            detail="Image retrieval requires OpenSearch vector store. Current vector store type: " + 
-                   getattr(service.rag_system, 'vector_store_type', 'unknown')
-        )
-    
-    try:
-        from vectorstores.opensearch_images_store import OpenSearchImagesStore
-        from langchain_openai import OpenAIEmbeddings
-        
-        logger.info(f"[STEP 2] Initializing OpenSearchImagesStore")
-        # Initialize images store
-        embeddings = OpenAIEmbeddings(
-            openai_api_key=os.getenv('OPENAI_API_KEY'),
-            model=service.rag_system.embedding_model
-        )
-        
-        images_store = OpenSearchImagesStore(
-            embeddings=embeddings,
-            domain=service.rag_system.opensearch_domain,
-            region=getattr(service.rag_system, 'region', None)
-        )
-        
-        logger.info(f"[STEP 3] Retrieving image: {image_id}")
-        image = images_store.get_image_by_id(image_id)
-        
-        if image is None:
-            logger.warning(f"⚠️ [STEP 3] Image not found: {image_id}")
-            raise HTTPException(status_code=404, detail=f"Image {image_id} not found")
-        
-        # Convert to ImageResult model
-        image_result = ImageResult(
-            image_id=image.get('image_id', image_id),
-            source=image.get('source', ''),
-            image_number=image.get('image_number', 0),
-            page=image.get('page'),
-            ocr_text=image.get('ocr_text', ''),
-            metadata=image.get('metadata', {}),
-            score=None
-        )
-        
-        logger.info(f"✅ [STEP 4] Image retrieved: {image_id}")
-        return image_result
-    except HTTPException:
-        raise
-    except ImportError as e:
-        logger.error(f"❌ [STEP 2] OpenSearch images store not available: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"OpenSearch images store not available: {str(e)}")
-    except Exception as e:
-        logger.error(f"❌ [STEP 2] Error retrieving image: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error retrieving image: {str(e)}")
+# Removed endpoints:
+# - GET /documents/{id} - Use GET /documents to list and filter
+# - PUT /documents/{id} - Not essential
+# - GET /documents/{id}/images - Use POST /query/images with source filter
+# - GET /images/{id} - Not essential
 
 
 @app.delete("/documents/{document_id}", status_code=204)
@@ -695,55 +476,102 @@ async def query_documents(
     request: QueryRequest,
     service: ServiceContainer = Depends(get_service)
 ):
-    """Query the RAG system"""
-    query_preview = request.question[:50] + "..." if len(request.question) > 50 else request.question
-    logger.info(f"[STEP 1] POST /query - Query validation: '{query_preview}' (k={request.k}, mmr={request.use_mmr}, document_id={request.document_id})")
     """
-    Query the RAG system with a question.
+    Query documents with natural language questions.
+    
+    Simple and reliable query endpoint that searches all documents by default.
+    Optionally filter to a specific document using document_id.
     
     Args:
-        request: Query request with question and parameters
-            - document_id (optional): If provided, queries only the specified document.
-                                     If not provided, queries all documents in the RAG system.
+        request: Query request with question and optional parameters
         service: Service container dependency
     
     Returns:
         Query response with answer, sources, and citations
     """
-    if service.rag_system.vectorstore is None:
-        logger.warning("⚠️ [STEP 1] Query attempted but no vectorstore available")
-        raise HTTPException(
-            status_code=400,
-            detail="No documents have been processed yet. Please upload documents first."
-        )
-    logger.info(f"✅ [STEP 1] Query validated - vectorstore available")
+    # For OpenSearch, vectorstore might be None initially but documents exist in cloud
+    # For FAISS, vectorstore must be loaded from disk
+    vector_store_type = service.rag_system.vector_store_type.lower()
+    has_documents = len(service.list_documents()) > 0
     
-    # Handle document_id filtering if provided (optional feature)
-    # If document_id is provided, filter to that document only
-    # If document_id is NOT provided, query all documents (normal RAG behavior)
-    original_active_sources = None
-    document_name = None
-    if request.document_id:
-        logger.info(f"[STEP 1.5] Document ID provided: {request.document_id} - filtering to specific document")
-        doc = service.get_document(request.document_id)
-        if doc is None:
-            logger.warning(f"⚠️ [STEP 1.5] Document ID not found: {request.document_id}")
-            raise HTTPException(status_code=404, detail=f"Document {request.document_id} not found")
+    # For OpenSearch, we can query even if vectorstore is None (it will be created on-the-fly)
+    if vector_store_type == 'opensearch':
+        # Check if OpenSearch domain is configured
+        if not service.rag_system.opensearch_domain:
+            raise HTTPException(
+                status_code=500,
+                detail="OpenSearch domain not configured. Please check your environment variables."
+            )
         
-        document_name = doc.get('document_name')
-        if not document_name:
-            logger.warning(f"⚠️ [STEP 1.5] Document has no document_name: {request.document_id}")
-            raise HTTPException(status_code=400, detail=f"Document {request.document_id} has no document name")
+        # If vectorstore is None, try to initialize it
+        if service.rag_system.vectorstore is None:
+            try:
+                logger.info("OpenSearch vectorstore is None, attempting to initialize...")
+                loaded = service.rag_system.load_vectorstore(
+                    service.rag_system.opensearch_index or "aris-rag-index"
+                )
+                if not loaded:
+                    logger.warning("Could not load OpenSearch vectorstore, will create on query")
+            except Exception as e:
+                logger.warning(f"Could not initialize OpenSearch vectorstore: {e}")
         
-        # Save original active_sources and set filter
-        original_active_sources = service.rag_system.active_sources
-        service.rag_system.active_sources = [document_name]
-        logger.info(f"✅ [STEP 1.5] Filtering query to document: {document_name}")
+        # For OpenSearch, we can proceed even if vectorstore is None
+        # The query will create/use the index as needed
+        if not has_documents:
+            raise HTTPException(
+                status_code=400,
+                detail="No documents have been processed yet. Please upload documents first."
+            )
     else:
-        logger.info(f"[STEP 1.5] No document_id provided - querying all documents in RAG system")
+        # For FAISS, vectorstore must exist
+        if service.rag_system.vectorstore is None:
+            if has_documents:
+                # Try to load from disk
+                try:
+                    vectorstore_path = ARISConfig.get_vectorstore_path()
+                    if os.path.exists(vectorstore_path):
+                        logger.info(f"Attempting to load FAISS vectorstore from: {vectorstore_path}")
+                        service.rag_system.load_vectorstore(vectorstore_path)
+                    else:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="No documents have been processed yet. Please upload documents first."
+                        )
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"Could not load FAISS vectorstore: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Could not load vectorstore: {str(e)}"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No documents have been processed yet. Please upload documents first."
+                )
+    
+    # Simple document filtering - if document_id provided, try to filter
+    # If filtering fails, query all documents (graceful fallback)
+    original_active_sources = service.rag_system.active_sources
+    
+    if request.document_id:
+        try:
+            doc = service.get_document(request.document_id)
+            if doc:
+                document_name = doc.get('document_name') or doc.get('original_document_name')
+                if document_name:
+                    # Try to set filter - if it fails, will query all
+                    service.rag_system.active_sources = [document_name]
+                    logger.info(f"Filtering query to document: {document_name}")
+        except Exception as e:
+            logger.warning(f"Could not filter to document_id {request.document_id}: {e}. Querying all documents.")
+            service.rag_system.active_sources = None
+    else:
+        # Query all documents
+        service.rag_system.active_sources = None
     
     try:
-        logger.info(f"[STEP 2] Executing vector store retrieval: k={request.k}, mmr={request.use_mmr}, hybrid={request.use_hybrid_search}, agentic={request.use_agentic_rag}, temperature={request.temperature}, max_tokens={request.max_tokens}, document_id={request.document_id}")
         result = service.rag_system.query_with_rag(
             question=request.question,
             k=request.k,
@@ -755,17 +583,10 @@ async def query_documents(
             temperature=request.temperature,
             max_tokens=request.max_tokens
         )
-        logger.info(f"✅ [STEP 2] Vector store retrieval completed")
         
-        # Convert citations to Citation models
-        logger.info(f"[STEP 3] Formatting response and extracting citations...")
         citations = [
             Citation(**citation) for citation in result.get("citations", [])
         ]
-        logger.info(f"✅ [STEP 3] Response formatted: {len(citations)} citations extracted")
-        
-        response_time = result.get('response_time', 0)
-        logger.info(f"✅ [STEP 4] Query completed successfully: {len(citations)} citations, {response_time:.2f}s")
         
         return QueryResponse(
             answer=result["answer"],
@@ -780,58 +601,15 @@ async def query_documents(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ [STEP 2] Error processing query: {e}", exc_info=True)
+        logger.error(f"Error processing query: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
     finally:
-        # Restore original active_sources if we modified it
-        if request.document_id and original_active_sources is not None:
-            service.rag_system.active_sources = original_active_sources
-            logger.info(f"[STEP 5] Restored original active_sources filter")
+        # Always restore original active_sources
+        service.rag_system.active_sources = original_active_sources
 
 
-@app.get("/stats", response_model=StatsResponse)
-async def get_stats(service: ServiceContainer = Depends(get_service)):
-    """
-    Get system statistics and metrics.
-    
-    Returns:
-        Statistics from RAG system and metrics collector
-    """
-    logger.info("[STEP 1] GET /stats - Retrieving system statistics")
-    try:
-        logger.info("[STEP 2] Collecting RAG system stats...")
-        rag_stats = service.rag_system.get_stats()
-        logger.info("[STEP 3] Collecting metrics...")
-        metrics = service.metrics_collector.get_all_metrics()
-        
-        processing_count = len(metrics.get('processing_metrics', []))
-        logger.info(f"✅ [STEP 4] Stats retrieved: {processing_count} processing metrics")
-        return StatsResponse(
-            rag_stats=rag_stats,
-            metrics=metrics
-        )
-    except Exception as e:
-        logger.error(f"❌ Error retrieving stats: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error retrieving stats: {str(e)}")
-
-
-@app.get("/stats/chunks")
-async def get_chunk_stats(service: ServiceContainer = Depends(get_service)):
-    """
-    Get chunk token statistics.
-    
-    Returns:
-        Chunk token statistics from RAG system
-    """
-    logger.info("[STEP 1] GET /stats/chunks - Retrieving chunk statistics")
-    try:
-        logger.info("[STEP 2] Collecting chunk token stats...")
-        chunk_stats = service.rag_system.get_chunk_token_stats()
-        logger.info(f"✅ [STEP 3] Chunk stats retrieved successfully")
-        return chunk_stats
-    except Exception as e:
-        logger.error(f"❌ Error retrieving chunk stats: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error retrieving chunk stats: {str(e)}")
+# GET /stats removed - not essential for core functionality
+# Statistics can be obtained from GET /documents response
 
 
 @app.post("/query/images", response_model=ImageQueryResponse)
@@ -840,195 +618,148 @@ async def query_images(
     service: ServiceContainer = Depends(get_service)
 ):
     """
-    Query images in the RAG system.
+    Query images - search semantically or get all images for a document.
+    
+    - Use question to search images semantically
+    - Use empty question ("") and source to get all images for a document
+    - Use source to filter by document name
     
     Args:
-        request: Image query request with question and optional source filter
-        service: Service container dependency
+        request: Image query request
+            - question: Search query (use "" to get all images)
+            - source: Optional document name to filter by
+            - k: Number of results
     
     Returns:
         Image query response with matching images
     """
-    query_preview = request.question[:50] + "..." if len(request.question) > 50 else request.question
-    logger.info(f"[STEP 1] POST /query/images - Image query: '{query_preview}' (source={request.source}, k={request.k})")
-    
     # Check if OpenSearch is configured
     if (not hasattr(service.rag_system, 'vector_store_type') or 
         service.rag_system.vector_store_type.lower() != 'opensearch'):
-        logger.warning("⚠️ [STEP 1] Image query attempted but OpenSearch not configured")
         raise HTTPException(
             status_code=400,
-            detail="Image queries require OpenSearch vector store. Current vector store type: " + 
-                   getattr(service.rag_system, 'vector_store_type', 'unknown')
+            detail="Image queries require OpenSearch vector store"
         )
     
     try:
-        logger.info(f"[STEP 2] Executing image search...")
-        results = service.rag_system.query_images(
-            question=request.question,
-            source=request.source,
-            k=request.k
-        )
-        logger.info(f"✅ [STEP 2] Image search completed: {len(results)} images found")
+        from vectorstores.opensearch_images_store import OpenSearchImagesStore
+        from langchain_openai import OpenAIEmbeddings
         
-        # Convert results to ImageResult models
+        embeddings = OpenAIEmbeddings(
+            openai_api_key=os.getenv('OPENAI_API_KEY'),
+            model=service.rag_system.embedding_model
+        )
+        
+        images_store = OpenSearchImagesStore(
+            embeddings=embeddings,
+            domain=service.rag_system.opensearch_domain,
+            region=getattr(service.rag_system, 'region', None)
+        )
+        
+        # If question is empty and source provided, get all images for that document
+        if not request.question.strip() and request.source:
+            logger.info(f"Getting all images for source: {request.source}")
+            # Try multiple source formats
+            source_variants = [
+                request.source,
+                os.path.basename(request.source),
+                request.source.lower(),
+                os.path.basename(request.source).lower()
+            ]
+            
+            images = []
+            for source_variant in source_variants:
+                if not source_variant:
+                    continue
+                logger.info(f"Trying source variant: '{source_variant}'")
+                images = images_store.get_images_by_source(source_variant, limit=request.k)
+                if images:
+                    logger.info(f"✅ Found {len(images)} images with source variant: '{source_variant}'")
+                    break
+            
+            if not images:
+                # If no images found with source filter, try getting all images and filter manually
+                logger.warning(f"No images found with source filter, trying to get all images...")
+                try:
+                    client = images_store.vectorstore.vectorstore.client
+                    response = client.search(
+                        index=images_store.index_name,
+                        body={
+                            "size": 100,
+                            "query": {"match_all": {}}
+                        }
+                    )
+                    all_hits = response.get("hits", {}).get("hits", [])
+                    logger.info(f"Found {len(all_hits)} total images in index")
+                    
+                    # Show what sources exist
+                    sources_found = set()
+                    for hit in all_hits[:10]:  # Check first 10
+                        meta = hit.get("_source", {}).get('metadata', {})
+                        src = meta.get('source', 'unknown')
+                        sources_found.add(src)
+                    logger.info(f"Sample sources in index: {list(sources_found)}")
+                    
+                    # Try to match manually
+                    for hit in all_hits:
+                        meta = hit.get("_source", {}).get('metadata', {})
+                        src = meta.get('source', '')
+                        if (request.source in src or 
+                            os.path.basename(request.source) in src or
+                            src in request.source or
+                            os.path.basename(src) == os.path.basename(request.source)):
+                            source_data = hit.get("_source", {})
+                            images.append({
+                                'image_id': hit.get("_id"),
+                                'source': meta.get('source'),
+                                'image_number': meta.get('image_number', 0),
+                                'page': meta.get('page'),
+                                'ocr_text': source_data.get('text', ''),
+                                'score': None
+                            })
+                    if images:
+                        logger.info(f"✅ Found {len(images)} images by manual matching")
+                except Exception as e:
+                    logger.warning(f"Could not get all images: {e}")
+            
+            results = images
+        else:
+            # Semantic search
+            results = service.rag_system.query_images(
+                question=request.question or "all images",
+                source=request.source,
+                k=request.k
+            )
+        
+        # Convert to ImageResult models
         image_results = []
         for img in results:
-            image_results.append(ImageResult(
-                image_id=img.get('image_id', ''),
-                source=img.get('source', ''),
-                image_number=img.get('image_number', 0),
-                page=img.get('page'),
-                ocr_text=img.get('ocr_text', ''),
-                metadata=img.get('metadata', {}),
-                score=img.get('score')
-            ))
+            try:
+                image_results.append(ImageResult(
+                    image_id=img.get('image_id', ''),
+                    source=img.get('source', ''),
+                    image_number=img.get('image_number', 0),
+                    page=img.get('page'),
+                    ocr_text=img.get('ocr_text', ''),
+                    metadata=img.get('metadata', {}),
+                    score=img.get('score')
+                ))
+            except Exception:
+                continue
         
-        logger.info(f"✅ [STEP 3] Image query completed successfully: {len(image_results)} images")
         return ImageQueryResponse(
             images=image_results,
             total=len(image_results)
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"❌ [STEP 2] Error processing image query: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error processing image query: {str(e)}")
+        logger.error(f"Error processing image query: {e}", exc_info=True)
+        return ImageQueryResponse(images=[], total=0)
 
 
-@app.get("/sync/status")
-async def get_sync_status(service: ServiceContainer = Depends(get_service)):
-    """
-    Get synchronization status between FastAPI and Streamlit.
-    
-    Returns:
-        Sync status including document count, last update, vectorstore status, conflicts
-    """
-    logger.info("[STEP 1] GET /sync/status - Checking synchronization status")
-    try:
-        registry_status = service.document_registry.get_sync_status()
-        
-        # Check for conflicts
-        conflict = service.document_registry.check_for_conflicts()
-        
-        # Check vectorstore status
-        vectorstore_status = {
-            'type': service.rag_system.vector_store_type,
-            'exists': service.rag_system.vectorstore is not None,
-            'path': ARISConfig.get_vectorstore_path() if service.rag_system.vector_store_type.lower() == 'faiss' else None
-        }
-        
-        if service.rag_system.vector_store_type.lower() == 'faiss':
-            vectorstore_path = ARISConfig.get_vectorstore_path()
-            vectorstore_status['path_exists'] = os.path.exists(vectorstore_path)
-            if os.path.exists(vectorstore_path):
-                vectorstore_status['last_modified'] = datetime.fromtimestamp(
-                    os.path.getmtime(vectorstore_path)
-                ).isoformat()
-        
-        return {
-            'document_registry': registry_status,
-            'vectorstore': vectorstore_status,
-            'rag_stats': service.rag_system.get_stats(),
-            'conflicts': conflict
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving sync status: {str(e)}")
-
-
-@app.post("/sync/reload-vectorstore")
-async def reload_vectorstore(service: ServiceContainer = Depends(get_service)):
-    """
-    Manually reload vectorstore from disk.
-    Useful when vectorstore was updated by Streamlit.
-    Also reloads document registry to sync metadata.
-    
-    Returns:
-        Success message
-    """
-    logger.info("[STEP 1] POST /sync/reload-vectorstore - Reloading vectorstore and registry")
-    try:
-        # Check for conflicts and reload registry if needed
-        conflict = service.document_registry.check_for_conflicts()
-        if conflict:
-            service.document_registry.reload_from_disk()
-        
-        if service.rag_system.vector_store_type.lower() == 'faiss':
-            vectorstore_path = ARISConfig.get_vectorstore_path()
-            if os.path.exists(vectorstore_path):
-                loaded = service.rag_system.load_vectorstore(vectorstore_path)
-                if loaded:
-                    logger.info(f"✅ [STEP 2] Vectorstore reloaded successfully from: {vectorstore_path}")
-                    return {
-                        "message": "Vectorstore and registry reloaded successfully",
-                        "path": vectorstore_path,
-                        "conflict_resolved": conflict is not None
-                    }
-                else:
-                    logger.error(f"❌ Failed to load vectorstore from: {vectorstore_path}")
-                    raise HTTPException(status_code=400, detail="Failed to load vectorstore")
-            else:
-                raise HTTPException(status_code=404, detail=f"Vectorstore path not found: {vectorstore_path}")
-        else:
-            # OpenSearch loads automatically
-            return {"message": "OpenSearch vectorstore is cloud-based and always in sync"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reloading vectorstore: {str(e)}")
-
-
-@app.post("/sync/save-vectorstore")
-async def save_vectorstore(service: ServiceContainer = Depends(get_service)):
-    """
-    Manually save vectorstore to disk.
-    Useful for forcing a save before shutdown or for sharing with Streamlit.
-    
-    Returns:
-        Success message
-    """
-    logger.info("[STEP 1] POST /sync/save-vectorstore - Manually saving vectorstore")
-    try:
-        if service.rag_system.vectorstore and service.rag_system.vector_store_type.lower() == 'faiss':
-            vectorstore_path = ARISConfig.get_vectorstore_path()
-            logger.info(f"[STEP 2] Saving vectorstore to: {vectorstore_path}")
-            service.rag_system.save_vectorstore(vectorstore_path)
-            logger.info("✅ [STEP 2] Vectorstore saved successfully")
-            return {"message": "Vectorstore saved successfully", "path": vectorstore_path}
-        else:
-            logger.warning("⚠️ No vectorstore to save or using OpenSearch")
-            raise HTTPException(
-                status_code=400, 
-                detail="No vectorstore to save or using OpenSearch (cloud-based)"
-            )
-    except Exception as e:
-        logger.error(f"❌ Error saving vectorstore: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error saving vectorstore: {str(e)}")
-
-
-@app.post("/sync/reload-registry")
-async def reload_registry(service: ServiceContainer = Depends(get_service)):
-    """
-    Manually reload document registry from disk.
-    Useful when registry was updated by Streamlit.
-    
-    Returns:
-        Success message
-    """
-    logger.info("[STEP 1] POST /sync/reload-registry - Reloading document registry")
-    try:
-        conflict = service.document_registry.check_for_conflicts()
-        if conflict:
-            logger.info(f"⚠️ [STEP 1] Conflict detected: {conflict}")
-        logger.info("[STEP 2] Reloading registry from disk...")
-        if service.document_registry.reload_from_disk():
-            logger.info("✅ [STEP 2] Document registry reloaded successfully")
-            return {
-                "message": "Document registry reloaded successfully",
-                "conflict_resolved": conflict is not None
-            }
-        else:
-            logger.error("❌ Failed to reload registry")
-            raise HTTPException(status_code=400, detail="Failed to reload registry")
-    except Exception as e:
-        logger.error(f"❌ Error reloading registry: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error reloading registry: {str(e)}")
+# Sync endpoints removed - these are internal operations
+# If needed, use service methods directly for internal operations
 
 
 if __name__ == "__main__":

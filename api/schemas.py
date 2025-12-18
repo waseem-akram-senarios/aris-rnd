@@ -31,6 +31,15 @@ class Citation(BaseModel):
     content_type: str = "text"
     image_ref: Optional[Dict[str, Any]] = None
     image_info: Optional[str] = None
+    # Additional optional fields that may be present
+    source_confidence: Optional[float] = None
+    page_confidence: Optional[float] = None
+    section: Optional[str] = None
+    start_char: Optional[int] = None
+    end_char: Optional[int] = None
+    chunk_index: Optional[int] = None
+    extraction_method: Optional[str] = None
+    similarity_score: Optional[float] = None
 
 
 class QueryResponse(BaseModel):

@@ -1,0 +1,119 @@
+
+================================================================================
+  COMPREHENSIVE IMAGE API TEST SUITE
+================================================================================
+Server: http://44.221.84.58:8500
+Started: 2025-12-18 19:18:55
+
+================================================================================
+  TEST: Upload Document with Images
+================================================================================
+✅ PASS: Document uploaded: FL10.11 SPECIFIC8 (1).pdf
+   Document ID: fbf03de4-579a-49cf-974d-ede1be1e1af9
+   Images detected: 13
+   Chunks created: 47
+✅ PASS: Images detected: 13
+
+⏳ Waiting 10 seconds for image processing...
+
+================================================================================
+  TEST: Get All Images from Document
+================================================================================
+✅ PASS: Retrieved 50 images
+   First image:
+     - ID: fde7e9f4-0182-4310-bb40-a5c14685ea07
+     - Source: FL10.11 SPECIFIC8 (1).pdf
+     - Page: 1
+     - OCR length: 8138 chars
+     - OCR preview: Week: ____________
+
+|       | Monday   | Tuesday   | Wednesday   | Thursday   | Friday   | Saturday   | Sunday   |
+|-------|----------|-----------|---...
+✅ PASS: All images have required fields
+
+================================================================================
+  TEST: Semantic Search in Images
+================================================================================
+   Query: 'drawer tools' -> 0 results
+   Query: 'part numbers' -> 0 results
+   Query: 'tool reorder sheet' -> 0 results
+   Query: 'socket wrench' -> 0 results
+✅ PASS: Semantic search tests
+
+================================================================================
+  TEST: Query with Image Questions (Regular Endpoint)
+================================================================================
+   Question: 'What tools are in drawer 1?'
+     Answer length: 420 chars
+     Total citations: 3
+     Image citations: 2
+✅ PASS: Found 2 image citations
+       - FL10.11 SPECIFIC8 (1).pdf, Page 40, Image 1 on Page 40
+       - FL10.11 SPECIFIC8 (1).pdf, Page 39, Image 1 on Page 39
+   Question: 'What part numbers are in the tool reorder sheet?'
+     Answer length: 879 chars
+     Total citations: 3
+     Image citations: 2
+✅ PASS: Found 2 image citations
+       - FL10.11 SPECIFIC8 (1).pdf, Page 1, Image 1 on Page 1
+       - FL10.11 SPECIFIC8 (1).pdf, Page 40, Image 1 on Page 40
+   Question: 'What is in drawer 2?'
+     Answer length: 638 chars
+     Total citations: 2
+     Image citations: 2
+✅ PASS: Found 2 image citations
+       - FL10.11 SPECIFIC8 (1).pdf, Page 40, Image 1 on Page 40
+       - FL10.11 SPECIFIC8 (1).pdf, Page 39, Image 1 on Page 39
+   Question: 'List all tools mentioned in images'
+     Answer length: 1673 chars
+     Total citations: 4
+     Image citations: 3
+✅ PASS: Found 3 image citations
+       - FL10.11 SPECIFIC8 (1).pdf, Page 40, Image 1 on Page 40
+       - FL10.11 SPECIFIC8 (1).pdf, Page 39, Image 1 on Page 39
+✅ PASS: Image question queries
+
+================================================================================
+  TEST: Verify Image OCR Content
+================================================================================
+   Total images checked: 20
+   OCR text lengths:
+     - Average: 1729 chars
+     - Min: 132 chars
+     - Max: 10000 chars
+   Content patterns found:
+     - Tools: ✅
+     - Drawers: ✅
+     - Part numbers: ✅
+✅ PASS: OCR content quality (avg 1729 chars)
+
+================================================================================
+  TEST: Verify Image Metadata
+================================================================================
+✅ PASS: All 10 images have required metadata
+   Required fields: image_id, source, image_number, ocr_text
+   Optional fields: page, metadata, score
+
+================================================================================
+  TEST: Filter Images by Source
+================================================================================
+✅ PASS: All 10 images match source filter: FL10.11 SPECIFIC8 (1).pdf
+
+================================================================================
+  TEST SUMMARY
+================================================================================
+✅ PASS: upload
+✅ PASS: get_all_images
+✅ PASS: semantic_search
+✅ PASS: image_queries
+✅ PASS: ocr_content
+✅ PASS: metadata
+✅ PASS: source_filter
+
+Total: 7/7 tests passed
+Success rate: 100.0%
+
+💾 Results saved to: IMAGE_TEST_RESULTS.json
+Completed: 2025-12-18 19:22:04
+
+✅ ALL TESTS PASSED!
