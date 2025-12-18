@@ -17,9 +17,11 @@
 - **Guardrails** with Bedrock boolean check and heuristic fallback; allow-on-error
 - **Core libraries architecture** with modular memory and file processing systems
 - **Document processing** for 12+ file types (including JSON, XML, HTML, Markdown) with S3 integration and 4MB limits
-- **MCP integration** with FastMCP client library and HTTP-based servers
+- **MCP integration** with FastMCP client library and HTTP-based servers (4 servers: core, email, file-generator, rag)
 - **Tool calling** with rich manufacturing data (machines, groups, production)
 - **Email service** integration for notifications and reports with attachment support
+- **File Generator MCP Server** - Dedicated PDF creation service with S3 storage and organized file structure
+- **Version Management** - Current version 2.0.3, automatic version inclusion in all WebSocket messages
 - **Dynamic system prompts** based on tool availability (prevents hallucinations)
 - **Comprehensive logging** for debugging tool usage and MCP communication
 - **Multi-container architecture** with proper networking and health checks
@@ -163,8 +165,9 @@
 - **Refactored planning module architecture** - Moved models to proper domain structure for better organization
 
 ## Current status 🎯
-- **Complete MCP architecture** - Both intelycx-core and intelycx-email servers fully operational with proper FastMCP compliance
-- **Working tool chain** - Login → get fake data → send email pipeline functional without serialization errors
+- **Complete MCP architecture** - Four MCP servers operational: intelycx-core, intelycx-email, intelycx-file-generator, intelycx-rag (Phase 1 complete)
+- **Working tool chain** - Login → get fake data → create PDF → send email pipeline functional without serialization errors
+- **Version Management** - Current version 2.0.3, all WebSocket messages include version field automatically
 - **Well-architected core libraries** - Memory and file processing properly modularized
 - **Volume-mounted development** - Live code reload for all services
 - **Production-ready networking** - Docker network connectivity resolved and documented

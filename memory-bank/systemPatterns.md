@@ -53,7 +53,7 @@
 ## MCP Integration Patterns
 - **Server management**: HTTP-based FastMCP servers in separate Docker containers with volume mounting
 - **Initialization**: Required before tool calls, handled automatically by `MCPServerManager`
-- **Tool routing**: Dynamic tool discovery and server-specific routing (core tools → intelycx-core, email → intelycx-email)
+- **Tool routing**: Dynamic tool discovery and server-specific routing (core tools → intelycx-core, email → intelycx-email, PDF → intelycx-file-generator, RAG → intelycx-rag)
 - **Authentication**: Bearer token authentication with configurable API keys
 - **JWT handling**: Special logic for login tool (generates tokens) vs data tools (requires tokens)
 - **Context logging**: Multi-stage FastMCP Context logging with structured metadata and progress reporting
@@ -77,6 +77,12 @@
 - **Parameter Placement**: Context parameter always last for consistency across all tools
 - **Version Management**: Tool versioning via meta field and semantic versioning practices
 - **Annotation System**: Tool behavior hints (readOnlyHint, destructiveHint, idempotentHint, openWorldHint)
+
+### MCP Server Architecture
+- **intelycx-core**: Authentication (intelycx_login) and manufacturing data (get_fake_data) tools
+- **intelycx-email**: Email sending capabilities (send_email) with attachment support
+- **intelycx-file-generator**: PDF creation (create_pdf) with S3 storage backend and organized file structure
+- **intelycx-rag**: RAG services (Phase 1 complete: vector stores, embeddings, chunking; Phase 2 planned: ingestion pipeline)
 
 ### Smart Result Formatters (`app/core/formatters.py`)
 - **Pattern-Based Formatting**: Eliminates hardcoded tool-specific logic using intelligent pattern matching
@@ -130,6 +136,14 @@
 - **Potential optimizations**: Connection pooling for MCP servers, agent instance caching, resource limits
 - **Performance bottlenecks**: Agent initialization (~5-6s), MCP connection setup (~300ms per server)
 - **Monitoring needs**: Connection count tracking, memory usage monitoring, MCP server health checks
+
+## Version Management
+- **Current Version**: 2.0.3 (ARIS 2.0)
+- **Version Format**: MAJOR.MINOR.PATCH (semantic versioning)
+- **Version Location**: `services/agent/app/version.py` - `__version__` constant
+- **Version in Messages**: All WebSocket messages automatically include `"version"` field via `add_version_to_message()` helper
+- **Version Bumping Rules**: PATCH for any code change, MINOR for medium features, MAJOR for breaking changes (only on user request)
+- **Helper Function**: `add_version_to_message()` from `app.version` ensures consistent version tracking
 
 ## Configuration
 - `.env` loaded best-effort via `Settings.load_settings()` with search order: `DOTENV_PATH` → `config/.env` → `.env`

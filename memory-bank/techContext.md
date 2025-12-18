@@ -14,6 +14,8 @@
 - **FastMCP stack**: fastmcp>=2.11.0, pydantic>=2.5.0, aiohttp>=3.9.0, starlette>=0.27.0
 - **Authentication**: Bearer token authentication via FastMCP
 - **Advanced Features**: Enum support, Field validation, structured responses, output schemas
+- **File Generator**: reportlab (PDF generation), boto3 (S3 storage)
+- **RAG Services**: opensearch-py, asyncpg, qdrant-client, openai, sentence-transformers, torch
 
 ## Infra dependencies
 - aws-cdk-lib v2, constructs v10
@@ -66,11 +68,17 @@
 - **Protocol**: FastMCP over HTTP with automatic client management
 - **Authentication**: Bearer token with configurable API keys
 - **Server lifecycle**: Health checks, initialization, tool routing
-- **Tool categories**: Core manufacturing data, email services
+- **Tool categories**: Core manufacturing data (intelycx-core), email services (intelycx-email), PDF generation (intelycx-file-generator), RAG services (intelycx-rag)
 - **Error handling**: Graceful degradation, honest limitation reporting
 - **Client library**: FastMCP handles connection management and protocol details
 - **Advanced Implementation**: Production-ready tools with type safety, validation, and structured outputs
 - **Tool Enhancement**: Comprehensive metadata, annotations, progress tracking, and notification system
+
+## MCP Server Details
+- **intelycx-core**: Authentication and manufacturing data tools (port 8080)
+- **intelycx-email**: Email sending with attachments (port 8081)
+- **intelycx-file-generator**: PDF creation with ReportLab and S3 storage (port 8080)
+- **intelycx-rag**: RAG services with vector stores, embeddings, chunking (port 8082)
 
 ## Notable patterns
 - **Guardrails default**: Off (opt-in per-message via `rag_params.guardrails`)

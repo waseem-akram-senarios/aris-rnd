@@ -32,8 +32,10 @@ Success is measured by:
 ## High-Level Architecture
 - `services/agent`: aiohttp server, Cognito auth, agent orchestration, guardrails, Bedrock client, file processing, MCP client
 - `services/mcp-servers/`: Separate MCP server containers for different tool categories
-  - `intelycx-core`: Manufacturing data API (machines, groups, production)
-  - `intelycx-email`: Email sending capabilities
+  - `intelycx-core`: Manufacturing data API (machines, groups, production) and authentication
+  - `intelycx-email`: Email sending capabilities with attachment support
+  - `intelycx-file-generator`: PDF creation service with S3 storage backend
+  - `intelycx-rag`: RAG services (vector stores, embeddings, chunking - Phase 1 complete)
 - `services/lambdas`: Lambda placeholders (e.g., `podcast`)
 - `infra`: AWS CDK application and stacks
 - `docker/`: Local dev `docker-compose.yml` with multi-container setup

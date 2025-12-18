@@ -12,7 +12,8 @@ Manufacturing organizations need an assistant to answer questions about equipmen
 - Low-latency chat over WebSocket with progressive streaming
 - Document processing: Upload manufacturing documents (procedures, reports, specs) and ask questions about their content
 - Real-time data access: Query machine status, production metrics, maintenance schedules
-- Email notifications: Send reports, alerts, and summaries to relevant teams
+- PDF generation: Create formatted reports and documents with S3 storage
+- Email notifications: Send reports, alerts, and summaries to relevant teams with attachments
 - Secure-by-default: JWT validation at connection time
 - Guardrails maintain focus on manufacturing topics
 
