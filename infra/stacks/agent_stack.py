@@ -35,6 +35,10 @@ class AgentStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        # Store region for later use
+        self.region = self.region or "us-east-2"
+        self.account = self.account or "975049910508"
+
         env_name = self.node.try_get_context("env") or "dev"
         cluster_name = self.node.try_get_context("cluster_name") or "intelycx-dev-cluster"
         
@@ -597,9 +601,25 @@ class AgentStack(Stack):
             "aris-mcp-intelycx-rag": ["/aris/rag/*", "/aris/mcp/rag/*"],
         }
 
-        # Get listener ARNs from context or use defaults
+        # Get listener ARNs from context or look them up automatically
         http_listener_arn = self.node.try_get_context("http_listener_arn")
         https_listener_arn = self.node.try_get_context("https_listener_arn")
+        
+        # If not provided, try to look up listeners from the ALB
+        if not http_listener_arn or not https_listener_arn:
+            try:
+                import boto3
+                elbv2_client = boto3.client('elbv2', region_name=self.region)
+                listeners_response = elbv2_client.describe_listeners(
+                    LoadBalancerArn=self.alb_arn
+                )
+                for listener in listeners_response.get('Listeners', []):
+                    if listener['Port'] == 80 and not http_listener_arn:
+                        http_listener_arn = listener['ListenerArn']
+                    elif listener['Port'] == 443 and not https_listener_arn:
+                        https_listener_arn = listener['ListenerArn']
+            except Exception as e:
+                Annotations.of(self).add_warning(f"Could not auto-discover listener ARNs: {e}. Please provide http_listener_arn and https_listener_arn in context.")
 
         # Store listener rules per service for dependency management
         service_listener_rules: Dict[str, List[elbv2.CfnListenerRule]] = {
