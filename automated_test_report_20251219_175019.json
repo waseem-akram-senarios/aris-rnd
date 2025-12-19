@@ -1,0 +1,86 @@
+{
+  "start_time": "2025-12-19T17:50:17.958140",
+  "tests": [
+    {
+      "name": "API Health Check",
+      "status": "PASS",
+      "message": "API is healthy",
+      "details": {},
+      "timestamp": "2025-12-19T17:50:18.508458"
+    },
+    {
+      "name": "Documents List Endpoint",
+      "status": "PASS",
+      "message": "Found 7 documents",
+      "details": {
+        "document_count": 7
+      },
+      "timestamp": "2025-12-19T17:50:18.993936"
+    },
+    {
+      "name": "Enhanced Metadata Fields",
+      "status": "SKIP",
+      "message": "Only 0 fields present (may be old document)",
+      "details": {
+        "present": [],
+        "missing": [
+          "File Hash",
+          "Upload Metadata",
+          "PDF Metadata",
+          "Processing Metadata",
+          "OCR Quality Metrics",
+          "Version Info"
+        ]
+      },
+      "timestamp": "2025-12-19T17:50:18.994225"
+    },
+    {
+      "name": "Utility Module Imports",
+      "status": "PASS",
+      "message": "All utilities imported successfully",
+      "details": {},
+      "timestamp": "2025-12-19T17:50:19.678264"
+    },
+    {
+      "name": "OCR Verifier Functionality",
+      "status": "PASS",
+      "message": "Similarity calculation working",
+      "details": {
+        "similarity": "100.00%"
+      },
+      "timestamp": "2025-12-19T17:50:19.678536"
+    },
+    {
+      "name": "Auto-Fix Functionality",
+      "status": "PASS",
+      "message": "Auto-fix logic working correctly",
+      "details": {
+        "low_accuracy_should_fix": true,
+        "high_accuracy_should_fix": false
+      },
+      "timestamp": "2025-12-19T17:50:19.678603"
+    },
+    {
+      "name": "Schema Validation",
+      "status": "PASS",
+      "message": "All schemas validated successfully",
+      "details": {},
+      "timestamp": "2025-12-19T17:50:19.865139"
+    },
+    {
+      "name": "Version Tracking",
+      "status": "PASS",
+      "message": "Version tracking methods available",
+      "details": {},
+      "timestamp": "2025-12-19T17:50:19.873700"
+    }
+  ],
+  "summary": {
+    "total": 8,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 1
+  },
+  "end_time": "2025-12-19T17:50:19.873779",
+  "duration_seconds": 1.915639
+}

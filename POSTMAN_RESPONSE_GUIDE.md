@@ -179,3 +179,5 @@ POST /query
 - **image_ref and image_info** will have values for image citations
 - If you see null in required fields, check your request format and document upload status
 
+
+

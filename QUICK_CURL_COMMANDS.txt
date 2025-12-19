@@ -1,0 +1,24 @@
+
+================================================================================
+QUICK cURL COMMANDS - COPY & PASTE READY
+================================================================================
+
+1. GET DOCUMENT ID:
+--------------------------------------------------------------------------------
+DOC_ID=$(curl -s http://44.221.84.58:8500/documents | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['documents'][0]['document_id'] if d.get('documents') else '')")
+echo "Document ID: $DOC_ID"
+
+2. QUICK ACCURACY CHECK:
+--------------------------------------------------------------------------------
+curl -s "http://44.221.84.58:8500/documents/$DOC_ID/accuracy" | python3 -m json.tool
+
+3. FULL VERIFICATION:
+--------------------------------------------------------------------------------
+curl -X POST "http://44.221.84.58:8500/documents/$DOC_ID/verify" -F "file=@FL10.11 SPECIFIC8 (1).pdf" -F "auto_fix=false" | python3 -m json.tool
+
+4. SAVE VERIFICATION TO FILE:
+--------------------------------------------------------------------------------
+curl -X POST "http://44.221.84.58:8500/documents/$DOC_ID/verify" -F "file=@FL10.11 SPECIFIC8 (1).pdf" -F "auto_fix=false" -o report.json
+
+================================================================================
+

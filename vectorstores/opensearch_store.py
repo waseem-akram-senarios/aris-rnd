@@ -323,10 +323,13 @@ class OpenSearchVectorStore:
                                 cleaned_metadata[key] = value[:1000]
                             else:
                                 cleaned_metadata[key] = value
-                
+
                 # Add source if not already present (required for filtering)
                 if 'source' not in cleaned_metadata and 'source' in doc.metadata:
                     cleaned_metadata['source'] = doc.metadata['source']
+            
+            # Add content_type to indicate this is text content (not image OCR)
+            cleaned_metadata['content_type'] = 'text'
             
             # Create cleaned document
             cleaned_doc = Document(

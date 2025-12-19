@@ -1,0 +1,88 @@
+# Curl Commands: Get OCR Content of Images Per Page
+
+## Main Endpoint
+GET /documents/{document_id}/pages/{page_number}
+
+This returns all images from a specific page with their OCR text.
+
+---
+
+## Get Images OCR from Page 1
+
+curl -X GET "http://44.221.84.58:8500/documents/b0b01b35-ccbb-4e52-9db6-2690e531289b/pages/1" \
+  -H "Accept: application/json"
+
+---
+
+## Get Only OCR Text from Images on Page 1
+
+curl -X GET "http://44.221.84.58:8500/documents/b0b01b35-ccbb-4e52-9db6-2690e531289b/pages/1" \
+  -H "Accept: application/json" | jq '.images[] | {image_number, page, ocr_text}'
+
+---
+
+## Get OCR Text Only (No Metadata)
+
+curl -X GET "http://44.221.84.58:8500/documents/b0b01b35-ccbb-4e52-9db6-2690e531289b/pages/1" \
+  -H "Accept: application/json" | jq '.images[] | .ocr_text'
+
+---
+
+## Get Images with OCR from Page 2
+
+curl -X GET "http://44.221.84.58:8500/documents/b0b01b35-ccbb-4e52-9db6-2690e531289b/pages/2" \
+  -H "Accept: application/json" | jq '.images[] | {image_number, page, ocr_text}'
+
+---
+
+## Get Summary: Count and OCR Lengths per Page
+
+curl -X GET "http://44.221.84.58:8500/documents/b0b01b35-ccbb-4e52-9db6-2690e531289b/pages/1" \
+  -H "Accept: application/json" | jq '{
+    page: .page_number,
+    total_images: .total_images,
+    total_ocr_length: .total_ocr_text_length,
+    images: [.images[] | {image_number, ocr_text_length, ocr_text}]
+  }'
+
+---
+
+## Get All Pages with Images (Loop)
+
+# Replace {doc_id} with your document ID
+# Replace 1..10 with page range you want to check
+
+for page in {1..10}; do
+  echo "Page $page:"
+  curl -s -X GET "http://44.221.84.58:8500/documents/b0b01b35-ccbb-4e52-9db6-2690e531289b/pages/$page" \
+    -H "Accept: application/json" | jq '{
+      page: .page_number,
+      images: .total_images,
+      ocr_length: .total_ocr_text_length
+    }'
+done
+
+---
+
+## Get OCR Text Formatted by Image Number
+
+curl -X GET "http://44.221.84.58:8500/documents/b0b01b35-ccbb-4e52-9db6-2690e531289b/pages/1" \
+  -H "Accept: application/json" | jq -r '.images[] | "Image \(.image_number) (Page \(.page)):\n\(.ocr_text)\n---"'
+
+---
+
+## Save OCR to File
+
+curl -X GET "http://44.221.84.58:8500/documents/b0b01b35-ccbb-4e52-9db6-2690e531289b/pages/1" \
+  -H "Accept: application/json" | jq -r '.images[] | "Image \(.image_number):\n\(.ocr_text)\n---"' > page_1_ocr.txt
+
+---
+
+## Quick Reference
+
+# Get images OCR from specific page
+curl -X GET "http://44.221.84.58:8500/documents/{doc_id}/pages/{page_number}" -H "Accept: application/json" | jq '.images[] | {image_number, page, ocr_text}'
+
+# Replace:
+#   {doc_id} with: b0b01b35-ccbb-4e52-9db6-2690e531289b
+#   {page_number} with: 1, 2, 3, etc.

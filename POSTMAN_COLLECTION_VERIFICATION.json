@@ -1,0 +1,120 @@
+{
+  "info": {
+    "name": "OCR Verification Endpoints",
+    "description": "Postman collection for OCR verification and accuracy testing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get Document ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://44.221.84.58:8500/documents",
+          "protocol": "http",
+          "host": ["44.221.84.58"],
+          "port": "8500",
+          "path": ["documents"]
+        }
+      }
+    },
+    {
+      "name": "Quick Accuracy Check",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://44.221.84.58:8500/documents/{{document_id}}/accuracy",
+          "protocol": "http",
+          "host": ["44.221.84.58"],
+          "port": "8500",
+          "path": ["documents", "{{document_id}}", "accuracy"]
+        },
+        "description": "Get quick accuracy check for a document. Returns accuracy status without full verification."
+      },
+      "response": []
+    },
+    {
+      "name": "Full Verification",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": [],
+              "description": "PDF file to verify"
+            },
+            {
+              "key": "auto_fix",
+              "value": "false",
+              "type": "text",
+              "description": "Enable auto-fix for low accuracy"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://44.221.84.58:8500/documents/{{document_id}}/verify",
+          "protocol": "http",
+          "host": ["44.221.84.58"],
+          "port": "8500",
+          "path": ["documents", "{{document_id}}", "verify"]
+        },
+        "description": "Full OCR verification with side-by-side comparison. Requires PDF file upload."
+      },
+      "response": []
+    },
+    {
+      "name": "Verification with Auto-Fix",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "file",
+              "type": "file",
+              "src": []
+            },
+            {
+              "key": "auto_fix",
+              "value": "true",
+              "type": "text"
+            }
+          ]
+        },
+        "url": {
+          "raw": "http://44.221.84.58:8500/documents/{{document_id}}/verify",
+          "protocol": "http",
+          "host": ["44.221.84.58"],
+          "port": "8500",
+          "path": ["documents", "{{document_id}}", "verify"]
+        },
+        "description": "Verification with auto-fix enabled for low accuracy documents"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "document_id",
+      "value": "2bac8df5-931a-4d5a-9074-c8eaa7d6247e",
+      "type": "string"
+    }
+  ]
+}

@@ -3,7 +3,7 @@ Service container for RAG system components
 """
 import os
 import logging
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from dotenv import load_dotenv
 from rag_system import RAGSystem
 from ingestion.document_processor import DocumentProcessor
@@ -125,6 +125,152 @@ class ServiceContainer:
         logger.info("[STEP 1] ServiceContainer: Clearing all documents from registry...")
         self.document_registry.clear_all()
         logger.info("✅ [STEP 1] All documents cleared from registry")
+    
+    def query_text_only(self, question: str, k: int = 6, document_id: Optional[str] = None, use_mmr: bool = True) -> Dict:
+        """
+        Query only text content from main index (excludes images).
+        
+        Args:
+            question: Query question
+            k: Number of chunks to retrieve
+            document_id: Optional document ID to filter by
+            use_mmr: Use Maximum Marginal Relevance
+            
+        Returns:
+            Query response with text-only results
+        """
+        logger.info(f"[STEP 1] ServiceContainer: Querying text-only content: question='{question[:50]}...', k={k}, document_id={document_id}")
+        
+        # Set document filter if provided (using active_sources)
+        original_sources = self.rag_system.active_sources
+        if document_id:
+            try:
+                doc = self.get_document(document_id)
+                if doc:
+                    doc_name = doc.get('document_name') or doc.get('original_document_name')
+                    if doc_name:
+                        self.rag_system.active_sources = [doc_name]
+                        logger.info(f"Filtering text query to document: {doc_name}")
+            except Exception as e:
+                logger.warning(f"Could not filter to document_id {document_id}: {e}")
+                self.rag_system.active_sources = None
+        else:
+            self.rag_system.active_sources = None
+        
+        try:
+            # Use the main query method but ensure it only queries text index
+            # The RAG system should already separate text and images by index
+            result = self.rag_system.query_with_rag(
+                question=question,
+                k=k,
+                use_mmr=use_mmr
+            )
+        finally:
+            # Restore original active_sources
+            self.rag_system.active_sources = original_sources
+        
+        # Ensure we're only getting text results (no image content)
+        # Filter out any citations that might be from images
+        if 'citations' in result:
+            text_citations = [
+                cit for cit in result['citations']
+                if cit.get('content_type', 'text') == 'text'
+            ]
+            result['citations'] = text_citations
+            result['num_chunks_used'] = len(text_citations)
+        
+        logger.info(f"✅ [STEP 1] Text-only query completed: {result.get('num_chunks_used', 0)} chunks")
+        return result
+    
+    def query_images_only(self, question: str, k: int = 5, source: Optional[str] = None) -> List[Dict]:
+        """
+        Query only image OCR content from images index (excludes regular text).
+        
+        Args:
+            question: Query question
+            k: Number of images to retrieve
+            source: Optional document source to filter by
+            
+        Returns:
+            List of image results with OCR text
+        """
+        logger.info(f"[STEP 1] ServiceContainer: Querying images-only content: question='{question[:50]}...', k={k}, source={source}")
+        
+        # Use the existing query_images method which already queries images index
+        result = self.rag_system.query_images(
+            question=question,
+            source=source,
+            k=k
+        )
+        
+        logger.info(f"✅ [STEP 1] Images-only query completed: {len(result)} images")
+        return result
+    
+    def get_storage_status(self, document_id: str) -> Dict:
+        """
+        Get separate storage status for text and images.
+        
+        Args:
+            document_id: Document ID to check
+            
+        Returns:
+            Dictionary with storage status for text and images
+        """
+        logger.info(f"[STEP 1] ServiceContainer: Getting storage status for document: {document_id}")
+        
+        # Get document metadata
+        doc = self.get_document(document_id)
+        if not doc:
+            raise ValueError(f"Document {document_id} not found")
+        
+        doc_name = doc.get('document_name', 'unknown')
+        
+        # Initialize status response
+        status = {
+            'document_id': document_id,
+            'document_name': doc_name,
+            'text_index': getattr(self.rag_system, 'opensearch_index', 'aris-rag-index') or 'aris-rag-index',
+            'text_chunks_count': doc.get('chunks_created', 0),
+            'text_storage_status': 'completed' if doc.get('chunks_created', 0) > 0 else 'pending',
+            'text_last_updated': None,
+            'images_index': 'aris-rag-images-index',
+            'images_count': doc.get('image_count', 0),
+            'images_storage_status': 'completed' if doc.get('images_detected', False) and doc.get('image_count', 0) > 0 else 'pending',
+            'images_last_updated': None,
+            'ocr_enabled': doc.get('parser_used', '').lower() == 'docling',
+            'total_ocr_text_length': 0
+        }
+        
+        # Try to get actual counts from OpenSearch if available
+        if self.rag_system.vector_store_type.lower() == 'opensearch':
+            try:
+                from vectorstores.opensearch_images_store import OpenSearchImagesStore
+                from langchain_openai import OpenAIEmbeddings
+                
+                # Get images count
+                embeddings = OpenAIEmbeddings(
+                    openai_api_key=os.getenv('OPENAI_API_KEY'),
+                    model=self.rag_system.embedding_model
+                )
+                images_store = OpenSearchImagesStore(
+                    embeddings=embeddings,
+                    domain=self.rag_system.opensearch_domain,
+                    region=getattr(self.rag_system, 'region', None)
+                )
+                
+                # Count images for this document
+                images = images_store.get_images_by_source(doc_name, limit=1000)
+                status['images_count'] = len(images)
+                
+                # Calculate total OCR text length
+                total_ocr_length = sum(len(img.get('ocr_text', '')) for img in images)
+                status['total_ocr_text_length'] = total_ocr_length
+                
+            except Exception as e:
+                logger.warning(f"Could not get detailed storage status from OpenSearch: {e}")
+        
+        logger.info(f"✅ [STEP 1] Storage status retrieved: text_chunks={status['text_chunks_count']}, images={status['images_count']}")
+        return status
 
 
 def create_service_container(

@@ -1,0 +1,19 @@
+# Quick cURL Commands: Get Image OCR by Page Number
+
+## Basic Command
+curl -X GET "http://44.221.84.58:8500/documents/{document_id}/pages/1" -H "Accept: application/json"
+
+## Get OCR Text Only
+curl -X GET "http://44.221.84.58:8500/documents/{document_id}/pages/1" -H "Accept: application/json" | jq '.images[] | .ocr_text'
+
+## Get Image Numbers and OCR
+curl -X GET "http://44.221.84.58:8500/documents/{document_id}/pages/1" -H "Accept: application/json" | jq '.images[] | {image_number, page, ocr_text}'
+
+## Get Summary (Count and Lengths)
+curl -X GET "http://44.221.84.58:8500/documents/{document_id}/pages/1" -H "Accept: application/json" | jq '{page: .page_number, total_images: .total_images, images: [.images[] | {image_number, ocr_text_length}]}'
+
+## Save OCR to File
+curl -X GET "http://44.221.84.58:8500/documents/{document_id}/pages/1" -H "Accept: application/json" | jq -r '.images[] | "Image \(.image_number):\n\(.ocr_text)\n---"' > page_1_ocr.txt
+
+## Replace {document_id} with your actual document ID
+## Replace /pages/1 with any page number (1, 2, 3, etc.)

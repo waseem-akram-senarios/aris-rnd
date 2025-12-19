@@ -171,7 +171,14 @@ class OpenSearchImagesStore:
             'extraction_timestamp': datetime.utcnow().isoformat() + 'Z',
             'metadata': metadata,
             'full_chunk': full_chunk[:5000] if full_chunk else None,  # Limit size
-            'context_before': context_before[:1000] if context_before else None  # Limit size
+            'context_before': context_before[:1000] if context_before else None,  # Limit size
+            'content_type': 'image_ocr',  # Indicate this is image OCR content
+            # OCR quality metrics
+            'ocr_quality_metrics': {
+                'extraction_method': extraction_method,
+                'ocr_text_length': len(ocr_text) if ocr_text else 0,
+                'has_content': bool(ocr_text and len(ocr_text.strip()) > 0)
+            }
         }
         
         # Create LangChain Document
@@ -232,17 +239,27 @@ class OpenSearchImagesStore:
             # Create document
             doc_content = ocr_text if ocr_text else f"Image {image_number} from {os.path.basename(source)}"
             
+            extraction_method = img_data.get('extraction_method', 'unknown')
             doc_metadata = {
                 'source': source,
                 'image_number': image_number,
                 'page': img_data.get('page', 0),
                 'ocr_text_length': len(ocr_text) if ocr_text else 0,
                 'marker_detected': img_data.get('marker_detected', True),
-                'extraction_method': img_data.get('extraction_method', 'unknown'),
+                'extraction_method': extraction_method,
                 'extraction_timestamp': datetime.utcnow().isoformat() + 'Z',
                 'metadata': metadata,
                 'full_chunk': (img_data.get('full_chunk', '') or '')[:5000],
-                'context_before': (img_data.get('context_before', '') or '')[:1000]
+                'context_before': (img_data.get('context_before', '') or '')[:1000],
+                'content_type': 'image_ocr',  # Indicate this is image OCR content
+                # OCR quality metrics
+                'ocr_quality_metrics': {
+                    'extraction_method': extraction_method,
+                    'ocr_text_length': len(ocr_text) if ocr_text else 0,
+                    'has_content': bool(ocr_text and len(ocr_text.strip()) > 0),
+                    'confidence_score': img_data.get('ocr_confidence'),  # If provided
+                    'character_accuracy': img_data.get('character_accuracy')  # If provided
+                }
             }
             
             doc = Document(

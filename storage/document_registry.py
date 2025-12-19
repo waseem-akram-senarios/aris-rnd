@@ -83,13 +83,100 @@ class DocumentRegistry:
             metadata: Document metadata dictionary
         """
         with self._lock:
+            # Check if document already exists (for version tracking)
+            existing_doc = self._documents.get(document_id)
+            
             # Add timestamp if not present
             if 'created_at' not in metadata:
-                metadata['created_at'] = datetime.now().isoformat()
+                if existing_doc and existing_doc.get('created_at'):
+                    metadata['created_at'] = existing_doc['created_at']
+                else:
+                    metadata['created_at'] = datetime.now().isoformat()
+            
+            # Track version if document exists
+            if existing_doc:
+                # Increment version
+                existing_version = existing_doc.get('version_info', {}).get('version', 1)
+                new_version = existing_version + 1
+                
+                # Store version history
+                if 'version_history' not in metadata.get('version_info', {}):
+                    version_info = metadata.get('version_info', {})
+                    if 'version_history' not in version_info:
+                        version_info['version_history'] = []
+                    
+                    # Add previous version to history
+                    version_info['version_history'].append({
+                        'version': existing_version,
+                        'updated_at': existing_doc.get('updated_at'),
+                        'changes': self._detect_changes(existing_doc, metadata)
+                    })
+                    version_info['version'] = new_version
+                    metadata['version_info'] = version_info
+                else:
+                    version_info = metadata.get('version_info', {})
+                    version_info['version'] = new_version
+            
             metadata['updated_at'] = datetime.now().isoformat()
             
             self._documents[document_id] = metadata
             self._save_registry()
+    
+    def _detect_changes(self, old_metadata: Dict, new_metadata: Dict) -> List[str]:
+        """
+        Detect changes between old and new metadata.
+        
+        Args:
+            old_metadata: Previous metadata
+            new_metadata: New metadata
+        
+        Returns:
+            List of change descriptions
+        """
+        changes = []
+        
+        # Check key fields
+        key_fields = ['document_name', 'parser_used', 'chunks_created', 'images_stored', 'file_hash']
+        for field in key_fields:
+            if old_metadata.get(field) != new_metadata.get(field):
+                changes.append(f"{field} changed from {old_metadata.get(field)} to {new_metadata.get(field)}")
+        
+        return changes
+    
+    def add_document_version(self, document_id: str, metadata: Dict):
+        """
+        Add new version of existing document.
+        
+        Args:
+            document_id: Document identifier
+            metadata: New version metadata
+        """
+        self.add_document(document_id, metadata)
+    
+    def get_document_versions(self, document_id: str) -> List[Dict]:
+        """
+        Get all versions of a document.
+        
+        Args:
+            document_id: Document identifier
+        
+        Returns:
+            List of version metadata dictionaries
+        """
+        with self._lock:
+            doc = self._documents.get(document_id)
+            if not doc:
+                return []
+            
+            versions = [doc]  # Current version
+            
+            # Get version history if available
+            version_info = doc.get('version_info', {})
+            version_history = version_info.get('version_history', [])
+            
+            # Note: Full version history would require storing all versions
+            # For now, we return current version with history metadata
+            return versions
     
     def get_document(self, document_id: str) -> Optional[Dict]:
         """

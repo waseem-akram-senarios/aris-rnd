@@ -91,3 +91,5 @@ curl -X POST http://44.221.84.58:8500/query \
 
 ✅ **Image data is successfully included in query responses!**
 
+
+

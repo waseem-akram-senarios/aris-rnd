@@ -88,3 +88,5 @@ Enhanced the `/query/images` endpoint to:
 
 The image retrieval endpoint now successfully returns all images with their OCR text and information.
 
+
+
