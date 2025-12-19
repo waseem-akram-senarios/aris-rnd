@@ -59,7 +59,7 @@ class DatabaseManager:
             import urllib.parse
             encoded_password = urllib.parse.quote(db_password, safe='')
             db_url = db_url.replace('${DB_PASSWORD}', encoded_password)
-            logger.info(f"✅ Replaced ${DB_PASSWORD} placeholder in DATABASE_URL (password length: {len(db_password)})")
+            logger.info(f"✅ Replaced ${{DB_PASSWORD}} placeholder in DATABASE_URL (password length: {len(db_password)})")
         
         # Parse additional configuration from environment
         pool_size = int(os.getenv('DATABASE_POOL_SIZE', pool_size))
