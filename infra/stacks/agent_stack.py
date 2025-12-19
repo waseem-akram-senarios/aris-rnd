@@ -223,8 +223,11 @@ class AgentStack(Stack):
         
         for service_name, docker_dir in service_dirs.items():
             # Get the absolute path to the Dockerfile directory
+            # __file__ is infra/stacks/agent_stack.py, so parent.parent is infra/
+            # docker_dir is relative to infra/ (e.g., "../services/agent")
             infra_dir = Path(__file__).parent.parent
-            docker_path = infra_dir / docker_dir.lstrip("../")
+            # Resolve the relative path from infra_dir
+            docker_path = (infra_dir / docker_dir).resolve()
             
             # Get the existing ECR repository for this service
             repo = self.ecr_repos[service_name]
