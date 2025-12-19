@@ -3,7 +3,7 @@ ARIS Agent ECS Stack for AWS CDK.
 
 Deploys ARIS services to existing ECS cluster intelycx-dev-cluster.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, List, Any, Optional
 
 from aws_cdk import (
     Stack,
