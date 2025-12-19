@@ -14,6 +14,7 @@ from aws_cdk import (
     aws_ecs as ecs,
     aws_ec2 as ec2,
     aws_ecr as ecr,
+    aws_ecr_assets as ecr_assets,
     aws_iam as iam,
     aws_elasticloadbalancingv2 as elbv2,
     aws_logs as logs,
@@ -154,6 +155,9 @@ class AgentStack(Stack):
 
         # Create ECR repositories for ARIS services
         self.ecr_repos = self._create_ecr_repositories(env_name)
+        
+        # Build and push Docker images as CDK assets
+        self.docker_images = self._create_docker_images(env_name)
 
         # Create IAM execution role for ECS tasks
         self.execution_role = self._create_execution_role(env_name)
@@ -203,7 +207,46 @@ class AgentStack(Stack):
             )
         
         return repos
-
+    
+    def _create_docker_images(self, env_name: str) -> Dict[str, ecs.ContainerImage]:
+        """Build and push Docker images as CDK assets to existing ECR repositories."""
+        images = {}
+        
+        # Map service names to their Dockerfile directories (relative to infra directory)
+        service_dirs = {
+            "aris-agent": "../services/agent",
+            "aris-mcp-intelycx-core": "../services/mcp-servers/intelycx-core",
+            "aris-mcp-intelycx-email": "../services/mcp-servers/intelycx-email",
+            "aris-mcp-intelycx-file-generator": "../services/mcp-servers/intelycx-file-generator",
+            "aris-mcp-intelycx-rag": "../services/mcp-servers/intelycx-rag",
+        }
+        
+        for service_name, docker_dir in service_dirs.items():
+            # Get the absolute path to the Dockerfile directory
+            infra_dir = Path(__file__).parent.parent
+            docker_path = infra_dir / docker_dir.lstrip("../")
+            
+            # Get the existing ECR repository for this service
+            repo = self.ecr_repos[service_name]
+            
+            # Create Docker image asset - CDK will build and push automatically
+            # Note: DockerImageAsset creates its own repository, but we can use it
+            # and then reference the existing repo, or use the asset's repo
+            docker_image = ecr_assets.DockerImageAsset(
+                self,
+                f"{service_name.replace('-', '').replace('_', '')}DockerImage",
+                directory=str(docker_path),
+            )
+            
+            # Use the ECR image from the asset (CDK manages the repository)
+            # The image will be built and pushed during cdk deploy
+            images[service_name] = ecs.ContainerImage.from_ecr_repository(
+                docker_image.repository,
+                tag=docker_image.image_tag,
+            )
+        
+        return images
+    
     def _create_execution_role(self, env_name: str) -> iam.Role:
         """Create IAM role for ECS task execution."""
         role = iam.Role(
@@ -575,11 +618,10 @@ class AgentStack(Stack):
             )
 
             # Container definition
-            # Force new task definition by using image digest or adding a comment
-            # Using latest tag - ECS will resolve to latest image digest when task starts
+            # Use Docker image asset (built and pushed by CDK)
             container = task_def.add_container(
                 f"{service_name}Container",
-                image=ecs.ContainerImage.from_ecr_repository(repo, tag="latest"),
+                image=self.docker_images[service_name],
                 logging=ecs.LogDrivers.aws_logs(
                     stream_prefix=service_name,
                     log_group=log_group,
