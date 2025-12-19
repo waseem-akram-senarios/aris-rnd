@@ -42,6 +42,7 @@
 - **Major Increments**: MAJOR version bumps (2.0.0 -> 3.0.0) ONLY for breaking changes upon user request
 - **Helper Function**: Use `add_version_to_message()` from `app.version` to add version to all WebSocket messages
 - **No Exceptions**: This rule applies to ALL code changes, including bug fixes, refactoring, new features, documentation updates, etc.
+- **Git Tagging**: After making a commit that includes a version bump, ALWAYS create a git tag with the new version: `git tag v<version>` (e.g., `git tag v2.0.16`). Tag format: `v` prefix + version number.
 
 ## Commit Message Standards
 - **MANDATORY**: Follow Conventional Commits specification for all commits.
