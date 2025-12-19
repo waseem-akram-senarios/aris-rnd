@@ -143,14 +143,12 @@ class DatabaseManager:
                 from .models import Chat, Plan, Action, SessionMemory
                 
                 # Use SQLAlchemy to generate CREATE TABLE statements
-                # We'll use a dummy sync engine just for DDL generation
-                from sqlalchemy import create_engine
+                # Use PostgreSQL dialect directly without creating an engine (avoids psycopg2 dependency)
                 from sqlalchemy.schema import CreateTable
+                from sqlalchemy.dialects import postgresql
                 
-                # Create a dummy sync engine with psycopg2 dialect for DDL generation
-                # (We don't actually connect, just use it to generate SQL)
-                dummy_url = 'postgresql://dummy:dummy@localhost/dummy'
-                dummy_engine = create_engine(dummy_url)
+                # Get PostgreSQL dialect for DDL generation (doesn't require psycopg2)
+                dialect = postgresql.dialect()
                 
                 # Generate and execute CREATE TABLE statements
                 for table in Base.metadata.sorted_tables:
@@ -164,14 +162,12 @@ class DatabaseManager:
                     """, table.name)
                     
                     if not exists:
-                        # Generate CREATE TABLE statement
-                        create_stmt = str(CreateTable(table).compile(dummy_engine))
+                        # Generate CREATE TABLE statement using dialect directly
+                        create_stmt = str(CreateTable(table).compile(dialect=dialect))
                         logger.info(f"Creating table: {table.name}")
                         await conn.execute(create_stmt)
                     else:
                         logger.debug(f"Table {table.name} already exists")
-                
-                dummy_engine.dispose()
             finally:
                 await conn.close()
             

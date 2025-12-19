@@ -8,6 +8,7 @@ from aiohttp import web
 from .websocket_handler import WebSocketHandler
 from ..config.settings import load_settings
 from ..database import init_database, close_database
+from ..version import get_version
 
 
 def create_app() -> web.Application:
@@ -21,9 +22,10 @@ def create_app() -> web.Application:
 
     async def startup_handler(app):
         """Initialize database connection on startup."""
-        logging.getLogger(__name__).info("🔗 Initializing database connection...")
+        logger = logging.getLogger(__name__)
+        logger.info(f"🔗 Initializing database connection... (ARIS Agent v{get_version()})")
         await init_database()
-        logging.getLogger(__name__).info("✅ Database connection initialized")
+        logger.info("✅ Database connection initialized")
 
     async def cleanup_handler(app):
         """Close database connection on shutdown."""
@@ -49,11 +51,13 @@ def _configure_logging() -> None:
 
 def main() -> None:
     _configure_logging()
+    logger = logging.getLogger(__name__)
+    logger.info(f"🚀 Starting ARIS Agent v{get_version()}")
     app = create_app()
 
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "443"))
-    logging.getLogger(__name__).info(f"Initializing ARIS agent service host={host} port={port}")
+    logger.info(f"Initializing ARIS agent service host={host} port={port}")
 
     # Optional TLS similar to old agent
     cert_path = Path(os.environ.get("TLS_CERT_PATH", "/certs/server.crt"))
