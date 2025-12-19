@@ -46,6 +46,21 @@ class DatabaseManager:
         if not db_url:
             raise ValueError("DATABASE_URL environment variable or database_url parameter required")
         
+        # Replace ${DB_PASSWORD} placeholder with actual password from environment
+        # ECS secrets are injected as environment variables but DATABASE_URL may contain placeholders
+        if '${DB_PASSWORD}' in db_url:
+            db_password = os.getenv('DB_PASSWORD')
+            logger.info(f"🔐 Checking DB_PASSWORD: present={db_password is not None}, type={type(db_password).__name__}")
+            if not db_password:
+                logger.error("❌ DB_PASSWORD environment variable not found - secret may not be injected correctly")
+                logger.error(f"❌ Available env vars containing 'DB' or 'PASSWORD': {[k for k in os.environ.keys() if 'DB' in k.upper() or 'PASSWORD' in k.upper()]}")
+                raise ValueError("DB_PASSWORD environment variable required when using ${DB_PASSWORD} placeholder in DATABASE_URL")
+            # URL-encode the password to handle special characters
+            import urllib.parse
+            encoded_password = urllib.parse.quote(db_password, safe='')
+            db_url = db_url.replace('${DB_PASSWORD}', encoded_password)
+            logger.info(f"✅ Replaced ${DB_PASSWORD} placeholder in DATABASE_URL (password length: {len(db_password)})")
+        
         # Parse additional configuration from environment
         pool_size = int(os.getenv('DATABASE_POOL_SIZE', pool_size))
         max_overflow = int(os.getenv('DATABASE_MAX_OVERFLOW', max_overflow))

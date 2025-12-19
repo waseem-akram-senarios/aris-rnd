@@ -36,7 +36,15 @@ class Settings:
         self.s3_document_prefix = os.environ.get("S3_DOCUMENT_PREFIX", "knowledge-base/")
         
         # Database Configuration
-        self.database_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://aris:aris_dev_password_2024@aris-postgres:5432/aris_agent")
+        database_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://aris:aris_dev_password_2024@aris-postgres:5432/aris_agent")
+        # Replace ${DB_PASSWORD} placeholder with actual password from environment
+        # ECS secrets are injected as environment variables but DATABASE_URL may contain placeholders
+        if '${DB_PASSWORD}' in database_url:
+            db_password = os.environ.get('DB_PASSWORD')
+            if not db_password:
+                raise ValueError("DB_PASSWORD environment variable required when using ${DB_PASSWORD} placeholder in DATABASE_URL")
+            database_url = database_url.replace('${DB_PASSWORD}', db_password)
+        self.database_url = database_url
         
         # Knowledge Base Configuration
         self.knowledge_index_name = os.environ.get("KNOWLEDGE_INDEX_NAME", "manufacturing-knowledge")

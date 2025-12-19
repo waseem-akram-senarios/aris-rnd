@@ -18,9 +18,7 @@ WORKDIR /app
 
 # Copy project files
 COPY pyproject.toml /app/
-
-# Create app directory structure for volume mounting
-RUN mkdir -p /app/app
+COPY app /app/app
 
 # Install dependencies
 RUN pip install --upgrade pip && pip install -e .
