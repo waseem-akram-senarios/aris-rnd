@@ -23,6 +23,12 @@ from aws_cdk import (
 )
 from constructs import Construct
 
+# Import config loader
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils.config_loader import load_config, get_config_value
+
 
 class AgentStack(Stack):
     """CDK Stack for deploying ARIS services to ECS."""
@@ -35,28 +41,64 @@ class AgentStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        # Load configuration from YAML file (similar to old ARIS project)
+        env_name = self.node.try_get_context("env") or "dev"
+        yaml_config = load_config(env_name)  # YAML config dictionary
+        
         # Store region and account for later use (CDK Stack.region/account are read-only properties)
         # Read from the properties and store in separate variables for boto3 calls
         region_value = getattr(self, 'region', None)
         account_value = getattr(self, 'account', None)
-        self.stack_region = region_value if region_value else "us-east-2"
-        self.stack_account = account_value if account_value else "975049910508"
+        self.stack_region = (
+            region_value or 
+            get_config_value(config, "aws.region") or 
+            "us-east-2"
+        )
+        self.stack_account = (
+            account_value or 
+            get_config_value(config, "aws.account") or 
+            "975049910508"
+        )
 
-        env_name = self.node.try_get_context("env") or "dev"
-        cluster_name = self.node.try_get_context("cluster_name") or "intelycx-dev-cluster"
+        # Get configuration values with fallback: config file -> context -> defaults
+        cluster_name = (
+            self.node.try_get_context("cluster_name") or
+            get_config_value(yaml_config, "ecs.cluster_name") or
+            "intelycx-dev-cluster"
+        )
         
         # Database configuration
-        self.database_host = self.node.try_get_context("database_host") or f"aris-postgres-{env_name}"
+        self.database_host = (
+            self.node.try_get_context("database_host") or
+            get_config_value(yaml_config, "database.host") or
+            f"aris-postgres-{env_name}.aris-{env_name}.local"
+        )
         
         # VPC and networking configuration (from existing cluster)
-        vpc_id = self.node.try_get_context("vpc_id") or "vpc-0aad20b9963e29f38"
-        subnet_ids = self.node.try_get_context("subnet_ids") or [
-            "subnet-0835ed1aedb87026a",  # us-east-2b
-            "subnet-0e3e46ca86701686b",  # us-east-2c
-            "subnet-05c352570f5e8128c",  # us-east-2a
-        ]
-        security_group_id = self.node.try_get_context("security_group_id") or "sg-05cb45ca06004c701"
-        alb_arn = self.node.try_get_context("alb_arn") or "arn:aws:elasticloadbalancing:us-east-2:975049910508:loadbalancer/app/intelycx-alb-dev/d03a8658af509291"
+        vpc_id = (
+            self.node.try_get_context("vpc_id") or
+            get_config_value(yaml_config, "vpc.id") or
+            "vpc-0aad20b9963e29f38"
+        )
+        subnet_ids = (
+            self.node.try_get_context("subnet_ids") or
+            get_config_value(yaml_config, "vpc.subnet_ids") or
+            [
+                "subnet-0835ed1aedb87026a",  # us-east-2b
+                "subnet-0e3e46ca86701686b",  # us-east-2c
+                "subnet-05c352570f5e8128c",  # us-east-2a
+            ]
+        )
+        security_group_id = (
+            self.node.try_get_context("security_group_id") or
+            get_config_value(yaml_config, "vpc.security_group_id") or
+            "sg-05cb45ca06004c701"
+        )
+        alb_arn = (
+            self.node.try_get_context("alb_arn") or
+            get_config_value(yaml_config, "alb.arn") or
+            "arn:aws:elasticloadbalancing:us-east-2:975049910508:loadbalancer/app/intelycx-alb-dev/d03a8658af509291"
+        )
 
         # Import existing VPC and networking resources
         self.vpc = ec2.Vpc.from_lookup(self, "Vpc", vpc_id=vpc_id)
@@ -65,8 +107,15 @@ class AgentStack(Stack):
             self, "EcsSecurityGroup", security_group_id=security_group_id
         )
         
-        # Get ALB security group from context or use default
-        alb_security_group_id = self.node.try_get_context("alb_security_group_id") or "sg-0bbdbdf305674fe64"
+        # Get ALB security group from context or config or use default
+        alb_security_group_id = (
+            self.node.try_get_context("alb_security_group_id") or
+            get_config_value(yaml_config, "vpc.alb_security_group_id") or
+            "sg-0bbdbdf305674fe64"
+        )
+        
+        # Store yaml_config for use in other methods
+        self.yaml_config = yaml_config
         alb_security_group = ec2.SecurityGroup.from_security_group_id(
             self, "AlbSecurityGroup", security_group_id=alb_security_group_id
         )
@@ -604,9 +653,17 @@ class AgentStack(Stack):
             "aris-mcp-intelycx-rag": ["/aris/rag/*", "/aris/mcp/rag/*"],
         }
 
-        # Get listener ARNs from context or look them up automatically
-        http_listener_arn = self.node.try_get_context("http_listener_arn")
-        https_listener_arn = self.node.try_get_context("https_listener_arn")
+        # Get listener ARNs from config file, context, or look them up automatically
+        yaml_config = getattr(self, 'yaml_config', {})
+        
+        http_listener_arn = (
+            self.node.try_get_context("http_listener_arn") or
+            get_config_value(yaml_config, "alb.http_listener_arn")
+        )
+        https_listener_arn = (
+            self.node.try_get_context("https_listener_arn") or
+            get_config_value(yaml_config, "alb.https_listener_arn")
+        )
         
         # If not provided, try to look up listeners from the ALB
         if not http_listener_arn or not https_listener_arn:

@@ -1,0 +1,125 @@
+# ARIS Agent Infrastructure Configuration
+# This config contains important settings for CDK stack deployment
+# Choose the components you need for your environment
+
+stack_name: intelycx-aris-agent-dev
+
+# AWS Environment
+aws:
+  account: "975049910508"
+  region: "us-east-2"
+
+# VPC and Networking Configuration
+vpc:
+  id: "vpc-0aad20b9963e29f38"
+  security_group_id: "sg-05cb45ca06004c701"
+  alb_security_group_id: "sg-0bbdbdf305674fe64"
+  subnet_ids:
+    - "subnet-0835ed1aedb87026a"  # us-east-2b
+    - "subnet-0e3e46ca86701686b"  # us-east-2c
+    - "subnet-05c352570f5e8128c"  # us-east-2a
+
+# ECS Cluster Configuration
+ecs:
+  cluster_name: "intelycx-dev-cluster"
+
+# Application Load Balancer Configuration
+alb:
+  arn: "arn:aws:elasticloadbalancing:us-east-2:975049910508:loadbalancer/app/intelycx-alb-dev/d03a8658af509291"
+  http_listener_arn: "arn:aws:elasticloadbalancing:us-east-2:975049910508:listener/app/intelycx-alb-dev/d03a8658af509291/a14de0845f19d39e"
+  https_listener_arn: "arn:aws:elasticloadbalancing:us-east-2:975049910508:listener/app/intelycx-alb-dev/d03a8658af509291/f2803351d3adc0d8"
+
+# Database Configuration
+database:
+  host: "aris-postgres-dev.aris-dev.local"  # Cloud Map DNS name
+  password_secret_name: "intelycx-aris-dev-database"
+  # Note: Database password is stored in AWS Secrets Manager
+
+# ECR Repositories (existing repositories to import)
+ecr_repos:
+  - name: "aris-agent-dev"
+  - name: "aris-mcp-intelycx-core-dev"
+  - name: "aris-mcp-intelycx-email-dev"
+  - name: "aris-mcp-intelycx-file-generator-dev"
+  - name: "aris-mcp-intelycx-rag-dev"
+
+# Service Configurations
+services:
+  aris-agent:
+    port: 443
+    cpu: 1024  # 1 vCPU
+    memory: 2048  # 2 GB
+    desired_count: 2
+    health_check_path: "/health"
+    path_patterns:
+      - "/aris/agent/*"
+      - "/aris/ws/*"
+  
+  aris-mcp-intelycx-core:
+    port: 8080
+    cpu: 512
+    memory: 1024
+    desired_count: 2
+    health_check_path: "/health"
+    path_patterns:
+      - "/aris/core/*"
+      - "/aris/mcp/core/*"
+  
+  aris-mcp-intelycx-email:
+    port: 8081
+    cpu: 256
+    memory: 512
+    desired_count: 1
+    health_check_path: "/health"
+    path_patterns:
+      - "/aris/email/*"
+      - "/aris/mcp/email/*"
+  
+  aris-mcp-intelycx-file-generator:
+    port: 8080
+    cpu: 512
+    memory: 1024
+    desired_count: 1
+    health_check_path: "/health"
+    path_patterns:
+      - "/aris/file/*"
+      - "/aris/mcp/file/*"
+  
+  aris-mcp-intelycx-rag:
+    port: 8082
+    cpu: 1024
+    memory: 2048
+    desired_count: 1
+    health_check_path: "/health"
+    path_patterns:
+      - "/aris/rag/*"
+      - "/aris/mcp/rag/*"
+
+# PostgreSQL Service Configuration
+postgres:
+  enabled: true
+  cpu: 512
+  memory: 1024
+  desired_count: 1
+  image: "postgres:16-alpine"
+  database_name: "aris_agent"
+  username: "aris"
+  password_secret_name: "intelycx-aris-dev-database"
+
+# S3 Configuration
+s3:
+  bucket_name: "iris-batch-001-data-975049910508"
+
+# CloudWatch Logs Configuration
+logs:
+  retention_days: 30
+
+# Secrets Manager Configuration
+secrets:
+  database:
+    name: "intelycx-aris-dev-database"
+    # Password stored in AWS Secrets Manager
+  aws_credentials:
+    name: "intelycx-aris-dev-aws-credentials"
+    # AWS credentials stored in AWS Secrets Manager
+
