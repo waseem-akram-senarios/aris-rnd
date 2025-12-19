@@ -61,6 +61,9 @@ class DatabaseManager:
             db_url = db_url.replace('${DB_PASSWORD}', encoded_password)
             logger.info(f"✅ Replaced ${{DB_PASSWORD}} placeholder in DATABASE_URL (password length: {len(db_password)})")
         
+        # Store db_url for table creation
+        self._db_url = db_url
+        
         # Parse additional configuration from environment
         pool_size = int(os.getenv('DATABASE_POOL_SIZE', pool_size))
         max_overflow = int(os.getenv('DATABASE_MAX_OVERFLOW', max_overflow))
@@ -103,6 +106,9 @@ class DatabaseManager:
             
             self._initialized = True
             
+            # Create tables if they don't exist
+            await self._create_tables_if_needed()
+            
             # Test connection after initialization
             await self._test_connection()
             
@@ -110,6 +116,69 @@ class DatabaseManager:
             
         except Exception as e:
             logger.error(f"❌ Failed to initialize database connection: {str(e)}")
+            raise
+    
+    async def _create_tables_if_needed(self) -> None:
+        """Create database tables if they don't exist using asyncpg."""
+        try:
+            logger.info("🔨 Creating database tables if they don't exist...")
+            # Use asyncpg directly to execute CREATE TABLE statements
+            import asyncpg
+            from urllib.parse import urlparse
+            
+            # Parse the database URL
+            parsed = urlparse(self._db_url.replace('postgresql+asyncpg://', 'postgresql://'))
+            
+            # Connect using asyncpg
+            conn = await asyncpg.connect(
+                host=parsed.hostname,
+                port=parsed.port or 5432,
+                user=parsed.username,
+                password=parsed.password,
+                database=parsed.path.lstrip('/')
+            )
+            
+            try:
+                # Import all models to ensure they're registered with Base
+                from .models import Chat, Plan, Action, SessionMemory
+                
+                # Use SQLAlchemy to generate CREATE TABLE statements
+                # We'll use a dummy sync engine just for DDL generation
+                from sqlalchemy import create_engine
+                from sqlalchemy.schema import CreateTable
+                
+                # Create a dummy sync engine with psycopg2 dialect for DDL generation
+                # (We don't actually connect, just use it to generate SQL)
+                dummy_url = 'postgresql://dummy:dummy@localhost/dummy'
+                dummy_engine = create_engine(dummy_url)
+                
+                # Generate and execute CREATE TABLE statements
+                for table in Base.metadata.sorted_tables:
+                    # Check if table exists
+                    exists = await conn.fetchval("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_schema = 'public' 
+                            AND table_name = $1
+                        )
+                    """, table.name)
+                    
+                    if not exists:
+                        # Generate CREATE TABLE statement
+                        create_stmt = str(CreateTable(table).compile(dummy_engine))
+                        logger.info(f"Creating table: {table.name}")
+                        await conn.execute(create_stmt)
+                    else:
+                        logger.debug(f"Table {table.name} already exists")
+                
+                dummy_engine.dispose()
+            finally:
+                await conn.close()
+            
+            logger.info("✅ Database tables created/verified")
+        except Exception as e:
+            logger.error(f"❌ Could not create tables automatically: {str(e)}")
+            # Re-raise to fail initialization - tables are required
             raise
     
     async def _test_connection(self) -> None:
@@ -130,7 +199,9 @@ class DatabaseManager:
                 tables = [row[0] for row in result.fetchall()]
                 expected_tables = ['actions', 'chats', 'plans', 'session_memory']
                 
-                if tables != expected_tables:
+                if set(tables) != set(expected_tables):
+                    missing = set(expected_tables) - set(tables)
+                    logger.error(f"❌ Missing database tables: {missing}. Found: {tables}")
                     raise ValueError(f"Missing database tables. Expected: {expected_tables}, Found: {tables}")
                 
                 logger.info(f"✅ Database schema verified: {len(tables)} tables found")
