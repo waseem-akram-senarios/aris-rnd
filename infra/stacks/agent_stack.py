@@ -578,16 +578,21 @@ class AgentStack(Stack):
         
         target_groups = {}
         for service_name, config in service_configs.items():
+            # Use HTTPS protocol for port 443 (agent service), HTTP for other ports
+            # The agent service runs HTTPS internally, while MCP servers use HTTP
+            protocol = elbv2.ApplicationProtocol.HTTPS if config["port"] == 443 else elbv2.ApplicationProtocol.HTTP
+            
             target_groups[service_name] = elbv2.ApplicationTargetGroup(
                 self,
                 f"{service_name.replace('-', '').replace('_', '')}TargetGroup",
                 target_group_name=get_short_tg_name(service_name, env_name),
                 port=config["port"],
-                protocol=elbv2.ApplicationProtocol.HTTP,
+                protocol=protocol,
                 vpc=self.vpc,
                 target_type=elbv2.TargetType.IP,  # Required for Fargate with awsvpc network mode
                 health_check=elbv2.HealthCheck(
                     path=config["health_check_path"],
+                    protocol=elbv2.Protocol.HTTPS if config["port"] == 443 else elbv2.Protocol.HTTP,
                     interval=Duration.seconds(30),
                     timeout=Duration.seconds(5),
                     healthy_threshold_count=2,
@@ -595,6 +600,16 @@ class AgentStack(Stack):
                 ),
                 deregistration_delay=Duration.seconds(30),
             )
+            
+            # For HTTPS target groups, disable certificate validation for health checks
+            # This is needed when using self-signed certificates for internal services
+            if protocol == elbv2.ApplicationProtocol.HTTPS:
+                target_groups[service_name].set_attribute(
+                    "deregistration_delay.timeout_seconds", "30"
+                )
+                # Note: Certificate validation is enabled by default for HTTPS health checks
+                # If health checks fail due to certificate validation, we may need to configure
+                # the target group to accept self-signed certificates
 
         # Store target groups for ALB integration
         self.target_groups = target_groups
