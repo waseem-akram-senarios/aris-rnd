@@ -575,6 +575,8 @@ class AgentStack(Stack):
             )
 
             # Container definition
+            # Force new task definition by using image digest or adding a comment
+            # Using latest tag - ECS will resolve to latest image digest when task starts
             container = task_def.add_container(
                 f"{service_name}Container",
                 image=ecs.ContainerImage.from_ecr_repository(repo, tag="latest"),
@@ -582,7 +584,11 @@ class AgentStack(Stack):
                     stream_prefix=service_name,
                     log_group=log_group,
                 ),
-                environment=self._get_environment_variables(service_name, env_name),
+                environment={
+                    **self._get_environment_variables(service_name, env_name),
+                    # Add deployment timestamp to force new task definition when code changes
+                    "DEPLOYMENT_TIMESTAMP": str(int(__import__('time').time())),
+                },
                 secrets=self._get_secrets(service_name, env_name),
                 health_check=ecs.HealthCheck(
                     command=["CMD-SHELL", f"curl -f http://localhost:{config['port']}{config['health_check_path']} || exit 1"],
