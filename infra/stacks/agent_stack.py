@@ -35,9 +35,12 @@ class AgentStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # Store region for later use
-        self.region = self.region or "us-east-2"
-        self.account = self.account or "975049910508"
+        # Store region and account for later use (CDK Stack.region/account are read-only properties)
+        # Read from the properties and store in separate variables for boto3 calls
+        region_value = getattr(self, 'region', None)
+        account_value = getattr(self, 'account', None)
+        self.stack_region = region_value if region_value else "us-east-2"
+        self.stack_account = account_value if account_value else "975049910508"
 
         env_name = self.node.try_get_context("env") or "dev"
         cluster_name = self.node.try_get_context("cluster_name") or "intelycx-dev-cluster"
@@ -203,7 +206,7 @@ class AgentStack(Stack):
                     "ssm:GetParametersByPath",
                 ],
                 resources=[
-                    f"arn:aws:ssm:{self.region}:{self.account}:parameter/intelycx-aris-{env_name}/*"
+                    f"arn:aws:ssm:{self.stack_region}:{self.stack_account}:parameter/intelycx-aris-{env_name}/*"
                 ],
             )
         )
@@ -233,8 +236,8 @@ class AgentStack(Stack):
                     "s3:ListBucket",
                 ],
                 resources=[
-                    f"arn:aws:s3:::iris-batch-001-data-{self.account}",
-                    f"arn:aws:s3:::iris-batch-001-data-{self.account}/*",
+                    f"arn:aws:s3:::iris-batch-001-data-{self.stack_account}",
+                    f"arn:aws:s3:::iris-batch-001-data-{self.stack_account}/*",
                 ],
             )
         )
@@ -609,7 +612,7 @@ class AgentStack(Stack):
         if not http_listener_arn or not https_listener_arn:
             try:
                 import boto3
-                elbv2_client = boto3.client('elbv2', region_name=self.region)
+                elbv2_client = boto3.client('elbv2', region_name=self.stack_region)
                 listeners_response = elbv2_client.describe_listeners(
                     LoadBalancerArn=self.alb_arn
                 )
@@ -723,12 +726,12 @@ class AgentStack(Stack):
                 "HOST": "0.0.0.0",
                 "PORT": "8080",
                 "STORAGE_DRIVER": "s3",
-                "S3_BUCKET_NAME": f"iris-batch-001-data-{self.account}",
+                "S3_BUCKET_NAME": f"iris-batch-001-data-{self.stack_account}",
             },
             "aris-mcp-intelycx-rag": {
                 "HOST": "0.0.0.0",
                 "PORT": "8082",
-                "S3_DOCUMENT_BUCKET": f"iris-batch-001-data-{self.account}",
+                "S3_DOCUMENT_BUCKET": f"iris-batch-001-data-{self.stack_account}",
                 "EMBEDDING_MODEL": "amazon.titan-embed-text-v2:0",
                 "EMBEDDING_DIMENSIONS": "1536",
                 "DATABASE_URL": f"postgresql+asyncpg://aris:${{DB_PASSWORD}}@{self.database_host}:5432/aris_agent",
