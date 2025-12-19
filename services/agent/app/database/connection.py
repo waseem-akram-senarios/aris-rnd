@@ -5,6 +5,8 @@ Handles PostgreSQL connections with async support.
 
 import os
 import logging
+import asyncio
+from datetime import datetime
 from typing import Optional, Dict, Any
 from contextlib import asynccontextmanager
 from sqlalchemy.ext.asyncio import (
@@ -80,7 +82,8 @@ class DatabaseManager:
                     db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
                     logger.info(f"🔄 Updated URL to use asyncpg driver: {db_url}")
             
-            # Create async engine
+            # Create async engine with connection timeout settings
+            # These help handle DNS resolution delays during service discovery initialization
             self.engine = create_async_engine(
                 db_url,
                 pool_size=pool_size,
@@ -93,8 +96,12 @@ class DatabaseManager:
                     "server_settings": {
                         "application_name": "aris_agent",
                         "jit": "off"  # Disable JIT for better cold start performance
-                    }
-                }
+                    },
+                    "timeout": 10.0,  # Connection timeout in seconds
+                    "command_timeout": 30.0,  # Command timeout in seconds
+                },
+                # Pool pre-ping to verify connections before use
+                pool_pre_ping=True,
             )
             
             # Create session factory
@@ -118,25 +125,90 @@ class DatabaseManager:
             logger.error(f"❌ Failed to initialize database connection: {str(e)}")
             raise
     
+    async def _connect_with_retry(self, parsed, max_retries: int = 5, initial_delay: float = 1.0):
+        """
+        Connect to PostgreSQL with retry logic for DNS resolution failures.
+        
+        Handles transient DNS resolution errors that can occur during ECS service discovery
+        initialization when the service discovery DNS name isn't immediately available.
+        
+        Args:
+            parsed: Parsed URL object from urllib.parse.urlparse
+            max_retries: Maximum number of connection attempts (default: 5)
+            initial_delay: Initial delay in seconds before retry (default: 1.0)
+        
+        Returns:
+            asyncpg.Connection object
+        
+        Raises:
+            Exception: If connection fails after all retries
+        """
+        import asyncpg
+        
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                conn = await asyncio.wait_for(
+                    asyncpg.connect(
+                        host=parsed.hostname,
+                        port=parsed.port or 5432,
+                        user=parsed.username,
+                        password=parsed.password,
+                        database=parsed.path.lstrip('/'),
+                        timeout=10.0  # Connection timeout
+                    ),
+                    timeout=15.0  # Total timeout including DNS resolution
+                )
+                if attempt > 0:
+                    logger.info(f"✅ Database connection succeeded on attempt {attempt + 1}")
+                return conn
+            except (OSError, asyncio.TimeoutError, Exception) as e:
+                last_error = e
+                error_msg = str(e).lower()
+                # Check if it's a DNS resolution error
+                is_dns_error = any(keyword in error_msg for keyword in [
+                    'getaddrinfo', 'name or service not known', 'nodename nor servname provided',
+                    'temporary failure in name resolution', 'name resolution failed'
+                ])
+                
+                if attempt < max_retries - 1:
+                    # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                    delay = initial_delay * (2 ** attempt)
+                    if is_dns_error:
+                        logger.warning(
+                            f"⚠️ DNS resolution failed for {parsed.hostname} (attempt {attempt + 1}/{max_retries}). "
+                            f"Retrying in {delay:.1f}s... (This is normal during service discovery initialization)"
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Database connection failed (attempt {attempt + 1}/{max_retries}): {str(e)}. "
+                            f"Retrying in {delay:.1f}s..."
+                        )
+                    await asyncio.sleep(delay)
+                else:
+                    # Last attempt failed
+                    if is_dns_error:
+                        logger.error(
+                            f"❌ DNS resolution failed after {max_retries} attempts. "
+                            f"Service discovery DNS name '{parsed.hostname}' may not be available yet. "
+                            f"Check that the PostgreSQL service is running and registered in service discovery."
+                        )
+                    else:
+                        logger.error(f"❌ Database connection failed after {max_retries} attempts: {str(e)}")
+                    raise
+    
     async def _create_tables_if_needed(self) -> None:
         """Create database tables if they don't exist using asyncpg."""
         try:
             logger.info("🔨 Creating database tables if they don't exist...")
             # Use asyncpg directly to execute CREATE TABLE statements
-            import asyncpg
             from urllib.parse import urlparse
             
             # Parse the database URL
             parsed = urlparse(self._db_url.replace('postgresql+asyncpg://', 'postgresql://'))
             
-            # Connect using asyncpg
-            conn = await asyncpg.connect(
-                host=parsed.hostname,
-                port=parsed.port or 5432,
-                user=parsed.username,
-                password=parsed.password,
-                database=parsed.path.lstrip('/')
-            )
+            # Connect using asyncpg with retry logic for DNS resolution
+            conn = await self._connect_with_retry(parsed)
             
             try:
                 # Import all models to ensure they're registered with Base
