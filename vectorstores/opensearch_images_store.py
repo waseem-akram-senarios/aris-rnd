@@ -151,6 +151,14 @@ class OpenSearchImagesStore:
         Returns:
             Image ID of stored image
         """
+        # Ensure image_number is always a positive integer (avoid 0 which breaks API consumers)
+        try:
+            image_number = int(image_number) if image_number is not None else 1
+        except Exception:
+            image_number = 1
+        if image_number <= 0:
+            image_number = 1
+
         image_id = self._create_image_id(source, image_number)
         
         # Extract metadata from OCR text
@@ -169,7 +177,13 @@ class OpenSearchImagesStore:
             'marker_detected': marker_detected,
             'extraction_method': extraction_method,
             'extraction_timestamp': datetime.utcnow().isoformat() + 'Z',
+            # Keep nested metadata for backward compatibility
             'metadata': metadata,
+            # Also expose commonly-used fields at top-level to avoid nested-dict mapping issues
+            'drawer_references': metadata.get('drawer_references', []),
+            'part_numbers': metadata.get('part_numbers', []),
+            'tools_found': metadata.get('tools_found', []),
+            'has_structured_content': metadata.get('has_structured_content', False),
             'full_chunk': full_chunk[:5000] if full_chunk else None,  # Limit size
             'context_before': context_before[:1000] if context_before else None,  # Limit size
             'content_type': 'image_ocr',  # Indicate this is image OCR content
@@ -227,8 +241,16 @@ class OpenSearchImagesStore:
         
         for img_data in images:
             source = img_data.get('source', 'unknown')
-            image_number = img_data.get('image_number', 0)
+            image_number = img_data.get('image_number')
+            try:
+                image_number = int(image_number) if image_number is not None else None
+            except Exception:
+                image_number = None
             ocr_text = img_data.get('ocr_text', '')
+
+            # Ensure image_number is always 1..N (never 0)
+            if not image_number or image_number <= 0:
+                image_number = len(image_ids) + 1
             
             image_id = self._create_image_id(source, image_number)
             image_ids.append(image_id)
@@ -248,7 +270,13 @@ class OpenSearchImagesStore:
                 'marker_detected': img_data.get('marker_detected', True),
                 'extraction_method': extraction_method,
                 'extraction_timestamp': datetime.utcnow().isoformat() + 'Z',
+                # Keep nested metadata for backward compatibility
                 'metadata': metadata,
+                # Also expose commonly-used fields at top-level to avoid nested-dict mapping issues
+                'drawer_references': metadata.get('drawer_references', []),
+                'part_numbers': metadata.get('part_numbers', []),
+                'tools_found': metadata.get('tools_found', []),
+                'has_structured_content': metadata.get('has_structured_content', False),
                 'full_chunk': (img_data.get('full_chunk', '') or '')[:5000],
                 'context_before': (img_data.get('context_before', '') or '')[:1000],
                 'content_type': 'image_ocr',  # Indicate this is image OCR content
@@ -335,19 +363,84 @@ class OpenSearchImagesStore:
             hits = response.get("hits", {}).get("hits", [])
             
             images = []
+            seq_number = 0
             for hit in hits:
+                seq_number += 1
                 source_data = hit.get("_source", {})
                 meta = source_data.get('metadata', {}) or {}
+                # OpenSearch/LangChain may store our metadata in nested structures.
+                # Common shapes observed:
+                # - _source.metadata = {source, image_number, page, metadata={drawer_references...}}
+                # - _source.metadata = {metadata={source, image_number, ...}, ...}
+                nested_meta = {}
+                if isinstance(meta, dict):
+                    nested_meta = meta.get('metadata', {}) or {}
+
+                def _pick(*vals):
+                    for v in vals:
+                        if v is None:
+                            continue
+                        # preserve 0 only if caller explicitly passed 0
+                        if isinstance(v, str) and v.strip() == "":
+                            continue
+                        return v
+                    return None
+
+                image_number = _pick(
+                    meta.get('image_number') if isinstance(meta, dict) else None,
+                    nested_meta.get('image_number') if isinstance(nested_meta, dict) else None,
+                    meta.get('imageNumber') if isinstance(meta, dict) else None,
+                    nested_meta.get('imageNumber') if isinstance(nested_meta, dict) else None,
+                )
+                page = _pick(
+                    meta.get('page') if isinstance(meta, dict) else None,
+                    nested_meta.get('page') if isinstance(nested_meta, dict) else None,
+                )
+
+                ocr_text = source_data.get('text', '') or ''
+
+                # Extract structured OCR metadata (drawer_references, part_numbers, tools_found, etc.)
+                # NOTE: Some OpenSearch mappings drop nested metadata keys.
+                # If not present, recompute from OCR text so API callers still get useful metadata.
+                structured_metadata = {}
+                if isinstance(nested_meta, dict) and isinstance(nested_meta.get('metadata'), dict):
+                    structured_metadata = nested_meta.get('metadata') or {}
+                elif isinstance(meta, dict) and isinstance(meta.get('metadata'), dict):
+                    structured_metadata = meta.get('metadata') or {}
+                if not structured_metadata:
+                    structured_metadata = self._extract_image_metadata(ocr_text)
+
+                # If image_number is missing, try to parse from the document ID suffix '*_image_<n>'
+                if image_number is None:
+                    hit_id = hit.get('_id') or ''
+                    m = re.search(r'_image_(\d+)$', str(hit_id))
+                    if m:
+                        image_number = m.group(1)
+                    else:
+                        image_number = seq_number
+
                 images.append({
                     'image_id': hit.get("_id"),
-                    'source': meta.get('source'),
-                    'image_number': meta.get('image_number') or 0,
-                    'page': meta.get('page'),
-                    'ocr_text': source_data.get('text', '') or '',
-                    'ocr_text_length': meta.get('ocr_text_length', 0),
-                    'metadata': meta.get('metadata', {}) or {},
-                    'extraction_method': meta.get('extraction_method'),
-                    'extraction_timestamp': meta.get('extraction_timestamp')
+                    'source': _pick(
+                        meta.get('source') if isinstance(meta, dict) else None,
+                        nested_meta.get('source') if isinstance(nested_meta, dict) else None,
+                    ),
+                    'image_number': int(image_number) if image_number is not None else 0,
+                    'page': int(page) if page is not None else None,
+                    'ocr_text': ocr_text,
+                    'ocr_text_length': _pick(
+                        meta.get('ocr_text_length', 0) if isinstance(meta, dict) else 0,
+                        nested_meta.get('ocr_text_length', 0) if isinstance(nested_meta, dict) else 0,
+                    ) or 0,
+                    'metadata': structured_metadata or {},
+                    'extraction_method': _pick(
+                        meta.get('extraction_method') if isinstance(meta, dict) else None,
+                        nested_meta.get('extraction_method') if isinstance(nested_meta, dict) else None,
+                    ),
+                    'extraction_timestamp': _pick(
+                        meta.get('extraction_timestamp') if isinstance(meta, dict) else None,
+                        nested_meta.get('extraction_timestamp') if isinstance(nested_meta, dict) else None,
+                    )
                 })
             
             logger.info(f"Retrieved {len(images)} images for source: {os.path.basename(source)}")
@@ -372,23 +465,74 @@ class OpenSearchImagesStore:
         
         try:
             client = self.vectorstore.vectorstore.client
-            
             response = client.get(index=self.index_name, id=image_id)
             source_data = response.get("_source", {})
             meta = source_data.get('metadata', {}) or {}
-            
+            nested_meta = meta.get('metadata', {}) if isinstance(meta, dict) else {}
+
+            def _pick(*vals):
+                for v in vals:
+                    if v is None:
+                        continue
+                    if isinstance(v, str) and v.strip() == "":
+                        continue
+                    return v
+                return None
+
+            image_number = _pick(
+                meta.get('image_number') if isinstance(meta, dict) else None,
+                nested_meta.get('image_number') if isinstance(nested_meta, dict) else None,
+            )
+            if image_number is None:
+                m = re.search(r'_image_(\d+)$', str(image_id))
+                if m:
+                    image_number = m.group(1)
+
+            page = _pick(
+                meta.get('page') if isinstance(meta, dict) else None,
+                nested_meta.get('page') if isinstance(nested_meta, dict) else None,
+            )
+
+            ocr_text = source_data.get('text', '') or ''
+
+            structured_metadata = {}
+            if isinstance(nested_meta, dict) and isinstance(nested_meta.get('metadata'), dict):
+                structured_metadata = nested_meta.get('metadata') or {}
+            elif isinstance(meta, dict) and isinstance(meta.get('metadata'), dict):
+                structured_metadata = meta.get('metadata') or {}
+            if not structured_metadata:
+                structured_metadata = self._extract_image_metadata(ocr_text)
+
             return {
                 'image_id': response.get("_id"),
-                'source': meta.get('source'),
-                'image_number': meta.get('image_number') or 0,
-                'page': meta.get('page'),
-                'ocr_text': source_data.get('text', '') or '',
-                'ocr_text_length': meta.get('ocr_text_length', 0),
-                'metadata': meta.get('metadata', {}) or {},
-                'extraction_method': meta.get('extraction_method'),
-                'extraction_timestamp': meta.get('extraction_timestamp'),
-                'full_chunk': meta.get('full_chunk'),
-                'context_before': meta.get('context_before')
+                'source': _pick(
+                    meta.get('source') if isinstance(meta, dict) else None,
+                    nested_meta.get('source') if isinstance(nested_meta, dict) else None,
+                ),
+                'image_number': int(image_number) if image_number is not None else 0,
+                'page': int(page) if page is not None else None,
+                'ocr_text': ocr_text,
+                'ocr_text_length': _pick(
+                    meta.get('ocr_text_length', 0) if isinstance(meta, dict) else 0,
+                    nested_meta.get('ocr_text_length', 0) if isinstance(nested_meta, dict) else 0,
+                ) or 0,
+                'metadata': structured_metadata or {},
+                'extraction_method': _pick(
+                    meta.get('extraction_method') if isinstance(meta, dict) else None,
+                    nested_meta.get('extraction_method') if isinstance(nested_meta, dict) else None,
+                ),
+                'extraction_timestamp': _pick(
+                    meta.get('extraction_timestamp') if isinstance(meta, dict) else None,
+                    nested_meta.get('extraction_timestamp') if isinstance(nested_meta, dict) else None,
+                ),
+                'full_chunk': _pick(
+                    meta.get('full_chunk') if isinstance(meta, dict) else None,
+                    nested_meta.get('full_chunk') if isinstance(nested_meta, dict) else None,
+                ),
+                'context_before': _pick(
+                    meta.get('context_before') if isinstance(meta, dict) else None,
+                    nested_meta.get('context_before') if isinstance(nested_meta, dict) else None,
+                )
             }
         except Exception as e:
             logger.warning(f"Image {image_id} not found: {str(e)}")
@@ -417,7 +561,7 @@ class OpenSearchImagesStore:
         
         try:
             # Use similarity search from underlying vectorstore
-            search_kwargs = {'k': k}
+            search_kwargs: Dict[str, Any] = {}
             if source:
                 source_variants = {
                     source,

@@ -185,6 +185,18 @@ def main():
                 "document_id": uploaded_doc_id
             }
         )
+
+        # STEP 6B: Strict per-document query endpoint
+        print_step("6B", "Strict per-document query endpoint")
+        results['query_strict'] = test_request(
+            "Query single document (strict)",
+            "POST",
+            f"{API_BASE_URL}/documents/{uploaded_doc_id}/query",
+            json={
+                "question": "What information is in this specific document?",
+                "k": 3
+            }
+        )
     
     # STEP 7: Query Images
     print_step(7, "Query Images")

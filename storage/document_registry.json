@@ -6,5 +6,208 @@
     "vector_store_type": "faiss",
     "created_at": "2025-12-10T13:31:05.105885",
     "updated_at": "2025-12-10T13:31:05.105919"
+  },
+  "b2613e85-e646-4207-aace-9491253592bf": {
+    "document_id": "b2613e85-e646-4207-aace-9491253592bf",
+    "document_name": "FL10.11 SPECIFIC8 (1).pdf",
+    "status": "failed",
+    "chunks_created": 0,
+    "tokens_extracted": 0,
+    "parser_used": null,
+    "processing_time": 314.7351589202881,
+    "extraction_percentage": 0.0,
+    "images_detected": false,
+    "image_count": 0,
+    "pages": 0,
+    "error": "Chunking error: Failed to create/update OpenSearch vectorstore: Failed to initialize LangChain OpenSearch store: Failed to initialize OpenSearch with any authentication method. Endpoint: https://search-intelycx-waseem-os-4e6bsxzyull4zxtvxul5keh4wu.us-east-2.es.amazonaws.com, Domain: intelycx-waseem-os, Index: aris-doc-b2613e85-e646-4207-aace-9491253592bf. Last error: Could not import OpenSearch. Please install it with `pip install opensearch-py`.\nTraceback (most recent call last):\n  File \"/home/senarios/.local/lib/python3.10/site-packages/langchain_community/vectorstores/opensearch_vector_search.py\", line 34, in _get_opensearch_client\n    from opensearchpy import OpenSearch\nModuleNotFoundError: No module named 'opensearchpy'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/home/senarios/Desktop. Please check your credentials and OpenSearch domain configuration.. Please check your OpenSearch credentials and domain configuration. You may want to use FAISS instead for local storage.\nError details: Traceback (most recent call last):\n  File \"/home/senarios/Desktop/aris/vectorstores/opensearch_store.py\", line 197, in _initialize_langchain_store\n    raise ValueError(\nValueError: Failed to initialize OpenSearch with any authentication method. Endpoint: https://search-intelycx-waseem-os-4e6bsxzyull4zxtvxul5keh4wu.us-east-2.es.amazonaws.com, Domain: intelycx-waseem-os, Index: aris-doc-b2613e85-e646-4207-aace-9491253592bf. Last error: Could not import OpenSearch. Please install it with `pip insta",
+    "text_chunks_stored": 0,
+    "images_stored": 0,
+    "text_index": "aris-doc-b2613e85-e646-4207-aace-9491253592bf",
+    "images_index": "aris-rag-images-index",
+    "text_storage_status": "pending",
+    "images_storage_status": "pending",
+    "file_hash": "1ed3891d9da5b936ba7fe45429098728bb143b49b060cfddb45899a67b8db46c",
+    "upload_metadata": {
+      "file_hash": "1ed3891d9da5b936ba7fe45429098728bb143b49b060cfddb45899a67b8db46c",
+      "file_size_bytes": 1630393,
+      "upload_timestamp": "2025-12-22T12:38:23.675342Z",
+      "mime_type": "application/pdf",
+      "original_filename": "FL10.11 SPECIFIC8 (1).pdf",
+      "file_extension": ".pdf"
+    },
+    "pdf_metadata": {
+      "title": null,
+      "author": "notesuser",
+      "subject": null,
+      "creator": "Microsoft Word(14.0)",
+      "producer": "www.adlibsoftware.com: CTP (6.0.0.47140) OS (Windows 2012,2,0,64)",
+      "creation_date": "2025-01-10T16:50:04Z",
+      "modification_date": "2025-01-10T16:50:04Z",
+      "pdf_version": "%PDF-1.3",
+      "encrypted": true,
+      "page_count": 49,
+      "has_bookmarks": false,
+      "has_forms": false,
+      "annotations_count": 0,
+      "extraction_timestamp": "2025-12-22T12:38:23.675533Z"
+    },
+    "processing_metadata": {
+      "processing_time": 314.7351589202881,
+      "parser_used": null,
+      "extraction_percentage": 0.0,
+      "stages": {
+        "parsing": null,
+        "ocr": null,
+        "chunking": null
+      }
+    },
+    "ocr_quality_metrics": null,
+    "version_info": {
+      "version": 1,
+      "created_at": "2025-12-22T12:38:23.675342Z",
+      "updated_at": "2025-12-22T12:38:23.675342Z",
+      "is_duplicate": false,
+      "duplicate_of": null
+    },
+    "created_at": "2025-12-22T17:43:38.923547",
+    "updated_at": "2025-12-22T17:43:38.923565"
+  },
+  "9da826ab-80f5-4a9c-964e-3dc5d2ac97e7": {
+    "document_id": "9da826ab-80f5-4a9c-964e-3dc5d2ac97e7",
+    "document_name": "FL10.11 SPECIFIC8 (1).pdf",
+    "status": "success",
+    "chunks_created": 47,
+    "tokens_extracted": 23478,
+    "parser_used": "docling",
+    "processing_time": 350.37234139442444,
+    "extraction_percentage": 1.0,
+    "images_detected": true,
+    "image_count": 13,
+    "pages": 49,
+    "error": null,
+    "text_chunks_stored": 47,
+    "images_stored": 13,
+    "text_index": "aris-doc-9da826ab-80f5-4a9c-964e-3dc5d2ac97e7",
+    "images_index": "aris-rag-images-index",
+    "text_storage_status": "completed",
+    "images_storage_status": "completed",
+    "file_hash": "1ed3891d9da5b936ba7fe45429098728bb143b49b060cfddb45899a67b8db46c",
+    "upload_metadata": {
+      "file_hash": "1ed3891d9da5b936ba7fe45429098728bb143b49b060cfddb45899a67b8db46c",
+      "file_size_bytes": 1630393,
+      "upload_timestamp": "2025-12-22T13:05:05.169723Z",
+      "mime_type": "application/pdf",
+      "original_filename": "FL10.11 SPECIFIC8 (1).pdf",
+      "file_extension": ".pdf"
+    },
+    "pdf_metadata": {
+      "title": null,
+      "author": "notesuser",
+      "subject": null,
+      "creator": "Microsoft Word(14.0)",
+      "producer": "www.adlibsoftware.com: CTP (6.0.0.47140) OS (Windows 2012,2,0,64)",
+      "creation_date": "2025-01-10T16:50:04Z",
+      "modification_date": "2025-01-10T16:50:04Z",
+      "pdf_version": "%PDF-1.3",
+      "encrypted": true,
+      "page_count": 49,
+      "has_bookmarks": false,
+      "has_forms": false,
+      "annotations_count": 0,
+      "extraction_timestamp": "2025-12-22T13:05:05.169966Z"
+    },
+    "processing_metadata": {
+      "processing_time": 350.37234139442444,
+      "parser_used": "docling",
+      "extraction_percentage": 1.0,
+      "stages": {
+        "parsing": null,
+        "ocr": null,
+        "chunking": null
+      }
+    },
+    "ocr_quality_metrics": {
+      "images_processed": 13,
+      "ocr_enabled": true,
+      "extraction_method": "docling"
+    },
+    "version_info": {
+      "version": 1,
+      "created_at": "2025-12-22T13:05:05.169723Z",
+      "updated_at": "2025-12-22T13:05:05.169723Z",
+      "is_duplicate": true,
+      "duplicate_of": "b2613e85-e646-4207-aace-9491253592bf"
+    },
+    "created_at": "2025-12-22T18:10:55.576250",
+    "updated_at": "2025-12-22T18:10:55.576272"
+  },
+  "a1064075-218c-4e7b-8cde-d54337b9c491": {
+    "document_id": "a1064075-218c-4e7b-8cde-d54337b9c491",
+    "document_name": "FL10.11 SPECIFIC8 (1).pdf",
+    "status": "success",
+    "chunks_created": 47,
+    "tokens_extracted": 23478,
+    "parser_used": "docling",
+    "processing_time": 812.482501745224,
+    "extraction_percentage": 1.0,
+    "images_detected": true,
+    "image_count": 13,
+    "pages": 49,
+    "error": null,
+    "text_chunks_stored": 47,
+    "images_stored": 13,
+    "text_index": "aris-doc-a1064075-218c-4e7b-8cde-d54337b9c491",
+    "images_index": "aris-rag-images-index",
+    "text_storage_status": "completed",
+    "images_storage_status": "completed",
+    "file_hash": "1ed3891d9da5b936ba7fe45429098728bb143b49b060cfddb45899a67b8db46c",
+    "upload_metadata": {
+      "file_hash": "1ed3891d9da5b936ba7fe45429098728bb143b49b060cfddb45899a67b8db46c",
+      "file_size_bytes": 1630393,
+      "upload_timestamp": "2025-12-22T13:24:43.391452Z",
+      "mime_type": "application/pdf",
+      "original_filename": "FL10.11 SPECIFIC8 (1).pdf",
+      "file_extension": ".pdf"
+    },
+    "pdf_metadata": {
+      "title": null,
+      "author": "notesuser",
+      "subject": null,
+      "creator": "Microsoft Word(14.0)",
+      "producer": "www.adlibsoftware.com: CTP (6.0.0.47140) OS (Windows 2012,2,0,64)",
+      "creation_date": "2025-01-10T16:50:04Z",
+      "modification_date": "2025-01-10T16:50:04Z",
+      "pdf_version": "%PDF-1.3",
+      "encrypted": true,
+      "page_count": 49,
+      "has_bookmarks": false,
+      "has_forms": false,
+      "annotations_count": 0,
+      "extraction_timestamp": "2025-12-22T13:24:43.391695Z"
+    },
+    "processing_metadata": {
+      "processing_time": 812.482501745224,
+      "parser_used": "docling",
+      "extraction_percentage": 1.0,
+      "stages": {
+        "parsing": null,
+        "ocr": null,
+        "chunking": null
+      }
+    },
+    "ocr_quality_metrics": {
+      "images_processed": 13,
+      "ocr_enabled": true,
+      "extraction_method": "docling"
+    },
+    "version_info": {
+      "version": 1,
+      "created_at": "2025-12-22T13:24:43.391452Z",
+      "updated_at": "2025-12-22T13:24:43.391452Z",
+      "is_duplicate": true,
+      "duplicate_of": "b2613e85-e646-4207-aace-9491253592bf"
+    },
+    "created_at": "2025-12-22T18:38:16.261120",
+    "updated_at": "2025-12-22T18:38:16.261150"
   }
 }

@@ -52,6 +52,7 @@ class DocumentProcessor:
         file_content: Optional[bytes] = None,
         file_name: Optional[str] = None,
         parser_preference: Optional[str] = None,
+        document_id: Optional[str] = None,
         progress_callback: Optional[callable] = None
     ) -> ProcessingResult:
         """
@@ -62,6 +63,7 @@ class DocumentProcessor:
             file_content: Optional file content as bytes
             file_name: Optional file name for display
             parser_preference: Preferred parser ('auto', 'pymupdf', 'docling', 'textract')
+            document_id: Optional document ID for strict indexing and registry persistence
             progress_callback: Optional callback function(status, progress) for updates
         
         Returns:
@@ -69,7 +71,7 @@ class DocumentProcessor:
         """
         start_time = time.time()
         doc_name = file_name or os.path.basename(file_path)
-        doc_id = file_path
+        doc_id = document_id or file_path
         
         logger.info("=" * 60)
         logger.info(f"[STEP 1] DocumentProcessor: Starting processing for: {doc_name}")
@@ -83,6 +85,11 @@ class DocumentProcessor:
             current_index = getattr(self.rag_system, 'opensearch_index', None)
             default_index = 'aris-rag-index'
             
+            # Best-plan: if an authoritative document_id is provided, use a strict per-document index.
+            # This ensures queries can be isolated to this document.
+            if document_id:
+                self.rag_system.opensearch_index = f"aris-doc-{document_id}"
+                current_index = self.rag_system.opensearch_index
             # Generate from document name if index is None or is the default
             if not current_index or current_index == default_index:
                 try:
@@ -349,6 +356,7 @@ class DocumentProcessor:
                 # Build metadata with page_blocks for citation support
                 doc_metadata = {
                     'source': doc_name,
+                    'document_id': document_id,
                     'parser_used': getattr(parsed_doc, 'parser_used', 'unknown'),
                     'pages': getattr(parsed_doc, 'pages', 0),
                     'images_detected': getattr(parsed_doc, 'images_detected', False),
@@ -421,11 +429,14 @@ class DocumentProcessor:
                 registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
                 registry = DocumentRegistry(registry_path)
                 
-                # Create stable document ID from file name and content hash
-                content_hash = hashlib.md5(
-                    (doc_name + str(file_size)).encode()
-                ).hexdigest()[:16]
-                doc_id = f"{doc_name}_{content_hash}"
+                # Use authoritative document_id if provided (FastAPI path). Otherwise fall back to stable ID.
+                if document_id:
+                    doc_id = document_id
+                else:
+                    content_hash = hashlib.md5(
+                        (doc_name + str(file_size)).encode()
+                    ).hexdigest()[:16]
+                    doc_id = f"{doc_name}_{content_hash}"
                 
                 # Save comprehensive metadata to registry
                 doc_metadata = {
@@ -453,6 +464,7 @@ class DocumentProcessor:
                             doc_metadata['opensearch_domain'] = self.rag_system.opensearch_domain
                         if hasattr(self.rag_system, 'opensearch_index') and self.rag_system.opensearch_index:
                             doc_metadata['opensearch_index'] = self.rag_system.opensearch_index
+                            doc_metadata['text_index'] = self.rag_system.opensearch_index
                         doc_metadata['storage_location'] = 'opensearch_cloud'
                     else:
                         doc_metadata['storage_location'] = 'local_faiss'
@@ -650,18 +662,16 @@ class DocumentProcessor:
             if not isinstance(img, dict):
                 continue
             cleaned = dict(img)
-            src_value = cleaned.get('source') or normalized_source
-            cleaned['source'] = os.path.basename(src_value) if src_value else normalized_source
+            # Force a canonical source so downstream retrieval can query by document name
+            cleaned['source'] = normalized_source
             cleaned['image_number'] = cleaned.get('image_number') or (idx + 1)
             cleaned['ocr_text'] = cleaned.get('ocr_text') or ""
             cleaned_images.append(cleaned)
-        
+
         if not cleaned_images:
             logger.warning("_store_images_in_opensearch: Image list was empty after normalization - skipping storage")
             return
-        
-        # Store images in OpenSearch if domain is configured (regardless of main vector store type)
-        # Images can be stored in OpenSearch even if main vector store is FAISS
+
         opensearch_domain = getattr(self.rag_system, 'opensearch_domain', None)
         if not opensearch_domain:
             # Check if OpenSearch is configured via environment variables

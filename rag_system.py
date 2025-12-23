@@ -406,26 +406,34 @@ class RAGSystem:
         try:
             # For OpenSearch: Create per-document index
             if self.vector_store_type == "opensearch" and valid_chunks:
-                # Extract document name from chunks
-                doc_name = valid_chunks[0].metadata.get('source', 'Unknown') if valid_chunks else 'Unknown'
-                
-                # Generate index name for this document
-                from vectorstores.opensearch_store import OpenSearchVectorStore
-                temp_store = OpenSearchVectorStore(
-                    embeddings=self.embeddings,
-                    domain=self.opensearch_domain,
-                    index_name="temp"  # Temporary, just for method access
-                )
-                
-                # Get or create index name for this document
-                if doc_name in self.document_index_map:
-                    index_name = self.document_index_map[doc_name]
-                    logger.info(f"Using existing index '{index_name}' for document '{doc_name}'")
+                # Best-plan: prefer strict per-document index from metadata
+                first_meta = valid_chunks[0].metadata if valid_chunks and hasattr(valid_chunks[0], 'metadata') else {}
+                doc_name = first_meta.get('source', 'Unknown')
+                doc_id = first_meta.get('document_id')
+                explicit_index_name = first_meta.get('text_index') or first_meta.get('opensearch_index')
+
+                if explicit_index_name:
+                    index_name = explicit_index_name
+                    logger.info(f"Using explicit OpenSearch index '{index_name}' for document '{doc_name}'")
+                elif doc_id:
+                    index_name = f"aris-doc-{doc_id}"
+                    logger.info(f"Using per-document OpenSearch index '{index_name}' for document '{doc_name}' (document_id={doc_id})")
                 else:
-                    index_name = temp_store.get_index_name_for_document(doc_name, auto_increment=True)
-                    self.document_index_map[doc_name] = index_name
-                    logger.info(f"Created new index '{index_name}' for document '{doc_name}'")
-                    self._save_document_index_map()
+                    # Backward compatibility: fall back to existing name->index mapping
+                    from vectorstores.opensearch_store import OpenSearchVectorStore
+                    temp_store = OpenSearchVectorStore(
+                        embeddings=self.embeddings,
+                        domain=self.opensearch_domain,
+                        index_name="temp"  # Temporary, just for method access
+                    )
+                    if doc_name in self.document_index_map:
+                        index_name = self.document_index_map[doc_name]
+                        logger.info(f"Using existing index '{index_name}' for document '{doc_name}'")
+                    else:
+                        index_name = temp_store.get_index_name_for_document(doc_name, auto_increment=True)
+                        self.document_index_map[doc_name] = index_name
+                        logger.info(f"Created new index '{index_name}' for document '{doc_name}'")
+                        self._save_document_index_map()
                 
                 # Create vectorstore with document-specific index
                 if self.vectorstore is None:
@@ -1384,6 +1392,32 @@ class RAGSystem:
             'active_sources': self.active_sources
         }
         
+        if self.vectorstore is None:
+            # For OpenSearch, the authoritative storage is in the cloud; initialize on demand.
+            if self.vector_store_type == "opensearch":
+                try:
+                    target_index = getattr(self, 'opensearch_index', None) or "aris-rag-index"
+                    self.vectorstore = VectorStoreFactory.create_vector_store(
+                        store_type="opensearch",
+                        embeddings=self.embeddings,
+                        opensearch_domain=self.opensearch_domain,
+                        opensearch_index=target_index
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not initialize OpenSearch vectorstore for querying: {e}")
+            else:
+                return {
+                    "answer": "No documents have been uploaded yet. Please upload documents first.",
+                    "sources": [],
+                    "context_chunks": [],
+                    "citations": [],
+                    "num_chunks_used": 0,
+                    "response_time": 0.0,
+                    "context_tokens": 0,
+                    "response_tokens": 0,
+                    "total_tokens": 0
+                }
+
         if self.vectorstore is None:
             return {
                 "answer": "No documents have been uploaded yet. Please upload documents first.",

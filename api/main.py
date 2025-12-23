@@ -5,10 +5,11 @@ import os
 import uuid
 import logging
 import hashlib
+import time as time_module
 from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Form, Request
+from fastapi import BackgroundTasks, FastAPI, UploadFile, File, HTTPException, Depends, Form, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -164,7 +165,8 @@ async def health_check():
 @app.post("/documents", response_model=DocumentMetadata, status_code=201)
 async def upload_document(
     file: UploadFile = File(...),
-    parser: str = Form(default="docling"),
+    background_tasks: BackgroundTasks = None,
+    async_process: bool = Form(True),
     service: ServiceContainer = Depends(get_service)
 ):
     """
@@ -172,14 +174,13 @@ async def upload_document(
     
     Args:
         file: The document file to upload
-        parser: Parser to use ('docling', 'pymupdf', 'textract', 'auto')
         service: Service container dependency
     
     Returns:
         DocumentMetadata with processing results
     """
     file_size = file.size if hasattr(file, 'size') else 'unknown'
-    logger.info(f"[STEP 1] POST /documents - Upload request: file={file.filename}, parser={parser}, size={file_size}")
+    logger.info(f"[STEP 1] POST /documents - Upload request: file={file.filename}, size={file_size}")
     
     # Validate file type
     logger.info("[STEP 2] Validating file type...")
@@ -242,14 +243,189 @@ async def upload_document(
     document_id = str(uuid.uuid4())
     logger.info(f"[STEP 4] Generated document ID: {document_id}")
     
-    # Process document
+    # Best-plan: per-document OpenSearch index for strict isolation
+    per_doc_text_index = f"aris-doc-{document_id}"
+
+    def _process_document_background(
+        document_id: str,
+        file_name: str,
+        file_content: bytes,
+        per_doc_text_index: str,
+        file_hash: str,
+        upload_metadata: dict,
+        pdf_metadata: Optional[dict],
+        duplicate_doc_id: Optional[str]
+    ):
+        start_ts = time_module.time()
+        try:
+            logger.info(f"[BG] Starting document processing: id={document_id}, parser=docling")
+            result = service.document_processor.process_document(
+                file_path=file_name,
+                file_content=file_content,
+                file_name=file_name,
+                parser_preference="docling",
+                document_id=document_id
+            )
+
+            # Try to get pages from metrics collector (most recent processing)
+            pages = None
+            if service.metrics_collector.processing_metrics:
+                for metric in reversed(service.metrics_collector.processing_metrics):
+                    if metric.document_name == result.document_name:
+                        pages = metric.pages
+                        break
+
+            # Get storage statistics for text and images
+            text_chunks_stored = result.chunks_created
+            images_stored = getattr(result, 'image_count', 0) if result.images_detected else 0
+
+            # Determine storage status
+            text_storage_status = "completed" if text_chunks_stored > 0 else "pending"
+            images_storage_status = "completed" if images_stored > 0 else "pending"
+
+            # Get index names
+            text_index = "aris-rag-index"
+            images_index = "aris-rag-images-index"
+            if service.rag_system.vector_store_type.lower() == 'opensearch':
+                text_index = per_doc_text_index
+
+            processing_metadata = {
+                'processing_time': result.processing_time,
+                'parser_used': result.parser_used,
+                'extraction_percentage': result.extraction_percentage,
+                'stages': {
+                    'parsing': getattr(result, 'parsing_time', None),
+                    'ocr': getattr(result, 'ocr_time', None),
+                    'chunking': getattr(result, 'chunking_time', None)
+                }
+            }
+
+            ocr_quality_metrics = getattr(result, 'ocr_quality_metrics', None)
+            if not ocr_quality_metrics and result.images_detected:
+                ocr_quality_metrics = {
+                    'images_processed': images_stored,
+                    'ocr_enabled': True,
+                    'extraction_method': result.parser_used
+                }
+
+            version_info = {
+                'version': 1,
+                'created_at': upload_metadata.get('upload_timestamp'),
+                'updated_at': datetime.utcnow().isoformat() + 'Z',
+                'is_duplicate': duplicate_doc_id is not None,
+                'duplicate_of': duplicate_doc_id
+            }
+
+            result_dict = {
+                "document_id": document_id,
+                "document_name": result.document_name,
+                "status": result.status,
+                "chunks_created": result.chunks_created,
+                "tokens_extracted": result.tokens_extracted,
+                "parser_used": result.parser_used,
+                "processing_time": result.processing_time,
+                "extraction_percentage": result.extraction_percentage,
+                "images_detected": result.images_detected,
+                "image_count": getattr(result, 'image_count', 0),
+                "pages": pages,
+                "error": result.error,
+                "text_chunks_stored": text_chunks_stored,
+                "images_stored": images_stored,
+                "text_index": text_index,
+                "images_index": images_index,
+                "text_storage_status": text_storage_status,
+                "images_storage_status": images_storage_status,
+                "file_hash": file_hash,
+                "upload_metadata": upload_metadata,
+                "pdf_metadata": pdf_metadata,
+                "processing_metadata": processing_metadata,
+                "ocr_quality_metrics": ocr_quality_metrics,
+                "version_info": version_info
+            }
+
+            logger.info(f"[BG] Storing document metadata (completed): id={document_id}, name={result_dict.get('document_name')}")
+            service.add_document(document_id, result_dict)
+            logger.info(f"✅ [BG] Document processed successfully: {document_id}")
+        except Exception as e:
+            elapsed = time_module.time() - start_ts
+            logger.error(f"❌ [BG] Error processing document {document_id}: {e}", exc_info=True)
+
+            existing = service.get_document(document_id) or {}
+            error_dict = dict(existing)
+            error_dict.update({
+                "document_id": document_id,
+                "document_name": existing.get('document_name') or file_name,
+                "status": "error",
+                "error": str(e),
+                "processing_time": float(elapsed),
+                "updated_at": datetime.utcnow().isoformat()
+            })
+            service.add_document(document_id, error_dict)
+
+    if async_process:
+        if background_tasks is None:
+            background_tasks = BackgroundTasks()
+
+        placeholder = {
+            "document_id": document_id,
+            "document_name": file.filename,
+            "status": "processing",
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "parser_used": "docling",
+            "processing_time": 0.0,
+            "extraction_percentage": 0.0,
+            "images_detected": False,
+            "image_count": 0,
+            "pages": None,
+            "error": None,
+            "text_chunks_stored": 0,
+            "images_stored": 0,
+            "text_index": per_doc_text_index if service.rag_system.vector_store_type.lower() == 'opensearch' else "aris-rag-index",
+            "images_index": "aris-rag-images-index",
+            "text_storage_status": "pending",
+            "images_storage_status": "pending",
+            "file_hash": file_hash,
+            "upload_metadata": upload_metadata,
+            "pdf_metadata": pdf_metadata,
+            "processing_metadata": None,
+            "ocr_quality_metrics": None,
+            "version_info": {
+                'version': 1,
+                'created_at': upload_metadata.get('upload_timestamp'),
+                'updated_at': upload_metadata.get('upload_timestamp'),
+                'is_duplicate': duplicate_doc_id is not None,
+                'duplicate_of': duplicate_doc_id
+            }
+        }
+
+        logger.info(f"[STEP 6] Storing document metadata (processing): id={document_id}, name={file.filename}")
+        service.add_document(document_id, placeholder)
+
+        background_tasks.add_task(
+            _process_document_background,
+            document_id,
+            file.filename,
+            file_content,
+            per_doc_text_index,
+            file_hash,
+            upload_metadata,
+            pdf_metadata,
+            duplicate_doc_id
+        )
+
+        logger.info(f"✅ [STEP 8] Document accepted for background processing: {document_id}")
+        return DocumentMetadata(**placeholder)
+
+    # Process document synchronously (legacy behavior)
     try:
-        logger.info(f"[STEP 5] Starting document processing: id={document_id}, parser={parser}")
+        logger.info(f"[STEP 5] Starting document processing: id={document_id}, parser=docling")
         result = service.document_processor.process_document(
             file_path=file.filename,
             file_content=file_content,
             file_name=file.filename,
-            parser_preference=parser.lower() if parser else None
+            parser_preference="docling",
+            document_id=document_id
         )
         
         # Try to get pages from metrics collector (most recent processing)
@@ -273,7 +449,7 @@ async def upload_document(
         text_index = "aris-rag-index"
         images_index = "aris-rag-images-index"
         if service.rag_system.vector_store_type.lower() == 'opensearch':
-            text_index = getattr(service.rag_system, 'opensearch_index', 'aris-rag-index') or 'aris-rag-index'
+            text_index = per_doc_text_index
         
         # Get processing metadata from result if available
         processing_metadata = {
@@ -395,6 +571,19 @@ async def list_documents(service: ServiceContainer = Depends(get_service)):
     )
 
 
+@app.get("/documents/{document_id}", response_model=DocumentMetadata)
+async def get_document(
+    document_id: str,
+    service: ServiceContainer = Depends(get_service)
+):
+    """Get a single document's metadata by document_id."""
+    logger.info(f"[STEP 1] GET /documents/{document_id} - Getting document metadata")
+    doc = service.get_document(document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+    return DocumentMetadata(**doc)
+
+
 # Removed endpoints:
 # - GET /documents/{id} - Use GET /documents to list and filter
 # - PUT /documents/{id} - Not essential
@@ -419,58 +608,59 @@ async def delete_document(
         document_id: Document ID to delete
     """
     logger.info(f"[STEP 1] DELETE /documents/{document_id} - Starting document deletion")
-    
+
     # Get document metadata first to get document name
     doc = service.get_document(document_id)
     if doc is None:
         logger.warning(f"⚠️ [STEP 1] Document not found for deletion: {document_id}")
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
-    
+
     document_name = doc.get('document_name', '')
+    text_index = doc.get('text_index')
     if not document_name:
         logger.warning(f"⚠️ [STEP 1] Document name not found for: {document_id}")
         raise HTTPException(status_code=400, detail=f"Document {document_id} has no document name")
-    
+
     vector_store_type = service.rag_system.vector_store_type.lower()
-    
+
     try:
         # Step 2: Delete from vectorstore
         logger.info(f"[STEP 2] Deleting document from vectorstore: {vector_store_type}")
-        
+
         if vector_store_type == 'opensearch':
             # Delete OpenSearch index for this document
-            if hasattr(service.rag_system, 'document_index_map'):
+            index_name = text_index
+            if not index_name and hasattr(service.rag_system, 'document_index_map'):
                 index_name = service.rag_system.document_index_map.get(document_name)
-                if index_name:
-                    try:
-                        from vectorstores.opensearch_store import OpenSearchVectorStore
-                        temp_store = OpenSearchVectorStore(
-                            embeddings=service.rag_system.embeddings,
-                            domain=service.rag_system.opensearch_domain,
-                            index_name=index_name
-                        )
-                        
-                        # Delete the entire index
-                        if temp_store.index_exists(index_name):
-                            client = temp_store.vectorstore.client
-                            client.indices.delete(index=index_name)
-                            logger.info(f"✅ [STEP 2.1] Deleted OpenSearch index: {index_name}")
-                            
-                            # Remove from document_index_map
-                            if document_name in service.rag_system.document_index_map:
-                                del service.rag_system.document_index_map[document_name]
-                                service.rag_system._save_document_index_map()
-                                logger.info(f"✅ [STEP 2.2] Removed from document_index_map")
-                        else:
-                            logger.warning(f"⚠️ [STEP 2.1] Index {index_name} does not exist")
-                    except Exception as e:
-                        logger.warning(f"⚠️ [STEP 2] Error deleting OpenSearch index: {e}", exc_info=True)
-                        # Continue with deletion even if index deletion fails
-                else:
-                    logger.warning(f"⚠️ [STEP 2] No index found for document: {document_name}")
+
+            if index_name:
+                try:
+                    from vectorstores.opensearch_store import OpenSearchVectorStore
+                    temp_store = OpenSearchVectorStore(
+                        embeddings=service.rag_system.embeddings,
+                        domain=service.rag_system.opensearch_domain,
+                        index_name=index_name
+                    )
+
+                    # Delete the entire index
+                    if temp_store.index_exists(index_name):
+                        client = temp_store.vectorstore.client
+                        client.indices.delete(index=index_name)
+                        logger.info(f"✅ [STEP 2.1] Deleted OpenSearch index: {index_name}")
+
+                        # Remove from document_index_map if present (backward compatibility)
+                        if hasattr(service.rag_system, 'document_index_map') and document_name in service.rag_system.document_index_map:
+                            del service.rag_system.document_index_map[document_name]
+                            service.rag_system._save_document_index_map()
+                            logger.info(f"✅ [STEP 2.2] Removed from document_index_map")
+                    else:
+                        logger.warning(f"⚠️ [STEP 2.1] Index {index_name} does not exist")
+                except Exception as e:
+                    logger.warning(f"⚠️ [STEP 2] Error deleting OpenSearch index: {e}", exc_info=True)
+                    # Continue with deletion even if index deletion fails
             else:
-                logger.warning(f"⚠️ [STEP 2] document_index_map not found in RAG system")
-        
+                logger.warning(f"⚠️ [STEP 2] No OpenSearch text index found for document: {document_name} (document_id={document_id})")
+
         elif vector_store_type == 'faiss':
             # For FAISS, rebuild vectorstore excluding this document
             try:
@@ -481,12 +671,12 @@ async def delete_document(
                     for d in all_docs 
                     if d.get('document_id') != document_id and d.get('document_name')
                 ]
-                
+
                 if remaining_doc_names:
                     logger.info(f"[STEP 2.1] Rebuilding FAISS vectorstore with {len(remaining_doc_names)} remaining documents")
                     vectorstore_path = ARISConfig.get_vectorstore_path()
                     result = service.rag_system.load_selected_documents(remaining_doc_names, vectorstore_path)
-                    
+
                     if result.get('loaded'):
                         # Save the rebuilt vectorstore
                         service.rag_system.save_vectorstore(vectorstore_path)
@@ -509,29 +699,28 @@ async def delete_document(
             except Exception as e:
                 logger.warning(f"⚠️ [STEP 2] Error rebuilding FAISS vectorstore: {e}", exc_info=True)
                 # Continue with deletion even if vectorstore rebuild fails
-        
+
         # Step 3: Delete images from images index (OpenSearch only)
         if vector_store_type == 'opensearch':
             logger.info(f"[STEP 3] Deleting images from images index for document: {document_name}")
             try:
                 from vectorstores.opensearch_images_store import OpenSearchImagesStore
                 from langchain_openai import OpenAIEmbeddings
-                
-                # Initialize images store
+
                 embeddings = OpenAIEmbeddings(
                     openai_api_key=os.getenv('OPENAI_API_KEY'),
                     model=service.rag_system.embedding_model
                 )
-                
+
                 images_store = OpenSearchImagesStore(
                     embeddings=embeddings,
                     domain=service.rag_system.opensearch_domain,
                     region=getattr(service.rag_system, 'region', None)
                 )
-                
+
                 # Get all images for this document
                 images = images_store.get_images_by_source(document_name, limit=1000)
-                
+
                 if images:
                     # Delete each image
                     client = images_store.vectorstore.vectorstore.client
@@ -544,7 +733,7 @@ async def delete_document(
                                 deleted_count += 1
                             except Exception as e:
                                 logger.warning(f"⚠️ [STEP 3] Could not delete image {image_id}: {e}")
-                    
+
                     logger.info(f"✅ [STEP 3] Deleted {deleted_count} images from images index")
                 else:
                     logger.info(f"ℹ️ [STEP 3] No images found for document: {document_name}")
@@ -553,16 +742,16 @@ async def delete_document(
             except Exception as e:
                 logger.warning(f"⚠️ [STEP 3] Error deleting images: {e}", exc_info=True)
                 # Continue with deletion even if image deletion fails
-        
+
         # Step 4: Remove from document registry (last step)
         logger.info(f"[STEP 4] Removing document from registry")
         if not service.remove_document(document_id):
             logger.warning(f"⚠️ [STEP 4] Document not found in registry: {document_id}")
             # This shouldn't happen since we checked at the start, but handle gracefully
-        
+
         logger.info(f"✅ [STEP 5] Document deletion completed: {document_id}")
         return None
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -597,7 +786,7 @@ async def query_documents(
     # For FAISS, vectorstore must be loaded from disk
     vector_store_type = service.rag_system.vector_store_type.lower()
     has_documents = len(service.list_documents()) > 0
-    
+
     # For OpenSearch, we can query even if vectorstore is None (it will be created on-the-fly)
     if vector_store_type == 'opensearch':
         # Check if OpenSearch domain is configured
@@ -606,7 +795,7 @@ async def query_documents(
                 status_code=500,
                 detail="OpenSearch domain not configured. Please check your environment variables."
             )
-        
+
         # If vectorstore is None, try to initialize it
         if service.rag_system.vectorstore is None:
             try:
@@ -618,7 +807,7 @@ async def query_documents(
                     logger.warning("Could not load OpenSearch vectorstore, will create on query")
             except Exception as e:
                 logger.warning(f"Could not initialize OpenSearch vectorstore: {e}")
-        
+
         # For OpenSearch, we can proceed even if vectorstore is None
         # The query will create/use the index as needed
         if not has_documents:
@@ -654,11 +843,11 @@ async def query_documents(
                     status_code=400,
                     detail="No documents have been processed yet. Please upload documents first."
                 )
-    
+
     # Simple document filtering - if document_id provided, try to filter
     # If filtering fails, query all documents (graceful fallback)
     original_active_sources = service.rag_system.active_sources
-    
+
     if request.document_id:
         try:
             doc = service.get_document(request.document_id)
@@ -674,7 +863,7 @@ async def query_documents(
     else:
         # Query all documents
         service.rag_system.active_sources = None
-    
+
     try:
         result = service.rag_system.query_with_rag(
             question=request.question,
@@ -687,11 +876,11 @@ async def query_documents(
             temperature=request.temperature,
             max_tokens=request.max_tokens
         )
-        
+
         citations = [
             Citation(**citation) for citation in result.get("citations", [])
         ]
-        
+
         return QueryResponse(
             answer=result["answer"],
             sources=result.get("sources", []),
@@ -710,6 +899,71 @@ async def query_documents(
     finally:
         # Always restore original active_sources
         service.rag_system.active_sources = original_active_sources
+
+
+@app.post("/documents/{document_id}/query", response_model=QueryResponse)
+async def query_document(
+    document_id: str,
+    request: QueryRequest,
+    service: ServiceContainer = Depends(get_service)
+):
+    """Strictly query a single document by document_id.
+
+    Uses the per-document OpenSearch index stored in the registry (text_index).
+    Does not rely on active_sources filtering to avoid cross-document leakage.
+    """
+    vector_store_type = service.rag_system.vector_store_type.lower()
+    if vector_store_type != 'opensearch':
+        raise HTTPException(status_code=400, detail="This endpoint requires OpenSearch vector store")
+
+    if not service.rag_system.opensearch_domain:
+        raise HTTPException(status_code=500, detail="OpenSearch domain not configured. Please check your environment variables.")
+
+    doc = service.get_document(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+
+    index_name = doc.get('text_index') or f"aris-doc-{document_id}"
+
+    # Ensure we are pointing at the correct per-document index
+    service.rag_system.opensearch_index = index_name
+    service.rag_system.vectorstore = None
+
+    try:
+        # Initialize a store handle for this index (OpenSearch is cloud-backed)
+        service.rag_system.load_vectorstore(index_name)
+    except Exception as e:
+        logger.warning(f"Could not initialize OpenSearch vectorstore for index '{index_name}': {e}")
+
+    try:
+        result = service.rag_system.query_with_rag(
+            question=request.question,
+            k=request.k,
+            use_mmr=request.use_mmr,
+            use_hybrid_search=request.use_hybrid_search,
+            semantic_weight=request.semantic_weight,
+            search_mode=request.search_mode,
+            use_agentic_rag=request.use_agentic_rag,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens
+        )
+
+        citations = [Citation(**citation) for citation in result.get("citations", [])]
+        return QueryResponse(
+            answer=result["answer"],
+            sources=result.get("sources", []),
+            citations=citations,
+            num_chunks_used=result.get("num_chunks_used", 0),
+            response_time=result.get("response_time", 0.0),
+            context_tokens=result.get("context_tokens", 0),
+            response_tokens=result.get("response_tokens", 0),
+            total_tokens=result.get("total_tokens", 0)
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error processing document-scoped query: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
 
 @app.post("/query/text", response_model=TextQueryResponse)
