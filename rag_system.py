@@ -10,6 +10,7 @@ from typing import List, Dict, Optional, Callable, Any
 import numpy as np
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
+from utils.local_embeddings import LocalHashEmbeddings
 try:
     from langchain.docstore.document import Document
 except ImportError:
@@ -66,10 +67,13 @@ class RAGSystem:
         self.chunk_overlap = chunk_overlap
         
         # Use selected embedding model (use instance variable after defaults applied)
-        self.embeddings = OpenAIEmbeddings(
-            openai_api_key=os.getenv('OPENAI_API_KEY'),
-            model=self.embedding_model
-        )
+        if os.getenv('OPENAI_API_KEY'):
+            self.embeddings = OpenAIEmbeddings(
+                openai_api_key=os.getenv('OPENAI_API_KEY'),
+                model=self.embedding_model
+            )
+        else:
+            self.embeddings = LocalHashEmbeddings(model_name=self.embedding_model)
         self.vectorstore = None
         # Use token-aware text splitter with configurable chunking
         self.text_splitter = TokenTextSplitter(
@@ -415,9 +419,23 @@ class RAGSystem:
                 if explicit_index_name:
                     index_name = explicit_index_name
                     logger.info(f"Using explicit OpenSearch index '{index_name}' for document '{doc_name}'")
+                    # Ensure mapping exists for query-time filtering
+                    try:
+                        if doc_name:
+                            self.document_index_map[doc_name] = index_name
+                            self._save_document_index_map()
+                    except Exception:
+                        pass
                 elif doc_id:
                     index_name = f"aris-doc-{doc_id}"
                     logger.info(f"Using per-document OpenSearch index '{index_name}' for document '{doc_name}' (document_id={doc_id})")
+                    # Ensure mapping exists for query-time filtering
+                    try:
+                        if doc_name:
+                            self.document_index_map[doc_name] = index_name
+                            self._save_document_index_map()
+                    except Exception:
+                        pass
                 else:
                     # Backward compatibility: fall back to existing name->index mapping
                     from vectorstores.opensearch_store import OpenSearchVectorStore
@@ -774,10 +792,20 @@ class RAGSystem:
                 
                 msg = f"OpenSearch indexes ready for {len(indexes_found)} document(s): {indexes_found}"
                 logger.info(f"✅ {msg}")
+
+                # Best-effort: report chunk counts by counting docs in the selected indexes
+                chunks_loaded = 0
+                try:
+                    for index_name in indexes_found:
+                        store = self.multi_index_manager.get_or_create_index_store(index_name)
+                        if hasattr(store, 'count_documents'):
+                            chunks_loaded += int(store.count_documents() or 0)
+                except Exception:
+                    chunks_loaded = 0
                 return {
                     "loaded": True,
                     "docs_loaded": len(indexes_found),
-                    "chunks_loaded": 0,
+                    "chunks_loaded": chunks_loaded,
                     "message": msg
                 }
             else:
@@ -1461,6 +1489,9 @@ class RAGSystem:
             logger.info("Summary query detected - auto-enabling Agentic RAG for better coverage")
         elif use_agentic_rag is None:
             use_agentic_rag = agentic_config['use_agentic_rag']
+
+        if use_agentic_rag and (not self.use_cerebras) and (not self.openai_api_key):
+            use_agentic_rag = False
         
         # Agentic RAG: Decompose query and perform multi-query retrieval
         if use_agentic_rag:
@@ -3091,11 +3122,13 @@ class RAGSystem:
         except: pass
         # #endregion
         
-        # Generate answer using LLM with improved prompt
         if self.use_cerebras:
             answer, response_tokens = self._query_cerebras(question, context, relevant_docs, mentioned_documents, question_doc_number)
         else:
-            answer, response_tokens = self._query_openai(question, context, relevant_docs, mentioned_documents, question_doc_number)
+            if not self.openai_api_key:
+                answer, response_tokens = self._query_offline(question, context, relevant_docs)
+            else:
+                answer, response_tokens = self._query_openai(question, context, relevant_docs, mentioned_documents, question_doc_number)
         
         response_time = time_module.time() - query_start_time
         total_tokens = context_tokens + response_tokens
@@ -3131,6 +3164,31 @@ class RAGSystem:
             "response_tokens": response_tokens,
             "total_tokens": total_tokens
         }
+
+    def _query_offline(self, question: str, context: str, relevant_docs: List = None) -> tuple:
+        parts = []
+        if relevant_docs:
+            for doc in relevant_docs[:3]:
+                try:
+                    source = doc.metadata.get('source', 'Unknown') if hasattr(doc, 'metadata') and doc.metadata else 'Unknown'
+                    page = doc.metadata.get('page', None) if hasattr(doc, 'metadata') and doc.metadata else None
+                    snippet = (doc.page_content or '').strip().replace('\n', ' ')
+                    if len(snippet) > 350:
+                        snippet = snippet[:350] + "..."
+                    if page is not None:
+                        parts.append(f"- ({source}, page {page}) {snippet}")
+                    else:
+                        parts.append(f"- ({source}) {snippet}")
+                except Exception:
+                    continue
+        if not parts:
+            preview = (context or '').strip().replace('\n', ' ')
+            if len(preview) > 800:
+                preview = preview[:800] + "..."
+            if preview:
+                parts = [preview]
+        answer = "OpenAI is not configured (missing OPENAI_API_KEY). Retrieved context:\n" + "\n".join(parts)
+        return answer, self.count_tokens(answer)
     
     def _query_openai(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None) -> tuple:
         """
@@ -4577,7 +4635,10 @@ Answer:"""
         if self.use_cerebras:
             answer, response_tokens = self._query_cerebras_agentic(question, sub_queries, context, relevant_docs)
         else:
-            answer, response_tokens = self._query_openai_agentic(question, sub_queries, context, relevant_docs)
+            if not self.openai_api_key:
+                answer, response_tokens = self._query_offline(question, context, relevant_docs)
+            else:
+                answer, response_tokens = self._query_openai_agentic(question, sub_queries, context, relevant_docs)
         
         response_time = time_module.time() - query_start_time
         total_tokens = context_tokens + response_tokens

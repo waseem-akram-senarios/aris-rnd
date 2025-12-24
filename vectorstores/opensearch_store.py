@@ -699,6 +699,20 @@ class OpenSearchVectorStore:
         except Exception as e:
             logger.warning(f"Could not check if index '{check_index}' exists: {str(e)}")
             return False
+
+    def count_documents(self, query: Optional[Dict[str, Any]] = None, index_name: Optional[str] = None) -> int:
+        if self.vectorstore is None:
+            return 0
+
+        target_index = index_name or self.index_name
+        try:
+            client = self.vectorstore.client
+            body = {"query": query or {"match_all": {}}}
+            resp = client.count(index=target_index, body=body)
+            return int(resp.get("count", 0) or 0)
+        except Exception as e:
+            logger.warning(f"Could not count documents in index '{target_index}': {str(e)}")
+            return 0
     
     def find_next_available_index_name(self, base_index_name: str) -> str:
         """

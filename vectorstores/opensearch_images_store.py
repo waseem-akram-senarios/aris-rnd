@@ -448,6 +448,43 @@ class OpenSearchImagesStore:
         except Exception as e:
             logger.error(f"Failed to retrieve images for source {source}: {str(e)}")
             return []
+
+    def count_images_by_source(self, source: str) -> int:
+        if not self.vectorstore or not self.vectorstore.vectorstore:
+            return 0
+
+        try:
+            client = self.vectorstore.vectorstore.client
+
+            source_variants = {
+                source,
+                os.path.basename(source or ""),
+                (source or "").lower(),
+                os.path.basename(source or "").lower(),
+            }
+
+            should_clauses = []
+            for variant in source_variants:
+                if not variant:
+                    continue
+                should_clauses.extend([
+                    {"term": {"metadata.source.keyword": variant}},
+                    {"term": {"metadata.source": variant}},
+                    {"match_phrase": {"metadata.source": variant}},
+                ])
+
+            query = {
+                "bool": {
+                    "should": should_clauses or [{"match_all": {}}],
+                    "minimum_should_match": 1,
+                }
+            }
+
+            resp = client.count(index=self.index_name, body={"query": query})
+            return int(resp.get("count", 0) or 0)
+        except Exception as e:
+            logger.warning(f"Failed to count images for source {source}: {str(e)}")
+            return 0
     
     def get_image_by_id(self, image_id: str) -> Optional[Dict[str, Any]]:
         """

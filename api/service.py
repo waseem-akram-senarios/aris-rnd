@@ -143,6 +143,7 @@ class ServiceContainer:
         
         # Set document filter if provided (using active_sources)
         original_sources = self.rag_system.active_sources
+        original_index_map = getattr(self.rag_system, 'document_index_map', None)
         if document_id:
             try:
                 doc = self.get_document(document_id)
@@ -151,6 +152,15 @@ class ServiceContainer:
                     if doc_name:
                         self.rag_system.active_sources = [doc_name]
                         logger.info(f"Filtering text query to document: {doc_name}")
+                        if self.rag_system.vector_store_type.lower() == 'opensearch':
+                            doc_text_index = doc.get('text_index')
+                            if doc_text_index:
+                                try:
+                                    if not hasattr(self.rag_system, 'document_index_map') or self.rag_system.document_index_map is None:
+                                        self.rag_system.document_index_map = {}
+                                    self.rag_system.document_index_map[doc_name] = doc_text_index
+                                except Exception as e:
+                                    logger.warning(f"Could not set document_index_map for '{doc_name}': {e}")
             except Exception as e:
                 logger.warning(f"Could not filter to document_id {document_id}: {e}")
                 self.rag_system.active_sources = None
@@ -168,6 +178,12 @@ class ServiceContainer:
         finally:
             # Restore original active_sources
             self.rag_system.active_sources = original_sources
+            # Restore original index map reference if it was missing (best-effort)
+            if original_index_map is None:
+                try:
+                    self.rag_system.document_index_map = None
+                except Exception:
+                    pass
         
         # Ensure we're only getting text results (no image content)
         # Filter out any citations that might be from images
@@ -224,12 +240,13 @@ class ServiceContainer:
             raise ValueError(f"Document {document_id} not found")
         
         doc_name = doc.get('document_name', 'unknown')
+        doc_text_index = doc.get('text_index') or getattr(self.rag_system, 'opensearch_index', None) or 'aris-rag-index'
         
         # Initialize status response
         status = {
             'document_id': document_id,
             'document_name': doc_name,
-            'text_index': getattr(self.rag_system, 'opensearch_index', 'aris-rag-index') or 'aris-rag-index',
+            'text_index': doc_text_index,
             'text_chunks_count': doc.get('chunks_created', 0),
             'text_storage_status': 'completed' if doc.get('chunks_created', 0) > 0 else 'pending',
             'text_last_updated': None,
@@ -244,27 +261,41 @@ class ServiceContainer:
         # Try to get actual counts from OpenSearch if available
         if self.rag_system.vector_store_type.lower() == 'opensearch':
             try:
-                from vectorstores.opensearch_images_store import OpenSearchImagesStore
+                # Get text chunks count from OpenSearch (authoritative)
+                from vectorstores.opensearch_store import OpenSearchVectorStore
                 from langchain_openai import OpenAIEmbeddings
-                
-                # Get images count
+
                 embeddings = OpenAIEmbeddings(
                     openai_api_key=os.getenv('OPENAI_API_KEY'),
                     model=self.rag_system.embedding_model
                 )
+
+                text_store = OpenSearchVectorStore(
+                    embeddings=embeddings,
+                    domain=self.rag_system.opensearch_domain,
+                    index_name=doc_text_index,
+                    region=getattr(self.rag_system, 'region', None)
+                )
+
+                status['text_chunks_count'] = text_store.count_documents()
+                status['text_storage_status'] = 'completed' if status['text_chunks_count'] > 0 else status['text_storage_status']
+
+                from vectorstores.opensearch_images_store import OpenSearchImagesStore
+
+                # Get images count
                 images_store = OpenSearchImagesStore(
                     embeddings=embeddings,
                     domain=self.rag_system.opensearch_domain,
                     region=getattr(self.rag_system, 'region', None)
                 )
                 
-                # Count images for this document
-                images = images_store.get_images_by_source(doc_name, limit=1000)
-                status['images_count'] = len(images)
+                # Count images for this document (best effort: by source)
+                status['images_count'] = images_store.count_images_by_source(doc_name)
+                status['images_storage_status'] = 'completed' if status['images_count'] > 0 else status['images_storage_status']
                 
-                # Calculate total OCR text length
-                total_ocr_length = sum(len(img.get('ocr_text', '')) for img in images)
-                status['total_ocr_text_length'] = total_ocr_length
+                # Calculate total OCR text length (requires fetching docs; keep as best-effort)
+                images = images_store.get_images_by_source(doc_name, limit=1000)
+                status['total_ocr_text_length'] = sum(len(img.get('ocr_text', '')) for img in images)
                 
             except Exception as e:
                 logger.warning(f"Could not get detailed storage status from OpenSearch: {e}")
@@ -306,6 +337,12 @@ def create_service_container(
     cerebras_model = cerebras_model or ARISConfig.CEREBRAS_MODEL
     vector_store_type = vector_store_type or ARISConfig.VECTOR_STORE_TYPE
     chunking_strategy = chunking_strategy or ARISConfig.CHUNKING_STRATEGY
+
+    if vector_store_type.lower() == "opensearch":
+        has_creds = bool(os.getenv('AWS_OPENSEARCH_ACCESS_KEY_ID') and os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY'))
+        has_domain = bool(os.getenv('AWS_OPENSEARCH_DOMAIN') or os.getenv('OPENSEARCH_DOMAIN'))
+        if not (has_creds and has_domain):
+            vector_store_type = "faiss"
     
     # Get chunking parameters from strategy
     chunk_size, chunk_overlap = get_chunking_params(chunking_strategy)

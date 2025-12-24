@@ -559,10 +559,22 @@ async def list_documents(service: ServiceContainer = Depends(get_service)):
     logger.info(f"[STEP 2] Retrieved {len(documents)} document(s) from registry")
     
     # Convert to DocumentMetadata models
-    document_list = [
-        DocumentMetadata(**doc)
-        for doc in documents
-    ]
+    document_list = []
+    for doc in documents:
+        if not isinstance(doc, dict):
+            continue
+        safe_doc = dict(doc)
+        if 'document_name' not in safe_doc:
+            safe_doc['document_name'] = safe_doc.get('document_id') or 'Unknown'
+        if 'status' not in safe_doc:
+            safe_doc['status'] = safe_doc.get('text_storage_status') or 'unknown'
+        if 'document_id' not in safe_doc and 'id' in safe_doc:
+            safe_doc['document_id'] = safe_doc.get('id')
+        try:
+            document_list.append(DocumentMetadata(**safe_doc))
+        except Exception as e:
+            logger.warning(f"Skipping invalid registry entry: {e}")
+            continue
     
     logger.info(f"✅ [STEP 3] Returning {len(document_list)} document(s)")
     return DocumentListResponse(
