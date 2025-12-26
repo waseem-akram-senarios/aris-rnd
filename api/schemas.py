@@ -98,8 +98,87 @@ class StatsResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     """Error response model"""
-    error: str
-    detail: Optional[str] = None
+
+
+# Settings API Schemas
+class ModelSettings(BaseModel):
+    """Model configuration settings"""
+    api_provider: Literal['openai', 'cerebras'] = Field(default='openai', description="API provider to use")
+    openai_model: str = Field(default='gpt-4o', description="OpenAI model name")
+    cerebras_model: str = Field(default='llama-3.3-70b', description="Cerebras model name")
+    embedding_model: str = Field(default='text-embedding-3-large', description="Embedding model name")
+    temperature: float = Field(default=0.0, ge=0.0, le=2.0, description="LLM temperature")
+    max_tokens: int = Field(default=1200, ge=1, le=4000, description="Maximum tokens for response")
+
+
+class ParserSettings(BaseModel):
+    """Parser configuration settings"""
+    parser: Literal['docling', 'pymupdf', 'pypdf2'] = Field(default='docling', description="Document parser to use")
+    docling_timeout: int = Field(default=1800, ge=60, le=3600, description="Docling parser timeout in seconds")
+
+
+class ChunkingSettings(BaseModel):
+    """Chunking strategy settings"""
+    strategy: Literal['comprehensive', 'balanced', 'fast'] = Field(default='comprehensive', description="Chunking strategy")
+    chunk_size: int = Field(default=384, ge=100, le=2000, description="Chunk size in tokens")
+    chunk_overlap: int = Field(default=120, ge=0, le=500, description="Chunk overlap in tokens")
+
+
+class VectorStoreSettings(BaseModel):
+    """Vector store configuration settings"""
+    vector_store_type: Literal['faiss', 'opensearch'] = Field(default='opensearch', description="Vector store type")
+    opensearch_domain: Optional[str] = Field(default='intelycx-waseem-os', description="OpenSearch domain name")
+    opensearch_index: str = Field(default='aris-rag-index', description="OpenSearch index name")
+    opensearch_region: str = Field(default='us-east-2', description="AWS region for OpenSearch")
+
+
+class RetrievalSettings(BaseModel):
+    """Retrieval configuration settings"""
+    default_k: int = Field(default=12, ge=1, le=50, description="Default number of chunks to retrieve")
+    use_mmr: bool = Field(default=True, description="Use Maximum Marginal Relevance")
+    mmr_fetch_k: int = Field(default=50, ge=1, le=100, description="Number of candidates for MMR")
+    mmr_lambda: float = Field(default=0.35, ge=0.0, le=1.0, description="MMR lambda for diversity")
+    search_mode: Literal['semantic', 'keyword', 'hybrid'] = Field(default='hybrid', description="Default search mode")
+    semantic_weight: float = Field(default=0.75, ge=0.0, le=1.0, description="Semantic search weight")
+    keyword_weight: float = Field(default=0.25, ge=0.0, le=1.0, description="Keyword search weight")
+
+
+class AgenticRAGSettings(BaseModel):
+    """Agentic RAG configuration settings"""
+    use_agentic_rag: bool = Field(default=True, description="Enable Agentic RAG")
+    max_sub_queries: int = Field(default=4, ge=1, le=10, description="Maximum sub-queries")
+    chunks_per_subquery: int = Field(default=6, ge=1, le=20, description="Chunks per sub-query")
+    max_total_chunks: int = Field(default=25, ge=1, le=100, description="Maximum total chunks")
+    deduplication_threshold: float = Field(default=0.95, ge=0.0, le=1.0, description="Deduplication threshold")
+
+
+class SystemSettings(BaseModel):
+    """Complete system settings"""
+    model_settings: ModelSettings
+    parser_settings: ParserSettings
+    chunking_settings: ChunkingSettings
+    vector_store_settings: VectorStoreSettings
+    retrieval_settings: RetrievalSettings
+    agentic_rag_settings: AgenticRAGSettings
+
+
+class DocumentLibraryInfo(BaseModel):
+    """Document library information"""
+    total_documents: int = Field(description="Total number of documents stored")
+    documents: List[DocumentMetadata] = Field(description="List of all documents")
+    storage_persists: bool = Field(default=True, description="Whether storage persists across restarts")
+
+
+class MetricsInfo(BaseModel):
+    """R&D Metrics and Analytics"""
+    total_documents_processed: int = Field(default=0, description="Total documents processed")
+    total_chunks_created: int = Field(default=0, description="Total chunks created")
+    total_images_extracted: int = Field(default=0, description="Total images extracted")
+    average_processing_time: float = Field(default=0.0, description="Average processing time per document")
+    total_queries: int = Field(default=0, description="Total queries processed")
+    average_query_time: float = Field(default=0.0, description="Average query response time")
+    parsers_used: Dict[str, int] = Field(default_factory=dict, description="Count of documents by parser")
+    storage_stats: Dict[str, Any] = Field(default_factory=dict, description="Storage statistics")
 
 
 class ImageQueryRequest(BaseModel):
@@ -126,6 +205,7 @@ class ImageQueryResponse(BaseModel):
     total: int
     content_type: str = "image_ocr"  # Always "image_ocr" for this endpoint
     images_index: str = "aris-rag-images-index"  # Index used for query
+    message: Optional[str] = None  # Optional message for informational purposes
 
 
 class DocumentUpdateRequest(BaseModel):
