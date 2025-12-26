@@ -254,12 +254,13 @@ class ServiceContainer:
             'images_count': doc.get('image_count', 0),
             'images_storage_status': 'completed' if doc.get('images_detected', False) and doc.get('image_count', 0) > 0 else 'pending',
             'images_last_updated': None,
-            'ocr_enabled': doc.get('parser_used', '').lower() == 'docling',
+            'ocr_enabled': str(doc.get('parser_used', '')).lower() == 'docling',
             'total_ocr_text_length': 0
         }
         
         # Try to get actual counts from OpenSearch if available
-        if self.rag_system.vector_store_type.lower() == 'opensearch':
+        vector_store_type = getattr(self.rag_system, 'vector_store_type', None)
+        if vector_store_type and vector_store_type.lower() == 'opensearch':
             try:
                 # Get text chunks count from OpenSearch (authoritative)
                 from vectorstores.opensearch_store import OpenSearchVectorStore

@@ -1502,7 +1502,7 @@ async def get_all_images_info(
         raise HTTPException(status_code=500, detail=f"Error getting all images: {str(e)}")
 
 
-@app.get("/documents/{document_id}/images", response_model=ImagesSummaryResponse)
+@app.get("/documents/{document_id}/images-summary", response_model=ImagesSummaryResponse)
 async def get_images_summary(
     document_id: str,
     service: ServiceContainer = Depends(get_service)
