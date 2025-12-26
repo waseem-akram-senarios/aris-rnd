@@ -1818,10 +1818,13 @@ async def get_page_information(
                     ))
                     total_text_length += len(text_content)
                 
-                logger.info(f"Found {len(text_chunks)} text chunks from page {page_number}")
+                if text_chunks:
+                    logger.info(f"✅ Found {len(text_chunks)} text chunks from page {page_number}")
+                else:
+                    logger.warning(f"⚠️ No text chunks found for page {page_number}. This may indicate: 1) Page number doesn't exist, 2) Chunks don't have page metadata, 3) Document not fully processed")
                 
             except Exception as e:
-                logger.warning(f"Could not retrieve text chunks from OpenSearch: {e}")
+                logger.error(f"Error retrieving text chunks from OpenSearch: {e}", exc_info=True)
         
         # Get images from the page
         images = []
@@ -1888,16 +1891,23 @@ async def get_page_information(
                 
                 # Sort images by image number
                 images.sort(key=lambda x: x.image_number)
-                logger.info(f"Found {len(images)} images from page {page_number}")
+                if images:
+                    logger.info(f"✅ Found {len(images)} images from page {page_number}")
+                else:
+                    logger.warning(f"⚠️ No images found for page {page_number}. This may indicate: 1) No images on this page, 2) Images not extracted, 3) Document not processed with Docling")
                 
         except Exception as e:
-            logger.warning(f"Could not retrieve images: {e}")
+            logger.error(f"Error retrieving images: {e}", exc_info=True)
         
         # Get index names
         text_index = getattr(service.rag_system, 'opensearch_index', 'aris-rag-index') or 'aris-rag-index'
         images_index = 'aris-rag-images-index'
         
-        logger.info(f"✅ Retrieved page {page_number} information: {len(text_chunks)} text chunks, {len(images)} images")
+        # Provide helpful message if nothing found
+        if not text_chunks and not images:
+            logger.warning(f"⚠️ No content found for page {page_number} of document {document_id}. Possible reasons: 1) Invalid page number, 2) Document not fully processed, 3) Chunks missing page metadata")
+        else:
+            logger.info(f"✅ Retrieved page {page_number} information: {len(text_chunks)} text chunks, {len(images)} images")
         
         return PageInformationResponse(
             document_id=document_id,
