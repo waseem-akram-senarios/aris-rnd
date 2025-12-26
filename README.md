@@ -1,239 +1,159 @@
 # ARIS RAG System
 
-Advanced RAG (Retrieval-Augmented Generation) system for document processing and intelligent querying.
+Advanced Retrieval-Augmented Generation system with document processing, OCR, and multi-modal search capabilities.
 
-## Quick Start
+---
 
-### Local Development
+## 🚀 Quick Start
 
+### Run Server:
 ```bash
-# Install dependencies
-pip install -r config/requirements.txt
-
-# Run Streamlit app
-streamlit run app.py
-
-# Run FastAPI (separate terminal)
-uvicorn api.main:app --reload
+./scripts/start.sh
 ```
 
-### Docker Deployment
-
+### Run Tests:
 ```bash
-# Build and run
-docker-compose up -d
-
-# Or for production
-docker-compose -f docker-compose.prod.yml up -d
+python3 tests/comprehensive_api_test.py
 ```
 
-## Server Deployment
-
-### Deploy to AWS EC2
-
+### Deploy Latest Code:
 ```bash
-# Fast deployment (recommended)
-./scripts/deploy-fast.sh
-
-# Or adaptive deployment with resource detection
-./scripts/deploy-adaptive.sh
+cd documentation/deployment
+cat DEPLOY_COMMANDS.sh
 ```
 
-**Server Details:**
-- **IP**: 44.221.84.58
-- **Streamlit UI**: http://44.221.84.58/
-- **FastAPI Docs**: http://44.221.84.58:8500/docs
+---
 
-## Viewing Logs
+## 📁 Folder Structure
 
-### Server Logs (Docker Container)
+```
+aris/
+├── api/              # FastAPI application (main.py, schemas.py, service.py)
+├── parsers/          # Document parsers (Docling, PyMuPDF)
+├── vectorstores/     # OpenSearch integration
+├── rag/              # RAG system core
+├── tests/            # All test files (70+ tests)
+├── scripts/          # Utility and testing scripts
+├── documentation/    # All documentation
+│   ├── api-fixes/   # Bug fixes (11 fixes)
+│   ├── deployment/  # Deployment packages & guides
+│   ├── testing/     # Test results
+│   └── guides/      # How-to guides
+├── data/             # Extracted data
+├── storage/          # Document registry
+└── logs/             # Application logs
+```
 
-#### View All Logs
+---
+
+## 📦 Latest Deployment Package
+
+**Location:** `documentation/deployment/aris_final_deployment.tar.gz`
+
+**Contains:**
+- `api/schemas.py` - Fixed search_mode validation
+- `api/main.py` - 9 endpoint fixes
+- `api/service.py` - Storage status fix
+
+**Fixes Applied:** 11 total fixes
+- ✅ search_mode validation
+- ✅ Storage status 500 error
+- ✅ Accuracy check 500 error
+- ✅ Images summary 422 error
+- ✅ All query endpoints improved
+- ✅ Better error handling everywhere
+
+---
+
+## 🧪 Testing
+
+### Main Test Suite:
 ```bash
-# Real-time logs (follow mode)
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app -f'
-
-# Last 100 lines
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app --tail 100'
-
-# Last 500 lines
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app --tail 500'
+python3 tests/comprehensive_api_test.py
 ```
 
-#### Filter Logs by Component
+**Expected Results:** 13/14 tests pass (93%)
 
-**Document Processing Logs:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app 2>&1 | grep -E "DocumentProcessor|STEP" | tail -50'
-```
+### Test Results:
+See `documentation/testing/test_report_*.json`
 
-**Chunking Progress Logs:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app 2>&1 | grep -E "TokenTextSplitter|chunking|Chunking" | tail -50'
-```
+---
 
-**PDF Parsing Logs:**
-```bash
-# Docling parser
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app 2>&1 | grep -E "Docling|docling" | tail -50'
+## 📚 Documentation
 
-# PyMuPDF parser
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app 2>&1 | grep -E "PyMuPDF|pymupdf" | tail -50'
-```
+### API Fixes:
+- `documentation/api-fixes/ALL_ISSUES_FIXED.md` - Complete fix list
+- `documentation/api-fixes/FAILING_TEST_ANALYSIS.md` - Test analysis
 
-**FastAPI Logs:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app 2>&1 | grep -E "FastAPI|uvicorn|api" | tail -50'
-```
+### Deployment:
+- `documentation/deployment/DEPLOYMENT_INSTRUCTIONS.md`
+- `documentation/deployment/DEPLOY_COMMANDS.sh`
 
-**Error Logs:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app 2>&1 | grep -E "ERROR|Error|error|Exception|Traceback" | tail -50'
-```
+### Guides:
+- `documentation/guides/HOW_TO_*.md` - Various how-to guides
+- `documentation/guides/POSTMAN_*.md` - Postman collection guides
 
-**Progress Logs (Real-time during processing):**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app -f 2>&1 | grep -E "Progress|progress|STEP|%"'
-```
+---
 
-#### Logs by Time Range
+## 🔧 Configuration
 
-**Last 10 minutes:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app --since 10m'
-```
+Environment variables in `.env`:
+- OpenSearch credentials
+- OpenAI API key
+- AWS credentials (if using S3)
 
-**Last 1 hour:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app --since 1h'
-```
+---
 
-**Since specific time:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app --since 2024-12-04T15:00:00'
-```
+## 🎯 Key Features
 
-### Application Log Files (Inside Container)
+- **Multi-Parser Support:** Docling, PyMuPDF, PyPDF2
+- **OCR Integration:** Image text extraction
+- **Vector Search:** OpenSearch with hybrid search
+- **Image Queries:** Search within document images
+- **Page-Level Queries:** Get content by page number
+- **Accuracy Verification:** OCR quality checking
 
-The application also writes logs to files inside the container:
+---
 
-```bash
-# View document processor log
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker exec aris-rag-app tail -50 /app/logs/document_processor.log'
+## 📊 API Endpoints
 
-# View FastAPI log
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker exec aris-rag-app tail -50 /app/logs/fastapi.log'
+- `POST /query` - General RAG query
+- `POST /query/text` - Text-only query
+- `POST /query/images` - Image-only query
+- `GET /documents/{id}` - Get document metadata
+- `GET /documents/{id}/storage/status` - Storage status
+- `GET /documents/{id}/pages/{page}` - Page content
+- `GET /documents/{id}/images-summary` - Images summary
 
-# Follow document processor log (real-time)
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker exec aris-rag-app tail -f /app/logs/document_processor.log'
-```
+Full API docs: `http://localhost:8500/docs`
 
-### Local Logs
+---
 
-If running locally, logs are written to:
-- `logs/document_processor.log` - Document processing logs
-- `logs/fastapi.log` - FastAPI logs
+## 🐛 Recent Fixes
 
-```bash
-# View local logs
-tail -f logs/document_processor.log
-tail -f logs/fastapi.log
-```
+All 11 API issues fixed:
+1. search_mode validation
+2. Get document crashes
+3. Storage status errors
+4. Accuracy check errors
+5. Image query improvements
+6. Page content diagnostics
+7. Re-store text diagnostics
+8. Verify endpoint errors
+9. Storage status NoneType fix
+10. Images summary route fix
+11. Parser field safety
 
-## Logging Features
+---
 
-### Enhanced Progress Logging
+## 📞 Support
 
-The system now provides detailed progress logging during document processing:
+- Documentation: `documentation/`
+- Test Reports: `documentation/testing/`
+- Guides: `documentation/guides/`
 
-- **Progress Updates**: Every 3-5 seconds for large documents
-- **Time Remaining**: Estimated time based on processing speed
-- **Processing Speed**: Chunks per second and tokens per second
-- **Percentage Complete**: Real-time progress percentage
+---
 
-**Example Progress Log:**
-```
-TokenTextSplitter: Progress - 25 chunks created, 12500/50000 tokens (25.0%) | Speed: 2.5 chunks/sec | ~30s remaining
-```
-
-### Performance Monitoring
-
-The system tracks and logs performance metrics:
-
-- **Chunking Time**: Total time for chunking operation
-- **Performance Warnings**: Alerts if chunking takes >10 minutes
-- **Speed Metrics**: Chunks/sec and tokens/sec
-
-**Example Performance Log:**
-```
-TokenTextSplitter: Chunking completed - 84 chunks created from 42,914 tokens | Time: 33.45s | Speed: 2.51 chunks/sec, 1283 tokens/sec
-```
-
-## Monitoring Commands
-
-### Check Container Status
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker ps --filter name=aris-rag-app'
-```
-
-### Check Container Health
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker inspect aris-rag-app --format "{{.State.Health.Status}}"'
-```
-
-### Check Resource Usage
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker stats aris-rag-app --no-stream'
-```
-
-### View Recent Errors Only
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker logs aris-rag-app 2>&1 | grep -i error | tail -20'
-```
-
-## Quick Reference
-
-### Common Operations
-
-**Restart Container:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker restart aris-rag-app'
-```
-
-**Stop Container:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker stop aris-rag-app'
-```
-
-**Start Container:**
-```bash
-ssh -i scripts/ec2_wah_pk.pem ec2-user@44.221.84.58 'sudo docker start aris-rag-app'
-```
-
-**View Container Logs (Simplified):**
-```bash
-# Using the view_logs script
-./scripts/view_logs.sh
-```
-
-## Features
-
-- **Multi-Parser Support**: Docling, PyMuPDF, AWS Textract
-- **Intelligent Chunking**: Token-aware text splitting with adaptive chunk sizes
-- **Multiple Vector Stores**: FAISS (local) and OpenSearch (cloud)
-- **Progress Tracking**: Real-time progress updates during processing
-- **Performance Monitoring**: Detailed metrics and performance tracking
-- **FastAPI API**: RESTful API for document management and querying
-- **Streamlit UI**: User-friendly web interface
-
-## Documentation
-
-- [Deployment Guide](docs/deployment/AWS_DEPLOYMENT.md)
-- [API Documentation](docs/API_USAGE.md)
-- [Logging Guide](docs/LOGGING_GUIDE.md)
-- [Project Structure](docs/PROJECT_STRUCTURE.md)
-
-## Support
-
-For issues or questions, check the logs using the commands above or review the documentation in the `docs/` directory.
-
+**Last Updated:** December 26, 2025
+**Status:** All fixes applied, ready for deployment
+**Version:** Latest with 11 fixes
