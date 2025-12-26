@@ -1,8 +1,8 @@
 """
 Pydantic models for FastAPI request/response schemas
 """
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, validator
+from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime
 
 
@@ -13,7 +13,7 @@ class QueryRequest(BaseModel):
     use_mmr: bool = Field(default=True, description="Use Maximum Marginal Relevance for diverse results")
     use_hybrid_search: Optional[bool] = Field(default=None, description="Use hybrid search combining semantic and keyword search")
     semantic_weight: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Weight for semantic search in hybrid mode (0.0-1.0)")
-    search_mode: Optional[str] = Field(default=None, description="Search mode: 'semantic', 'keyword', or 'hybrid'")
+    search_mode: Optional[Literal['semantic', 'keyword', 'hybrid']] = Field(default='hybrid', description="Search mode: 'semantic', 'keyword', or 'hybrid'")
     use_agentic_rag: Optional[bool] = Field(default=None, description="Use Agentic RAG with query decomposition and synthesis")
     temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0, description="Temperature for LLM response generation (0.0-2.0)")
     max_tokens: Optional[int] = Field(default=None, ge=1, le=4000, description="Maximum tokens for LLM response (1-4000)")

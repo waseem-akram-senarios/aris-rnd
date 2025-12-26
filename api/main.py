@@ -590,10 +590,45 @@ async def get_document(
 ):
     """Get a single document's metadata by document_id."""
     logger.info(f"[STEP 1] GET /documents/{document_id} - Getting document metadata")
-    doc = service.get_document(document_id)
-    if doc is None:
-        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
-    return DocumentMetadata(**doc)
+    try:
+        doc = service.get_document(document_id)
+        if doc is None:
+            raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+        
+        # Ensure all required fields have safe defaults
+        doc_metadata = {
+            'document_id': doc.get('document_id', document_id),
+            'document_name': doc.get('document_name', 'unknown'),
+            'status': doc.get('status', 'unknown'),
+            'chunks_created': doc.get('chunks_created', 0),
+            'tokens_extracted': doc.get('tokens_extracted', 0),
+            'parser_used': doc.get('parser_used'),
+            'processing_time': doc.get('processing_time', 0.0),
+            'extraction_percentage': doc.get('extraction_percentage', 0.0),
+            'images_detected': doc.get('images_detected', False),
+            'image_count': doc.get('image_count', 0),
+            'pages': doc.get('pages'),
+            'error': doc.get('error'),
+            'text_chunks_stored': doc.get('text_chunks_stored', doc.get('chunks_created', 0)),
+            'images_stored': doc.get('images_stored', 0),
+            'text_index': doc.get('text_index', 'aris-rag-index'),
+            'images_index': doc.get('images_index', 'aris-rag-images-index'),
+            'text_storage_status': doc.get('text_storage_status', 'completed' if doc.get('chunks_created', 0) > 0 else 'pending'),
+            'images_storage_status': doc.get('images_storage_status', 'completed' if doc.get('images_stored', 0) > 0 else 'pending'),
+            'file_hash': doc.get('file_hash'),
+            'upload_metadata': doc.get('upload_metadata'),
+            'pdf_metadata': doc.get('pdf_metadata'),
+            'processing_metadata': doc.get('processing_metadata'),
+            'ocr_quality_metrics': doc.get('ocr_quality_metrics'),
+            'version_info': doc.get('version_info')
+        }
+        
+        return DocumentMetadata(**doc_metadata)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting document metadata: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error retrieving document: {str(e)}")
 
 
 # Removed endpoints:
@@ -1275,25 +1310,36 @@ async def get_storage_status(
     logger.info(f"GET /documents/{document_id}/storage/status - Getting storage status")
     
     try:
+        # Get document first to ensure it exists
+        doc = service.get_document(document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+        
         status = service.get_storage_status(document_id)
         
+        # Ensure all fields have safe defaults
         return StorageStatusResponse(
-            document_id=status['document_id'],
-            document_name=status['document_name'],
-            text_index=status['text_index'],
-            text_chunks_count=status['text_chunks_count'],
-            text_storage_status=status['text_storage_status'],
+            document_id=status.get('document_id', document_id),
+            document_name=status.get('document_name', doc.get('document_name', 'unknown')),
+            text_index=status.get('text_index', 'aris-rag-index'),
+            text_chunks_count=status.get('text_chunks_count', 0),
+            text_storage_status=status.get('text_storage_status', 'unknown'),
             text_last_updated=status.get('text_last_updated'),
-            images_index=status['images_index'],
-            images_count=status['images_count'],
-            images_storage_status=status['images_storage_status'],
+            images_index=status.get('images_index', 'aris-rag-images-index'),
+            images_count=status.get('images_count', 0),
+            images_storage_status=status.get('images_storage_status', 'unknown'),
             images_last_updated=status.get('images_last_updated'),
-            ocr_enabled=status['ocr_enabled'],
-            total_ocr_text_length=status['total_ocr_text_length']
+            ocr_enabled=status.get('ocr_enabled', False),
+            total_ocr_text_length=status.get('total_ocr_text_length', 0)
         )
+    except HTTPException:
+        raise
     except ValueError as e:
         logger.warning(f"Document not found: {document_id}")
         raise HTTPException(status_code=404, detail=str(e))
+    except KeyError as e:
+        logger.error(f"Missing required field in storage status: {e}")
+        raise HTTPException(status_code=500, detail=f"Missing required field: {str(e)}")
     except Exception as e:
         logger.error(f"Error getting storage status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error getting storage status: {str(e)}")
@@ -2254,40 +2300,46 @@ async def get_document_accuracy(
     """
     logger.info(f"GET /documents/{document_id}/accuracy - Quick accuracy check")
     
-    # Get document metadata
-    doc = service.get_document(document_id)
-    if not doc:
-        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
-    
-    # Get OCR quality metrics from metadata
-    ocr_quality = doc.get('ocr_quality_metrics', {})
-    overall_accuracy = ocr_quality.get('overall_accuracy')
-    ocr_accuracy = ocr_quality.get('average_ocr_accuracy')
-    
-    # Determine status
-    if overall_accuracy is None:
-        status = 'not_verified'
-        verification_needed = True
-    elif overall_accuracy >= 0.90:
-        status = 'accurate'
-        verification_needed = False
-    elif overall_accuracy >= 0.85:
-        status = 'needs_review'
-        verification_needed = True
-    else:
-        status = 'inaccurate'
-        verification_needed = True
-    
-    return AccuracyCheckResponse(
-        document_id=document_id,
-        document_name=doc.get('document_name', ''),
-        overall_accuracy=overall_accuracy,
-        ocr_accuracy=ocr_accuracy,
-        text_accuracy=None,  # Could be added if tracked
-        last_verification=doc.get('last_verification'),
-        verification_needed=verification_needed,
-        status=status
-    )
+    try:
+        # Get document metadata
+        doc = service.get_document(document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+        
+        # Get OCR quality metrics from metadata
+        ocr_quality = doc.get('ocr_quality_metrics', {}) or {}
+        overall_accuracy = ocr_quality.get('overall_accuracy')
+        ocr_accuracy = ocr_quality.get('average_ocr_accuracy')
+        
+        # Determine status
+        if overall_accuracy is None:
+            status = 'not_verified'
+            verification_needed = True
+        elif overall_accuracy >= 0.90:
+            status = 'accurate'
+            verification_needed = False
+        elif overall_accuracy >= 0.85:
+            status = 'needs_review'
+            verification_needed = True
+        else:
+            status = 'inaccurate'
+            verification_needed = True
+        
+        return AccuracyCheckResponse(
+            document_id=document_id,
+            document_name=doc.get('document_name', 'unknown'),
+            overall_accuracy=overall_accuracy,
+            ocr_accuracy=ocr_accuracy,
+            text_accuracy=None,
+            last_verification=doc.get('last_verification'),
+            verification_needed=verification_needed,
+            status=status
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting document accuracy: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error checking accuracy: {str(e)}")
 
 
 @app.post("/documents/{document_id}/verify", response_model=VerificationReport)
