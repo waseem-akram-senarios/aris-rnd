@@ -8,6 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dotenv import load_dotenv
 from .base_parser import BaseParser, ParsedDocument
 
+try:
+    from utils.image_extraction_logger import image_logger
+except ImportError:
+    image_logger = None
+
 load_dotenv()
 
 
@@ -43,22 +48,24 @@ class TextractParser(BaseParser):
         """
         try:
             import boto3
-            from botocore.exceptions import NoCredentialsError, ClientError
-            
-            # Get region
+
             region = self._get_region()
-            
-            # Try to create a Textract client
-            try:
-                textract = boto3.client('textract', region_name=region)
-                # Try a simple operation to verify credentials
-                # We'll just check if we can create the client
-                return True
-            except (NoCredentialsError, ClientError) as e:
-                # Check if it's a region error
-                if 'region' in str(e).lower():
-                    return False
+            session = boto3.Session(region_name=region)
+            creds = session.get_credentials()
+            if creds is None:
                 return False
+
+            frozen = creds.get_frozen_credentials() if hasattr(creds, 'get_frozen_credentials') else creds
+            access_key = getattr(frozen, 'access_key', None)
+            secret_key = getattr(frozen, 'secret_key', None)
+            if not access_key or not secret_key:
+                return False
+
+            try:
+                session.client('textract', region_name=region)
+            except Exception:
+                return False
+            return True
         except Exception:
             return False
     

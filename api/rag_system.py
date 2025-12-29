@@ -1334,8 +1334,41 @@ class RAGSystem:
         Returns:
             List of document names that were uploaded recently
         """
-        # For now, if document_index_map exists, use all documents in it
-        # This can be enhanced later to check actual upload timestamps from registry
+        try:
+            from config.settings import ARISConfig
+            import json
+            from datetime import datetime, timedelta
+
+            registry_path = getattr(ARISConfig, 'DOCUMENT_REGISTRY_PATH', None)
+            if registry_path and os.path.exists(registry_path):
+                with open(registry_path, 'r', encoding='utf-8') as f:
+                    raw = json.load(f)
+
+                docs = list(raw.values()) if isinstance(raw, dict) else (raw or [])
+                cutoff = datetime.now() - timedelta(hours=max_age_hours)
+
+                recent: List[tuple] = []
+                for d in docs:
+                    if not isinstance(d, dict):
+                        continue
+                    name = d.get('document_name') or d.get('original_document_name')
+                    ts = d.get('updated_at') or d.get('created_at')
+                    if not name or not ts:
+                        continue
+                    try:
+                        dt = datetime.fromisoformat(ts)
+                    except Exception:
+                        continue
+                    if dt >= cutoff:
+                        recent.append((dt, name))
+
+                recent.sort(key=lambda x: x[0], reverse=True)
+                return [name for _, name in recent]
+
+        except Exception:
+            pass
+
+        # Fallback: if no registry timestamps, use known indexed documents (best-effort)
         if hasattr(self, 'document_index_map') and self.document_index_map:
             return list(self.document_index_map.keys())
         return []
@@ -1356,6 +1389,250 @@ class RAGSystem:
         # Look for pattern like "(1)", "(2)", etc.
         match = re.search(r'\((\d+)\)', basename)
         return int(match.group(1)) if match else None
+
+    def _detect_occurrence_query(self, question: str) -> tuple:
+        """Detect if a question is asking to find all occurrences of a term.
+
+        Returns:
+            (is_occurrence_query, term)
+        """
+        if not question:
+            return False, ""
+
+        q = question.strip()
+        ql = q.lower()
+
+        triggers = [
+            "where does",
+            "where is",
+            "find ",
+            "locate ",
+            "occurrence",
+            "occurrences",
+            "all occurrences",
+            "show me all",
+            "highlight",
+        ]
+        if not any(t in ql for t in triggers):
+            return False, ""
+
+        import re
+
+        # Prefer quoted term: find "Cape Verde"
+        m = re.search(r'"([^"]+)"', q)
+        if m and m.group(1).strip():
+            return True, m.group(1).strip()
+
+        # Patterns like: where does X appear
+        m = re.search(r"(?:where\s+does|where\s+is)\s+(.+?)\s+(?:appear|occur|show\s+up)\b", ql)
+        if m and m.group(1).strip():
+            return True, q[m.start(1):m.end(1)].strip()
+
+        # Patterns like: occurrences of X
+        m = re.search(r"occurrences?\s+of\s+(.+)$", ql)
+        if m and m.group(1).strip():
+            return True, q[m.start(1):m.end(1)].strip()
+
+        # Patterns like: find X
+        m = re.search(r"\bfind\s+(.+)$", ql)
+        if m and m.group(1).strip():
+            return True, q[m.start(1):m.end(1)].strip()
+
+        return True, q.strip()
+
+    def _build_occurrence_answer(self, term: str, source: str, occurrences: List[Dict], truncated: bool) -> str:
+        """Build a human-readable answer string for occurrence results."""
+        safe_term = term.strip()
+        total = len(occurrences)
+        header = f"Found {total} occurrence(s) of '{safe_term}' in {source}."
+        if truncated:
+            header += " (Results truncated.)"
+
+        lines = [header, ""]
+        for occ in occurrences:
+            page = occ.get('page')
+            image_idx = occ.get('image_index')
+            snippet = (occ.get('snippet') or "").strip()
+            loc_parts = []
+            if page:
+                loc_parts.append(f"Page {page}")
+            if image_idx is not None:
+                loc_parts.append(f"Image {image_idx}")
+            loc = " | ".join(loc_parts) if loc_parts else "Text"
+            if snippet:
+                lines.append(f"- {loc}: {snippet}")
+            else:
+                lines.append(f"- {loc}")
+        return "\n".join(lines)
+
+    def _find_occurrences_opensearch(self, term: str, max_hits: int = 5000) -> List:
+        """Fetch chunks containing term from OpenSearch for the active document."""
+        if not hasattr(self, 'multi_index_manager'):
+            from vectorstores.opensearch_store import OpenSearchMultiIndexManager
+            self.multi_index_manager = OpenSearchMultiIndexManager(
+                embeddings=self.embeddings,
+                domain=self.opensearch_domain,
+                region=getattr(self, 'region', None)
+            )
+
+        indexes_to_search = []
+        if self.active_sources:
+            for doc_name in self.active_sources:
+                if doc_name in self.document_index_map:
+                    indexes_to_search.append(self.document_index_map[doc_name])
+        if not indexes_to_search:
+            return []
+
+        # Lucene query_string escaping (minimal)
+        q = term.replace('\\', '\\\\').replace('"', '\\"')
+        query = f'"{q}"'
+
+        results = []
+        page_size = 500
+        for index_name in indexes_to_search:
+            try:
+                store = self.multi_index_manager.get_or_create_index_store(index_name)
+                client = store.vectorstore.client
+                offset = 0
+                while offset < max_hits:
+                    body = {
+                        "from": offset,
+                        "size": min(page_size, max_hits - offset),
+                        "query": {
+                            "query_string": {
+                                "query": query,
+                                "fields": ["text"],
+                                "default_operator": "AND"
+                            }
+                        }
+                    }
+                    resp = client.search(index=index_name, body=body)
+                    hits = resp.get("hits", {}).get("hits", [])
+                    if not hits:
+                        break
+                    results.extend(hits)
+                    if len(hits) < page_size:
+                        break
+                    offset += page_size
+            except Exception as e:
+                logger.warning(f"Occurrence search failed for index '{index_name}': {e}")
+                continue
+
+        # Convert to LangChain documents (best-effort)
+        from langchain_core.documents import Document
+        docs = []
+        for h in results:
+            src = h.get('_source', {}) or {}
+            text = src.get('text', '')
+            meta = src.get('metadata', {}) or {}
+            try:
+                docs.append(Document(page_content=text, metadata=meta))
+            except Exception:
+                continue
+        return docs
+
+    def find_all_occurrences(self, term: str, max_results: int = 200) -> Dict:
+        """Find all occurrences of a term in the active document and return an answer + citations."""
+        import re
+
+        if not term or not term.strip():
+            return {
+                "answer": "Please provide a word or phrase to find.",
+                "sources": [],
+                "citations": [],
+                "context_chunks": [],
+                "num_chunks_used": 0
+            }
+
+        if not self.active_sources:
+            return {
+                "answer": "Select one document (Active Document) first, then ask again.",
+                "sources": [],
+                "citations": [],
+                "context_chunks": [],
+                "num_chunks_used": 0
+            }
+
+        term_clean = term.strip()
+        # Pull candidate chunks
+        if self.vector_store_type == 'opensearch':
+            candidate_docs = self._find_occurrences_opensearch(term_clean)
+        else:
+            # FAISS fallback: retrieve a large set of chunks then scan
+            try:
+                candidate_docs = self.vectorstore.similarity_search(term_clean, k=1000)
+            except Exception:
+                candidate_docs = []
+
+        occurrences = []
+        for doc in candidate_docs:
+            text = getattr(doc, 'page_content', '') or ''
+            if not text:
+                continue
+
+            # Strict-ish matching: match whole word when term is a single token; else substring
+            if ' ' in term_clean:
+                pattern = re.compile(re.escape(term_clean), re.IGNORECASE)
+            else:
+                pattern = re.compile(rf"\b{re.escape(term_clean)}\b", re.IGNORECASE)
+
+            for m in pattern.finditer(text):
+                start = max(0, m.start() - 80)
+                end = min(len(text), m.end() + 80)
+                snippet = text[start:end].replace('\n', ' ').strip()
+                page = None
+                if hasattr(doc, 'metadata') and doc.metadata:
+                    page = doc.metadata.get('source_page') or doc.metadata.get('page')
+                image_ref = doc.metadata.get('image_ref') if hasattr(doc, 'metadata') and doc.metadata else None
+                image_index = None
+                if isinstance(image_ref, dict):
+                    image_index = image_ref.get('image_index')
+                elif hasattr(doc, 'metadata') and doc.metadata:
+                    image_index = doc.metadata.get('image_index')
+
+                occurrences.append({
+                    "source": doc.metadata.get('source') if hasattr(doc, 'metadata') and doc.metadata else None,
+                    "page": int(page) if page else None,
+                    "snippet": snippet,
+                    "image_index": image_index,
+                    "start_char": doc.metadata.get('start_char') if hasattr(doc, 'metadata') and doc.metadata else None,
+                    "end_char": doc.metadata.get('end_char') if hasattr(doc, 'metadata') and doc.metadata else None,
+                })
+
+        # Sort by page then snippet
+        occurrences.sort(key=lambda x: (x.get('page') or 10**9, x.get('image_index') or 10**9, x.get('start_char') or 10**9))
+
+        truncated = False
+        if len(occurrences) > max_results:
+            occurrences = occurrences[:max_results]
+            truncated = True
+
+        source_name = self.active_sources[0] if self.active_sources else 'selected document'
+        answer = self._build_occurrence_answer(term_clean, source_name, occurrences, truncated)
+
+        # Create citations-like objects so UI can render references
+        citations = []
+        for idx, occ in enumerate(occurrences, 1):
+            citations.append({
+                'id': idx,
+                'source': occ.get('source') or source_name,
+                'page': occ.get('page'),
+                'snippet': occ.get('snippet'),
+                'full_text': occ.get('snippet') or '',
+                'source_location': f"Page {occ.get('page')}" if occ.get('page') else "Text content",
+                'content_type': 'image' if occ.get('image_index') is not None else 'text',
+                'image_ref': {'image_index': occ.get('image_index'), 'page': occ.get('page')} if occ.get('image_index') is not None else None,
+            })
+
+        sources = [source_name]
+        return {
+            "answer": answer,
+            "sources": sources,
+            "citations": citations,
+            "context_chunks": [],
+            "num_chunks_used": len(citations),
+            "occurrences": occurrences
+        }
     
     def query_with_rag(
         self,
@@ -1458,6 +1735,14 @@ class RAGSystem:
                 "response_tokens": 0,
                 "total_tokens": 0
             }
+
+        # Option A: Find all occurrences (page + snippet) within the active document
+        try:
+            is_occurrence_query, term = self._detect_occurrence_query(question)
+            if is_occurrence_query:
+                return self.find_all_occurrences(term)
+        except Exception:
+            pass
         
         # Log active document filter status
         if self.active_sources:

@@ -1,6 +1,17 @@
 """
 Streamlit RAG Application with Advanced Parsers and Real-time Processing
 """
+import sys
+from pathlib import Path
+
+_PROJECT_ROOT = str(Path(__file__).resolve().parents[1])
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+_API_DIR = str(Path(__file__).resolve().parent)
+if _API_DIR in sys.path:
+    sys.path.remove(_API_DIR)
+
 import streamlit as st
 import os
 import io
@@ -481,6 +492,26 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
             f"✅ Processed {len(successful_results)} document(s) into {total_chunks} chunks "
             f"({total_tokens:,} tokens)!"
         )
+
+        # Default to the most recently processed document for Q&A / summary queries
+        try:
+            last_doc_name = successful_results[-1].document_name
+            if last_doc_name:
+                st.session_state.active_sources = [last_doc_name]
+                st.session_state.active_loaded_docs = [last_doc_name]
+                if st.session_state.rag_system:
+                    st.session_state.rag_system.active_sources = [last_doc_name]
+                    # For OpenSearch, ensure per-document index selection is active
+                    if getattr(st.session_state.rag_system, 'vector_store_type', '').lower() == 'opensearch':
+                        try:
+                            st.session_state.rag_system.load_selected_documents(
+                                document_names=[last_doc_name],
+                                path=ARISConfig.VECTORSTORE_PATH
+                            )
+                        except Exception:
+                            pass
+        except Exception:
+            pass
         
         # Save vectorstore to disk for sharing with FastAPI (FAISS only)
         # OpenSearch stores data in cloud, so no local save needed
@@ -599,13 +630,41 @@ with st.sidebar:
     st.header("🔧 Parser Settings")
     parser_choice = st.selectbox(
         "Choose Parser:",
-        ["Docling", "PyMuPDF", "Textract"],
-        index=0,  # Default to Docling
-        help="Docling extracts the most content (processes all pages) but takes 5-10 minutes (recommended). "
-             "PyMuPDF is fast for text-based PDFs. "
-             "Textract requires AWS credentials and is best for scanned PDFs."
+        ["Docling", "PyMuPDF", "OCRmyPDF", "Textract"],
+        index=2,  # Default to OCRmyPDF
+        key="parser_choice_v2",
+        help="**Docling**: Extracts the most content (processes all pages) but takes 5-10 minutes (recommended).\n\n"
+             "**PyMuPDF**: Fast for text-based PDFs.\n\n"
+             "**OCRmyPDF**: High-accuracy OCR with Tesseract - best for scanned PDFs and image-heavy documents. "
+             "Includes automatic deskew, rotation correction, and noise removal.\n\n"
+             "**Textract**: AWS Textract (requires credentials) - best for complex scanned documents."
     )
     parser_preference = parser_choice.lower()
+    
+    # OCR settings for OCRmyPDF
+    if parser_choice == "OCRmyPDF":
+        with st.expander("🔍 OCR Settings", expanded=True):
+            ocr_languages = st.text_input(
+                "Tesseract Languages:",
+                value="eng",
+                help="Language codes for Tesseract OCR. Examples: 'eng' (English), 'eng+spa' (English+Spanish), 'eng+fra' (English+French)"
+            )
+            ocr_dpi = st.slider(
+                "OCR DPI:",
+                min_value=150,
+                max_value=600,
+                value=300,
+                step=50,
+                help="DPI for OCR processing. Higher DPI = better accuracy but slower. 300 DPI is recommended."
+            )
+            st.info("💡 **OCRmyPDF Features:**\n"
+                   "- Automatic deskew and rotation correction\n"
+                   "- Noise removal for better accuracy\n"
+                   "- Text layer embedding in PDFs\n"
+                   "- Optimized for scanned documents")
+    else:
+        ocr_languages = "eng"
+        ocr_dpi = 300
     
     # Document Library - Long-term Storage Review
     st.divider()

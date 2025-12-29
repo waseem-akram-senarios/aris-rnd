@@ -9,6 +9,11 @@ from typing import Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from .base_parser import BaseParser, ParsedDocument
 
+try:
+    from utils.image_extraction_logger import image_logger
+except ImportError:
+    image_logger = None
+
 logger = logging.getLogger(__name__)
 
 

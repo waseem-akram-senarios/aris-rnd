@@ -180,16 +180,18 @@ class DocumentProcessor:
                     logger.info(f"[STEP 2.2] File size: {file_size_mb:.2f} MB | Estimated processing time: {estimated_time if parser_preference and parser_preference.lower() == 'docling' else 'varies'}")
                 
                 # Create a wrapper callback that provides parser-specific progress updates
-                def parser_progress_callback(status_msg, progress):
+                def parser_progress_callback(status_msg, progress, detailed_message=None):
                     if progress_callback:
                         # Map parser progress (0.0-1.0) to parsing phase (0.25-0.45)
                         # Parsing phase is 25% to 45% of total progress
                         mapped_progress = 0.25 + (progress * 0.20)  # 0.25 to 0.45
+                        # Use detailed_message if provided, otherwise use status_msg
+                        msg = detailed_message if detailed_message else status_msg
                         # Pass detailed message to progress callback
                         import inspect
                         sig = inspect.signature(progress_callback)
                         if len(sig.parameters) > 2:  # Check if callback accepts kwargs
-                            progress_callback('parsing', mapped_progress, detailed_message=status_msg)
+                            progress_callback('parsing', mapped_progress, detailed_message=msg)
                         else:
                             progress_callback('parsing', mapped_progress)
                 

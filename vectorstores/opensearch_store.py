@@ -309,7 +309,8 @@ class OpenSearchVectorStore:
             essential_fields = [
                 'source', 'page', 'source_page', 'chunk_index', 'total_chunks',
                 'parser_used', 'pages', 'images_detected', 'extraction_percentage',
-                'start_char', 'end_char', 'token_count'
+                'start_char', 'end_char', 'token_count',
+                'has_image', 'image_ref', 'image_index', 'image_bbox', 'image_info'
             ]
             
             if doc.metadata:

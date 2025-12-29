@@ -38,6 +38,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender1 \
     libgthread-2.0-0 \
+    tesseract-ocr \
+    tesseract-ocr-eng \
+    ghostscript \
+    qpdf \
+    unpaper \
+    pngquant \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages from builder
@@ -69,17 +75,17 @@ RUN mkdir -p /app/vectorstore /app/data
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
-    STREAMLIT_SERVER_PORT=8501 \
+    STREAMLIT_SERVER_PORT=80 \
     STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
     STREAMLIT_SERVER_HEADLESS=true
 
 # Expose Streamlit port
-EXPOSE 8501
+EXPOSE 80
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8501/_stcore/health')" || exit 1
+    CMD python -c "import requests; requests.get('http://localhost:80/_stcore/health')" || exit 1
 
 # Run both Streamlit and FastAPI
 CMD ["/app/start.sh"]

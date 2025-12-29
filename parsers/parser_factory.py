@@ -53,6 +53,12 @@ class ParserFactory:
         except ImportError:
             pass
         
+        try:
+            from .ocrmypdf_parser import OCRmyPDFParser
+            # OCRmyPDF is also for PDF, but we'll handle it in get_parser
+        except ImportError:
+            pass
+        
         cls._registered = True
     
     @classmethod
@@ -88,6 +94,9 @@ class ParserFactory:
                 elif preferred_parser.lower() == 'textract':
                     from .textract_parser import TextractParser
                     return TextractParser()
+                elif preferred_parser.lower() == 'ocrmypdf':
+                    from .ocrmypdf_parser import OCRmyPDFParser
+                    return OCRmyPDFParser()
             except ImportError:
                 pass  # Fall through to default selection
         
@@ -150,7 +159,21 @@ class ParserFactory:
         if preferred_parser and preferred_parser.lower() != 'auto':
             logger.info(f"[STEP 2.1] ParserFactory: Explicit parser requested: {preferred_parser}")
             
-            parser = cls.get_parser(file_path, preferred_parser)
+            # Special handling for OCRmyPDF - check if available
+            if preferred_parser.lower() == 'ocrmypdf':
+                try:
+                    from .ocrmypdf_parser import OCRmyPDFParser
+                    parser = OCRmyPDFParser()
+                    if not parser.is_available():
+                        raise ValueError(
+                            "OCRmyPDF or Tesseract not installed. "
+                            "Install with: sudo apt-get install tesseract-ocr && pip install ocrmypdf"
+                        )
+                except ImportError:
+                    raise ValueError("OCRmyPDF parser not available. Install with: pip install ocrmypdf")
+            else:
+                parser = cls.get_parser(file_path, preferred_parser)
+            
             if parser:
                 logger.info(f"[STEP 2.2] ParserFactory: Using {preferred_parser} parser (no fallback)")
                 try:
