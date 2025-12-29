@@ -58,6 +58,12 @@ class ParserFactory:
             # OCRmyPDF is also for PDF, but we'll handle it in get_parser
         except ImportError:
             pass
+
+        try:
+            from .llama_scan_parser import LlamaScanParser
+            # Llama-Scan is also for PDF, but we'll handle it in get_parser
+        except ImportError:
+            pass
         
         cls._registered = True
     
@@ -97,6 +103,9 @@ class ParserFactory:
                 elif preferred_parser.lower() == 'ocrmypdf':
                     from .ocrmypdf_parser import OCRmyPDFParser
                     return OCRmyPDFParser()
+                elif preferred_parser.lower() == 'llamascan':
+                    from .llama_scan_parser import LlamaScanParser
+                    return LlamaScanParser()
             except ImportError:
                 pass  # Fall through to default selection
         
@@ -171,6 +180,21 @@ class ParserFactory:
                         )
                 except ImportError:
                     raise ValueError("OCRmyPDF parser not available. Install with: pip install ocrmypdf")
+            elif preferred_parser.lower() == 'llamascan':
+                try:
+                    from .llama_scan_parser import LlamaScanParser
+                    parser = LlamaScanParser()
+                    if not parser.is_available():
+                        logger.warning(
+                            "Llama-Scan selected but Ollama is not reachable. Falling back to automatic PDF parsing. "
+                            "Set OLLAMA_SERVER_URL and ensure Ollama is running to use Llama-Scan."
+                        )
+                        parser = None
+                except ImportError:
+                    logger.warning(
+                        "Llama-Scan parser not available (missing llama-scan). Falling back to automatic PDF parsing."
+                    )
+                    parser = None
             else:
                 parser = cls.get_parser(file_path, preferred_parser)
             
@@ -204,8 +228,7 @@ class ParserFactory:
                             f"Please try again or use a different parser."
                         )
             else:
-                logger.error(f"❌ [STEP 2.1] ParserFactory: Parser '{preferred_parser}' is not available")
-                raise ValueError(f"Parser '{preferred_parser}' is not available")
+                logger.warning(f"[STEP 2.1] ParserFactory: Parser '{preferred_parser}' is not available, falling back")
         
         # Detect PDF type
         logger.info(f"[STEP 2.1] ParserFactory: Detecting PDF type...")

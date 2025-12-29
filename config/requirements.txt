@@ -27,6 +27,9 @@ ocrmypdf>=16.0.0
 # Note: Tesseract OCR engine must be installed separately:
 # sudo apt-get install tesseract-ocr tesseract-ocr-eng
 
+# Llama-Scan (multimodal PDF parsing via Ollama)
+llama-scan>=0.1.8
+
 # Vector store backends
 opensearch-py>=2.0.0
 requests-aws4auth>=1.1.0

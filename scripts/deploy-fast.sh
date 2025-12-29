@@ -78,11 +78,24 @@ echo ""
 echo -e "${BLUE}🔐 Step 2: Ensuring .env file exists...${NC}"
 # Copy .env separately if it exists locally
 if [ -f "$PROJECT_ROOT/.env" ]; then
-    scp -i "$PEM_FILE" -o StrictHostKeyChecking=no \
-        "$PROJECT_ROOT/.env" \
-        "$SERVER_USER@$SERVER_IP:$SERVER_DIR/.env" >/dev/null 2>&1 && \
-        echo "   ✅ .env copied" || \
-        echo "   ℹ️  Using existing .env on server"
+    COPY_ENV_VALUE="${COPY_ENV:-false}"
+    if [ "$COPY_ENV_VALUE" = "true" ] || [ "$COPY_ENV_VALUE" = "1" ]; then
+        scp -i "$PEM_FILE" -o StrictHostKeyChecking=no \
+            "$PROJECT_ROOT/.env" \
+            "$SERVER_USER@$SERVER_IP:$SERVER_DIR/.env" >/dev/null 2>&1 && \
+            echo "   ✅ .env copied" || \
+            echo "   ℹ️  Using existing .env on server"
+    else
+        if ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" "test -f $SERVER_DIR/.env" >/dev/null 2>&1; then
+            echo "   ℹ️  Using existing .env on server"
+        else
+            scp -i "$PEM_FILE" -o StrictHostKeyChecking=no \
+                "$PROJECT_ROOT/.env" \
+                "$SERVER_USER@$SERVER_IP:$SERVER_DIR/.env" >/dev/null 2>&1 && \
+                echo "   ✅ .env copied" || \
+                echo "   ℹ️  Using existing .env on server"
+        fi
+    fi
 else
     echo "   ℹ️  Using existing .env on server"
 fi
@@ -98,9 +111,17 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
     sudo docker rm aris-rag-app 2>/dev/null || true
     
     # Build image
-    sudo docker build -t aris-rag:latest . >/dev/null 2>&1 || {
+    CPU_COUNT=\$(nproc)
+    TOTAL_MEM_GB=\$(free -g | awk '/^Mem:/ {print \$2}')
+    BUILD_CPUS=\$((CPU_COUNT / 2))
+    BUILD_MEM_GB=\$((TOTAL_MEM_GB / 2))
+    if [ \$BUILD_CPUS -lt 1 ]; then BUILD_CPUS=1; fi
+    if [ \$BUILD_MEM_GB -lt 4 ]; then BUILD_MEM_GB=4; fi
+    CPUSET="0-\$((BUILD_CPUS - 1))"
+
+    sudo docker build --cpuset-cpus="\$CPUSET" --memory="\${BUILD_MEM_GB}g" -t aris-rag:latest . >/dev/null 2>&1 || {
         echo "   Building with output..."
-        sudo docker build -t aris-rag:latest .
+        sudo docker build --cpuset-cpus="\$CPUSET" --memory="\${BUILD_MEM_GB}g" -t aris-rag:latest .
     }
     echo "   ✅ Image built"
 EOF
@@ -115,9 +136,13 @@ CPU_COUNT=$(ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER
 TOTAL_MEM_GB=$(ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" \
     "free -g | awk '/^Mem:/ {print \$2}'" 2>/dev/null || echo "14")
 
-# Calculate optimal allocation (leave 1 CPU and 2GB for system)
-ALLOCATED_CPUS=$((CPU_COUNT - 1))
-ALLOCATED_MEM_GB=$((TOTAL_MEM_GB - 2))
+RESERVED_CPUS=${RESERVED_CPUS:-$((CPU_COUNT / 3))}
+RESERVED_MEM_GB=${RESERVED_MEM_GB:-$((TOTAL_MEM_GB / 4))}
+if [ $RESERVED_CPUS -lt 2 ]; then RESERVED_CPUS=2; fi
+if [ $RESERVED_MEM_GB -lt 8 ]; then RESERVED_MEM_GB=8; fi
+
+ALLOCATED_CPUS=$((CPU_COUNT - RESERVED_CPUS))
+ALLOCATED_MEM_GB=$((TOTAL_MEM_GB - RESERVED_MEM_GB))
 MEM_RESERVATION_GB=$((ALLOCATED_MEM_GB - 4))  # Reserve 4GB less than limit
 
 # Ensure minimum values
@@ -134,8 +159,10 @@ fi
 echo "   Server Specs:"
 echo "   - Total CPUs: $CPU_COUNT"
 echo "   - Total Memory: ${TOTAL_MEM_GB} GB"
-echo "   - Allocated CPUs: $ALLOCATED_CPUS (leaving 1 for system)"
-echo "   - Allocated Memory: ${ALLOCATED_MEM_GB} GB (leaving 2 GB for system)"
+echo "   - Reserved CPUs (host/Ollama): $RESERVED_CPUS"
+echo "   - Reserved Memory (host/Ollama): ${RESERVED_MEM_GB} GB"
+echo "   - Allocated CPUs (container): $ALLOCATED_CPUS"
+echo "   - Allocated Memory (container): ${ALLOCATED_MEM_GB} GB"
 echo "   - Memory Reservation: ${MEM_RESERVATION_GB} GB"
 
 echo ""
@@ -146,11 +173,13 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
     
     # Start container with dynamically calculated resource limits
     # Port 80 -> Streamlit (80), Port 8500 -> FastAPI (8500) - no port mapping
+    CPUSET="0-\$(( $ALLOCATED_CPUS - 1 ))"
     sudo docker run -d \
         --name aris-rag-app \
         --restart unless-stopped \
         -p 80:80 \
         -p 8500:8500 \
+        --cpuset-cpus="\$CPUSET" \
         --cpus="$ALLOCATED_CPUS" \
         --memory="${ALLOCATED_MEM_GB}g" \
         --memory-reservation="${MEM_RESERVATION_GB}g" \

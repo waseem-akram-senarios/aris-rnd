@@ -630,16 +630,20 @@ with st.sidebar:
     st.header("🔧 Parser Settings")
     parser_choice = st.selectbox(
         "Choose Parser:",
-        ["Docling", "PyMuPDF", "OCRmyPDF", "Textract"],
+        ["Docling", "PyMuPDF", "OCRmyPDF", "Llama-Scan", "Textract"],
         index=2,  # Default to OCRmyPDF
         key="parser_choice_v2",
         help="**Docling**: Extracts the most content (processes all pages) but takes 5-10 minutes (recommended).\n\n"
              "**PyMuPDF**: Fast for text-based PDFs.\n\n"
              "**OCRmyPDF**: High-accuracy OCR with Tesseract - best for scanned PDFs and image-heavy documents. "
              "Includes automatic deskew, rotation correction, and noise removal.\n\n"
+             "**Llama-Scan**: Multimodal PDF parsing via Ollama vision model (requires Ollama server).\n\n"
              "**Textract**: AWS Textract (requires credentials) - best for complex scanned documents."
     )
-    parser_preference = parser_choice.lower()
+    if parser_choice == "Llama-Scan":
+        parser_preference = "llamascan"
+    else:
+        parser_preference = parser_choice.lower()
     
     # OCR settings for OCRmyPDF
     if parser_choice == "OCRmyPDF":
@@ -665,6 +669,54 @@ with st.sidebar:
     else:
         ocr_languages = "eng"
         ocr_dpi = 300
+
+    if parser_choice == "Llama-Scan":
+        with st.expander("🦙 Llama-Scan Settings", expanded=True):
+            llama_model = st.text_input(
+                "Ollama Model:",
+                value=os.getenv("LLAMA_SCAN_MODEL", "qwen2.5vl:latest"),
+                help="Vision model name in Ollama. Example: qwen2.5vl:latest"
+            )
+            ollama_url = st.text_input(
+                "Ollama Server URL:",
+                value=os.getenv("OLLAMA_SERVER_URL", "http://localhost:11434"),
+                help="Ollama server endpoint reachable from the app container."
+            )
+            include_diagrams = st.checkbox(
+                "Include diagram/image descriptions",
+                value=os.getenv("LLAMA_SCAN_INCLUDE_DIAGRAMS", "true").strip().lower() in {"1", "true", "yes", "y", "on"},
+                help="If enabled, model will describe diagrams/images using <image> tags."
+            )
+            start_page = st.number_input(
+                "Start Page (0 = first)",
+                min_value=0,
+                value=int(os.getenv("LLAMA_SCAN_START_PAGE", "0")),
+                step=1
+            )
+            end_page = st.number_input(
+                "End Page (0 = last)",
+                min_value=0,
+                value=int(os.getenv("LLAMA_SCAN_END_PAGE", "0")),
+                step=1
+            )
+            resize_width = st.number_input(
+                "Resize Width (0 = no resize)",
+                min_value=0,
+                value=int(os.getenv("LLAMA_SCAN_WIDTH", "0")),
+                step=50
+            )
+            custom_instructions = st.text_area(
+                "Custom Instructions (optional)",
+                value=os.getenv("LLAMA_SCAN_CUSTOM_INSTRUCTIONS", ""),
+                help="Extra instructions appended to the transcription prompt."
+            )
+        os.environ["LLAMA_SCAN_MODEL"] = str(llama_model).strip() or "qwen2.5vl:latest"
+        os.environ["OLLAMA_SERVER_URL"] = str(ollama_url).strip() or "http://localhost:11434"
+        os.environ["LLAMA_SCAN_INCLUDE_DIAGRAMS"] = "true" if include_diagrams else "false"
+        os.environ["LLAMA_SCAN_START_PAGE"] = str(int(start_page))
+        os.environ["LLAMA_SCAN_END_PAGE"] = str(int(end_page))
+        os.environ["LLAMA_SCAN_WIDTH"] = str(int(resize_width))
+        os.environ["LLAMA_SCAN_CUSTOM_INSTRUCTIONS"] = str(custom_instructions or "").strip()
     
     # Document Library - Long-term Storage Review
     st.divider()
