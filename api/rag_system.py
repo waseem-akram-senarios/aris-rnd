@@ -1590,9 +1590,13 @@ class RAGSystem:
                 elif hasattr(doc, 'metadata') and doc.metadata:
                     image_index = doc.metadata.get('image_index')
 
+                # Ensure page is always set (fallback to 1 if None)
+                if page is None:
+                    page = 1
+                
                 occurrences.append({
                     "source": doc.metadata.get('source') if hasattr(doc, 'metadata') and doc.metadata else None,
-                    "page": int(page) if page else None,
+                    "page": int(page),  # Always guaranteed to be an integer >= 1
                     "snippet": snippet,
                     "image_index": image_index,
                     "start_char": doc.metadata.get('start_char') if hasattr(doc, 'metadata') and doc.metadata else None,
@@ -1613,15 +1617,21 @@ class RAGSystem:
         # Create citations-like objects so UI can render references
         citations = []
         for idx, occ in enumerate(occurrences, 1):
+            # Ensure page is always set (fallback to 1 if None)
+            page = occ.get('page')
+            if page is None:
+                page = 1
+                logger.debug(f"find_all_occurrences citation {idx}: page was None, using fallback page 1")
+            
             citations.append({
                 'id': idx,
                 'source': occ.get('source') or source_name,
-                'page': occ.get('page'),
+                'page': page,  # Always guaranteed to be an integer >= 1
                 'snippet': occ.get('snippet'),
                 'full_text': occ.get('snippet') or '',
-                'source_location': f"Page {occ.get('page')}" if occ.get('page') else "Text content",
+                'source_location': f"Page {page}",
                 'content_type': 'image' if occ.get('image_index') is not None else 'text',
-                'image_ref': {'image_index': occ.get('image_index'), 'page': occ.get('page')} if occ.get('image_index') is not None else None,
+                'image_ref': {'image_index': occ.get('image_index'), 'page': page} if occ.get('image_index') is not None else None,
             })
 
         sources = [source_name]
@@ -2382,7 +2392,7 @@ class RAGSystem:
                     # Use metadata image_ref if available (set during image content extraction)
                     if doc.metadata.get('image_ref'):
                         image_ref = doc.metadata.get('image_ref')
-                        image_info = doc.metadata.get('image_info', f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference")
+                        image_info = doc.metadata.get('image_info', f"Image {doc.metadata.get('image_index', '?')} on Page {page}")  # page is always set
                     else:
                         # Fallback to basic image reference
                         image_ref = {
@@ -2390,7 +2400,7 @@ class RAGSystem:
                             'image_index': doc.metadata.get('image_index'),
                             'bbox': doc.metadata.get('image_bbox')
                         }
-                        image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference"
+                        image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}"  # page is always set
             
             # CRITICAL: Also check if chunk text contains image markers (image content chunks)
             # These chunks should be marked as image content even if metadata doesn't have image_ref
@@ -2406,7 +2416,7 @@ class RAGSystem:
                         'image_index': image_num,
                         'source': source
                     }
-                    image_info = f"Image {image_num} on Page {page}" if page else f"Image {image_num}"
+                    image_info = f"Image {image_num} on Page {page}"  # page is always set
                 else:
                     # Default to image_index from metadata or 1
                     image_num = doc.metadata.get('image_index', 1)
@@ -2415,15 +2425,14 @@ class RAGSystem:
                         'image_index': image_num,
                         'source': source
                     }
-                    image_info = f"Image {image_num} on Page {page}" if page else f"Image {image_num}"
+                    image_info = f"Image {image_num} on Page {page}"  # page is always set
             
             # Generate context-aware snippet using query
             snippet_clean = self._generate_context_snippet(chunk_text, question, max_length=500)
             
             # Build source location description (certification field)
-            source_location_parts = []
-            if page:
-                source_location_parts.append(f"Page {page}")
+            # Page is always guaranteed to be set (>= 1) at this point
+            source_location_parts = [f"Page {page}"]  # Always include page
             
             # Only add image info if this specific chunk has an image reference
             if image_ref:
@@ -2436,7 +2445,7 @@ class RAGSystem:
                 source_location_parts.append(f"Image {image_index}")
             # REMOVED: Don't use document-level images_detected - it's too broad and misleading
             
-            source_location = " | ".join(source_location_parts) if source_location_parts else "Text content"
+            source_location = " | ".join(source_location_parts)  # Always includes "Page X"
             
             # Extract section/heading information from page_blocks if available
             section = None
@@ -2472,12 +2481,18 @@ class RAGSystem:
             elif hasattr(doc, 'metadata') and 'similarity_score' in doc.metadata:
                 similarity_score = doc.metadata.get('similarity_score')
             
+            # Ensure page is always set (fallback to 1 if None)
+            if page is None:
+                page = 1
+                page_confidence = 0.1
+                logger.debug(f"Citation {i}: page was None, using fallback page 1")
+            
             # Build citation entry with enhanced metadata including confidence scores
             citation = {
                 'id': i,
                 'source': source if source and source != 'Unknown' else 'Unknown',
                 'source_confidence': source_confidence,
-                'page': page,
+                'page': page,  # Always guaranteed to be an integer >= 1
                 'page_confidence': page_confidence,
                 'section': section,
                 'snippet': snippet_clean,
@@ -2496,7 +2511,7 @@ class RAGSystem:
             logger.debug(f"Citation {i}: source='{source}', page={page}, chunk_index={citation.get('chunk_index', 'N/A')}")
             
             # Add source and page info to context
-            page_info = f" (Page {page})" if page else ""
+            page_info = f" (Page {page})"  # page is always set
             context_parts.append(f"[Source {i}: {source}{page_info}]\n{chunk_text}")
         
         context = "\n\n---\n\n".join(context_parts)
@@ -3457,13 +3472,14 @@ class RAGSystem:
                 try:
                     source = doc.metadata.get('source', 'Unknown') if hasattr(doc, 'metadata') and doc.metadata else 'Unknown'
                     page = doc.metadata.get('page', None) if hasattr(doc, 'metadata') and doc.metadata else None
+                    # Ensure page is always set (fallback to 1)
+                    if page is None:
+                        page = 1
                     snippet = (doc.page_content or '').strip().replace('\n', ' ')
                     if len(snippet) > 350:
                         snippet = snippet[:350] + "..."
-                    if page is not None:
-                        parts.append(f"- ({source}, page {page}) {snippet}")
-                    else:
-                        parts.append(f"- ({source}) {snippet}")
+                    # Page is always set now, so always include it
+                    parts.append(f"- ({source}, page {page}) {snippet}")
                 except Exception:
                     continue
         if not parts:
@@ -4248,8 +4264,10 @@ Answer:"""
             else:
                 logger.warning(f"Page from page range {page_num} exceeds document pages {doc_pages}")
         
-        # No valid page found
-        return None, 0.0
+        # No valid page found - use fallback: page 1 with low confidence
+        # This ensures every citation has a page number, even if we can't determine it
+        logger.debug(f"No page number found in chunk, using fallback page 1")
+        return 1, 0.1  # Fallback to page 1 with very low confidence
     
     def _generate_context_snippet(self, chunk_text: str, query: str, max_length: int = 500) -> str:
         """
@@ -4803,6 +4821,12 @@ Answer:"""
             # Extract page number with confidence score
             page, page_confidence = self._extract_page_number(doc, chunk_text)
             
+            # Ensure page is always set (fallback to 1 if None)
+            if page is None:
+                page = 1
+                page_confidence = 0.1
+                logger.debug(f"Agentic RAG Citation {i}: page was None, using fallback page 1")
+            
             start_char = doc.metadata.get('start_char', None)
             end_char = doc.metadata.get('end_char', None)
             
@@ -4830,14 +4854,13 @@ Answer:"""
                         'image_index': doc.metadata.get('image_index'),
                         'bbox': doc.metadata.get('image_bbox')
                     }
-                    image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}" if page else "Image reference"
+                    image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}"  # page is always set (>= 1)
             
             # Generate context-aware snippet using original question
             snippet_clean = self._generate_context_snippet(chunk_text, question, max_length=500)
             
-            source_location_parts = []
-            if page:
-                source_location_parts.append(f"Page {page}")
+            # Build source location - page is always guaranteed to be set (>= 1) at this point
+            source_location_parts = [f"Page {page}"]  # Always include page
             
             # Only add image info if this specific chunk has an image reference
             if image_ref:
@@ -4850,7 +4873,7 @@ Answer:"""
                 source_location_parts.append(f"Image {image_index}")
             # REMOVED: Don't use document-level images_detected - it's too broad and misleading
             
-            source_location = " | ".join(source_location_parts) if source_location_parts else "Text content"
+            source_location = " | ".join(source_location_parts)  # Always includes "Page X"
             
             # Extract section/heading information from page_blocks if available
             section = None
@@ -4886,11 +4909,17 @@ Answer:"""
             elif hasattr(doc, 'metadata') and 'similarity_score' in doc.metadata:
                 similarity_score = doc.metadata.get('similarity_score')
             
+            # Ensure page is always set (fallback to 1 if None) - double check for agentic RAG
+            if page is None:
+                page = 1
+                page_confidence = 0.1
+                logger.debug(f"Agentic RAG Citation {i}: page was None in citation dict, using fallback page 1")
+            
             citation = {
                 'id': i,
                 'source': source if source and source != 'Unknown' else 'Unknown',
                 'source_confidence': source_confidence,
-                'page': page,
+                'page': page,  # Always guaranteed to be an integer >= 1
                 'page_confidence': page_confidence,
                 'section': section,
                 'snippet': snippet_clean,
@@ -4908,7 +4937,7 @@ Answer:"""
             citations.append(citation)
             logger.debug(f"Agentic RAG Citation {i}: source='{source}', page={page}, chunk_index={citation.get('chunk_index', 'N/A')}")
             
-            page_info = f" (Page {page})" if page else ""
+            page_info = f" (Page {page})"  # page is always set
             context_parts.append(f"[Source {i}: {source}{page_info}]\n{chunk_text}")
         
         context = "\n\n---\n\n".join(context_parts)

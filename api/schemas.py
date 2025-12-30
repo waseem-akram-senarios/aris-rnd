@@ -24,7 +24,7 @@ class Citation(BaseModel):
     """Citation information for a source"""
     id: int
     source: str
-    page: Optional[int] = None
+    page: int = Field(default=1, ge=1, description="Page number (always >= 1, defaults to 1 if not available)")
     snippet: str
     full_text: str
     source_location: str
@@ -88,6 +88,8 @@ class DocumentListResponse(BaseModel):
     """Response model for listing documents"""
     documents: List[DocumentMetadata]
     total: int
+    total_chunks: int = 0
+    total_images: int = 0
 
 
 class StatsResponse(BaseModel):
@@ -193,7 +195,7 @@ class ImageResult(BaseModel):
     image_id: str
     source: str
     image_number: int
-    page: Optional[int] = None
+    page: int = Field(default=1, ge=1, description="Page number where image appears (always >= 1, defaults to 1 if not available)")
     ocr_text: str
     metadata: Dict[str, Any]
     score: Optional[float] = None

@@ -302,8 +302,6 @@ async def query_unified(
     type: str = Query(default="text", description="Query type: text or image"),
     document_id: Optional[str] = Query(default=None, description="Filter to specific document"),
     focus: str = Query(default="all", description="Focus area: all, important, summary, specific"),
-    service: ServiceContainer = Depends(get_service),
-):
     k: Optional[int] = Query(default=None, ge=1, le=50, description="Number of chunks to retrieve (overrides body)"),
     use_mmr: Optional[bool] = Query(default=None, description="Use Maximum Marginal Relevance (overrides body)"),
     search_mode: Optional[str] = Query(default=None, description="Search mode: semantic, keyword, or hybrid (overrides body)"),
@@ -311,6 +309,8 @@ async def query_unified(
     max_tokens: Optional[int] = Query(default=None, ge=1, le=4000, description="Max tokens for response (overrides body)"),
     use_agentic_rag: Optional[bool] = Query(default=None, description="Use Agentic RAG with query decomposition (overrides body)"),
     semantic_weight: Optional[float] = Query(default=None, ge=0.0, le=1.0, description="Semantic search weight 0.0-1.0 (overrides body)"),
+    service: ServiceContainer = Depends(get_service),
+):
     """
     **Unified Query Endpoint - Enhanced with Importance Focus**
     
@@ -360,10 +360,24 @@ async def query_unified(
         # Route to appropriate handler
         if type == "image":
             # Image query
+            # Use query param k if provided, otherwise use request.k, otherwise default to 5
+            # FastAPI passes the actual value, not the Query object
+            image_k = 5  # Default from ImageQueryRequest schema
+            if k is not None:
+                image_k = int(k) if isinstance(k, str) else k
+            elif hasattr(request, 'k') and request.k is not None:
+                # Ensure request.k is an integer, not a Query object or tuple
+                req_k = request.k
+                if isinstance(req_k, tuple):
+                    # Handle tuple case - take first element if it's not a Query object
+                    req_k = req_k[0] if len(req_k) > 0 and not hasattr(req_k[0], 'default') else None
+                if req_k is not None:
+                    image_k = int(req_k) if isinstance(req_k, str) else req_k
+            
             image_request = ImageQueryRequest(
                 question=request.question,
                 source=document_id,
-                k=request.k
+                k=image_k
             )
             
             vector_store_type = getattr(service.rag_system, 'vector_store_type', None)
@@ -395,18 +409,26 @@ async def query_unified(
                 k=request.k
             )
             
-            image_results = [
-                ImageResult(
-                    image_id=img.get('image_id', ''),
-                    source=img.get('source', ''),
-                    image_number=img.get('image_number', 0),
-                    page=img.get('page'),
-                    ocr_text=img.get('ocr_text', ''),
-                    metadata=img.get('metadata', {}),
-                    score=img.get('score')
+            # Build image results - ensure page is always set
+            image_results = []
+            for img in results:
+                page = img.get('page')
+                # Ensure page is always set (fallback to 1 if None)
+                if page is None:
+                    page = 1
+                    logger.warning(f"ImageResult: page was None for image {img.get('image_id', 'unknown')}, using fallback page 1")
+                
+                image_results.append(
+                    ImageResult(
+                        image_id=img.get('image_id', ''),
+                        source=img.get('source', ''),
+                        image_number=img.get('image_number', 0),
+                        page=page,  # Always guaranteed to be an integer >= 1
+                        ocr_text=img.get('ocr_text', ''),
+                        metadata=img.get('metadata', {}),
+                        score=img.get('score')
+                    )
                 )
-                for img in results
-            ]
             
             return ImageQueryResponse(
                 images=image_results,
@@ -456,18 +478,25 @@ async def query_unified(
                 use_mmr=request.use_mmr
             )
             
-            # Build citations
-            citations = [
-                Citation(
-                    id=str(i),
-                    source=src.get("source", ""),
-                    page=src.get("page"),
-                    snippet=src.get("snippet", ""),
-                    full_text=src.get("full_text", ""),
-                    source_location=src.get("source_location", "")
+            # Build citations - ensure page is always set
+            citations = []
+            for i, src in enumerate(result.get("sources", [])):
+                page = src.get("page")
+                # Ensure page is always set (fallback to 1 if None)
+                if page is None:
+                    page = 1
+                    logger.warning(f"Citation {i}: page was None in API response, using fallback page 1")
+                
+                citations.append(
+                    Citation(
+                        id=str(i),
+                        source=src.get("source", ""),
+                        page=page,  # Always guaranteed to be an integer >= 1
+                        snippet=src.get("snippet", ""),
+                        full_text=src.get("full_text", ""),
+                        source_location=src.get("source_location", "")
+                    )
                 )
-                for i, src in enumerate(result.get("sources", []))
-            ]
             
             return QueryResponse(
                 answer=result["answer"],
