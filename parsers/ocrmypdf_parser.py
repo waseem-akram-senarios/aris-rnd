@@ -150,14 +150,35 @@ class OCRmyPDFParser(BaseParser):
                     doc = fitz.open(output_path)
                     
                     text_parts = []
+                    page_blocks = []  # Store page-level blocks for citation support
                     pages = len(doc)
                     images_detected = False
                     image_count = 0
+                    cumulative_pos = 0
                     
                     for page_num in range(pages):
                         page = doc[page_num]
                         page_text = page.get_text()
-                        text_parts.append(page_text)
+                        actual_page_num = page_num + 1  # 1-indexed page number
+                        
+                        # Add page marker for consistency with other parsers
+                        page_marker = f"--- Page {actual_page_num} ---\n"
+                        page_text_with_marker = page_marker + page_text
+                        page_start = cumulative_pos
+                        page_end = cumulative_pos + len(page_text_with_marker)
+                        
+                        # Store page block metadata
+                        page_blocks.append({
+                            'type': 'page',
+                            'page': actual_page_num,
+                            'text': page_text,
+                            'start_char': page_start,
+                            'end_char': page_end,
+                            'blocks': [{'text': page_text, 'page': actual_page_num}]
+                        })
+                        
+                        text_parts.append(page_text_with_marker)
+                        cumulative_pos = page_end + 2  # +2 for \n\n separator
                         
                         # Check for images
                         image_list = page.get_images()
@@ -180,11 +201,32 @@ class OCRmyPDFParser(BaseParser):
                     pages = len(reader.pages)
                     
                     text_parts = []
+                    page_blocks = []  # Store page-level blocks for citation support
                     images_detected = False
+                    cumulative_pos = 0
                     
                     for page_num, page in enumerate(reader.pages):
                         page_text = page.extract_text()
-                        text_parts.append(page_text)
+                        actual_page_num = page_num + 1  # 1-indexed page number
+                        
+                        # Add page marker for consistency with other parsers
+                        page_marker = f"--- Page {actual_page_num} ---\n"
+                        page_text_with_marker = page_marker + page_text
+                        page_start = cumulative_pos
+                        page_end = cumulative_pos + len(page_text_with_marker)
+                        
+                        # Store page block metadata
+                        page_blocks.append({
+                            'type': 'page',
+                            'page': actual_page_num,
+                            'text': page_text,
+                            'start_char': page_start,
+                            'end_char': page_end,
+                            'blocks': [{'text': page_text, 'page': actual_page_num}]
+                        })
+                        
+                        text_parts.append(page_text_with_marker)
+                        cumulative_pos = page_end + 2  # +2 for \n\n separator
                         
                         if progress_callback and pages > 0:
                             progress = 0.6 + (0.3 * (page_num + 1) / pages)
@@ -216,9 +258,11 @@ class OCRmyPDFParser(BaseParser):
                         "parser": "ocrmypdf",
                         "ocr_languages": self.languages,
                         "ocr_dpi": self.dpi,
+                        "pages": pages,  # Use 'pages' for consistency
                         "total_pages": pages,
                         "character_count": char_count,
-                        "image_count": image_count
+                        "image_count": image_count,
+                        "page_blocks": page_blocks  # Store page-level blocks for citation support
                     },
                     pages=pages,
                     images_detected=images_detected,

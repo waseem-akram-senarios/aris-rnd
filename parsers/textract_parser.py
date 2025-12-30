@@ -145,18 +145,25 @@ class TextractParser(BaseParser):
                 except Exception as e:
                     raise ValueError(f"Textract API call failed: {str(e)}")
             
-            # Extract text from response
+            # Extract text from response with page-level tracking
             text_parts = []
             pages = set()
             image_blocks = []
+            page_blocks = []  # Store page-level blocks for citation support
             current_page = 1
+            page_text_dict = {}  # Track text per page
             
             for block in response.get('Blocks', []):
                 if block['BlockType'] == 'PAGE':
                     current_page = block.get('Page', 1)
                     pages.add(current_page)
+                    if current_page not in page_text_dict:
+                        page_text_dict[current_page] = []
                 elif block['BlockType'] == 'LINE':
-                    text_parts.append(block.get('Text', ''))
+                    line_text = block.get('Text', '')
+                    text_parts.append(line_text)
+                    if current_page in page_text_dict:
+                        page_text_dict[current_page].append(line_text)
                 elif block['BlockType'] in ['IMAGE', 'FIGURE', 'TABLE']:
                     # Track image blocks for marker insertion
                     image_blocks.append({
@@ -165,7 +172,34 @@ class TextractParser(BaseParser):
                         'geometry': block.get('Geometry', {})
                     })
             
-            full_text = '\n'.join(text_parts)
+            # Build page_blocks metadata for accurate page tracking
+            cumulative_pos = 0
+            for page_num in sorted(pages):
+                page_text = '\n'.join(page_text_dict.get(page_num, []))
+                if page_text.strip():
+                    page_marker = f"--- Page {page_num} ---\n"
+                    page_text_with_marker = page_marker + page_text
+                    page_start = cumulative_pos
+                    page_end = cumulative_pos + len(page_text_with_marker)
+                    
+                    page_blocks.append({
+                        'type': 'page',
+                        'page': page_num,
+                        'text': page_text,
+                        'start_char': page_start,
+                        'end_char': page_end,
+                        'blocks': [{'text': page_text, 'page': page_num}]
+                    })
+                    cumulative_pos = page_end + 2  # +2 for \n\n separator
+            
+            # Build full text with page markers for consistency
+            full_text_parts = []
+            for page_num in sorted(pages):
+                page_text = '\n'.join(page_text_dict.get(page_num, []))
+                if page_text.strip():
+                    full_text_parts.append(f"--- Page {page_num} ---\n{page_text}")
+            
+            full_text = '\n\n'.join(full_text_parts)
             total_pages = len(pages) if pages else 1
             
             # Insert image markers if images were detected
@@ -204,7 +238,8 @@ class TextractParser(BaseParser):
                 "pages": total_pages,
                 "text_length": len(full_text),
                 "estimated_cost_usd": estimated_cost,
-                "file_size": len(file_content) if file_content else os.path.getsize(file_path)
+                "file_size": len(file_content) if file_content else os.path.getsize(file_path),
+                "page_blocks": page_blocks  # Store page-level blocks for citation support
             }
             
             return ParsedDocument(

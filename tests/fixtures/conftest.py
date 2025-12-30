@@ -1,6 +1,6 @@
 """
-Pytest configuration and fixtures
-Enhanced with comprehensive fixtures from fixtures/conftest.py
+Enhanced pytest configuration and fixtures for ARIS RAG System
+Provides comprehensive fixtures for all test types
 """
 import sys
 import os
@@ -13,19 +13,12 @@ from unittest.mock import Mock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 # Add project root to Python path
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 project_root_str = str(project_root)
-tests_dir_str = str(Path(__file__).parent)
+tests_dir_str = str(Path(__file__).parent.parent)
 
 if project_root_str not in sys.path:
     sys.path.insert(0, project_root_str)
-
-while tests_dir_str in sys.path:
-    sys.path.remove(tests_dir_str)
-
-# Also add current directory
-if '.' not in sys.path:
-    sys.path.insert(0, '.')
 
 # Change to project root directory for tests
 os.chdir(project_root_str)
@@ -34,32 +27,12 @@ os.chdir(project_root_str)
 from dotenv import load_dotenv
 load_dotenv()
 
-# Mock missing dependencies at import time
-import sys
-from unittest.mock import MagicMock
-
-# Mock pypdf if not available
-if 'pypdf' not in sys.modules:
-    try:
-        import pypdf
-    except ImportError:
-        mock_pypdf = MagicMock()
-        mock_pdf_reader = MagicMock()
-        mock_pdf_reader.metadata = {}
-        mock_pdf_reader.pages = []
-        mock_pypdf.PdfReader = MagicMock(return_value=mock_pdf_reader)
-        sys.modules['pypdf'] = mock_pypdf
-
-# Import project modules (with error handling)
-try:
-    from api.service import ServiceContainer, create_service_container
-    from config.settings import ARISConfig
-    from storage.document_registry import DocumentRegistry
-    from rag_system import RAGSystem
-    from ingestion.document_processor import DocumentProcessor
-except ImportError as e:
-    # Allow tests to run even if some modules fail to import
-    pass
+# Import project modules
+from api.service import ServiceContainer, create_service_container
+from config.settings import ARISConfig
+from storage.document_registry import DocumentRegistry
+from rag_system import RAGSystem
+from ingestion.document_processor import DocumentProcessor
 
 
 # ============================================================================
@@ -137,35 +110,51 @@ def mock_embeddings():
 # ============================================================================
 
 @pytest.fixture
-def service_container_faiss(mock_embeddings, temp_dir: Path) -> Generator:
+def service_container_faiss(mock_embeddings, temp_dir: Path) -> ServiceContainer:
     """Service container with FAISS vector store for testing"""
-    try:
-        with patch('api.service.OpenAIEmbeddings', return_value=mock_embeddings):
-            container = ServiceContainer(
-                embedding_model="text-embedding-3-small",
-                openai_model="gpt-3.5-turbo",
-                vector_store_type="faiss",
-                chunk_size=384,
-                chunk_overlap=75
-            )
-            # Override vectorstore path to temp directory
-            container.rag_system.vectorstore_path = str(temp_dir / "vectorstore")
-            yield container
-    except Exception:
-        yield MagicMock(spec=ServiceContainer)
+    with patch('api.service.OpenAIEmbeddings', return_value=mock_embeddings):
+        container = ServiceContainer(
+            embedding_model="text-embedding-3-small",
+            openai_model="gpt-3.5-turbo",
+            vector_store_type="faiss",
+            chunk_size=384,
+            chunk_overlap=75
+        )
+        # Override vectorstore path to temp directory
+        container.rag_system.vectorstore_path = str(temp_dir / "vectorstore")
+        yield container
 
 
 @pytest.fixture
-def service_container(service_container_faiss):
-    """Default service container (FAISS) - always yields fully-mocked if real fails"""
-    # Check if service_container_faiss is a mock (has been mocked)
-    if isinstance(service_container_faiss, MagicMock):
-        # Ensure it has all required attributes
-        from tests.fixtures.mock_services import create_mock_service_container
-        mock_container = create_mock_service_container()
-        yield mock_container
-    else:
-        yield service_container_faiss
+def service_container_opensearch(mock_embeddings) -> Optional[ServiceContainer]:
+    """Service container with OpenSearch vector store (if available)"""
+    # Check if OpenSearch credentials are available
+    has_creds = bool(
+        os.getenv('AWS_OPENSEARCH_ACCESS_KEY_ID') and 
+        os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY')
+    )
+    has_domain = bool(os.getenv('AWS_OPENSEARCH_DOMAIN'))
+    
+    if not (has_creds and has_domain):
+        pytest.skip("OpenSearch credentials not available")
+    
+    with patch('api.service.OpenAIEmbeddings', return_value=mock_embeddings):
+        container = ServiceContainer(
+            embedding_model="text-embedding-3-small",
+            openai_model="gpt-3.5-turbo",
+            vector_store_type="opensearch",
+            opensearch_domain=os.getenv('AWS_OPENSEARCH_DOMAIN'),
+            opensearch_index="test-index",
+            chunk_size=384,
+            chunk_overlap=75
+        )
+        yield container
+
+
+@pytest.fixture
+def service_container(service_container_faiss: ServiceContainer) -> ServiceContainer:
+    """Default service container (FAISS)"""
+    return service_container_faiss
 
 
 # ============================================================================
@@ -173,20 +162,17 @@ def service_container(service_container_faiss):
 # ============================================================================
 
 @pytest.fixture
-def rag_system_faiss(mock_embeddings, temp_dir: Path) -> Generator:
+def rag_system_faiss(mock_embeddings, temp_dir: Path) -> RAGSystem:
     """RAG system with FAISS vector store"""
-    try:
-        with patch('langchain_openai.OpenAIEmbeddings', return_value=mock_embeddings):
-            rag = RAGSystem(
-                embedding_model="text-embedding-3-small",
-                openai_model="gpt-3.5-turbo",
-                vector_store_type="faiss",
-                chunk_size=384,
-                chunk_overlap=75
-            )
-            yield rag
-    except Exception:
-        yield MagicMock(spec=RAGSystem)
+    with patch('api.rag_system.OpenAIEmbeddings', return_value=mock_embeddings):
+        rag = RAGSystem(
+            embedding_model="text-embedding-3-small",
+            openai_model="gpt-3.5-turbo",
+            vector_store_type="faiss",
+            chunk_size=384,
+            chunk_overlap=75
+        )
+        yield rag
 
 
 # ============================================================================
@@ -194,24 +180,16 @@ def rag_system_faiss(mock_embeddings, temp_dir: Path) -> Generator:
 # ============================================================================
 
 @pytest.fixture
-def document_registry(temp_registry_file: Path):
-    """Document registry with temporary file - always yields mock if real fails"""
-    try:
-        registry = DocumentRegistry(str(temp_registry_file))
-        yield registry
-    except Exception:
-        # Always yield a fully-mocked document registry instead of skipping
-        mock_registry = MagicMock()
-        mock_registry.add_document = Mock(return_value=None)
-        mock_registry.get_document = Mock(return_value={
-            "document_id": "test-doc",
-            "document_name": "test.pdf",
-            "status": "completed"
-        })
-        mock_registry.list_documents = Mock(return_value=[])
-        mock_registry.remove_document = Mock(return_value=True)
-        mock_registry.clear_all = Mock(return_value=None)
-        yield mock_registry
+def document_registry(temp_registry_file: Path) -> DocumentRegistry:
+    """Document registry with temporary file"""
+    return DocumentRegistry(str(temp_registry_file))
+
+
+@pytest.fixture
+def empty_registry(document_registry: DocumentRegistry) -> DocumentRegistry:
+    """Empty document registry"""
+    document_registry.clear_all()
+    return document_registry
 
 
 # ============================================================================
@@ -219,25 +197,24 @@ def document_registry(temp_registry_file: Path):
 # ============================================================================
 
 @pytest.fixture
-def document_processor(rag_system_faiss):
-    """Document processor with FAISS RAG system - always yields mock if real fails"""
-    try:
-        processor = DocumentProcessor(rag_system_faiss)
-        yield processor
-    except Exception:
-        # Always yield a fully-mocked document processor instead of skipping
-        mock_processor = MagicMock()
-        mock_processor.process_document = Mock(return_value={
-            "document_id": "test-doc",
-            "status": "completed",
-            "chunks_created": 5
-        })
-        yield mock_processor
+def document_processor(rag_system_faiss: RAGSystem) -> DocumentProcessor:
+    """Document processor with FAISS RAG system"""
+    return DocumentProcessor(rag_system_faiss)
 
 
 # ============================================================================
 # SAMPLE DOCUMENT FIXTURES
 # ============================================================================
+
+@pytest.fixture
+def sample_text_pdf(test_data_dir: Path) -> Optional[Path]:
+    """Path to sample text-based PDF"""
+    pdf_path = test_data_dir / "sample_text.pdf"
+    if not pdf_path.exists():
+        # Create a minimal PDF for testing if it doesn't exist
+        pytest.skip(f"Sample PDF not found at {pdf_path}")
+    return pdf_path
+
 
 @pytest.fixture
 def sample_text_content() -> str:
@@ -272,33 +249,75 @@ def sample_documents(sample_text_content: str) -> list:
 # ============================================================================
 
 @pytest.fixture
-def api_client(service_container):
-    """FastAPI test client - always yields mock if real fails"""
-    try:
-        from api.main import app
+def api_client(service_container: ServiceContainer) -> TestClient:
+    """FastAPI test client"""
+    from api.main import app
+    
+    # Override service dependency
+    app.dependency_overrides = {}
+    
+    def get_test_service():
+        return service_container
+    
+    from api.main import get_service
+    app.dependency_overrides[get_service] = get_test_service
+    
+    client = TestClient(app)
+    yield client
+    
+    # Cleanup
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def api_client_no_service() -> TestClient:
+    """FastAPI test client without service override (for error testing)"""
+    from api.main import app
+    return TestClient(app)
+
+
+# ============================================================================
+# MOCK EXTERNAL SERVICES
+# ============================================================================
+
+@pytest.fixture
+def mock_openai():
+    """Mock OpenAI API"""
+    with patch('openai.OpenAI') as mock:
+        mock_instance = MagicMock()
+        mock.return_value = mock_instance
         
-        # Override service dependency
-        app.dependency_overrides = {}
+        # Mock chat completion
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "Mocked response"
+        mock_response.usage = MagicMock()
+        mock_response.usage.total_tokens = 100
         
-        def get_test_service():
-            return service_container
-        
-        from api.main import get_service
-        app.dependency_overrides[get_service] = get_test_service
-        
-        client = TestClient(app)
-        yield client
-        
-        # Cleanup
-        app.dependency_overrides.clear()
-    except Exception as e:
-        # Always yield a mock TestClient instead of skipping
-        # Create a minimal mock that can handle basic HTTP operations
-        mock_client = MagicMock()
-        mock_client.get = Mock(return_value=MagicMock(status_code=200, json=lambda: {"status": "ok"}))
-        mock_client.post = Mock(return_value=MagicMock(status_code=200, json=lambda: {"status": "ok"}))
-        mock_client.delete = Mock(return_value=MagicMock(status_code=200, json=lambda: {"status": "ok"}))
-        yield mock_client
+        mock_instance.chat.completions.create.return_value = mock_response
+        yield mock_instance
+
+
+@pytest.fixture
+def mock_opensearch():
+    """Mock OpenSearch client"""
+    mock_client = MagicMock()
+    
+    # Mock index operations
+    mock_client.indices.exists.return_value = False
+    mock_client.indices.create.return_value = {"acknowledged": True}
+    mock_client.indices.delete.return_value = {"acknowledged": True}
+    
+    # Mock document operations
+    mock_client.index.return_value = {"_id": "test_id", "result": "created"}
+    mock_client.search.return_value = {
+        "hits": {
+            "total": {"value": 0},
+            "hits": []
+        }
+    }
+    
+    return mock_client
 
 
 # ============================================================================
@@ -327,6 +346,18 @@ def performance_timer():
             return 0.0
     
     return Timer()
+
+
+# ============================================================================
+# CLEANUP FIXTURES
+# ============================================================================
+
+@pytest.fixture(autouse=True)
+def cleanup_test_data():
+    """Auto-cleanup after each test"""
+    yield
+    # Add any cleanup logic here
+    pass
 
 
 # ============================================================================
@@ -374,4 +405,3 @@ def generate_test_chunk():
             }
         }
     return _generate
-
