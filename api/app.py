@@ -1670,12 +1670,12 @@ with st.sidebar:
             for citation in citations[:5]:  # Show first 5 citations
                 citation_id = citation.get('id', '?')
                 source_name = citation.get('source', 'Unknown')
-                page = citation.get('page')
+                page = citation.get('page') or 1
                 source_location = citation.get('source_location', '')
                 
                 with st.expander(f"[{citation_id}] {source_name.split('/')[-1][:30]}...", expanded=False):
-                    if page:
-                        st.success(f"📍 Page {page}")
+                    # Always show page number - page is guaranteed to be >= 1
+                    st.success(f"📍 Page {page}")
                     if source_location:
                         st.caption(f"Location: {source_location}")
                     
@@ -1741,11 +1741,9 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                 for citation in citations:
                     citation_id = citation.get('id', '?')
                     source_name = citation.get('source', 'Unknown')
-                    page = citation.get('page')
-                    if page:
-                        citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
-                    else:
-                        citation_refs.append(f"[{citation_id}] {source_name}")
+                    page = citation.get('page') or 1
+                    # Always show page number - page is guaranteed to be >= 1
+                    citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
                 
                 if citation_refs:
                     st.caption("**📎 References:** " + " | ".join(citation_refs))
@@ -1755,15 +1753,14 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     for citation in citations:
                         citation_id = citation.get('id', '?')
                         source_name = citation.get('source', 'Unknown')
-                        page = citation.get('page')
+                        page = citation.get('page') or 1
                         snippet = citation.get('snippet', citation.get('full_text', ''))
-                        source_location = citation.get('source_location', f"Page {page}" if page else "Text content")
+                        source_location = citation.get('source_location', f"Page {page or 1}")
                         relevance_score = citation.get('relevance_score', 0)
                         
                         # Display citation header with relevance ranking
                         citation_header = f"**[{citation_id}] {source_name}**"
-                        if page:
-                            citation_header += f" - **Page {page}**"
+                        citation_header += f" - **Page {page or 1}**"
                         
                         # Show relevance score prominently
                         if relevance_score > 0:
@@ -1939,10 +1936,30 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     if "context_chunks" in result and len(result["context_chunks"]) > 0:
                         citations = []
                         import re
-                        for idx, chunk_text in enumerate(result["context_chunks"], 1):
-                            # Try to extract page number from chunk text
-                            page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
-                            page = int(page_match.group(1)) if page_match else None
+                        for idx, chunk_item in enumerate(result["context_chunks"], 1):
+                            # Handle both string chunks and Document objects with metadata
+                            if isinstance(chunk_item, dict) and 'page_content' in chunk_item:
+                                # Document-like object with metadata
+                                chunk_text = chunk_item.get('page_content', '')
+                                chunk_metadata = chunk_item.get('metadata', {})
+                                # Prioritize metadata over text markers
+                                page = chunk_metadata.get('source_page') or chunk_metadata.get('page') or None
+                            elif isinstance(chunk_item, str):
+                                # Plain string chunk
+                                chunk_text = chunk_item
+                                chunk_metadata = {}
+                                page = None
+                            else:
+                                # Fallback: treat as string
+                                chunk_text = str(chunk_item)
+                                chunk_metadata = {}
+                                page = None
+                            
+                            # If no page from metadata, try to extract from text markers
+                            if not page:
+                                page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                                if page_match:
+                                    page = int(page_match.group(1))
                             
                             # Validate page number - page should be positive
                             if page and page < 1:
@@ -1950,6 +1967,9 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                                 logger = logging.getLogger(__name__)
                                 logger.warning(f"Invalid page number {page} extracted from chunk")
                                 page = None
+                            
+                            # Ensure page is always set (fallback to 1)
+                            page = page or 1
                             
                             # Extract source from chunk text metadata markers if available
                             # Look for [Source X: filename] pattern in chunk
@@ -1974,12 +1994,12 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                                 content_type = 'image'
                             
                             # Build source location
-                            source_location = f"Page {page}" if page else "Text content"
+                            source_location = f"Page {page or 1}"
                             
                             citations.append({
                                 'id': idx,
                                 'source': source,
-                                'page': page,
+                                'page': page or 1,
                                 'snippet': snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
                                 'full_text': chunk_text,
                                 'source_location': source_location,
@@ -1992,10 +2012,10 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                             citations.append({
                                 'id': idx,
                                 'source': source,
-                                'page': None,
+                                'page': 1,
                                 'snippet': 'Source information available - expand to see details',
                                 'full_text': '',
-                                'source_location': 'Text content',
+                                'source_location': 'Page 1',  # Always use page number, default to 1
                                 'content_type': 'text'
                             })
                 
@@ -2009,11 +2029,9 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     for idx, citation in enumerate(citations, 1):
                         citation_id = citation.get('id', idx)
                         source_name = citation.get('source', 'Unknown')
-                        page = citation.get('page')
-                        if page:
-                            citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
-                        else:
-                            citation_refs.append(f"[{citation_id}] {source_name}")
+                        page = citation.get('page') or 1
+                        # Always show page number - page is guaranteed to be >= 1
+                        citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
                     
                     if citation_refs:
                         st.caption("**📎 References:** " + " | ".join(citation_refs))
@@ -2047,10 +2065,31 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                         # Create citation-like objects from context_chunks with enhanced metadata
                         # Create citation-like objects from context_chunks
                         items_to_display = []
-                        for idx, chunk_text in enumerate(context_chunks, 1):
+                        for idx, chunk_item in enumerate(context_chunks, 1):
                             import re
-                            page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
-                            page = int(page_match.group(1)) if page_match else None
+                            # Handle both string chunks and Document objects with metadata
+                            if isinstance(chunk_item, dict) and 'page_content' in chunk_item:
+                                # Document-like object with metadata
+                                chunk_text = chunk_item.get('page_content', '')
+                                chunk_metadata = chunk_item.get('metadata', {})
+                                # Prioritize metadata over text markers
+                                page = chunk_metadata.get('source_page') or chunk_metadata.get('page') or None
+                            elif isinstance(chunk_item, str):
+                                # Plain string chunk
+                                chunk_text = chunk_item
+                                chunk_metadata = {}
+                                page = None
+                            else:
+                                # Fallback: treat as string
+                                chunk_text = str(chunk_item)
+                                chunk_metadata = {}
+                                page = None
+                            
+                            # If no page from metadata, try to extract from text markers
+                            if not page:
+                                page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                                if page_match:
+                                    page = int(page_match.group(1))
                             
                             # Validate page number if document metadata is available
                             # Basic validation - page should be positive
@@ -2059,6 +2098,9 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                                 logger = logging.getLogger(__name__)
                                 logger.warning(f"Invalid page number {page} extracted from chunk")
                                 page = None
+                            
+                            # Ensure page is always set (fallback to 1)
+                            page = page or 1
                             
                             # Extract source from chunk text metadata markers if available
                             # Look for [Source X: filename] pattern in chunk
@@ -2085,10 +2127,10 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                             items_to_display.append({
                                 'id': idx,
                                 'source': source,
-                                'page': page,
+                                'page': page or 1,
                                 'snippet': snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
                                 'full_text': chunk_text,
-                                'source_location': f"Page {page}" if page else "Text content",
+                                'source_location': f"Page {page or 1}",
                                 'content_type': content_type
                             })
                         st.info(f"**{len(items_to_display)} source(s) were used to generate this answer:**")
@@ -2096,9 +2138,9 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     for idx, item in enumerate(items_to_display, 1):
                         citation_id = item.get('id', idx)
                         source_name = item.get('source', 'Unknown')
-                        page = item.get('page')
+                        page = item.get('page') or 1 or 1
                         snippet = item.get('snippet', item.get('full_text', ''))
-                        source_location = item.get('source_location', 'Text content')
+                        source_location = item.get('source_location', f"Page {page or 1}")
                         image_ref = item.get('image_ref')
                         image_info = item.get('image_info')
                         content_type = item.get('content_type', 'text')
@@ -2308,9 +2350,30 @@ if st.session_state.documents_processed and st.session_state.rag_system:
             # Create citations from context_chunks if not available
             import re
             created_citations = []
-            for idx, chunk_text in enumerate(context_chunks, 1):
-                page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
-                page = int(page_match.group(1)) if page_match else None
+            for idx, chunk_item in enumerate(context_chunks, 1):
+                # Handle both string chunks and Document objects with metadata
+                if isinstance(chunk_item, dict) and 'page_content' in chunk_item:
+                    # Document-like object with metadata
+                    chunk_text = chunk_item.get('page_content', '')
+                    chunk_metadata = chunk_item.get('metadata', {})
+                    # Prioritize metadata over text markers
+                    page = chunk_metadata.get('source_page') or chunk_metadata.get('page') or None
+                elif isinstance(chunk_item, str):
+                    # Plain string chunk (most common case)
+                    chunk_text = chunk_item
+                    chunk_metadata = {}
+                    page = None
+                else:
+                    # Fallback: treat as string
+                    chunk_text = str(chunk_item)
+                    chunk_metadata = {}
+                    page = None
+                
+                # If no page from metadata, try to extract from text markers
+                if not page:
+                    page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                    if page_match:
+                        page = int(page_match.group(1))
                 
                 # Validate page number - page should be positive
                 if page and page < 1:
@@ -2318,6 +2381,9 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     logger = logging.getLogger(__name__)
                     logger.warning(f"Invalid page number {page} extracted from chunk")
                     page = None
+                
+                # Ensure page is always set (fallback to 1)
+                page = page or 1
                 
                 # Extract source from chunk text metadata markers if available
                 # Look for [Source X: filename] pattern in chunk
@@ -2342,12 +2408,12 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     content_type = 'image'
                 
                 # Build source location
-                source_location = f"Page {page}" if page else "Text content"
+                source_location = f"Page {page or 1}"
                 
                 created_citations.append({
                     'id': idx,
                     'source': source,
-                    'page': page,
+                    'page': page or 1,
                     'snippet': snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
                     'full_text': chunk_text,
                     'source_location': source_location,

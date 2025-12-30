@@ -808,11 +808,29 @@ class TokenTextSplitter:
                 })
                 
                 # Add page number for citation support
+                # Always ensure both 'page' and 'source_page' are set for accurate citations
                 if chunk_page:
                     chunk_metadata_copy['page'] = chunk_page
                     chunk_metadata_copy['source_page'] = chunk_page
                 elif 'page' in chunk_metadata_copy:
+                    # Use existing page from metadata
                     chunk_metadata_copy['source_page'] = chunk_metadata_copy['page']
+                elif 'source_page' in chunk_metadata_copy:
+                    # Use existing source_page if available
+                    chunk_metadata_copy['page'] = chunk_metadata_copy['source_page']
+                else:
+                    # Fallback: try to extract from text markers one more time
+                    import re
+                    page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                    if page_match:
+                        extracted_page = int(page_match.group(1))
+                        if not doc_pages or extracted_page <= doc_pages:
+                            chunk_metadata_copy['page'] = extracted_page
+                            chunk_metadata_copy['source_page'] = extracted_page
+                    # If still no page, default to 1 (ensures citations always have a page)
+                    if 'page' not in chunk_metadata_copy:
+                        chunk_metadata_copy['page'] = 1
+                        chunk_metadata_copy['source_page'] = 1
                 
                 # Add image reference if found
                 if chunk_image_ref:

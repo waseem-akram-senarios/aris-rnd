@@ -1234,6 +1234,49 @@ class RAGSystem:
         """Count tokens in text using the tokenizer."""
         return self.text_splitter.count_tokens(text)
     
+    def _truncate_text_by_tokens(self, text: str, max_tokens: int) -> str:
+        """
+        Truncate text to fit within token limit, preserving structure where possible.
+        
+        Args:
+            text: Text to truncate
+            max_tokens: Maximum number of tokens allowed
+        
+        Returns:
+            Truncated text
+        """
+        if not text or max_tokens <= 0:
+            return text
+        
+        current_tokens = self.count_tokens(text)
+        if current_tokens <= max_tokens:
+            return text
+        
+        # Estimate characters per token (rough: ~4 chars per token)
+        chars_per_token = len(text) / max(current_tokens, 1)
+        max_chars = int(max_tokens * chars_per_token * 0.9)  # 90% to be safe
+        
+        # Try to truncate at a natural boundary (sentence or chunk separator)
+        if len(text) > max_chars:
+            truncated = text[:max_chars]
+            # Try to find a good break point
+            last_separator = max(
+                truncated.rfind('\n\n---\n\n'),  # Chunk separator
+                truncated.rfind('\n\n'),  # Paragraph break
+                truncated.rfind('. '),  # Sentence end
+                truncated.rfind('\n')  # Line break
+            )
+            if last_separator > max_chars * 0.8:  # If we found a break point reasonably close
+                truncated = text[:last_separator]
+            
+            # Verify token count
+            while self.count_tokens(truncated) > max_tokens and len(truncated) > 100:
+                truncated = truncated[:int(len(truncated) * 0.95)]  # Reduce by 5%
+            
+            return truncated
+        
+        return text
+    
     def _clean_answer(self, answer: str) -> str:
         """
         Clean answer to remove repetitive text, greetings, and unwanted endings.
@@ -3506,6 +3549,52 @@ class RAGSystem:
         from config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
+        # Truncate context if it exceeds model's token limit
+        # Most OpenAI models have 128k context limit, reserve space for prompt and response
+        MAX_CONTEXT_TOKENS = 100000  # Reserve ~28k for prompt, question, and response
+        context_tokens = self.count_tokens(context)
+        
+        if context_tokens > MAX_CONTEXT_TOKENS:
+            logger.warning(
+                f"Context too large ({context_tokens:,} tokens > {MAX_CONTEXT_TOKENS:,} limit). "
+                f"Truncating to fit within model limits..."
+            )
+            
+            # Intelligent truncation: try to preserve important sections
+            # 1. Check if there's an image content section - preserve it if present
+            image_section_start = context.find('IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)')
+            image_section_end = context.find('\n\n---\n\n', image_section_start + 100) if image_section_start >= 0 else -1
+            
+            # 2. Calculate how much we need to truncate
+            question_tokens = self.count_tokens(question)
+            system_prompt_estimate = 500  # Rough estimate for system prompt
+            buffer_tokens = 2000  # Safety buffer
+            available_context_tokens = MAX_CONTEXT_TOKENS - question_tokens - system_prompt_estimate - buffer_tokens
+            
+            # 3. If image section exists, preserve it and truncate from the end
+            if image_section_start >= 0 and image_section_end >= 0:
+                image_section = context[image_section_start:image_section_end]
+                image_section_tokens = self.count_tokens(image_section)
+                remaining_tokens = available_context_tokens - image_section_tokens
+                
+                if remaining_tokens > 0:
+                    # Keep image section + truncate main context
+                    main_context = context[:image_section_start]
+                    # Truncate main context to fit
+                    truncated_main = self._truncate_text_by_tokens(main_context, remaining_tokens)
+                    context = truncated_main + "\n\n" + image_section
+                    logger.info(f"Preserved image section ({image_section_tokens:,} tokens), truncated main context to {remaining_tokens:,} tokens")
+                else:
+                    # Image section itself is too large, truncate everything
+                    context = self._truncate_text_by_tokens(context, available_context_tokens)
+                    logger.warning("Image section too large, truncating entire context")
+            else:
+                # No image section, truncate from the end
+                context = self._truncate_text_by_tokens(context, available_context_tokens)
+            
+            final_context_tokens = self.count_tokens(context)
+            logger.info(f"Context truncated: {context_tokens:,} -> {final_context_tokens:,} tokens")
+        
         # #region agent log
         try:
             with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
@@ -4396,10 +4485,17 @@ Answer:"""
             return []
         
         # Group citations by (source, page) tuple
+        # Ensure all citations have page numbers before grouping
         citation_groups = {}
         for citation in citations:
             source = citation.get('source', 'Unknown')
             page = citation.get('page')
+            # Ensure page is always set (fallback to 1)
+            if page is None or page < 1:
+                page = 1
+                citation['page'] = 1
+                citation['page_confidence'] = citation.get('page_confidence', 0.1)
+                logger.debug(f"Deduplication: Citation missing page, set to 1 for source '{source}'")
             key = (source, page)
             
             if key not in citation_groups:
@@ -4442,6 +4538,12 @@ Answer:"""
                     c.get('page_confidence', 0) for c in group_citations
                 )
                 
+                # Ensure page is always set (double-check after merge)
+                if best_citation.get('page') is None or best_citation.get('page') < 1:
+                    best_citation['page'] = group_key[1] if group_key[1] else 1
+                    best_citation['page_confidence'] = best_citation.get('page_confidence', 0.1)
+                    logger.debug(f"Deduplication: Merged citation missing page, set to {best_citation['page']}")
+                
                 # Merge other metadata if available
                 if any(c.get('section') for c in group_citations):
                     sections = [c.get('section') for c in group_citations if c.get('section')]
@@ -4450,9 +4552,14 @@ Answer:"""
                 merged_citations.append(best_citation)
                 logger.debug(f"Merged {len(group_citations)} duplicate citations for {group_key}")
         
-        # Re-number IDs sequentially
+        # Re-number IDs sequentially and ensure all citations have page numbers
         for i, citation in enumerate(merged_citations, 1):
             citation['id'] = i
+            # Final check: ensure page is always set
+            if citation.get('page') is None or citation.get('page') < 1:
+                citation['page'] = 1
+                citation['page_confidence'] = citation.get('page_confidence', 0.1)
+                logger.warning(f"Deduplication: Final citation {i} missing page, set to 1")
         
         logger.info(f"Deduplicated citations: {len(citations)} -> {len(merged_citations)}")
         return merged_citations
@@ -5012,6 +5119,45 @@ Answer:"""
         from openai import OpenAI
         from config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        
+        # Truncate context if it exceeds model's token limit
+        MAX_CONTEXT_TOKENS = 100000  # Reserve ~28k for prompt, question, and response
+        context_tokens = self.count_tokens(context)
+        
+        if context_tokens > MAX_CONTEXT_TOKENS:
+            logger.warning(
+                f"Agentic RAG: Context too large ({context_tokens:,} tokens > {MAX_CONTEXT_TOKENS:,} limit). "
+                f"Truncating to fit within model limits..."
+            )
+            
+            # Intelligent truncation: preserve important sections
+            image_section_start = context.find('IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)')
+            image_section_end = context.find('\n\n---\n\n', image_section_start + 100) if image_section_start >= 0 else -1
+            
+            question_tokens = self.count_tokens(question)
+            sub_queries_tokens = sum(self.count_tokens(sq) for sq in sub_queries)
+            system_prompt_estimate = 800  # Rough estimate for agentic system prompt
+            buffer_tokens = 2000  # Safety buffer
+            available_context_tokens = MAX_CONTEXT_TOKENS - question_tokens - sub_queries_tokens - system_prompt_estimate - buffer_tokens
+            
+            if image_section_start >= 0 and image_section_end >= 0:
+                image_section = context[image_section_start:image_section_end]
+                image_section_tokens = self.count_tokens(image_section)
+                remaining_tokens = available_context_tokens - image_section_tokens
+                
+                if remaining_tokens > 0:
+                    main_context = context[:image_section_start]
+                    truncated_main = self._truncate_text_by_tokens(main_context, remaining_tokens)
+                    context = truncated_main + "\n\n" + image_section
+                    logger.info(f"Agentic RAG: Preserved image section ({image_section_tokens:,} tokens), truncated main context to {remaining_tokens:,} tokens")
+                else:
+                    context = self._truncate_text_by_tokens(context, available_context_tokens)
+                    logger.warning("Agentic RAG: Image section too large, truncating entire context")
+            else:
+                context = self._truncate_text_by_tokens(context, available_context_tokens)
+            
+            final_context_tokens = self.count_tokens(context)
+            logger.info(f"Agentic RAG: Context truncated: {context_tokens:,} -> {final_context_tokens:,} tokens")
         
         sub_queries_text = "\n".join([f"- {sq}" for sq in sub_queries])
         

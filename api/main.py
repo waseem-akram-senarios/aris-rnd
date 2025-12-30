@@ -487,6 +487,11 @@ async def query_unified(
                     page = 1
                     logger.warning(f"Citation {i}: page was None in API response, using fallback page 1")
                 
+                # Ensure source_location always includes page number
+                source_location = src.get("source_location", "")
+                if not source_location or source_location == "Text content":
+                    source_location = f"Page {page}"
+                
                 citations.append(
                     Citation(
                         id=str(i),
@@ -494,7 +499,7 @@ async def query_unified(
                         page=page,  # Always guaranteed to be an integer >= 1
                         snippet=src.get("snippet", ""),
                         full_text=src.get("full_text", ""),
-                        source_location=src.get("source_location", "")
+                        source_location=source_location  # Always includes "Page X"
                     )
                 )
             
