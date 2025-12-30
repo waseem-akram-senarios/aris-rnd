@@ -341,8 +341,14 @@ class OpenSearchVectorStore:
         
         return cleaned_documents
     
-    def from_documents(self, documents: List[Document]) -> 'OpenSearchVectorStore':
-        """Create vector store from documents."""
+    def from_documents(self, documents: List[Document], auto_recreate_on_mismatch: bool = True) -> 'OpenSearchVectorStore':
+        """
+        Create vector store from documents.
+        
+        Args:
+            documents: Documents to create vector store from
+            auto_recreate_on_mismatch: If True, automatically delete and recreate index on dimension mismatch
+        """
         if not documents:
             raise ValueError("Cannot create vector store from empty document list")
         
@@ -353,18 +359,106 @@ class OpenSearchVectorStore:
             cleaned_documents = self._clean_metadata_for_opensearch(documents)
             logger.info(f"Cleaned metadata for {len(cleaned_documents)} documents (removed large nested structures)")
             
+            # Check if index exists and validate dimensions before adding
+            try:
+                client = self.vectorstore.client
+                if client.indices.exists(index=self.index_name):
+                    # Validate dimension before attempting to add
+                    self._validate_embedding_dimension(client)
+            except ValueError as ve:
+                # Dimension mismatch detected during validation
+                if auto_recreate_on_mismatch:
+                    error_str = str(ve)
+                    logger.warning(
+                        f"⚠️ Dimension mismatch detected: {error_str}\n"
+                        f"   Auto-recreating index '{self.index_name}' with current embedding model..."
+                    )
+                    
+                    # Delete the old index
+                    if client.indices.exists(index=self.index_name):
+                        logger.info(f"Deleting old index '{self.index_name}' with mismatched dimensions...")
+                        client.indices.delete(index=self.index_name)
+                        logger.info(f"✅ Old index deleted successfully")
+                    
+                    # Recreate the vectorstore (which will create a new index with correct dimensions)
+                    test_embedding = self.embeddings.embed_query("test")
+                    current_dimension = len(test_embedding)
+                    logger.info(f"Recreating index '{self.index_name}' with {current_dimension} dimensions...")
+                    self._initialize_langchain_store()
+                else:
+                    # Re-raise the validation error if auto-recreate is disabled
+                    raise
+            
             # Add documents to the index
             # OpenSearchVectorSearch will create the index if it doesn't exist
             self.vectorstore.add_documents(cleaned_documents)
             logger.info(f"OpenSearch vectorstore created successfully with {len(cleaned_documents)} documents")
         except Exception as e:
-            logger.error(f"Failed to create OpenSearch vectorstore: {str(e)}")
-            raise ValueError(f"Failed to create OpenSearch vectorstore: {str(e)}")
+            error_str = str(e)
+            error_lower = error_str.lower()
+            
+            # Check if this is a dimension mismatch error (in case validation didn't catch it)
+            is_dimension_mismatch = (
+                "dimension mismatch" in error_lower or
+                "vector dimension mismatch" in error_lower or
+                "mapper_parsing_exception" in error_lower and "knn_vector" in error_lower or
+                "illegal_argument_exception" in error_lower and "dimension" in error_lower
+            )
+            
+            if is_dimension_mismatch and auto_recreate_on_mismatch:
+                logger.warning(
+                    f"⚠️ Dimension mismatch detected during from_documents. "
+                    f"Index '{self.index_name}' was created with a different embedding dimension. "
+                    f"Auto-recreating index with current embedding model..."
+                )
+                
+                try:
+                    # Get current embedding dimension
+                    test_embedding = self.embeddings.embed_query("test")
+                    current_dimension = len(test_embedding)
+                    
+                    # Delete the old index
+                    client = self.vectorstore.client
+                    if client.indices.exists(index=self.index_name):
+                        logger.info(f"Deleting old index '{self.index_name}' with mismatched dimensions...")
+                        client.indices.delete(index=self.index_name)
+                        logger.info(f"✅ Old index deleted successfully")
+                    
+                    # Recreate the vectorstore (which will create a new index with correct dimensions)
+                    logger.info(f"Recreating index '{self.index_name}' with {current_dimension} dimensions...")
+                    self._initialize_langchain_store()
+                    
+                    # Retry adding documents
+                    logger.info(f"Retrying to add {len(cleaned_documents)} documents to recreated index...")
+                    self.vectorstore.add_documents(cleaned_documents)
+                    logger.info(f"✅ OpenSearch vectorstore created successfully with {len(cleaned_documents)} documents")
+                    return self
+                    
+                except Exception as recreate_error:
+                    logger.error(
+                        f"❌ Failed to auto-recreate index on dimension mismatch: {str(recreate_error)}\n"
+                        f"   Original error: {error_str}\n"
+                        f"   Please manually delete the index '{self.index_name}' and try again."
+                    )
+                    raise ValueError(
+                        f"Dimension mismatch error and auto-recreation failed: {str(recreate_error)}. "
+                        f"Original error: {error_str}. "
+                        f"Please manually delete the index '{self.index_name}' and try again."
+                    )
+            else:
+                logger.error(f"Failed to create OpenSearch vectorstore: {error_str}")
+                raise ValueError(f"Failed to create OpenSearch vectorstore: {error_str}")
         
         return self
     
-    def add_documents(self, documents: List[Document]):
-        """Add documents to existing vector store."""
+    def add_documents(self, documents: List[Document], auto_recreate_on_mismatch: bool = True):
+        """
+        Add documents to existing vector store.
+        
+        Args:
+            documents: Documents to add
+            auto_recreate_on_mismatch: If True, automatically delete and recreate index on dimension mismatch
+        """
         if not documents:
             logger.warning("No documents to add")
             return
@@ -382,8 +476,60 @@ class OpenSearchVectorStore:
             self.vectorstore.add_documents(cleaned_documents)
             logger.info(f"Successfully added {len(cleaned_documents)} documents to OpenSearch vectorstore")
         except Exception as e:
-            logger.error(f"Failed to add documents to OpenSearch vectorstore: {str(e)}")
-            raise ValueError(f"Failed to add documents to OpenSearch vectorstore: {str(e)}")
+            error_str = str(e)
+            error_lower = error_str.lower()
+            
+            # Check if this is a dimension mismatch error
+            is_dimension_mismatch = (
+                "dimension mismatch" in error_lower or
+                "vector dimension mismatch" in error_lower or
+                "mapper_parsing_exception" in error_lower and "knn_vector" in error_lower or
+                "illegal_argument_exception" in error_lower and "dimension" in error_lower
+            )
+            
+            if is_dimension_mismatch and auto_recreate_on_mismatch:
+                logger.warning(
+                    f"⚠️ Dimension mismatch detected during add_documents. "
+                    f"Index '{self.index_name}' was created with a different embedding dimension. "
+                    f"Auto-recreating index with current embedding model..."
+                )
+                
+                try:
+                    # Get current embedding dimension
+                    test_embedding = self.embeddings.embed_query("test")
+                    current_dimension = len(test_embedding)
+                    
+                    # Delete the old index
+                    client = self.vectorstore.client
+                    if client.indices.exists(index=self.index_name):
+                        logger.info(f"Deleting old index '{self.index_name}' with mismatched dimensions...")
+                        client.indices.delete(index=self.index_name)
+                        logger.info(f"✅ Old index deleted successfully")
+                    
+                    # Recreate the vectorstore (which will create a new index with correct dimensions)
+                    logger.info(f"Recreating index '{self.index_name}' with {current_dimension} dimensions...")
+                    self._initialize_langchain_store()
+                    
+                    # Retry adding documents
+                    logger.info(f"Retrying to add {len(cleaned_documents)} documents to recreated index...")
+                    self.vectorstore.add_documents(cleaned_documents)
+                    logger.info(f"✅ Successfully added {len(cleaned_documents)} documents to recreated index")
+                    return
+                    
+                except Exception as recreate_error:
+                    logger.error(
+                        f"❌ Failed to auto-recreate index on dimension mismatch: {str(recreate_error)}\n"
+                        f"   Original error: {error_str}\n"
+                        f"   Please manually delete the index '{self.index_name}' and try again."
+                    )
+                    raise ValueError(
+                        f"Dimension mismatch error and auto-recreation failed: {str(recreate_error)}. "
+                        f"Original error: {error_str}. "
+                        f"Please manually delete the index '{self.index_name}' and try again."
+                    )
+            else:
+                logger.error(f"Failed to add documents to OpenSearch vectorstore: {error_str}")
+                raise ValueError(f"Failed to add documents to OpenSearch vectorstore: {error_str}")
     
     def as_retriever(self, search_type: str = "similarity", search_kwargs: Optional[Dict] = None):
         """Get retriever for querying."""
