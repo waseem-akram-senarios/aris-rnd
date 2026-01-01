@@ -17,6 +17,7 @@ except ImportError:
     from langchain_core.documents import Document
 import requests
 from shared.utils.tokenizer import TokenTextSplitter
+from shared.utils.s3_service import S3Service
 # Accuracy Improvements: Recursive Chunking and Reranking
 try:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -156,6 +157,9 @@ class RetrievalEngine:
             # Create a local one if not provided
             from metrics.metrics_collector import MetricsCollector
             self.metrics_collector = MetricsCollector()
+            
+        # Initialize S3 Service
+        self.s3_service = S3Service()
             
         # Use token-aware text splitter with configurable chunking
         # Accuracy Upgrade: Use RecursiveCharacterTextSplitter for context preservation
@@ -2241,8 +2245,22 @@ class RetrievalEngine:
                 'source_location': source_location,  # Certification field: exact location
                 'content_type': 'image' if image_ref else 'text',  # Type of content
                 'extraction_method': extraction_method,  # How source was extracted
-                'similarity_score': similarity_score  # Vector similarity score for ranking
+                'similarity_score': similarity_score,  # Vector similarity score for ranking
+                's3_url': doc.metadata.get('s3_url')
             }
+            
+            # Generate pre-signed URL if S3 is enabled and URL is present
+            if self.s3_service.enabled and citation['s3_url']:
+                try:
+                    # Extract key from s3://bucket/key
+                    s3_parts = citation['s3_url'].replace("s3://", "").split("/", 1)
+                    if len(s3_parts) > 1 and s3_parts[1]:  # Ensure key is not empty
+                        s3_key = s3_parts[1]
+                        signed_url = self.s3_service.get_signed_url(s3_key)
+                        if signed_url:
+                            citation['s3_preview_url'] = signed_url
+                except Exception as e:
+                    logger.debug(f"Failed to generate pre-signed URL for {citation['s3_url']}: {e}")
             citations.append(citation)
             logger.debug(f"Citation {i}: source='{source}', page={page}, method={page_extraction_method}, chunk_index={citation.get('chunk_index', 'N/A')}")
             
