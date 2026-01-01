@@ -19,15 +19,20 @@ import json
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from rag_system import RAGSystem
-from ingestion.document_processor import DocumentProcessor
-from parsers.parser_factory import ParserFactory
+from api.rag_system import RAGSystem
+from services.ingestion.processor import DocumentProcessor
+from services.ingestion.parsers.parser_factory import ParserFactory
 from metrics.metrics_collector import MetricsCollector
-from utils.chunking_strategies import get_all_strategies, get_chunking_params, validate_custom_params
-from config.settings import ARISConfig
+from shared.utils.chunking_strategies import get_all_strategies, get_chunking_params, validate_custom_params
+from shared.config.settings import ARISConfig
 from storage.document_registry import DocumentRegistry
+from api.service import ServiceContainer  # Unified Service Layer
+import logging
 
 load_dotenv()
+
+# Set up logger for app.py
+logger = logging.getLogger(__name__)
 
 # Page configuration
 st.set_page_config(
@@ -68,43 +73,45 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
     if not uploaded_files:
         return False
     
-    # Initialize or update RAG system
+    # Initialize or update ServiceContainer (which manages RAGSystem and DocumentProcessor)
     # Recreate if API, models, embedding model, vector store, or chunking changed
+    current_rag = st.session_state.rag_system
+    
     needs_reinit = (
-        st.session_state.rag_system is None or
-        (hasattr(st.session_state.rag_system, 'use_cerebras') and st.session_state.rag_system.use_cerebras != use_cerebras) or
-        (hasattr(st.session_state.rag_system, 'embedding_model') and st.session_state.rag_system.embedding_model != embedding_model) or
-        (hasattr(st.session_state.rag_system, 'openai_model') and st.session_state.rag_system.openai_model != openai_model) or
-        (hasattr(st.session_state.rag_system, 'cerebras_model') and st.session_state.rag_system.cerebras_model != cerebras_model) or
-        (hasattr(st.session_state.rag_system, 'vector_store_type') and st.session_state.rag_system.vector_store_type != vector_store_type.lower()) or
-        (hasattr(st.session_state.rag_system, 'opensearch_domain') and st.session_state.rag_system.opensearch_domain != opensearch_domain) or
-        (hasattr(st.session_state.rag_system, 'chunk_size') and st.session_state.rag_system.chunk_size != chunk_size) or
-        (hasattr(st.session_state.rag_system, 'chunk_overlap') and st.session_state.rag_system.chunk_overlap != chunk_overlap)
+        current_rag is None or
+        (hasattr(current_rag, 'use_cerebras') and current_rag.use_cerebras != use_cerebras) or
+        (hasattr(current_rag, 'embedding_model') and current_rag.embedding_model != embedding_model) or
+        (hasattr(current_rag, 'openai_model') and current_rag.openai_model != openai_model) or
+        (hasattr(current_rag, 'cerebras_model') and current_rag.cerebras_model != cerebras_model) or
+        (hasattr(current_rag, 'vector_store_type') and current_rag.vector_store_type != vector_store_type.lower()) or
+        (hasattr(current_rag, 'opensearch_domain') and current_rag.opensearch_domain != opensearch_domain) or
+        (hasattr(current_rag, 'chunk_size') and current_rag.chunk_size != chunk_size) or
+        (hasattr(current_rag, 'chunk_overlap') and current_rag.chunk_overlap != chunk_overlap)
     )
     
     if needs_reinit:
         # Warn if switching vector stores and data exists
-        if (st.session_state.rag_system is not None and 
-            hasattr(st.session_state.rag_system, 'vector_store_type') and
-            st.session_state.rag_system.vector_store_type != vector_store_type.lower() and
-            st.session_state.rag_system.vectorstore is not None):
+        if (current_rag is not None and 
+            hasattr(current_rag, 'vector_store_type') and
+            current_rag.vector_store_type != vector_store_type.lower() and
+            current_rag.vectorstore is not None):
             st.warning(
-                f"⚠️ Switching vector store from {st.session_state.rag_system.vector_store_type.upper()} to {vector_store_type.upper()}. "
+                f"⚠️ Switching vector store from {current_rag.vector_store_type.upper()} to {vector_store_type.upper()}. "
                 f"Data in the previous store will not be accessible. You may need to reprocess documents."
             )
         
-        st.session_state.rag_system = RAGSystem(
-            use_cerebras=use_cerebras,
-            metrics_collector=st.session_state.metrics_collector,
-            embedding_model=embedding_model,
-            openai_model=openai_model,
-            cerebras_model=cerebras_model,
-            vector_store_type=vector_store_type,
-            opensearch_domain=opensearch_domain,
-            opensearch_index=opensearch_index,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap
-        )
+        # Initialize Unified Service Container
+        if 'service_container' not in st.session_state:
+            container = ServiceContainer()
+            st.session_state.service_container = container
+        else:
+            container = st.session_state.service_container
+        
+        # Bind components for compatibility
+        st.session_state.rag_system = container.rag_system
+        st.session_state.document_processor = container.document_processor
+        st.session_state.metrics_collector = getattr(container, 'metrics_collector', MetricsCollector())
+        st.session_state.document_registry = container.document_registry
         
         # Try to load existing vectorstore if FAISS and not already loaded
         if vector_store_type.lower() == 'faiss' and not st.session_state.vectorstore_loaded:
@@ -128,12 +135,6 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                             )
                 except Exception as e:
                     st.warning(f"⚠️ Could not load existing vectorstore: {e}")
-    
-    # Initialize or update document processor
-    if (st.session_state.document_processor is None or 
-        not hasattr(st.session_state.document_processor, 'rag_system') or
-        st.session_state.document_processor.rag_system != st.session_state.rag_system):
-        st.session_state.document_processor = DocumentProcessor(st.session_state.rag_system)
     
     # Prepare files for processing
     files_to_process = []
@@ -291,8 +292,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                 # Handle OpenSearch index name generation from document name
                 if vector_store_type.lower() == 'opensearch' and st.session_state.rag_system:
                     try:
+                        # Use static method for sanitization only - no instantiation
                         from vectorstores.opensearch_store import OpenSearchVectorStore
-                        from langchain_openai import OpenAIEmbeddings
                         
                         # Generate index name from document name
                         base_index_name = OpenSearchVectorStore.sanitize_index_name(file_name)
@@ -304,26 +305,11 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         
                         # Check if user has already made a choice
                         if st.session_state[choice_key] is None:
-                            # Check if index exists by creating a temporary OpenSearch connection
+                            # Check if index exists via Gateway/Ingestion service
+                            # Using Gateway's proxy to avoid direct DB connection from UI
                             index_exists = False
-                            temp_store = None
-                            try:
-                                # Create a temporary OpenSearchVectorStore to check index existence
-                                temp_embeddings = OpenAIEmbeddings(
-                                    openai_api_key=os.getenv('OPENAI_API_KEY'),
-                                    model=st.session_state.rag_system.embedding_model
-                                )
-                                temp_store = OpenSearchVectorStore(
-                                    embeddings=temp_embeddings,
-                                    domain=opensearch_domain or st.session_state.rag_system.opensearch_domain,
-                                    index_name=base_index_name  # Check this specific index
-                                )
-                                index_exists = temp_store.index_exists(base_index_name)
-                            except Exception as check_error:
-                                # If we can't check, assume it doesn't exist and continue
-                                import logging
-                                logging.warning(f"Could not check if index exists: {str(check_error)}")
-                                index_exists = False
+                            if hasattr(st.session_state.rag_system, 'index_exists'):
+                                index_exists = st.session_state.rag_system.index_exists(base_index_name)
                             
                             # If index exists, ask user what to do
                             if index_exists:
@@ -340,8 +326,6 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                         )
                                         if update_clicked:
                                             st.session_state[choice_key] = "update"
-                                            # Store temp_store in session state for later use
-                                            st.session_state[f"temp_store_{file_name}"] = temp_store
                                             st.rerun()
                                     with col2:
                                         new_clicked = st.button(
@@ -351,8 +335,6 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                         )
                                         if new_clicked:
                                             st.session_state[choice_key] = "new"
-                                            # Store temp_store in session state for later use
-                                            st.session_state[f"temp_store_{file_name}"] = temp_store
                                             st.rerun()
                                     
                                     # Wait for user decision - only stop if no choice has been made
@@ -360,7 +342,13 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                             else:
                                 # Index doesn't exist, use the base name
                                 final_index_name = base_index_name
-                                st.session_state.rag_system.opensearch_index = final_index_name
+                                # Set opensearch_index if it's settable
+                                if hasattr(st.session_state.rag_system, 'opensearch_index'):
+                                    try:
+                                        st.session_state.rag_system.opensearch_index = final_index_name
+                                    except AttributeError:
+                                        # If it's a read-only property, log warning but continue
+                                        logger.warning(f"Could not set opensearch_index (read-only), using: {final_index_name}")
                                 st.info(f"📇 Using index: `{final_index_name}`")
                                 # Clear choice key since we're done
                                 if choice_key in st.session_state:
@@ -368,51 +356,29 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         
                         # User has made a choice (index existed), process it
                         if choice_key in st.session_state and st.session_state[choice_key] is not None:
-                            # Get temp_store from session state or recreate if needed
-                            temp_store = st.session_state.get(f"temp_store_{file_name}")
-                            if temp_store is None:
-                                try:
-                                    temp_embeddings = OpenAIEmbeddings(
-                                        openai_api_key=os.getenv('OPENAI_API_KEY'),
-                                        model=st.session_state.rag_system.embedding_model
-                                    )
-                                    temp_store = OpenSearchVectorStore(
-                                        embeddings=temp_embeddings,
-                                        domain=opensearch_domain or st.session_state.rag_system.opensearch_domain,
-                                        index_name=base_index_name
-                                    )
-                                except Exception as e:
-                                    import logging
-                                    logging.warning(f"Could not create temp store: {str(e)}")
-                                    temp_store = None
-                            
                             if st.session_state[choice_key] == "update":
                                 # Use existing index name
                                 final_index_name = base_index_name
                             elif st.session_state[choice_key] == "new":
-                                # Find next available index name
-                                try:
-                                    if temp_store:
-                                        final_index_name = temp_store.find_next_available_index_name(base_index_name)
-                                    else:
-                                        # Fallback: just append -1
-                                        final_index_name = f"{base_index_name}-1"
-                                except Exception as e:
-                                    import logging
-                                    logging.warning(f"Could not find next available index: {str(e)}")
-                                    # Fallback: just append -1
+                                # Find next available index name via Gateway
+                                if hasattr(st.session_state.rag_system, 'find_next_available_index_name'):
+                                    final_index_name = st.session_state.rag_system.find_next_available_index_name(base_index_name)
+                                else:
                                     final_index_name = f"{base_index_name}-1"
                             else:
                                 # No choice made yet (shouldn't happen, but fallback)
                                 final_index_name = base_index_name
                             
                             # Update RAGSystem's opensearch_index
-                            st.session_state.rag_system.opensearch_index = final_index_name
+                            if hasattr(st.session_state.rag_system, 'opensearch_index'):
+                                try:
+                                    st.session_state.rag_system.opensearch_index = final_index_name
+                                except AttributeError:
+                                    # If it's a read-only property, log warning but continue
+                                    logger.warning(f"Could not set opensearch_index (read-only), using: {final_index_name}")
                             st.success(f"✅ Using index: `{final_index_name}`")
-                            # Clear the choice and temp_store after using it
+                            # Clear the choice after using it
                             del st.session_state[choice_key]
-                            if f"temp_store_{file_name}" in st.session_state:
-                                del st.session_state[f"temp_store_{file_name}"]
                             
                     except Exception as e:
                         st.warning(f"⚠️ Could not generate index name from document name: {str(e)}. Using default index.")
@@ -424,7 +390,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                     file_content=file_info['content'],
                     file_name=file_name,
                     parser_preference=parser_preference,
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    index_name=final_index_name if 'final_index_name' in locals() else opensearch_index
                 )
                 
                 results.append(result)
@@ -822,36 +789,17 @@ with st.sidebar:
                                     st.error("❌ OpenSearch domain not found. Please ensure the document was processed with OpenSearch or configure OpenSearch settings.")
                                     st.stop()
 
-                                # Initialize RAG system if needed, or update OpenSearch index if it changed
-                                if st.session_state.rag_system is None:
-                                    st.session_state.rag_system = RAGSystem(
-                                        use_cerebras=use_cerebras,
-                                        metrics_collector=st.session_state.metrics_collector,
-                                        embedding_model=current_embedding,
-                                        openai_model=openai_model,
-                                        cerebras_model=cerebras_model,
-                                        vector_store_type=current_vector_store,
-                                        opensearch_domain=opensearch_domain,
-                                        opensearch_index=opensearch_index,
-                                        chunk_size=current_chunk_size,
-                                        chunk_overlap=current_chunk_overlap
-                                    )
-                                elif current_vector_store == 'opensearch':
-                                    # Update OpenSearch index if it changed (e.g., from document metadata)
-                                    if opensearch_index and hasattr(st.session_state.rag_system, 'opensearch_index'):
-                                        if st.session_state.rag_system.opensearch_index != opensearch_index:
-                                            st.session_state.rag_system.opensearch_index = opensearch_index
-                                            # Reset vectorstore so it reconnects with new index
-                                            st.session_state.rag_system.vectorstore = None
-                                    if opensearch_domain and hasattr(st.session_state.rag_system, 'opensearch_domain'):
-                                        if st.session_state.rag_system.opensearch_domain != opensearch_domain:
-                                            st.session_state.rag_system.opensearch_domain = opensearch_domain
-                                            # Reset vectorstore so it reconnects with new domain
-                                            st.session_state.rag_system.vectorstore = None
-
-                                # Get the correct vectorstore path
-                                # Use the base vectorstore path (not model-specific) since load_selected_documents
-                                # will handle model-specific paths internally
+                                # Use Unified Service Container
+                                if 'service_container' not in st.session_state:
+                                    st.session_state.service_container = ServiceContainer()
+                                
+                                # Compatibility bindings
+                                st.session_state.rag_system = st.session_state.service_container.rag_system
+                                st.session_state.document_processor = st.session_state.service_container.document_processor
+                                
+                                # Set active sources for filtering
+                                st.session_state.rag_system.active_sources = selected_sources
+                                
                                 vectorstore_base_path = ARISConfig.VECTORSTORE_PATH
                                 
                                 # For FAISS, ensure we're using the correct path
@@ -1284,7 +1232,12 @@ with st.sidebar:
     
     if st.session_state.documents_processed and st.session_state.rag_system:
         # Get all metrics
-        all_metrics = st.session_state.metrics_collector.get_all_metrics()
+        # Fetch metrics from Gateway Service if available, otherwise use local collector
+        if hasattr(st.session_state.rag_system, 'get_all_metrics'):
+            all_metrics = st.session_state.rag_system.get_all_metrics()
+        else:
+            all_metrics = st.session_state.metrics_collector.get_all_metrics()
+            
         processing_stats = all_metrics.get('processing', {})
         query_stats = all_metrics.get('queries', {})
         parser_comparison = all_metrics.get('parser_comparison', {})
@@ -1756,7 +1709,10 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                         page = citation.get('page') or 1
                         snippet = citation.get('snippet', citation.get('full_text', ''))
                         source_location = citation.get('source_location', f"Page {page or 1}")
-                        relevance_score = citation.get('relevance_score', 0)
+                        # Handle None values explicitly to avoid TypeError
+                        relevance_score = citation.get('relevance_score')
+                        if relevance_score is None:
+                            relevance_score = 0
                         
                         # Display citation header with relevance ranking
                         citation_header = f"**[{citation_id}] {source_name}**"
@@ -2157,9 +2113,16 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                             citation_header = f"**[{citation_id}] {source_name}**"
                             
                             # Show confidence indicators and relevance score
-                            source_confidence = item.get('source_confidence', 0)
-                            page_confidence = item.get('page_confidence', 0)
-                            relevance_score = item.get('relevance_score', 0)
+                            # Handle None values explicitly to avoid TypeError
+                            source_confidence = item.get('source_confidence')
+                            if source_confidence is None:
+                                source_confidence = 0
+                            page_confidence = item.get('page_confidence')
+                            if page_confidence is None:
+                                page_confidence = 0
+                            relevance_score = item.get('relevance_score')
+                            if relevance_score is None:
+                                relevance_score = 0
                             extraction_method = item.get('extraction_method', 'unknown')
                             
                             # Show relevance ranking prominently at the top

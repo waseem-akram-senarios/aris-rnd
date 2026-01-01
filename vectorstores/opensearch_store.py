@@ -43,7 +43,14 @@ class OpenSearchVectorStore:
             region: AWS region (defaults to AWS_OPENSEARCH_REGION from .env)
         """
         self.embeddings = embeddings
-        self.domain = domain
+        # Validate domain - must be at least 3 characters (AWS requirement)
+        if not domain or len(str(domain).strip()) < 3:
+            raise ValueError(
+                f"Invalid OpenSearch domain: '{domain}'. Domain name must be at least 3 characters. "
+                f"Please set AWS_OPENSEARCH_DOMAIN in .env file or pass a valid domain parameter. "
+                f"You may want to use FAISS instead for local storage."
+            )
+        self.domain = str(domain).strip()
         self.index_name = index_name
         self.region = region or os.getenv('AWS_OPENSEARCH_REGION', 'us-east-2')
         
@@ -54,7 +61,8 @@ class OpenSearchVectorStore:
         if not self.access_key or not self.secret_key:
             raise ValueError(
                 "OpenSearch credentials not found. Please set AWS_OPENSEARCH_ACCESS_KEY_ID "
-                "and AWS_OPENSEARCH_SECRET_ACCESS_KEY in .env file"
+                "and AWS_OPENSEARCH_SECRET_ACCESS_KEY in .env file. "
+                "You may want to use FAISS instead for local storage."
             )
         
         # If endpoint is provided directly, use it; otherwise get from AWS

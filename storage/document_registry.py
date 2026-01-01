@@ -196,10 +196,17 @@ class DocumentRegistry:
         List all documents.
         
         Returns:
-            List of document metadata dictionaries
+            List of document metadata dictionaries (with document_id included)
         """
         with self._lock:
-            return list(self._documents.values())
+            # Include document_id in each document
+            result = []
+            for doc_id, doc in self._documents.items():
+                doc_with_id = dict(doc)  # Copy to avoid modifying original
+                if 'document_id' not in doc_with_id or not doc_with_id.get('document_id'):
+                    doc_with_id['document_id'] = doc_id
+                result.append(doc_with_id)
+            return result
     
     def remove_document(self, document_id: str) -> bool:
         """
