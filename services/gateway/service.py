@@ -19,8 +19,8 @@ class GatewayService:
     """Service layer that orchestrates microservices"""
     
     def __init__(self):
-        self.ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://localhost:8001")
-        self.retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://localhost:8002")
+        self.ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://localhost:8501")
+        self.retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://localhost:8502")
         
         registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
         self.document_registry = DocumentRegistry(registry_path)

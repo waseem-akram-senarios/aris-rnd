@@ -20,7 +20,7 @@ services:
       - AWS_OPENSEARCH_SECRET_ACCESS_KEY=${AWS_OPENSEARCH_SECRET_ACCESS_KEY:-}
       - AWS_OPENSEARCH_REGION=${AWS_OPENSEARCH_REGION:-us-east-2}
     ports:
-      - "8001:8001"
+      - "8501:8501"
     volumes:
       - ./data:/app/data
       - ./storage:/app/storage
@@ -28,7 +28,7 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8001/health | grep -q 'healthy' || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8501/health | grep -q 'healthy' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -50,14 +50,14 @@ services:
       - AWS_OPENSEARCH_SECRET_ACCESS_KEY=${AWS_OPENSEARCH_SECRET_ACCESS_KEY:-}
       - AWS_OPENSEARCH_REGION=${AWS_OPENSEARCH_REGION:-us-east-2}
     ports:
-      - "8002:8002"
+      - "8502:8502"
     volumes:
       - ./vectorstore:/app/vectorstore
       - ./storage:/app/storage
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8002/health | grep -q 'healthy' || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8502/health | grep -q 'healthy' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -70,11 +70,11 @@ services:
       - .env
     environment:
       - SERVICE_TYPE=gateway
-      - INGESTION_SERVICE_URL=http://ingestion:8001
-      - RETRIEVAL_SERVICE_URL=http://retrieval:8002
+      - INGESTION_SERVICE_URL=http://ingestion:8501
+      - RETRIEVAL_SERVICE_URL=http://retrieval:8502
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     ports:
-      - "8000:8000"
+      - "8500:8500"
     volumes:
       - ./storage:/app/storage
       - ./vectorstore:/app/vectorstore
@@ -86,7 +86,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health | grep -q 'healthy' || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8500/health | grep -q 'healthy' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -99,8 +99,8 @@ services:
       - .env
     environment:
       - SERVICE_TYPE=ui
-      - INGESTION_SERVICE_URL=http://ingestion:8001
-      - RETRIEVAL_SERVICE_URL=http://retrieval:8002
+      - INGESTION_SERVICE_URL=http://ingestion:8501
+      - RETRIEVAL_SERVICE_URL=http://retrieval:8502
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
       - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-opensearch}

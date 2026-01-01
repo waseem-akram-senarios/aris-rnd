@@ -74,7 +74,7 @@ RUN chmod +x /app/entrypoint.sh
 RUN mkdir -p /app/vectorstore /app/data /app/logs
 
 # Default port (can be overridden)
-EXPOSE 8000 8001 8002
+EXPOSE 8500 8501 8502
 
 # The entrypoint script uses the SERVICE_TYPE env var to start the correct service
 ENTRYPOINT ["/app/entrypoint.sh"]
