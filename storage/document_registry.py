@@ -10,6 +10,8 @@ import fcntl
 from typing import Dict, List, Optional
 from datetime import datetime
 from pathlib import Path
+from shared.utils.s3_service import S3Service
+from shared.config.settings import ARISConfig
 
 
 class DocumentRegistry:
@@ -26,6 +28,15 @@ class DocumentRegistry:
         self._lock = threading.Lock()
         self._version_file = f"{registry_path}.version"
         self._ensure_directory()
+        
+        # Initialize S3 Service for synchronization
+        self.s3_service = S3Service()
+        self.s3_registry_key = f"configs/{os.path.basename(registry_path)}"
+        
+        # Sync from S3 on startup if enabled
+        if ARISConfig.ENABLE_S3_STORAGE:
+            self._sync_from_s3()
+            
         self._load_registry()
     
     def _ensure_directory(self):
@@ -43,6 +54,23 @@ class DocumentRegistry:
                 self._documents = {}
         else:
             self._documents = {}
+
+    def _sync_from_s3(self):
+        """Try to download the registry from S3 if it's newer or local is missing."""
+        if not self.s3_service.enabled:
+            return
+
+        try:
+            # For simplicity, we just download it on startup if it exists in S3
+            # In a more advanced version, we could check ETag or last modified
+            if self.s3_service.download_file(self.s3_registry_key, self.registry_path):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"🔄 Synced document registry from S3: {self.s3_registry_key}")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ Failed to sync registry from S3: {e}")
     
     def _save_registry(self):
         """Save registry to disk with file locking"""
@@ -68,11 +96,28 @@ class DocumentRegistry:
                 fcntl.flock(vf.fileno(), fcntl.LOCK_EX)
                 vf.write(str(time.time()))
                 fcntl.flock(vf.fileno(), fcntl.LOCK_UN)
+                
+            # Sync to S3 if enabled
+            if ARISConfig.ENABLE_S3_STORAGE:
+                self._sync_to_s3()
+                
         except IOError as e:
             # Log error but don't fail
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Failed to save document registry: {e}")
+
+    def _sync_to_s3(self):
+        """Upload the local registry to S3."""
+        if not self.s3_service.enabled:
+            return
+
+        try:
+            self.s3_service.upload_file(self.registry_path, self.s3_registry_key, content_type="application/json")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"⚠️ Failed to upload registry to S3: {e}")
     
     def add_document(self, document_id: str, metadata: Dict):
         """

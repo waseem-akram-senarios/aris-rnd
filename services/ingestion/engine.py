@@ -17,6 +17,7 @@ except ImportError:
     from langchain_core.documents import Document
 import requests
 from shared.utils.tokenizer import TokenTextSplitter
+from shared.utils.s3_service import S3Service
 # Accuracy Improvements: Recursive Chunking and Reranking
 try:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -147,6 +148,9 @@ class IngestionEngine:
             from metrics.metrics_collector import MetricsCollector
             self.metrics_collector = MetricsCollector()
             
+        # Initialize S3 Service
+        self.s3_service = S3Service()
+            
         # Accuracy Upgrade: Initialize FlashRank Reranker
         self.ranker = None
         if Ranker:
@@ -203,6 +207,7 @@ class IngestionEngine:
         """
         Assigns accurate page numbers and other metadata to chunks.
         Uses page_blocks from original_metadata to find the correct page for each chunk offset.
+        Optimized for large documents with 100,000+ blocks.
         """
         page_blocks = original_metadata.get('page_blocks', [])
         if not page_blocks:
@@ -214,14 +219,28 @@ class IngestionEngine:
                         chunk.metadata['page'] = fallback_page
             return chunks
             
+        # Optimization: Sort blocks by start_char for faster lookup
+        # Some blocks might be unsorted depending on the parser
+        page_blocks = sorted(page_blocks, key=lambda x: x.get('start_char', 0))
+        
+        # Use a pointer to avoid O(N*M) - since both chunks and blocks are mostly sorted by offset
+        block_idx = 0
+        num_blocks = len(page_blocks)
+        
         for chunk in chunks:
             start_index = chunk.metadata.get('start_index', 0)
-            # Find the page that contains this start_index
-            chunk_page = 1
-            for block in page_blocks:
-                if block.get('start_char', 0) <= start_index <= block.get('end_char', 0):
-                    chunk_page = block.get('page', 1)
-                    break
+            
+            # Fast-forward to the block that might contain this start_index
+            while block_idx < num_blocks - 1 and page_blocks[block_idx].get('end_char', 0) < start_index:
+                block_idx += 1
+            
+            # Check if this block contains the index
+            current_block = page_blocks[block_idx]
+            if current_block.get('start_char', 0) <= start_index <= current_block.get('end_char', 0):
+                chunk_page = current_block.get('page', 1)
+            else:
+                # Fallback to the last seen page or 1
+                chunk_page = current_block.get('page', 1)
             
             chunk.metadata['page'] = chunk_page
             # Also set source_page for consistency if missing
@@ -700,8 +719,8 @@ class IngestionEngine:
                         raise
                 
                 # Process in batches for large documents to show progress
-                # Use smaller batches (50) for better progress visibility
-                batch_size = 50  # Process 50 chunks at a time for better progress updates
+                # Increased batch size for better throughput on large documents
+                batch_size = getattr(ARISConfig, 'EMBEDDING_BATCH_SIZE', 1000) 
                 total_batches = (len(valid_chunks) + batch_size - 1) // batch_size
                 
                 if len(valid_chunks) > batch_size:
@@ -783,7 +802,7 @@ class IngestionEngine:
                     logger.info(f"[STEP 3.2.3] RAGSystem: Adding {len(valid_chunks)} chunks to existing {self.vector_store_type.upper()} vectorstore (this may take a few minutes for large documents)...")
                     
                     # Process in batches for large documents
-                    batch_size = 50  # Use smaller batches for better progress visibility
+                    batch_size = getattr(ARISConfig, 'EMBEDDING_BATCH_SIZE', 1000)
                     total_batches = (len(valid_chunks) + batch_size - 1) // batch_size
                     
                     if len(valid_chunks) > batch_size:

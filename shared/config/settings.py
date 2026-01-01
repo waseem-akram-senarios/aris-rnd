@@ -31,6 +31,10 @@ class ARISConfig:
     AWS_OPENSEARCH_SECRET_ACCESS_KEY: Optional[str] = os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY')
     AWS_OPENSEARCH_REGION: str = os.getenv('AWS_OPENSEARCH_REGION', 'us-east-2')
     
+    # S3 Storage Configuration
+    ENABLE_S3_STORAGE: bool = os.getenv('ENABLE_S3_STORAGE', 'true').lower() == 'true'
+    AWS_S3_BUCKET: str = os.getenv('AWS_S3_BUCKET', 'intelycx-waseem-s3-bucket')
+    
     # Chunking Configuration - Optimized for maximum accuracy
     CHUNKING_STRATEGY: str = os.getenv('CHUNKING_STRATEGY', 'comprehensive')
     
@@ -73,6 +77,11 @@ class ARISConfig:
     
     # Parser Configuration
     DOCLING_MAX_TIMEOUT: int = int(os.getenv('DOCLING_MAX_TIMEOUT', '1800'))  # 30 minutes default
+    
+    # Ingestion Performance Configuration
+    EMBEDDING_BATCH_SIZE: int = int(os.getenv('EMBEDDING_BATCH_SIZE', '1000'))
+    OPENSEARCH_BULK_SIZE: int = int(os.getenv('OPENSEARCH_BULK_SIZE', '1000'))
+    MAX_PAGE_BLOCKS_PER_DOC: int = int(os.getenv('MAX_PAGE_BLOCKS_PER_DOC', '2000'))
     
     @classmethod
     def get_vectorstore_path(cls, embedding_model: Optional[str] = None) -> str:

@@ -153,6 +153,7 @@ class OpenSearchVectorStore:
                 try:
                     logger.info(f"Trying {auth_name} authentication with endpoint: {self.endpoint}, domain: {self.domain}, index: {self.index_name}")
                     
+                    from shared.config.settings import ARISConfig
                     kwargs = {
                         'opensearch_url': self.endpoint,
                         'index_name': self.index_name,
@@ -162,6 +163,7 @@ class OpenSearchVectorStore:
                         'verify_certs': True,
                         'ssl_assert_hostname': False,
                         'ssl_show_warn': False,
+                        'bulk_size': ARISConfig.OPENSEARCH_BULK_SIZE,
                         'engine': 'lucene'  # Use lucene engine for OpenSearch 3.0+ (nmslib is deprecated)
                     }
                     

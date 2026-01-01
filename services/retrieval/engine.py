@@ -3352,7 +3352,15 @@ CRITICAL DOCUMENT FILTERING: The question specifically asks about "{mentioned_do
 
 IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first. If the metadata shows "exact count not available" but images are detected, state that images are present but the exact count requires re-processing the document.{document_filter_instruction}
 
-CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content. The section is marked with prominent warning symbols (⚠️⚠️⚠️) to make it highly visible. 
+CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content.
+
+CITATION RULES:
+1. For EVERY technical claim, fact, or specification you provide, you MUST include a citation.
+2. Citations MUST follow this exact format: [Source X: filename (Page Y)].
+3. Source numbers (X), filenames, and page numbers (Y) are provided in the context headers: [Source X: filename (Page Y)].
+4. If information spans multiple sources, cite all of them: [Source 1: docA.pdf (Page 5), Source 2: docB.pdf (Page 12)].
+5. ALWAYS use the page number provided in the context header. This is the authoritative page number.
+6. Citations must be placed at the end of the sentence or paragraph they support.
 
 When asked:
 - "what is in image X" or "what information is in image X"
@@ -3373,19 +3381,17 @@ You MUST:
 
 IMPORTANT: When asked about specific tools, items, or part numbers (e.g., "Where can I find the Mallet?"):
 1. FIRST check the "=== IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES) ===" section
-2. Search the OCR text for the tool/item name or part number (try variations: lowercase, uppercase, partial matches)
+2. Search the OCR text for the tool/item name or part number
 3. Look for drawer numbers, locations, or quantities associated with the item
 4. Provide specific information from the OCR text, including drawer numbers, page numbers, and quantities
 5. DO NOT say "context does not contain" if you haven't thoroughly searched the Image Content section
-
-Each image is numbered - match the image number from the question to the image number in the Image Content section. If the question asks about "image 1" or "first image", look for "Image 1:" in the Image Content section.
 
 CRITICAL RULES:
 - Synthesize information from ALL provided context chunks to answer the question
 - Work with the information that IS available in the context
 - If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
 - DO NOT say "context does not contain" unless you have thoroughly analyzed ALL chunks and found absolutely no relevant information
-- Be specific and cite exact values, measurements, and specifications when available
+- Be specific and cite exact values, measurements, and specifications when available. ALWAYS CITE YOUR SOURCES.
 - Include relevant details like dimensions, materials, standards, and procedures
 - Maintain technical accuracy and precision
 - If multiple sources provide information, synthesize them clearly
@@ -3505,6 +3511,14 @@ Answer:"""
         # Synthesis-friendly prompt for Cerebras
         prompt = f"""You are a precise technical assistant. Synthesize information from the provided context to answer the question. Be specific and accurate.
 
+CITATION RULES:
+1. For EVERY technical claim, fact, or specification you provide, you MUST include a citation.
+2. Citations MUST follow this exact format: [Source X: filename (Page Y)].
+3. Source numbers (X), filenames, and page numbers (Y) are provided in the context headers: [Source X: filename (Page Y)].
+4. If information spans multiple sources, cite all of them: [Source 1: docA.pdf (Page 5), Source 2: docB.pdf (Page 12)].
+5. ALWAYS use the page number provided in the context header.
+6. Citations must be placed at the end of the sentence or paragraph they support.
+
 CRITICAL: DO NOT add greetings, signatures, or closing statements. DO NOT repeat phrases. End your answer when you have provided the information.
 
 Context:
@@ -3517,7 +3531,7 @@ Instructions:
 - Work with the information that IS available in the context
 - If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
 - Only say information is not available if you have thoroughly checked ALL chunks and found nothing relevant
-- Be specific with numbers, measurements, and technical details
+- Be specific with numbers, measurements, and technical details. ALWAYS CITE YOUR SOURCES.
 - Provide comprehensive and accurate answers
 - DO NOT add "Best regards", "Thank you", or similar endings
 - Stop immediately after providing the answer
@@ -4977,7 +4991,15 @@ Summary:"""
         else:
             system_prompt = """You are a precise technical assistant that provides comprehensive, accurate answers by synthesizing information from multiple sources.
 
-CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content. The section is marked with prominent warning symbols (⚠️⚠️⚠️) to make it highly visible. 
+IMPORTANT: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images.
+
+CITATION RULES:
+1. For EVERY technical claim, fact, or specification you provide, you MUST include a citation.
+2. Citations MUST follow this exact format: [Source X: filename (Page Y)].
+3. Source numbers (X), filenames, and page numbers (Y) are provided in the context headers: [Source X: filename (Page Y)].
+4. If information spans multiple sources, cite all of them: [Source 1: docA.pdf (Page 5), Source 2: docB.pdf (Page 12)].
+5. ALWAYS use the page number provided in the context header. This is the authoritative page number.
+6. Citations must be placed at the end of the sentence or paragraph they support.
 
 When asked:
 - "what is in image X" or "what information is in image X"
@@ -4993,15 +5015,13 @@ You MUST:
 4. Include exact part numbers, tool names, quantities, and other details from the OCR text
 5. Do NOT say "context does not contain" if the Image Content section has relevant information
 
-Each image is numbered - match the image number from the question to the image number in the Image Content section. If the question asks about "image 1" or "first image", look for "Image 1:" in the Image Content section.
-
 CRITICAL RULES:
 - Synthesize information from ALL provided context chunks
 - Work with the information that IS available in the context
 - If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
 - DO NOT say "context does not contain" unless you have thoroughly analyzed ALL chunks and found absolutely no relevant information
-- Address all relevant sub-questions if they relate to the original question
-- Be specific and cite exact values, measurements, and specifications when available
+- Address all relevant sub-queries and synthesize their results
+- Be specific and cite exact values, measurements, and specifications when available. ALWAYS CITE YOUR SOURCES.
 - Include relevant details like dimensions, materials, standards, and procedures
 - Maintain technical accuracy and precision
 - DO NOT add greetings, signatures, or closing statements
