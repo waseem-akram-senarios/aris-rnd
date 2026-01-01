@@ -135,7 +135,7 @@ def test_imports_and_structure():
         from parsers.textract_parser import TextractParser
         from parsers.base_parser import ParsedDocument, BaseParser
         from ingestion.document_processor import DocumentProcessor
-        from utils.tokenizer import TokenTextSplitter
+        from shared.utils.tokenizer import TokenTextSplitter
         from vectorstores.vector_store_factory import VectorStoreFactory
         
         log_test("Module imports", True, "All modules imported successfully")
@@ -419,7 +419,7 @@ def test_page_number_accuracy():
             return False
         
         # Test tokenizer page extraction
-        from utils.tokenizer import TokenTextSplitter
+        from shared.utils.tokenizer import TokenTextSplitter
         splitter = TokenTextSplitter()
         # The tokenizer should be able to extract page numbers from text markers
         log_test("Tokenizer page extraction", True, "Tokenizer can extract page numbers from text markers")
@@ -436,7 +436,7 @@ def test_chunking_fixes():
     print_section("TEST 9: Chunking Fixes for Large Documents")
     
     try:
-        from utils.tokenizer import TokenTextSplitter
+        from shared.utils.tokenizer import TokenTextSplitter
         
         splitter = TokenTextSplitter(chunk_size=512, chunk_overlap=50)
         
@@ -585,7 +585,7 @@ def test_rag_integration():
     
     try:
         from rag_system import RAGSystem
-        from utils.tokenizer import TokenTextSplitter
+        from shared.utils.tokenizer import TokenTextSplitter
         
         rag = RAGSystem(chunk_size=512, chunk_overlap=100)
         splitter = rag.text_splitter
@@ -634,7 +634,7 @@ def test_special_token_handling():
     print_section("TEST 13: Special Token Handling")
     
     try:
-        from utils.tokenizer import TokenTextSplitter
+        from shared.utils.tokenizer import TokenTextSplitter
         
         splitter = TokenTextSplitter(chunk_size=512, chunk_overlap=50)
         

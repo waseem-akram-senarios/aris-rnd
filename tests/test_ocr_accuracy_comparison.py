@@ -217,7 +217,7 @@ def compare_ocr_side_by_side(
         stored_by_page[page][img_num] = img
     
     # Compare each direct OCR image with stored OCR
-    from utils.ocr_verifier import OCRVerifier
+    from shared.utils.ocr_verifier import OCRVerifier
     verifier = OCRVerifier()
     
     accuracies = []

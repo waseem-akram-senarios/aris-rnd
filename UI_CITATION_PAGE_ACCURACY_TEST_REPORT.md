@@ -207,6 +207,20 @@ python3 -m pytest tests/test_ui_citation_page_accuracy.py::test_reference_line_p
 python3 -m pytest tests/test_ui_citation_page_accuracy.py::test_ui_page_number_display_format -v
 ```
 
+```
+
+## Backend Citation Accuracy Verification ✅
+**Date**: 2025-12-31
+**Test**: `tests/manual_verify_citation.py`
+**Scope**: Parsers (PyMuPDF, Textract, OCRmyPDF, Docling)
+**Status**: PASSED
+
+**Verification Points:**
+- **Page Blocking**: Confirmed chunks are created per-page.
+- **Image Indexing**: Confirmed `extracted_images` metadata is populated with Page numbers.
+- **Image Citation**: Confirmed `page_blocks` metadata includes `type: image` entries (Verified on sample PDF with 23 images in `PyMuPDFParser`).
+- **Parser Consistency**: Updated `TextractParser`, `OCRmyPDFParser`, and `DoclingParser` to align with this standard.
+
 ## Conclusion
 
 **All UI citation page accuracy tests PASSED** ✅

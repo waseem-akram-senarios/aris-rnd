@@ -10,15 +10,29 @@ from typing import List, Dict, Optional, Callable, Any
 import numpy as np
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
-from utils.local_embeddings import LocalHashEmbeddings
+from shared.utils.local_embeddings import LocalHashEmbeddings
 try:
     from langchain.docstore.document import Document
 except ImportError:
     from langchain_core.documents import Document
 import requests
-from utils.tokenizer import TokenTextSplitter
+from shared.utils.tokenizer import TokenTextSplitter
+# Accuracy Improvements: Recursive Chunking and Reranking
+try:
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+except ImportError:
+    try:
+        from langchain.text_splitter import RecursiveCharacterTextSplitter
+    except ImportError:
+        RecursiveCharacterTextSplitter = None
+
+try:
+    from flashrank import Ranker, RerankRequest
+except ImportError:
+    Ranker = None
+    RerankRequest = None
 from vectorstores.vector_store_factory import VectorStoreFactory
-from config.settings import ARISConfig
+from shared.config.settings import ARISConfig
 
 load_dotenv()
 
@@ -76,11 +90,47 @@ class RAGSystem:
             self.embeddings = LocalHashEmbeddings(model_name=self.embedding_model)
         self.vectorstore = None
         # Use token-aware text splitter with configurable chunking
-        self.text_splitter = TokenTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            model_name=embedding_model
-        )
+        # Accuracy Upgrade: Use RecursiveCharacterTextSplitter for context preservation
+        # This splits by paragraphs/headers first, then falls back to tokens
+        if RecursiveCharacterTextSplitter:
+            try:
+                self.text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+                    model_name=embedding_model,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                    separators=["\n\n", "\n", " ", ""]
+                )
+                # Keep legacy splitter for pure token counting if needed
+                self._legacy_splitter = TokenTextSplitter(
+                    chunk_size=chunk_size, 
+                    chunk_overlap=chunk_overlap, 
+                    model_name=embedding_model
+                )
+            except Exception as e:
+                logger.warning(f"Could not init RecursiveCharacterTextSplitter: {e}, using legacy")
+                self.text_splitter = TokenTextSplitter(
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                    model_name=embedding_model
+                )
+        else:
+            # Fallback to legacy splitter if RecursiveCharacterTextSplitter not available
+            logger.warning("RecursiveCharacterTextSplitter not available, using legacy TokenTextSplitter")
+            self.text_splitter = TokenTextSplitter(
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                model_name=embedding_model
+            )
+        
+        # Accuracy Upgrade: Initialize FlashRank Reranker
+        self.ranker = None
+        if Ranker:
+            try:
+                # Use a high-quality but fast model
+                self.ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="models/cache")
+                logger.info("✅ FlashRank Reranker initialized (ms-marco-MiniLM-L-12-v2)")
+            except Exception as e:
+                logger.warning(f"⚠️ FlashRank init failed: {e}")
         
         # Document tracking for incremental updates
         self.document_index: Dict[str, List[int]] = {}  # {doc_id: [chunk_indices]}
@@ -266,11 +316,26 @@ class RAGSystem:
                 adaptive_chunk_overlap = int(adaptive_chunk_size * overlap_ratio)
                 adaptive_chunk_overlap = min(adaptive_chunk_overlap, adaptive_chunk_size // 2)
                 
-                splitter_to_use = TokenTextSplitter(
-                    chunk_size=adaptive_chunk_size,
-                    chunk_overlap=adaptive_chunk_overlap,
-                    model_name=self.embedding_model
-                )
+                if RecursiveCharacterTextSplitter:
+                    try:
+                        splitter_to_use = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+                            model_name=self.embedding_model,
+                            chunk_size=adaptive_chunk_size,
+                            chunk_overlap=adaptive_chunk_overlap,
+                            separators=["\n\n", "\n", " ", ""]
+                        )
+                    except Exception:
+                        splitter_to_use = TokenTextSplitter(
+                            chunk_size=adaptive_chunk_size,
+                            chunk_overlap=adaptive_chunk_overlap,
+                            model_name=self.embedding_model
+                        )
+                else:
+                    splitter_to_use = TokenTextSplitter(
+                        chunk_size=adaptive_chunk_size,
+                        chunk_overlap=adaptive_chunk_overlap,
+                        model_name=self.embedding_model
+                    )
                 
                 logger.info(
                     f"[STEP 3.1.2] RAGSystem: Adaptive chunking enabled for large document - "
@@ -301,8 +366,7 @@ class RAGSystem:
         try:
             logger.info(f"[STEP 3.1.3] RAGSystem: Starting chunking operation (timeout warning at {chunking_timeout_warning}s)...")
             chunks = splitter_to_use.split_documents(
-                safe_documents,
-                progress_callback=splitter_progress_callback
+                safe_documents
             )
             if chunks is None:
                 chunks = []
@@ -744,7 +808,7 @@ class RAGSystem:
         """
         from scripts.setup_logging import get_logger
         from langchain_community.docstore.in_memory import InMemoryDocstore
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         logger = get_logger("aris_rag.rag_system")
 
         if not document_names:
@@ -1231,8 +1295,17 @@ class RAGSystem:
         }
     
     def count_tokens(self, text: str) -> int:
-        """Count tokens in text using the tokenizer."""
-        return self.text_splitter.count_tokens(text)
+        """Count tokens in text using tiktoken."""
+        if not text:
+            return 0
+        try:
+            import tiktoken
+            # Use cl100k_base for OpenAI models (GPT-3.5/4)
+            encoding = tiktoken.get_encoding("cl100k_base")
+            return len(encoding.encode(text))
+        except Exception:
+            # Fallback to rough estimate if tiktoken fails
+            return len(text) // 4
     
     def _truncate_text_by_tokens(self, text: str, max_tokens: int) -> str:
         """
@@ -1339,7 +1412,7 @@ class RAGSystem:
         Returns:
             Tuple of (is_summary_query, expanded_query, suggested_k)
         """
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         
         question_lower = question.lower().strip()
         
@@ -1378,7 +1451,7 @@ class RAGSystem:
             List of document names that were uploaded recently
         """
         try:
-            from config.settings import ARISConfig
+            from shared.config.settings import ARISConfig
             import json
             from datetime import datetime, timedelta
 
@@ -1713,7 +1786,7 @@ class RAGSystem:
         Returns:
             Dict with answer, sources, and context chunks
         """
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         
         # Use accuracy-optimized defaults if not specified
         if k is None:
@@ -2024,7 +2097,7 @@ class RAGSystem:
                         logger.warning(f"Hybrid search failed, falling back to standard search: {e}")
                         # Fall through to standard search
                         if use_mmr:
-                            from config.settings import ARISConfig
+                            from shared.config.settings import ARISConfig
                             fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                             lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
                             retriever = store.vectorstore.as_retriever(
@@ -2043,7 +2116,7 @@ class RAGSystem:
                 else:
                     # Standard search
                     if use_mmr:
-                        from config.settings import ARISConfig
+                        from shared.config.settings import ARISConfig
                         fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                         lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
                         retriever = store.vectorstore.as_retriever(
@@ -2061,7 +2134,7 @@ class RAGSystem:
                     relevant_docs = retriever.invoke(retrieval_question)
             else:
                 # Multiple indexes - search across all
-                from config.settings import ARISConfig
+                from shared.config.settings import ARISConfig
                 relevant_docs = self.multi_index_manager.search_across_indexes(
                     query=retrieval_question,
                     index_names=indexes_to_search,
@@ -2142,7 +2215,7 @@ class RAGSystem:
             # Retrieve relevant documents with MMR optimized for maximum accuracy
             if use_mmr:
                 # Use MMR with accuracy-optimized parameters
-                from config.settings import ARISConfig
+                from shared.config.settings import ARISConfig
                 fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                 lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
                 
@@ -2528,7 +2601,11 @@ class RAGSystem:
             if page is None:
                 page = 1
                 page_confidence = 0.1
-                logger.debug(f"Citation {i}: page was None, using fallback page 1")
+                source_name = doc.metadata.get('source', 'Unknown')
+                logger.warning(f"Citation {i}: page was None, using fallback page 1. Source: {source_name}")
+            
+            # Get page_extraction_method from chunk metadata for debugging
+            page_extraction_method = doc.metadata.get('page_extraction_method', 'unknown')
             
             # Build citation entry with enhanced metadata including confidence scores
             citation = {
@@ -2537,6 +2614,7 @@ class RAGSystem:
                 'source_confidence': source_confidence,
                 'page': page,  # Always guaranteed to be an integer >= 1
                 'page_confidence': page_confidence,
+                'page_extraction_method': page_extraction_method,  # How page was determined
                 'section': section,
                 'snippet': snippet_clean,
                 'full_text': chunk_text,
@@ -2551,7 +2629,7 @@ class RAGSystem:
                 'similarity_score': similarity_score  # Vector similarity score for ranking
             }
             citations.append(citation)
-            logger.debug(f"Citation {i}: source='{source}', page={page}, chunk_index={citation.get('chunk_index', 'N/A')}")
+            logger.debug(f"Citation {i}: source='{source}', page={page}, method={page_extraction_method}, chunk_index={citation.get('chunk_index', 'N/A')}")
             
             # Add source and page info to context
             page_info = f" (Page {page})"  # page is always set
@@ -3546,7 +3624,7 @@ class RAGSystem:
             question_doc_number: Document number extracted from question (e.g., 1, 2)
         """
         from openai import OpenAI
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
         # Truncate context if it exceeds model's token limit
@@ -3808,7 +3886,7 @@ Answer:"""
             mentioned_documents: List of documents mentioned in the question (for filtering)
             question_doc_number: Document number extracted from question (e.g., 1, 2)
         """
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         # Synthesis-friendly prompt for Cerebras
         prompt = f"""You are a precise technical assistant. Synthesize information from the provided context to answer the question. Be specific and accurate.
 
@@ -3892,6 +3970,69 @@ Answer:"""
         search_mode: str
     ) -> List:
         """
+        Retrieves chunks with optional Reranking (FlashRank) for higher accuracy.
+        Wrapper around _retrieve_chunks_raw.
+        """
+        # 1. Expand retrieval window for Reranking
+        # Retrieve 4x chunks to give Reranker candidates to choose from
+        initial_k = k
+        if self.ranker:
+            initial_k = k * 4
+        
+        # 2. Get Raw Candidates
+        relevant_docs = self._retrieve_chunks_raw(
+            query, 
+            initial_k, 
+            use_mmr, 
+            use_hybrid_search, 
+            semantic_weight, 
+            keyword_weight, 
+            search_mode
+        )
+        
+        # 3. Rerank Results
+        if self.ranker and relevant_docs:
+            try:
+                # Prepare Rerank Request
+                passages = [
+                    {"id": str(i), "text": doc.page_content, "meta": doc.metadata} 
+                    for i, doc in enumerate(relevant_docs)
+                ]
+                
+                logger.info(f"⚡ Reranking {len(passages)} chunks with FlashRank...")
+                rerank_request = RerankRequest(query=query, passages=passages)
+                results = self.ranker.rerank(rerank_request)
+                
+                # Reconstruct sorted document list
+                # Map back to original documents using index/id
+                reranked_docs = []
+                for res in results:
+                    original_idx = int(res['id'])
+                    # Update metadata with rerank score
+                    doc = relevant_docs[original_idx]
+                    doc.metadata['rerank_score'] = res['score']
+                    reranked_docs.append(doc)
+                
+                # Slice to requested k
+                return reranked_docs[:k]
+                
+            except Exception as e:
+                logger.warning(f"Reranking failed: {e}. Returning raw results.")
+                return relevant_docs[:k]
+        
+        return relevant_docs[:k]
+
+    def _retrieve_chunks_raw(
+        self,
+        query: str,
+        k: int,
+        use_mmr: bool,
+        use_hybrid_search: bool,
+        semantic_weight: float,
+        keyword_weight: float,
+        search_mode: str
+    ) -> List:
+        """
         Retrieve chunks for a single query (used by Agentic RAG for multi-query retrieval).
         
         Args:
@@ -3962,7 +4103,7 @@ Answer:"""
                 
                 # Standard search
                 if use_mmr:
-                    from config.settings import ARISConfig
+                    from shared.config.settings import ARISConfig
                     fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                     lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
                     retriever = store.vectorstore.as_retriever(
@@ -3981,7 +4122,7 @@ Answer:"""
                 return relevant_docs
             else:
                 # Multiple indexes - search across all
-                from config.settings import ARISConfig
+                from shared.config.settings import ARISConfig
                 relevant_docs = self.multi_index_manager.search_across_indexes(
                     query=query,
                     index_names=indexes_to_search,
@@ -4031,7 +4172,7 @@ Answer:"""
             logger.info(f"Agentic RAG - FAISS filtering active: Increasing k from {k} to {effective_k} to account for post-filtering")
         
         if use_mmr:
-            from config.settings import ARISConfig
+            from shared.config.settings import ARISConfig
             fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
             lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
             
@@ -4355,7 +4496,8 @@ Answer:"""
         
         # No valid page found - use fallback: page 1 with low confidence
         # This ensures every citation has a page number, even if we can't determine it
-        logger.debug(f"No page number found in chunk, using fallback page 1")
+        source = doc.metadata.get('source', 'Unknown')
+        logger.warning(f"No page number found in chunk, using fallback page 1. Source: {source}")
         return 1, 0.1  # Fallback to page 1 with very low confidence
     
     def _generate_context_snippet(self, chunk_text: str, query: str, max_length: int = 500) -> str:
@@ -4932,7 +5074,8 @@ Answer:"""
             if page is None:
                 page = 1
                 page_confidence = 0.1
-                logger.debug(f"Agentic RAG Citation {i}: page was None, using fallback page 1")
+                source_name = doc.metadata.get('source', 'Unknown')
+                logger.warning(f"Agentic RAG Citation {i}: page was None, using fallback page 1. Source: {source_name}")
             
             start_char = doc.metadata.get('start_char', None)
             end_char = doc.metadata.get('end_char', None)
@@ -5020,7 +5163,11 @@ Answer:"""
             if page is None:
                 page = 1
                 page_confidence = 0.1
-                logger.debug(f"Agentic RAG Citation {i}: page was None in citation dict, using fallback page 1")
+                source_name = doc.metadata.get('source', 'Unknown')
+                logger.warning(f"Agentic RAG Citation {i}: page was None in citation dict, using fallback page 1. Source: {source_name}")
+            
+            # Get page_extraction_method from chunk metadata for debugging
+            page_extraction_method = doc.metadata.get('page_extraction_method', 'unknown')
             
             citation = {
                 'id': i,
@@ -5028,6 +5175,7 @@ Answer:"""
                 'source_confidence': source_confidence,
                 'page': page,  # Always guaranteed to be an integer >= 1
                 'page_confidence': page_confidence,
+                'page_extraction_method': page_extraction_method,  # How page was determined
                 'section': section,
                 'snippet': snippet_clean,
                 'full_text': chunk_text,
@@ -5042,7 +5190,7 @@ Answer:"""
                 'extraction_method': extraction_method
             }
             citations.append(citation)
-            logger.debug(f"Agentic RAG Citation {i}: source='{source}', page={page}, chunk_index={citation.get('chunk_index', 'N/A')}")
+            logger.debug(f"Agentic RAG Citation {i}: source='{source}', page={page}, method={page_extraction_method}, chunk_index={citation.get('chunk_index', 'N/A')}")
             
             page_info = f" (Page {page})"  # page is always set
             context_parts.append(f"[Source {i}: {source}{page_info}]\n{chunk_text}")
@@ -5117,7 +5265,7 @@ Answer:"""
             Tuple of (answer, response_tokens)
         """
         from openai import OpenAI
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
         # Truncate context if it exceeds model's token limit
@@ -5316,7 +5464,7 @@ Answer:"""
     def save_vectorstore(self, path: str = "vectorstore"):
         """Save vector store to disk (FAISS only) or cloud (OpenSearch)"""
         from scripts.setup_logging import get_logger
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         logger = get_logger("aris_rag.rag_system")
         
         if self.vectorstore:
@@ -5359,7 +5507,7 @@ Answer:"""
     def load_vectorstore(self, path: str = "vectorstore"):
         """Load vector store from disk (FAISS) or cloud (OpenSearch) with model-specific path"""
         from scripts.setup_logging import get_logger
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         logger = get_logger("aris_rag.rag_system")
         
         if self.vector_store_type == "faiss":
@@ -5639,7 +5787,7 @@ Answer:"""
             
             # Import image logger
             try:
-                from utils.image_extraction_logger import image_logger
+                from shared.utils.image_extraction_logger import image_logger
             except ImportError:
                 image_logger = None
             

@@ -109,7 +109,7 @@ def test_imports_and_config():
     
     try:
         from rag_system import RAGSystem
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         from ingestion.document_processor import DocumentProcessor
         from storage.document_registry import DocumentRegistry
         from langchain_openai import OpenAIEmbeddings
@@ -278,7 +278,7 @@ def test_opensearch_processing(OPENSEARCH_AVAILABLE):
     
     try:
         from rag_system import RAGSystem
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         
         opensearch_config = ARISConfig.get_opensearch_config()
         
@@ -359,7 +359,7 @@ def test_per_document_loading(rag_system):
         return False
     
     try:
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         import tempfile
         import shutil
         
@@ -446,7 +446,7 @@ def test_configuration():
     print_section("TEST 9: Configuration")
     
     try:
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         
         # Test vectorstore path
         path = ARISConfig.get_vectorstore_path("text-embedding-3-small")
@@ -558,7 +558,7 @@ def test_opensearch_add_documents_fix(OPENSEARCH_AVAILABLE):
                 log_test("FAISS: Accepts auto_recreate_on_mismatch", True, f"Processed (error may be expected): {str(e)[:50]}")
         
         # Test that OpenSearch doesn't receive the parameter
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         opensearch_config = ARISConfig.get_opensearch_config()
         
         rag_opensearch = RAGSystem(
@@ -692,7 +692,7 @@ def test_configuration_validation():
     print_section("TEST 14: Configuration Validation")
     
     try:
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         
         # Test hybrid search config
         try:
@@ -755,7 +755,7 @@ def test_query_decomposition():
     
     try:
         from rag.query_decomposer import QueryDecomposer
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         import os
         
         api_key = os.getenv('OPENAI_API_KEY')

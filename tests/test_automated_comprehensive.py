@@ -188,10 +188,10 @@ def test_utility_imports():
     """Test 6: Utility Module Imports"""
     try:
         sys.path.insert(0, '.')
-        from utils.pdf_metadata_extractor import extract_pdf_metadata
-        from utils.pdf_content_extractor import extract_pdf_content
-        from utils.ocr_verifier import OCRVerifier
-        from utils.ocr_auto_fix import OCRAutoFix
+        from shared.utils.pdf_metadata_extractor import extract_pdf_metadata
+        from shared.utils.pdf_content_extractor import extract_pdf_content
+        from shared.utils.ocr_verifier import OCRVerifier
+        from shared.utils.ocr_auto_fix import OCRAutoFix
         from config.accuracy_config import ACCURACY_THRESHOLDS
         
         log_test("Utility Module Imports", "PASS", "All utilities imported successfully")
@@ -204,7 +204,7 @@ def test_ocr_verifier_functionality():
     """Test 7: OCR Verifier Functionality"""
     try:
         sys.path.insert(0, '.')
-        from utils.ocr_verifier import OCRVerifier
+        from shared.utils.ocr_verifier import OCRVerifier
         
         verifier = OCRVerifier()
         
@@ -229,7 +229,7 @@ def test_auto_fix_functionality():
     """Test 8: Auto-Fix Functionality"""
     try:
         sys.path.insert(0, '.')
-        from utils.ocr_auto_fix import OCRAutoFix
+        from shared.utils.ocr_auto_fix import OCRAutoFix
         
         auto_fix = OCRAutoFix()
         
@@ -257,7 +257,7 @@ def test_schema_validation():
     """Test 9: Schema Validation"""
     try:
         sys.path.insert(0, '.')
-        from api.schemas import (
+        from shared.schemas import (
             DocumentMetadata, VerificationReport, AccuracyCheckResponse
         )
         

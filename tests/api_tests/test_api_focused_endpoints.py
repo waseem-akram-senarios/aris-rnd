@@ -6,7 +6,7 @@ import json
 import os
 from unittest.mock import patch
 from tests.utils.assertions import assert_response_status, assert_json_response
-from config.settings import ARISConfig
+from shared.config.settings import ARISConfig
 
 
 @pytest.mark.api
@@ -60,7 +60,7 @@ class TestFocusedEndpoints:
         """Test GET /v1/library/{document_id}"""
         import json
         import os
-        from config.settings import ARISConfig
+        from shared.config.settings import ARISConfig
         
         # Add document to registry
         service_container.document_registry.add_document(

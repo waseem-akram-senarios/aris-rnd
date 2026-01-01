@@ -117,7 +117,7 @@ def test_image_logger():
     print_test("Image Extraction Logger")
     
     try:
-        from utils.image_extraction_logger import image_logger, ImageExtractionLogger
+        from shared.utils.image_extraction_logger import image_logger, ImageExtractionLogger
         
         # Test logger instance
         assert image_logger is not None, "image_logger is None"

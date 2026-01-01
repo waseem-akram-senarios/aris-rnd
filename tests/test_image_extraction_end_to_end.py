@@ -21,7 +21,7 @@ def test_image_logger():
     logger.info("=" * 60)
     
     try:
-        from utils.image_extraction_logger import image_logger, ImageExtractionLogger
+        from shared.utils.image_extraction_logger import image_logger, ImageExtractionLogger
         
         # Test logger initialization
         assert image_logger is not None, "Image logger not initialized"
@@ -252,7 +252,7 @@ def test_log_file_creation():
         log_file = log_dir / "image_extraction.log"
         
         # Initialize logger (should create log file)
-        from utils.image_extraction_logger import image_logger
+        from shared.utils.image_extraction_logger import image_logger
         image_logger.log_image_detection_start("test.pdf", "test")
         
         # Check if log file exists or was created

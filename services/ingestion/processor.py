@@ -8,6 +8,7 @@ from typing import Optional, Dict, List, Any, Any
 from shared.schemas import ProcessingResult
 from .parsers.parser_factory import ParserFactory
 from .engine import IngestionEngine
+from shared.config.settings import ARISConfig
 
 # Set up enhanced logging
 from scripts.setup_logging import setup_logging
@@ -60,6 +61,7 @@ class DocumentProcessor:
         start_time = time.time()
         doc_name = file_name or os.path.basename(file_path)
         doc_id = document_id or file_path
+        s3_url = None
         
         logger.info("=" * 60)
         logger.info(f"[STEP 1] DocumentProcessor: Starting processing for: {doc_name}")
@@ -160,6 +162,27 @@ class DocumentProcessor:
             file_type = file_ext if file_ext else 'unknown'
             file_size_mb = file_size / 1024 / 1024
             logger.info(f"✅ [STEP 1.1] Document validated: type={file_type}, size={file_size:,} bytes ({file_size_mb:.2f} MB)")
+            
+            # [NEW] Upload to S3 if enabled
+            if hasattr(self.rag_system, 's3_service') and self.rag_system.s3_service.enabled:
+                try:
+                    update_status('processing', 0.1, f"Backing up {doc_name} to S3...")
+                    # Use a clean folder structure: documents/doc_id/filename
+                    s3_key = f"documents/{doc_id}/{doc_name}"
+                    
+                    upload_success = False
+                    if file_content:
+                        upload_success = self.rag_system.s3_service.upload_bytes(file_content, s3_key)
+                    else:
+                        upload_success = self.rag_system.s3_service.upload_file(file_path, s3_key)
+                        
+                    if upload_success:
+                        s3_url = f"s3://{self.rag_system.s3_service.bucket_name}/{s3_key}"
+                        logger.info(f"✅ [STEP 1.2] Document backed up to S3: {s3_url}")
+                    else:
+                        logger.warning(f"⚠️ [STEP 1.2] S3 backup failed for {doc_name}, continuing with local processing")
+                except Exception as e:
+                    logger.warning(f"⚠️ [STEP 1.2] S3 upload error (non-critical): {e}")
             
             # Step 2: Parse document (25% progress)
             logger.info("[STEP 2] DocumentProcessor: Starting document parsing...")
@@ -363,7 +386,8 @@ class DocumentProcessor:
                     'pages': getattr(parsed_doc, 'pages', 0),
                     'images_detected': getattr(parsed_doc, 'images_detected', False),
                     'image_count': getattr(parsed_doc, 'image_count', 0),  # Store image count for queries
-                    'extraction_percentage': getattr(parsed_doc, 'extraction_percentage', 0.0)
+                    'extraction_percentage': getattr(parsed_doc, 'extraction_percentage', 0.0),
+                    's3_url': s3_url
                 }
                 
                 # NEW LOGIC: Use page_blocks if available for accurate citations
@@ -375,27 +399,57 @@ class DocumentProcessor:
                     'page_blocks' in parsed_doc.metadata and 
                     parsed_doc.metadata['page_blocks']):
                     
-                    logger.info(f"[STEP 4.2] Using page_blocks for accurate citation chunking ({len(parsed_doc.metadata['page_blocks'])} blocks)...")
-                    
                     page_blocks = parsed_doc.metadata['page_blocks']
-                    # Sort by page for correct order
-                    page_blocks.sort(key=lambda x: x.get('page', 0))
+                    num_raw_blocks = len(page_blocks)
+                    logger.info(f"[STEP 4.2] Processing page_blocks for accurate citation chunking ({num_raw_blocks} blocks detected)...")
                     
+                    # Group blocks by page to avoid overhead of 100,000+ individual items
+                    # This is Fix #11 for ingestion performance
+                    grouped_by_page = {}
                     for block in page_blocks:
-                        if block.get('text') and block['text'].strip():
-                            # Create per-page metadata
-                            page_meta = base_metadata.copy()
-                            page_meta.update({
-                                'page': block.get('page', 0),
+                        page_num = block.get('page', 0)
+                        if page_num not in grouped_by_page:
+                            grouped_by_page[page_num] = {
+                                'text_parts': [],
                                 'start_char': block.get('start_char', 0),
                                 'end_char': block.get('end_char', 0)
+                            }
+                        
+                        if block.get('text') and block['text'].strip():
+                            grouped_by_page[page_num]['text_parts'].append(block['text'])
+                            # Update page boundaries
+                            grouped_by_page[page_num]['start_char'] = min(grouped_by_page[page_num]['start_char'], block.get('start_char', 0))
+                            grouped_by_page[page_num]['end_char'] = max(grouped_by_page[page_num]['end_char'], block.get('end_char', 0))
+                    
+                    # Convert grouped pages back to lists for processing
+                    sorted_page_nums = sorted(grouped_by_page.keys())
+                    
+                    # Limit the number of blocks stored in metadata if it's too large to prevent OpenSearch failures
+                    max_meta_blocks = getattr(ARISConfig, 'MAX_PAGE_BLOCKS_PER_DOC', 2000)
+                    if len(page_blocks) > max_meta_blocks:
+                        logger.warning(f"⚠️ Document has too many blocks ({len(page_blocks)}). Reducing to {max_meta_blocks} for metadata storage.")
+                        # We still process everyone, but we only store a sample/summary in metadata if it's huge
+                        base_metadata['page_blocks'] = page_blocks[:max_meta_blocks]
+                        base_metadata['total_blocks_count'] = len(page_blocks)
+                    else:
+                        base_metadata['page_blocks'] = page_blocks
+
+                    for page_num in sorted_page_nums:
+                        page_data = grouped_by_page[page_num]
+                        if page_data['text_parts']:
+                            page_text = "\n".join(page_data['text_parts'])
+                            
+                            page_meta = base_metadata.copy()
+                            page_meta.update({
+                                'page': page_num,
+                                'start_char': page_data['start_char'],
+                                'end_char': page_data['end_char']
                             })
                             
-                            # Use text from block (with marker if available, or just text)
-                            # Parsers like PyMuPDF and LlamaScan include markers in 'text' if they did their job right
-                            # usage of block['text'] ensures we respect what the parser produced
-                            texts_to_process.append(block['text'])
+                            texts_to_process.append(page_text)
                             metadatas_to_process.append(page_meta)
+                    
+                    logger.info(f"✅ [STEP 4.2] Consolidated {num_raw_blocks} blocks into {len(texts_to_process)} page-level entries.")
                 
                 # Fallback if no page blocks or empty blocks
                 if not texts_to_process:
@@ -459,7 +513,7 @@ class DocumentProcessor:
             try:
                 # Import here to avoid circular dependency
                 from storage.document_registry import DocumentRegistry
-                from shared.config.settings import ARISConfig
+                # Save result to registry for persistence
                 import hashlib
                 from datetime import datetime
                 
@@ -490,6 +544,7 @@ class DocumentProcessor:
                     'pages': parsed_doc.pages,
                     'file_size': file_size,
                     'file_type': file_type,
+                    's3_url': s3_url,
                     'created_at': datetime.now().isoformat()
                 }
                 

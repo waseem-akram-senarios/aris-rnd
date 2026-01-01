@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch, MagicMock
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from vectorstores.opensearch_images_store import OpenSearchImagesStore
-from utils.image_extraction_logger import ImageExtractionLogger, image_logger
+from shared.utils.image_extraction_logger import ImageExtractionLogger, image_logger
 
 
 class TestOpenSearchImagesStore(unittest.TestCase):

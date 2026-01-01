@@ -4,7 +4,7 @@ Ensures all citations have accurate page numbers from all parsers.
 """
 import pytest
 from unittest.mock import MagicMock, patch
-from api.schemas import Citation, ImageResult
+from shared.schemas import Citation, ImageResult
 
 
 @pytest.mark.api

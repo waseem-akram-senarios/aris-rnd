@@ -29,7 +29,7 @@ load_dotenv()
 
 # Import project modules
 from api.service import ServiceContainer, create_service_container
-from config.settings import ARISConfig
+from shared.config.settings import ARISConfig
 from storage.document_registry import DocumentRegistry
 from rag_system import RAGSystem
 from ingestion.document_processor import DocumentProcessor

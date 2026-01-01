@@ -61,7 +61,7 @@ def test_schema_imports():
     print_test("Schema Imports")
     
     try:
-        from api.schemas import (
+        from shared.schemas import (
             QueryRequest, QueryResponse, DocumentMetadata, DocumentListResponse,
             StatsResponse, ErrorResponse, Citation, ImageQueryRequest, 
             ImageQueryResponse, ImageResult, DocumentUpdateRequest
@@ -78,7 +78,7 @@ def test_query_request_schema():
     print_test("QueryRequest Schema with Enhanced Parameters")
     
     try:
-        from api.schemas import QueryRequest
+        from shared.schemas import QueryRequest
         
         # Test with all parameters
         request = QueryRequest(
@@ -112,7 +112,7 @@ def test_image_schemas():
     print_test("Image Schemas")
     
     try:
-        from api.schemas import ImageQueryRequest, ImageResult, ImageQueryResponse
+        from shared.schemas import ImageQueryRequest, ImageResult, ImageQueryResponse
         
         # Test ImageQueryRequest
         img_query = ImageQueryRequest(
@@ -152,7 +152,7 @@ def test_document_update_schema():
     print_test("DocumentUpdateRequest Schema")
     
     try:
-        from api.schemas import DocumentUpdateRequest
+        from shared.schemas import DocumentUpdateRequest
         
         update = DocumentUpdateRequest(
             document_name="updated.pdf",

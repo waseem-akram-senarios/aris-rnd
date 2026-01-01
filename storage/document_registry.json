@@ -209,5 +209,40 @@
     },
     "created_at": "2025-12-22T18:38:16.261120",
     "updated_at": "2025-12-22T18:38:16.261150"
+  },
+  "doc-1": {
+    "document_id": "doc-1",
+    "document_name": "Manual.pdf",
+    "chunks_created": 0,
+    "image_count": 0,
+    "images_detected": true,
+    "text_index": "aris-doc-doc-1",
+    "created_at": "2025-12-30T16:48:08.772619",
+    "version_info": {
+      "version_history": [
+        {
+          "version": 1,
+          "updated_at": "2025-12-30T16:48:08.772627",
+          "changes": []
+        }
+      ],
+      "version": 2
+    },
+    "updated_at": "2025-12-30T16:48:26.691480"
+  },
+  "96fd54e3-14e9-4b5f-b9f9-35aa7c2f6eed": {
+    "document_id": "96fd54e3-14e9-4b5f-b9f9-35aa7c2f6eed",
+    "document_name": "1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf",
+    "status": "success",
+    "chunks_created": 4,
+    "tokens_extracted": 1374,
+    "parser_used": "ocrmypdf",
+    "processing_time": 8.789636611938477,
+    "extraction_percentage": 1.0,
+    "images_detected": true,
+    "pages": null,
+    "error": null,
+    "created_at": "2026-01-01T14:24:38.744252",
+    "updated_at": "2026-01-01T14:24:38.744257"
   }
 }
