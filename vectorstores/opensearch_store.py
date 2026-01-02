@@ -401,9 +401,53 @@ class OpenSearchVectorStore:
             
             # Add documents to the index
             # OpenSearchVectorSearch will create the index if it doesn't exist
-            self.vectorstore.add_documents(cleaned_documents)
-            logger.info(f"OpenSearch vectorstore created successfully with {len(cleaned_documents)} documents")
+            # Get bulk_size from config to ensure we don't exceed it
+            from shared.config.settings import ARISConfig
+            bulk_size = ARISConfig.OPENSEARCH_BULK_SIZE
+            
+            # Split into batches if documents exceed bulk_size
+            if len(cleaned_documents) > bulk_size:
+                logger.info(f"Splitting {len(cleaned_documents)} documents into batches of {bulk_size}...")
+                total_added = 0
+                for i in range(0, len(cleaned_documents), bulk_size):
+                    batch = cleaned_documents[i:i + bulk_size]
+                    batch_num = (i // bulk_size) + 1
+                    total_batches = (len(cleaned_documents) + bulk_size - 1) // bulk_size
+                    logger.info(f"Adding batch {batch_num}/{total_batches} ({len(batch)} documents)...")
+                    self.vectorstore.add_documents(batch)
+                    total_added += len(batch)
+                logger.info(f"OpenSearch vectorstore created successfully with {total_added} documents in {total_batches} batches")
+            else:
+                self.vectorstore.add_documents(cleaned_documents)
+                logger.info(f"OpenSearch vectorstore created successfully with {len(cleaned_documents)} documents")
         except Exception as e:
+            error_str = str(e)
+            error_lower = error_str.lower()
+            
+            # Check if this is a bulk_size exceeded error
+            is_bulk_size_error = (
+                "bulk_size" in error_lower and 
+                ("more than" in error_lower or "exceed" in error_lower or "greater than" in error_lower)
+            )
+            
+            if is_bulk_size_error:
+                logger.warning(f"⚠️ Bulk size exceeded during from_documents. Splitting into smaller batches...")
+                # Extract the count from error if possible, otherwise use a safe default
+                safe_batch_size = min(bulk_size - 100, 1000)  # Use smaller batch size
+                logger.info(f"Retrying with batch size of {safe_batch_size}...")
+                
+                total_added = 0
+                for i in range(0, len(cleaned_documents), safe_batch_size):
+                    batch = cleaned_documents[i:i + safe_batch_size]
+                    batch_num = (i // safe_batch_size) + 1
+                    total_batches = (len(cleaned_documents) + safe_batch_size - 1) // safe_batch_size
+                    logger.info(f"Adding batch {batch_num}/{total_batches} ({len(batch)} documents)...")
+                    self.vectorstore.add_documents(batch)
+                    total_added += len(batch)
+                logger.info(f"OpenSearch vectorstore created successfully with {total_added} documents in {total_batches} batches")
+                return  # Successfully handled, exit early
+            
+            # Continue with other error handling
             error_str = str(e)
             error_lower = error_str.lower()
             
@@ -483,11 +527,53 @@ class OpenSearchVectorStore:
             cleaned_documents = self._clean_metadata_for_opensearch(documents)
             logger.info(f"Cleaned metadata for {len(cleaned_documents)} documents (removed large nested structures)")
             
-            self.vectorstore.add_documents(cleaned_documents)
-            logger.info(f"Successfully added {len(cleaned_documents)} documents to OpenSearch vectorstore")
+            # Get bulk_size from config to ensure we don't exceed it
+            from shared.config.settings import ARISConfig
+            bulk_size = ARISConfig.OPENSEARCH_BULK_SIZE
+            
+            # Split into batches if documents exceed bulk_size
+            if len(cleaned_documents) > bulk_size:
+                logger.info(f"Splitting {len(cleaned_documents)} documents into batches of {bulk_size}...")
+                total_added = 0
+                for i in range(0, len(cleaned_documents), bulk_size):
+                    batch = cleaned_documents[i:i + bulk_size]
+                    batch_num = (i // bulk_size) + 1
+                    total_batches = (len(cleaned_documents) + bulk_size - 1) // bulk_size
+                    logger.info(f"Adding batch {batch_num}/{total_batches} ({len(batch)} documents)...")
+                    self.vectorstore.add_documents(batch)
+                    total_added += len(batch)
+                logger.info(f"Successfully added {total_added} documents to OpenSearch vectorstore in {total_batches} batches")
+            else:
+                self.vectorstore.add_documents(cleaned_documents)
+                logger.info(f"Successfully added {len(cleaned_documents)} documents to OpenSearch vectorstore")
         except Exception as e:
             error_str = str(e)
             error_lower = error_str.lower()
+            
+            # Check if this is a bulk_size exceeded error
+            is_bulk_size_error = (
+                "bulk_size" in error_lower and 
+                ("more than" in error_lower or "exceed" in error_lower or "greater than" in error_lower)
+            )
+            
+            if is_bulk_size_error:
+                logger.warning(f"⚠️ Bulk size exceeded. Splitting into smaller batches...")
+                # Use a safe batch size (smaller than configured)
+                from shared.config.settings import ARISConfig
+                safe_batch_size = min(ARISConfig.OPENSEARCH_BULK_SIZE - 100, 1000)
+                logger.info(f"Retrying with batch size of {safe_batch_size}...")
+                
+                cleaned_documents = self._clean_metadata_for_opensearch(documents)
+                total_added = 0
+                for i in range(0, len(cleaned_documents), safe_batch_size):
+                    batch = cleaned_documents[i:i + safe_batch_size]
+                    batch_num = (i // safe_batch_size) + 1
+                    total_batches = (len(cleaned_documents) + safe_batch_size - 1) // safe_batch_size
+                    logger.info(f"Adding batch {batch_num}/{total_batches} ({len(batch)} documents)...")
+                    self.vectorstore.add_documents(batch)
+                    total_added += len(batch)
+                logger.info(f"Successfully added {total_added} documents to OpenSearch vectorstore in {total_batches} batches")
+                return  # Successfully handled, exit early
             
             # Check if this is a dimension mismatch error
             is_dimension_mismatch = (
@@ -725,12 +811,24 @@ class OpenSearchVectorStore:
                 keyword_results
             )
             
-            # Convert to Document objects
+            # Convert to Document objects and preserve similarity scores
             documents = []
             for hit in results:
                 source = hit.get("_source", {})
                 text = source.get("text", "")
                 metadata = source.get("metadata", {})
+                
+                # Extract similarity score from hit if available
+                # Priority: hybrid_score (from RRF) > _score (from OpenSearch) > None
+                hit_score = None
+                if "_hybrid_score" in hit:
+                    hit_score = hit.get("_hybrid_score")
+                elif "_score" in hit:
+                    hit_score = hit.get("_score")
+                
+                if hit_score is not None:
+                    # Store score in metadata for later use
+                    metadata["_opensearch_score"] = float(hit_score)
                 
                 doc = Document(
                     page_content=text,
@@ -821,6 +919,9 @@ class OpenSearchVectorStore:
         combined_results = []
         for doc_id, scores in doc_scores.items():
             total_score = scores["semantic_score"] + scores["keyword_score"]
+            # Store the combined score in the hit for later extraction
+            if doc_id in doc_hits:
+                doc_hits[doc_id]["_hybrid_score"] = total_score
             combined_results.append({
                 "hit": doc_hits[doc_id],
                 "combined_score": total_score,

@@ -115,11 +115,11 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
     echo "Checking Gateway health (port 8500)..."
     curl -s http://localhost:8500/health || echo "❌ Gateway health check failed"
     echo ""
-    echo "Checking Ingestion health (port 8001)..."
-    curl -s http://localhost:8001/health || echo "❌ Ingestion health check failed"
+    echo "Checking Ingestion health (port 8501)..."
+    curl -s http://localhost:8501/health || echo "❌ Ingestion health check failed"
     echo ""
-    echo "Checking Retrieval health (port 8002)..."
-    curl -s http://localhost:8002/health || echo "❌ Retrieval health check failed"
+    echo "Checking Retrieval health (port 8502)..."
+    curl -s http://localhost:8502/health || echo "❌ Retrieval health check failed"
 EOF
 
 END_TIME=$(date +%s)

@@ -55,6 +55,7 @@ class Citation(BaseModel):
     chunk_index: Optional[int] = None
     extraction_method: Optional[str] = None
     similarity_score: Optional[float] = None
+    similarity_percentage: Optional[float] = Field(default=None, ge=0.0, le=100.0, description="Similarity ranking as percentage (100% = most similar)")
 
 
 class QueryResponse(BaseModel):

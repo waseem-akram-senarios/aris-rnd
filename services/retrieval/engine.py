@@ -2037,25 +2037,64 @@ class RetrievalEngine:
         doc_scores = {}
         doc_order_scores = {}  # Use retrieval order as proxy for relevance when scores unavailable
         
-        # First, try to get scores using similarity_search_with_score directly
+        # First, try to extract scores from retrieved documents if they have them
+        # (e.g., from hybrid_search which stores scores in metadata)
+        for doc in relevant_docs:
+            if hasattr(doc, 'metadata') and doc.metadata:
+                # Check for OpenSearch score from hybrid_search
+                if '_opensearch_score' in doc.metadata:
+                    score = doc.metadata.get('_opensearch_score')
+                    if hasattr(doc, 'page_content') and doc.page_content:
+                        import hashlib
+                        doc_content_200 = doc.page_content[:200]
+                        content_hash = hashlib.md5(doc.page_content.encode('utf-8')).hexdigest()
+                        doc_scores[doc_content_200] = float(score)
+                        doc_scores[content_hash] = float(score)
+                        logger.debug(f"Extracted OpenSearch score {score:.4f} from document metadata")
+        
+        # Then, try to get scores using similarity_search_with_score directly
+        # Match scores to retrieved documents using multiple strategies
         try:
-            if hasattr(self.vectorstore, 'similarity_search_with_score'):
+            if hasattr(self.vectorstore, 'similarity_search_with_score') and len(doc_scores) == 0:
                 # Get more results to ensure we have scores for all retrieved docs
-                scored_docs = self.vectorstore.similarity_search_with_score(retrieval_question, k=max(len(relevant_docs) * 2, 20))
+                # Use the same query and filters that were used for retrieval
+                scored_docs = self.vectorstore.similarity_search_with_score(retrieval_question, k=max(len(relevant_docs) * 3, 50))
                 
-                # Create a mapping of document content to scores
+                # Create a mapping of document content to scores using multiple keys
                 for scored_doc, score in scored_docs:
                     if hasattr(scored_doc, 'page_content'):
-                        # Use first 200 chars for better matching (more unique than 100)
-                        doc_content = scored_doc.page_content[:200]
-                        # Also try matching by full content hash
                         import hashlib
-                        content_hash = hashlib.md5(scored_doc.page_content.encode('utf-8')).hexdigest()
+                        doc_content = scored_doc.page_content
+                        # Use multiple matching strategies
+                        doc_content_200 = doc_content[:200] if doc_content else ""
+                        doc_content_100 = doc_content[:100] if doc_content else ""
+                        content_hash = hashlib.md5(doc_content.encode('utf-8')).hexdigest() if doc_content else ""
+                        content_hash_200 = hashlib.md5(doc_content_200.encode('utf-8')).hexdigest() if doc_content_200 else ""
+                        
                         score_val = float(score) if score is not None else 0.0
-                        doc_scores[doc_content] = score_val
-                        doc_scores[content_hash] = score_val
+                        
+                        # Store with multiple keys for better matching
+                        if doc_content_200:
+                            doc_scores[doc_content_200] = score_val
+                        if doc_content_100:
+                            doc_scores[doc_content_100] = score_val
+                        if content_hash:
+                            doc_scores[content_hash] = score_val
+                        if content_hash_200:
+                            doc_scores[content_hash_200] = score_val
+                        
+                        # Also try matching by metadata source + first 50 chars
+                        if hasattr(scored_doc, 'metadata') and scored_doc.metadata:
+                            source = scored_doc.metadata.get('source', '')
+                            if source and doc_content:
+                                source_content_key = f"{source}:{doc_content[:50]}"
+                                doc_scores[source_content_key] = score_val
+                                
+                logger.debug(f"Retrieved {len(scored_docs)} scored documents for matching")
         except Exception as e:
-            logger.debug(f"Could not retrieve similarity scores: {e}")
+            logger.warning(f"Could not retrieve similarity scores: {e}")
+            import traceback
+            logger.debug(f"Score retrieval traceback: {traceback.format_exc()[:300]}")
         
         # Use retrieval order as a proxy for relevance (earlier = more relevant)
         # This helps when similarity scores aren't available
@@ -2193,28 +2232,62 @@ class RetrievalEngine:
             # Determine extraction method based on confidence scores
             extraction_method = 'metadata' if source_confidence >= 0.7 else ('text_marker' if source_confidence >= 0.3 else 'fallback')
             
-            # Get similarity score if available (for ranking)
+            # Get similarity score if available (for ranking) - improved matching
             similarity_score = None
-            doc_content_key = chunk_text[:200] if chunk_text else ""
             import hashlib
-            content_hash = hashlib.md5(chunk_text.encode('utf-8')).hexdigest() if chunk_text else ""
             
-            # Try multiple matching strategies
-            if doc_content_key in doc_scores:
-                similarity_score = doc_scores[doc_content_key]
-            elif content_hash in doc_scores:
-                similarity_score = doc_scores[content_hash]
-            # Use order-based score as fallback
-            elif doc_content_key in doc_order_scores:
-                # Convert order score to similarity-like score (0.5 to 1.0 range)
-                order_score = doc_order_scores[doc_content_key]
-                similarity_score = 0.5 + (order_score * 0.5)  # Map 0.0-1.0 order to 0.5-1.0 similarity
-            elif content_hash in doc_order_scores:
-                order_score = doc_order_scores[content_hash]
-                similarity_score = 0.5 + (order_score * 0.5)
-            # Also try to get from metadata if stored there
-            elif hasattr(doc, 'metadata') and 'similarity_score' in doc.metadata:
-                similarity_score = doc.metadata.get('similarity_score')
+            if chunk_text:
+                doc_content_200 = chunk_text[:200]
+                doc_content_100 = chunk_text[:100]
+                content_hash = hashlib.md5(chunk_text.encode('utf-8')).hexdigest()
+                content_hash_200 = hashlib.md5(doc_content_200.encode('utf-8')).hexdigest()
+                
+                # Try multiple matching strategies (most specific first)
+                if doc_content_200 in doc_scores:
+                    similarity_score = doc_scores[doc_content_200]
+                elif content_hash in doc_scores:
+                    similarity_score = doc_scores[content_hash]
+                elif doc_content_100 in doc_scores:
+                    similarity_score = doc_scores[doc_content_100]
+                elif content_hash_200 in doc_scores:
+                    similarity_score = doc_scores[content_hash_200]
+                # Try source + content matching
+                elif hasattr(doc, 'metadata') and doc.metadata:
+                    source = doc.metadata.get('source', '')
+                    if source:
+                        source_content_key = f"{source}:{chunk_text[:50]}"
+                        if source_content_key in doc_scores:
+                            similarity_score = doc_scores[source_content_key]
+                
+                # Use order-based score as fallback
+                if similarity_score is None:
+                    if doc_content_200 in doc_order_scores:
+                        order_score = doc_order_scores[doc_content_200]
+                        similarity_score = 0.5 + (order_score * 0.5)  # Map 0.0-1.0 order to 0.5-1.0 similarity
+                    elif content_hash in doc_order_scores:
+                        order_score = doc_order_scores[content_hash]
+                        similarity_score = 0.5 + (order_score * 0.5)
+                
+                # Also try to get from metadata if stored there (e.g., from hybrid_search)
+                if similarity_score is None and hasattr(doc, 'metadata') and doc.metadata:
+                    # Check for OpenSearch score from hybrid_search
+                    if '_opensearch_score' in doc.metadata:
+                        similarity_score = doc.metadata.get('_opensearch_score')
+                        logger.debug(f"Using OpenSearch score from metadata: {similarity_score:.4f}")
+                    elif 'similarity_score' in doc.metadata:
+                        similarity_score = doc.metadata.get('similarity_score')
+                
+                # Final fallback: Use retrieval position as similarity proxy
+                # Earlier documents = higher similarity (normalized to 0.5-1.0 range)
+                if similarity_score is None:
+                    # Use index position (i starts at 1, so first doc gets highest score)
+                    position_score = 1.0 - ((i - 1) / max(len(relevant_docs), 1)) * 0.5
+                    similarity_score = 0.5 + position_score  # Map to 0.5-1.0 range
+                    logger.debug(f"Using position-based similarity score {similarity_score:.3f} for citation {i}")
+            else:
+                # No chunk text - use position-based score
+                position_score = 1.0 - ((i - 1) / max(len(relevant_docs), 1)) * 0.5
+                similarity_score = 0.5 + position_score
             
             # Ensure page is always set (fallback to 1 if None)
             if page is None:
@@ -4152,9 +4225,50 @@ Answer:"""
         logger.warning(f"No page number found in chunk, using fallback page 1. Source: {source}")
         return 1, 0.1  # Fallback to page 1 with very low confidence
     
+    def _calculate_semantic_similarity(self, text1: str, text2: str) -> float:
+        """
+        Calculate semantic similarity between two texts using embeddings.
+        Generic, dynamic approach that works for any document type.
+        
+        Args:
+            text1: First text
+            text2: Second text
+        
+        Returns:
+            Similarity score between 0 and 1
+        """
+        try:
+            # Use embeddings to calculate semantic similarity
+            if hasattr(self, 'embeddings') and self.embeddings:
+                # Get embeddings for both texts
+                emb1 = self.embeddings.embed_query(text1[:1000])  # Limit length for efficiency
+                emb2 = self.embeddings.embed_query(text2[:1000])
+                
+                # Calculate cosine similarity
+                import numpy as np
+                dot_product = np.dot(emb1, emb2)
+                norm1 = np.linalg.norm(emb1)
+                norm2 = np.linalg.norm(emb2)
+                
+                if norm1 > 0 and norm2 > 0:
+                    similarity = dot_product / (norm1 * norm2)
+                    return float(similarity)
+        except Exception:
+            pass
+        
+        # Fallback to word overlap similarity if embeddings fail
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        if not words1 or not words2:
+            return 0.0
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        return len(intersection) / len(union) if union else 0.0
+    
     def _generate_context_snippet(self, chunk_text: str, query: str, max_length: int = 500) -> str:
         """
-        Generate snippet centered around query-relevant content.
+        Generate snippet centered around query-relevant content using dynamic semantic matching.
+        Generic solution that works for all document types without hardcoded mappings.
         
         Args:
             chunk_text: Full chunk text content
@@ -4177,29 +4291,29 @@ Answer:"""
         if len(cleaned_text) <= max_length:
             return cleaned_text
         
-        # Extract query keywords (simple word extraction, case-insensitive)
+        # Strategy 1: Try semantic similarity-based sentence extraction (most generic)
+        try:
+            semantic_snippet = self._extract_semantic_snippet(cleaned_text, query, max_length)
+            if semantic_snippet and len(semantic_snippet) > 50:  # Only use if meaningful
+                return semantic_snippet
+        except Exception as e:
+            logger.debug(f"Semantic snippet extraction failed: {e}")
+        
+        # Strategy 2: Fallback to keyword-based matching with dynamic word extraction
         query_words = re.findall(r'\b\w+\b', query.lower())
-        # Filter out common stop words
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can'}
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can', 'about', 'tell', 'me', 'what', 'when', 'where', 'who', 'why', 'how'}
         query_keywords = [w for w in query_words if w not in stop_words and len(w) > 2]
         
-        # If no meaningful keywords, return first max_length chars
+        # If no meaningful keywords, use sentence-level semantic extraction
         if not query_keywords:
-            # Try to preserve sentence boundaries
-            snippet = cleaned_text[:max_length]
-            last_period = snippet.rfind('.')
-            last_exclamation = snippet.rfind('!')
-            last_question = snippet.rfind('?')
-            last_sentence_end = max(last_period, last_exclamation, last_question)
-            if last_sentence_end > max_length * 0.5:  # Only use if we have at least 50% of max_length
-                snippet = cleaned_text[:last_sentence_end + 1]
-            return snippet + "..."
+            return self._extract_sentences_snippet(cleaned_text, max_length, query=query)
         
-        # Find positions of query keywords in text
+        # Find positions of query keywords in text (with fuzzy matching)
         keyword_positions = []
         text_lower = cleaned_text.lower()
+        
         for keyword in query_keywords:
-            # Find all occurrences of keyword
+            # Exact matches
             start = 0
             while True:
                 pos = text_lower.find(keyword, start)
@@ -4207,17 +4321,26 @@ Answer:"""
                     break
                 keyword_positions.append(pos)
                 start = pos + 1
+            
+            # Partial word matches for longer keywords (dynamic, not hardcoded)
+            if len(keyword) > 4:
+                # Try stem-like matching (first 4-5 chars)
+                stem_length = min(5, len(keyword) - 1)
+                stem = keyword[:stem_length]
+                start = 0
+                while True:
+                    pos = text_lower.find(stem, start)
+                    if pos == -1:
+                        break
+                    # Check word boundaries
+                    if (pos == 0 or not text_lower[pos-1].isalnum()) and \
+                       (pos + len(stem) >= len(text_lower) or not text_lower[pos + len(stem)].isalnum()):
+                        keyword_positions.append(pos)
+                    start = pos + 1
         
         if not keyword_positions:
-            # Keywords not found, return first max_length chars with sentence boundary
-            snippet = cleaned_text[:max_length]
-            last_period = snippet.rfind('.')
-            last_exclamation = snippet.rfind('!')
-            last_question = snippet.rfind('?')
-            last_sentence_end = max(last_period, last_exclamation, last_question)
-            if last_sentence_end > max_length * 0.5:
-                snippet = cleaned_text[:last_sentence_end + 1]
-            return snippet + "..."
+            # No keyword matches found, use semantic sentence extraction
+            return self._extract_sentences_snippet(cleaned_text, max_length, query_keywords, query=query)
         
         # Find the center of keyword positions
         keyword_positions.sort()
@@ -4228,21 +4351,17 @@ Answer:"""
         end_pos = min(len(cleaned_text), start_pos + max_length)
         
         # Adjust to preserve sentence boundaries
-        # Try to start at sentence beginning
         if start_pos > 0:
-            # Look for sentence end before start_pos
-            search_start = max(0, start_pos - 100)  # Look back up to 100 chars
+            search_start = max(0, start_pos - 100)
             period = cleaned_text.rfind('.', search_start, start_pos)
             exclamation = cleaned_text.rfind('!', search_start, start_pos)
             question = cleaned_text.rfind('?', search_start, start_pos)
             sentence_end = max(period, exclamation, question)
-            if sentence_end > start_pos - 50:  # Only adjust if close
+            if sentence_end > start_pos - 50:
                 start_pos = sentence_end + 1
-                # Skip whitespace
                 while start_pos < len(cleaned_text) and cleaned_text[start_pos].isspace():
                     start_pos += 1
         
-        # Try to end at sentence end
         if end_pos < len(cleaned_text):
             period = cleaned_text.find('.', end_pos - 50, end_pos + 50)
             exclamation = cleaned_text.find('!', end_pos - 50, end_pos + 50)
@@ -4253,12 +4372,174 @@ Answer:"""
         
         snippet = cleaned_text[start_pos:end_pos].strip()
         
-        # Add ellipsis if we're not at the start or end
         if start_pos > 0:
             snippet = "..." + snippet
         if end_pos < len(cleaned_text):
             snippet = snippet + "..."
         
+        return snippet
+    
+    def _extract_semantic_snippet(self, text: str, query: str, max_length: int) -> str:
+        """
+        Extract snippet using semantic similarity - generic approach for any document.
+        
+        Args:
+            text: Full text to extract from
+            query: Query to match against
+            max_length: Maximum snippet length
+        
+        Returns:
+            Most semantically relevant snippet
+        """
+        import re
+        
+        # Split into sentences
+        sentence_pattern = r'(?<=[.!?])\s+'
+        sentences = re.split(sentence_pattern, text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        if not sentences:
+            return text[:max_length] + ("..." if len(text) > max_length else "")
+        
+        # Score each sentence by semantic similarity to query
+        scored_sentences = []
+        for sentence in sentences:
+            if len(sentence) < 10:  # Skip very short sentences
+                continue
+            similarity = self._calculate_semantic_similarity(sentence, query)
+            scored_sentences.append((similarity, sentence))
+        
+        if not scored_sentences:
+            return text[:max_length] + ("..." if len(text) > max_length else "")
+        
+        # Sort by similarity (highest first)
+        scored_sentences.sort(key=lambda x: x[0], reverse=True)
+        
+        # Select top sentences up to max_length
+        selected = []
+        total_length = 0
+        for similarity, sentence in scored_sentences:
+            if total_length + len(sentence) + 1 <= max_length:
+                selected.append(sentence)
+                total_length += len(sentence) + 1
+            else:
+                break
+        
+        if selected:
+            snippet = " ".join(selected)
+            if total_length < len(text):
+                snippet += "..."
+            return snippet
+        
+        # Fallback: return highest scoring sentence
+        return scored_sentences[0][1][:max_length] + "..."
+    
+    def _extract_sentences_snippet(self, text: str, max_length: int, keywords: Optional[List[str]] = None, query: Optional[str] = None) -> str:
+        """
+        Extract snippet by scoring sentences dynamically - generic approach for any document.
+        Uses semantic similarity when available, falls back to keyword matching.
+        
+        Args:
+            text: Full text to extract from
+            max_length: Maximum snippet length
+            keywords: Optional keywords to score sentences against
+            query: Optional query for semantic matching
+        
+        Returns:
+            Snippet composed of most relevant sentences
+        """
+        import re
+        
+        # Split into sentences
+        sentence_pattern = r'(?<=[.!?])\s+'
+        sentences = re.split(sentence_pattern, text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        if not sentences:
+            snippet = text[:max_length]
+            if len(text) > max_length:
+                snippet += "..."
+            return snippet
+        
+        scored_sentences = []
+        
+        # Strategy 1: Use semantic similarity if query provided and embeddings available
+        if query and hasattr(self, 'embeddings') and self.embeddings:
+            try:
+                for sentence in sentences:
+                    if len(sentence) < 10:  # Skip very short sentences
+                        continue
+                    similarity = self._calculate_semantic_similarity(sentence, query)
+                    scored_sentences.append((similarity, sentence, 'semantic'))
+            except Exception:
+                pass  # Fall back to keyword matching
+        
+        # Strategy 2: Keyword-based scoring (dynamic, no hardcoded patterns)
+        if not scored_sentences and keywords:
+            text_lower = text.lower()
+            for sentence in sentences:
+                if len(sentence) < 10:
+                    continue
+                score = 0
+                sentence_lower = sentence.lower()
+                
+                # Count keyword matches (exact and partial)
+                for keyword in keywords:
+                    if keyword in sentence_lower:
+                        score += 1.0
+                    # Dynamic partial matching for longer keywords
+                    elif len(keyword) > 4:
+                        stem = keyword[:min(5, len(keyword)-1)]
+                        if stem in sentence_lower:
+                            score += 0.5
+                
+                if score > 0:
+                    scored_sentences.append((score, sentence, 'keyword'))
+        
+        # Strategy 3: If no scoring worked, use sentence position (earlier = potentially more relevant)
+        if not scored_sentences:
+            for idx, sentence in enumerate(sentences):
+                if len(sentence) >= 10:
+                    # Earlier sentences get slightly higher score
+                    position_score = 1.0 - (idx / max(len(sentences), 1)) * 0.3
+                    scored_sentences.append((position_score, sentence, 'position'))
+        
+        # Sort by score (highest first)
+        scored_sentences.sort(key=lambda x: x[0], reverse=True)
+        
+        # Select top sentences up to max_length
+        selected = []
+        total_length = 0
+        for score, sentence, method in scored_sentences:
+            sentence_with_space = sentence + " "
+            if total_length + len(sentence_with_space) <= max_length:
+                selected.append(sentence)
+                total_length += len(sentence_with_space)
+            else:
+                # Try to fit partial sentence if close to max_length
+                remaining = max_length - total_length
+                if remaining > 50 and len(sentence) > remaining:
+                    # Take first part of sentence
+                    partial = sentence[:remaining].rsplit('.', 1)[0] + "."
+                    if partial:
+                        selected.append(partial)
+                break
+        
+        if selected:
+            snippet = " ".join(selected)
+            if total_length < len(text):
+                snippet += "..."
+            return snippet
+        
+        # Final fallback: return highest scoring sentence or first sentence
+        if scored_sentences:
+            best_sentence = scored_sentences[0][1]
+            return best_sentence[:max_length] + ("..." if len(best_sentence) > max_length else "")
+        
+        # Last resort: first few sentences
+        snippet = " ".join(sentences[:3])[:max_length]
+        if len(text) > max_length:
+            snippet += "..."
         return snippet
     
     def _deduplicate_citations(self, citations: List[Dict]) -> List[Dict]:
@@ -4408,17 +4689,17 @@ Answer:"""
     
     def _rank_citations_by_relevance(self, citations: List[Dict], query: str) -> List[Dict]:
         """
-        Rank citations by relevance to query using multiple metrics:
-        1. Vector similarity score (primary - most accurate)
-        2. Keyword matching (secondary - for text-based relevance)
-        3. Metadata confidence (tertiary - for quality)
+        Rank citations by similarity score - most similar first.
+        Uses vector similarity scores from similarity_search_with_score.
+        Automatically handles both distance-based (lower = more similar) and 
+        similarity-based (higher = more similar) scoring systems.
         
         Args:
-            citations: List of citation dictionaries
-            query: User query string
+            citations: List of citation dictionaries with similarity_score field
+            query: User query string (used for logging/debugging)
         
         Returns:
-            Ranked list of citations with relevance_score added, sorted from highest to lowest
+            Ranked list of citations sorted by similarity_score (most similar first)
         """
         import re
         from scripts.setup_logging import get_logger
@@ -4427,162 +4708,138 @@ Answer:"""
         if not citations or not query:
             return citations
         
-        # Extract query keywords (simple word extraction, case-insensitive)
-        query_words = re.findall(r'\b\w+\b', query.lower())
-        # Filter out common stop words (but keep important technical terms)
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'should', 'could', 'may', 'might', 'must', 'can', 'what', 'when', 'where', 'who', 'why', 'how', 'give', 'me', 'information', 'about'}
-        query_keywords = [w for w in query_words if w not in stop_words and len(w) > 2]
-        
-        # If no keywords after filtering, use all words longer than 3 chars (to catch technical terms)
-        if not query_keywords:
-            query_keywords = [w for w in query_words if len(w) > 3]
-        
-        # Normalize similarity scores to 0-1 range if needed
+        # Check if we have similarity scores
         similarity_scores = [c.get('similarity_score') for c in citations if c.get('similarity_score') is not None]
-        if similarity_scores:
-            min_score = min(similarity_scores)
-            max_score = max(similarity_scores)
-            score_range = max_score - min_score if max_score != min_score else 1.0
-            
-            # If all scores are the same, use a default normalized value
-            if score_range == 0:
-                # All scores identical - they'll get equal normalized value of 0.5
-                default_normalized = 0.5
-            else:
-                default_normalized = None
+        
+        if not similarity_scores:
+            logger.warning("No similarity scores found in citations. Citations will be returned in original order.")
+            return citations
+        
+        # Determine if scores are distance-based (lower is better) or similarity-based (higher is better)
+        # Distance-based scores are typically > 1.0, similarity-based are typically <= 1.0
+        min_score = min(similarity_scores)
+        max_score = max(similarity_scores)
+        
+        # If scores are mostly > 1.0, they're likely distance-based
+        # If scores are mostly <= 1.0, they're likely similarity-based
+        # Also check if scores are in the position-based fallback range (0.5-1.0)
+        # Position-based scores are in narrow range and decrease uniformly
+        is_position_based = (max_score <= 1.0 and min_score >= 0.5 and 
+                            (max_score - min_score) < 0.5 and len(similarity_scores) > 1)
+        is_distance_based = max_score > 1.0 and min_score > 0.5 and not is_position_based
+        
+        if is_position_based:
+            logger.warning(f"Detected position-based fallback scores (range: {min_score:.3f}-{max_score:.3f}). "
+                          f"Actual similarity scores may not be available. Consider using similarity_search_with_score.")
+        
+        # Sort by similarity score
+        # For distance-based scores (lower = more similar), sort ascending
+        # For similarity-based scores (higher = more similar), sort descending
+        if is_distance_based:
+            # Distance-based: lower score = more similar, so sort ascending
+            citations.sort(key=lambda c: (
+                c.get('similarity_score', 999) if c.get('similarity_score') is not None else 999,  # Primary: similarity (ascending for distance)
+                c.get('id', 0)  # Secondary: original order (ascending) for tie-breaking
+            ))
+            logger.debug(f"Sorted citations by distance-based similarity (ascending - lower distance = more similar)")
         else:
-            min_score = 0
-            max_score = 1.0
-            score_range = 1.0
-            default_normalized = 0.5
+            # Similarity-based: higher score = more similar, so sort descending
+            citations.sort(key=lambda c: (
+                -c.get('similarity_score', -999) if c.get('similarity_score') is not None else 999,  # Primary: similarity (descending for similarity)
+                c.get('id', 0)  # Secondary: original order (ascending) for tie-breaking
+            ))
+            logger.debug(f"Sorted citations by similarity-based score (descending - higher score = more similar)")
         
-        # Calculate combined relevance score for each citation
-        for citation in citations:
-            # 1. Vector similarity score (primary - 60% weight)
-            similarity_score = citation.get('similarity_score')
-            if similarity_score is not None:
-                # Normalize similarity score to 0-1 range
-                # For distance-based scores (lower is better), invert: 1 - normalized
-                # For similarity-based scores (higher is better), use normalized directly
-                # Assume distance-based if score > 1.0, similarity-based if <= 1.0
-                if score_range > 0:
-                    if similarity_score > 1.0:
-                        # Distance-based: lower is better, so invert
-                        normalized_sim = 1.0 - ((similarity_score - min_score) / score_range)
-                    else:
-                        # Similarity-based: higher is better
-                        normalized_sim = (similarity_score - min_score) / score_range if score_range > 0 else 0.5
-                else:
-                    normalized_sim = 0.5
-                similarity_component = normalized_sim * 0.3  # Reduced to 0.3 (30% weight) - keyword matching is much more important
+        # Get sorted scores for validation and percentage calculation
+        sorted_scores = [c.get('similarity_score') for c in citations if c.get('similarity_score') is not None]
+        
+        # Validate sorting is correct
+        if citations and sorted_scores and len(sorted_scores) > 1:
+            if is_distance_based:
+                # For distance: scores should increase (first is lowest/most similar)
+                is_sorted = all(sorted_scores[i] <= sorted_scores[i+1] for i in range(len(sorted_scores)-1))
             else:
-                similarity_component = 0.0
+                # For similarity: scores should decrease (first is highest/most similar)
+                is_sorted = all(sorted_scores[i] >= sorted_scores[i+1] for i in range(len(sorted_scores)-1))
             
-            # 2. Keyword matching score (secondary - 60% weight, increased from 50%)
-            keyword_score = 0.0
-            if query_keywords:
-                snippet = citation.get('snippet', '').lower()
-                full_text = citation.get('full_text', '').lower()
-                source = citation.get('source', '').lower()
-                
-                # All query keywords are important (especially technical terms)
-                important_terms = query_keywords  # All keywords are important
-                
-                # Count keyword matches using flexible substring matching
-                snippet_matches = self._count_flexible_keyword_matches(query_keywords, snippet)
-                full_text_matches = self._count_flexible_keyword_matches(query_keywords, full_text)
-                # Source matches use simple exact matching
-                source_matches = sum(1 for keyword in query_keywords if keyword in source)
-                
-                # Use flexible matches for scoring (includes both exact 1.0 and substring 0.7 matches)
-                flexible_snippet_matches = snippet_matches  # Already weighted: exact=1.0, substring=0.7
-                flexible_full_matches = full_text_matches   # Already weighted: exact=1.0, substring=0.7
-                
-                # Keep original exact matches for important boost calculation
-                original_snippet_matches = sum(1 for keyword in query_keywords if keyword in snippet)
-                original_full_matches = sum(1 for keyword in query_keywords if keyword in full_text)
-                
-                # Special boost for important terms found in snippet (very high weight)
-                important_in_snippet = sum(1 for term in important_terms if term in snippet)
-                important_in_full = sum(1 for term in important_terms if term in full_text)
-                # Increased boost for snippet matches (where user sees the result)
-                important_boost = ((important_in_snippet * 0.35) + (important_in_full * 0.15)) if important_terms else 0
-                # Increased from 0.30 to 0.35 for snippet to ensure exact matches rank higher
-                
-                # Count exact phrase matches (higher weight)
-                query_lower = query.lower()
-                phrase_in_snippet = 1 if query_lower in snippet else 0
-                phrase_in_full = 1 if query_lower in full_text else 0
-                
-                # Count how many unique keywords appear (coverage) using flexible matching
-                unique_keywords_in_snippet = sum(1 for k in query_keywords if self._count_flexible_keyword_matches([k], snippet) > 0)
-                unique_keywords_in_full = sum(1 for k in query_keywords if self._count_flexible_keyword_matches([k], full_text) > 0)
-                
-                total_keywords = len(query_keywords)
-                if total_keywords > 0:
-                    # Higher weight for snippet matches (where user sees results)
-                    # Weight: snippet (40%), full text (20%), source (3%), important terms boost (30%), phrase matches (5%), coverage bonus (2%)
-                    # FIXED: Use flexible matches in scoring (includes both exact and substring matches)
-                    snippet_score = (flexible_snippet_matches / total_keywords) * 0.40  # Use flexible, not original
-                    full_text_score = (flexible_full_matches / total_keywords) * 0.20   # Use flexible, not original
-                    source_score = (source_matches / total_keywords) * 0.03
-                    phrase_bonus = (phrase_in_snippet * 0.03) + (phrase_in_full * 0.02)
-                    # Coverage bonus: reward citations that have more unique keywords
-                    coverage_bonus = ((unique_keywords_in_snippet + unique_keywords_in_full) / (total_keywords * 2)) * 0.02
-                    keyword_score = min(1.0, snippet_score + full_text_score + source_score + important_boost + phrase_bonus + coverage_bonus)
-            else:
-                keyword_score = 0.5  # Default if no keywords
-            
-            keyword_component = keyword_score * 0.6  # Increased to 0.6 (60% weight) - prioritize keyword matches heavily
-            
-            # 3. Metadata confidence boost (tertiary - 10% weight)
-            confidence_avg = (citation.get('source_confidence', 0) + citation.get('page_confidence', 0)) / 2
-            confidence_component = confidence_avg * 0.1
-            
-            # Combine all components into final relevance score
-            relevance_score = similarity_component + keyword_component + confidence_component
-            
-            # Ensure score is in 0-1 range
-            relevance_score = max(0.0, min(1.0, relevance_score))
-            
-            citation['relevance_score'] = relevance_score
-        
-        # Filter out citations with very low relevance scores (likely irrelevant)
-        MIN_RELEVANCE_THRESHOLD = 0.20  # Citations below 20% relevance are filtered out
-        filtered_citations = [c for c in citations if c.get('relevance_score', 0) >= MIN_RELEVANCE_THRESHOLD]
-        
-        if len(filtered_citations) < len(citations):
-            logger.info(f"Filtered out {len(citations) - len(filtered_citations)} citations below relevance threshold {MIN_RELEVANCE_THRESHOLD:.0%}")
-            citations = filtered_citations
-        
-        # Sort by relevance score (descending - highest first), then by similarity score, then by confidence
-        # Handle None similarity scores by putting them last (use -1 instead of 999 for proper sorting)
-        citations.sort(key=lambda c: (
-            -c.get('relevance_score', 0),  # Primary: combined relevance (descending - highest first)
-            -c.get('similarity_score', -1) if c.get('similarity_score') is not None else 1,  # Secondary: similarity (descending, None goes last)
-            -(c.get('source_confidence', 0) + c.get('page_confidence', 0)),  # Tertiary: confidence (descending)
-            c.get('id', 0)  # Quaternary: original order (ascending)
-        ))
-        
-        # Validate sorting is correct (highest relevance first)
-        if citations:
-            relevance_scores = [c.get('relevance_score', 0) for c in citations]
-            is_sorted = all(relevance_scores[i] >= relevance_scores[i+1] for i in range(len(relevance_scores)-1))
             if not is_sorted:
-                logger.warning("Citations not properly sorted by relevance! Re-sorting...")
-                citations.sort(key=lambda c: -c.get('relevance_score', 0), reverse=False)  # Explicit descending sort
+                logger.warning("Citations not properly sorted by similarity! Re-sorting...")
+                if is_distance_based:
+                    citations.sort(key=lambda c: c.get('similarity_score', 999) if c.get('similarity_score') is not None else 999)
+                else:
+                    citations.sort(key=lambda c: -c.get('similarity_score', -999) if c.get('similarity_score') is not None else 999)
+                # Re-get sorted scores after re-sorting
+                sorted_scores = [c.get('similarity_score') for c in citations if c.get('similarity_score') is not None]
         
-        # Re-number IDs after sorting (1 = most relevant, highest score)
+        # Calculate similarity percentages (100% for most similar, decreasing for others)
+        # Get the best (most similar) score to use as 100% baseline
+        if sorted_scores and len(sorted_scores) > 0:
+            if is_distance_based:
+                # For distance: best score is the minimum (lowest distance = most similar)
+                best_score = min(sorted_scores)
+                worst_score = max(sorted_scores)
+            else:
+                # For similarity: best score is the maximum (highest similarity = most similar)
+                best_score = max(sorted_scores)
+                worst_score = min(sorted_scores)
+            
+            # Calculate percentage for each citation
+            # Use absolute value to handle both positive and negative ranges
+            score_range = abs(worst_score - best_score) if worst_score != best_score else 1.0
+            
+            logger.info(f"Calculating percentages: best={best_score:.4f}, worst={worst_score:.4f}, range={score_range:.4f}, is_distance={is_distance_based}, num_scores={len(sorted_scores)}")
+            
+            # Calculate percentages for all citations
+            for citation in citations:
+                sim_score = citation.get('similarity_score')
+                if sim_score is not None:
+                    if is_distance_based:
+                        # For distance: lower score = higher percentage
+                        # Invert: (worst - current) / (worst - best) * 100
+                        if score_range > 0.0001:  # Use small epsilon to avoid division issues
+                            similarity_percentage = ((worst_score - sim_score) / score_range) * 100.0
+                        else:
+                            # All same distance - assign 100% to all
+                            similarity_percentage = 100.0
+                    else:
+                        # For similarity: higher score = higher percentage
+                        # Normalize: (current - worst) / (best - worst) * 100
+                        if score_range > 0.0001:  # Use small epsilon to avoid division issues
+                            similarity_percentage = ((sim_score - worst_score) / score_range) * 100.0
+                        else:
+                            # All same similarity - assign 100% to all
+                            similarity_percentage = 100.0
+                    
+                    # Ensure percentage is in valid range
+                    similarity_percentage = max(0.0, min(100.0, similarity_percentage))
+                    # Store percentage - this happens BEFORE re-numbering
+                    citation['similarity_percentage'] = round(similarity_percentage, 2)
+                    
+                    # Debug logging for all citations to see what's happening
+                    if citation.get('id', 0) <= 6:
+                        logger.info(f"Citation {citation.get('id')}: score={sim_score:.4f}, calculated_percentage={similarity_percentage:.2f}%, source={citation.get('source', 'Unknown')[:40]}")
+                else:
+                    citation['similarity_percentage'] = 0.0  # No score = 0%
+                    logger.warning(f"Citation {citation.get('id')} has no similarity_score, setting percentage to 0%")
+        else:
+            # No scores available - set all to 0%
+            logger.warning("No similarity scores available for percentage calculation")
+            for citation in citations:
+                citation['similarity_percentage'] = 0.0
+        
+        # Re-number IDs after sorting (1 = most similar, highest similarity score)
         for i, citation in enumerate(citations, 1):
             citation['id'] = i
             # Log top 3 for debugging
             if i <= 3:
-                logger.debug(f"Rank {i}: relevance={citation.get('relevance_score', 0):.2%}, "
-                            f"similarity={citation.get('similarity_score', 'N/A')}, "
+                sim_score = citation.get('similarity_score', 'N/A')
+                sim_percent = citation.get('similarity_percentage', 'N/A')
+                sim_str = f"{sim_score:.4f}" if isinstance(sim_score, (int, float)) else str(sim_score)
+                logger.debug(f"Rank {i}: similarity={sim_str} ({sim_percent}%), "
                             f"source={citation.get('source', 'Unknown')[:50]}")
         
-        top_3_scores = [f'{c.get("relevance_score", 0):.2%}' for c in citations[:3]]
-        logger.info(f"Ranked {len(citations)} citations by relevance (highest to lowest). Top 3 scores: {top_3_scores}")
+        top_3_scores = [f'{c.get("similarity_score", "N/A")} ({c.get("similarity_percentage", 0):.1f}%)' for c in citations[:3]]
+        logger.info(f"Ranked {len(citations)} citations by similarity (highest to lowest). Top 3: {top_3_scores}")
         return citations
     
     def _deduplicate_chunks(self, chunks: List, threshold: float = 0.95) -> List:

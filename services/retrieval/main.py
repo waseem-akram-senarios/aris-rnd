@@ -165,12 +165,14 @@ async def query_rag(
         for i, src in enumerate(result.get("citations", [])):
             citations.append(
                 Citation(
-                    id=str(src.get('id', i)),
+                    id=src.get('id', i) if isinstance(src.get('id'), int) else i,
                     source=src.get("source", ""),
                     page=src.get("page", 1),
                     snippet=src.get("snippet", ""),
                     full_text=src.get("full_text", ""),
-                    source_location=src.get("source_location", f"Page {src.get('page', 1)}")
+                    source_location=src.get("source_location", f"Page {src.get('page', 1)}"),
+                    similarity_score=src.get("similarity_score"),
+                    similarity_percentage=src.get("similarity_percentage")
                 )
             )
             

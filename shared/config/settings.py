@@ -80,7 +80,7 @@ class ARISConfig:
     
     # Ingestion Performance Configuration
     EMBEDDING_BATCH_SIZE: int = int(os.getenv('EMBEDDING_BATCH_SIZE', '1000'))
-    OPENSEARCH_BULK_SIZE: int = int(os.getenv('OPENSEARCH_BULK_SIZE', '1000'))
+    OPENSEARCH_BULK_SIZE: int = int(os.getenv('OPENSEARCH_BULK_SIZE', '5000'))  # Increased to handle large documents
     MAX_PAGE_BLOCKS_PER_DOC: int = int(os.getenv('MAX_PAGE_BLOCKS_PER_DOC', '2000'))
     
     @classmethod

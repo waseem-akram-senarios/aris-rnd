@@ -384,17 +384,45 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         st.warning(f"⚠️ Could not generate index name from document name: {str(e)}. Using default index.")
                         # Continue with default index
                 
-                # Process document
-                result = st.session_state.document_processor.process_document(
-                    file_path=file_info['path'],
-                    file_content=file_info['content'],
-                    file_name=file_name,
-                    parser_preference=parser_preference,
-                    progress_callback=progress_callback,
-                    index_name=final_index_name if 'final_index_name' in locals() else opensearch_index
-                )
-                
-                results.append(result)
+                # Process document with error handling
+                try:
+                    # Show processing status immediately
+                    processing_status = st.info(f"🔄 Processing {file_name}...")
+                    
+                    # Process document (this may take time for large documents)
+                    result = st.session_state.document_processor.process_document(
+                        file_path=file_info['path'],
+                        file_content=file_info['content'],
+                        file_name=file_name,
+                        parser_preference=parser_preference,
+                        progress_callback=progress_callback,
+                        index_name=final_index_name if 'final_index_name' in locals() else opensearch_index
+                    )
+                    
+                    # Clear processing status
+                    processing_status.empty()
+                    
+                    # Verify result is valid
+                    if result is None:
+                        raise ValueError("Processing returned None result")
+                    
+                    results.append(result)
+                    
+                except Exception as e:
+                    import traceback
+                    error_details = traceback.format_exc()
+                    logger.error(f"Error processing {file_name}: {error_details}")
+                    st.error(f"❌ Error processing {file_name}: {str(e)}")
+                    # Create a failed result
+                    from shared.schemas import ProcessingResult
+                    result = ProcessingResult(
+                        status='failed',
+                        document_name=file_name,
+                        error=str(e),
+                        chunks_created=0,
+                        tokens_extracted=0
+                    )
+                    results.append(result)
                 
                 # Save to shared document registry if successful
                 if result.status == 'success':
@@ -1224,6 +1252,8 @@ with st.sidebar:
             # Only clear if no pending choices
             if not has_pending_choice:
                 del st.session_state[process_key]
+                # Force UI refresh to show completion
+                st.rerun()
     
     st.divider()
     
