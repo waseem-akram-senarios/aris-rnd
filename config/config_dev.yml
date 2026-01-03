@@ -28,6 +28,7 @@ alb:
   arn: "arn:aws:elasticloadbalancing:us-east-2:975049910508:loadbalancer/app/intelycx-alb-dev/d03a8658af509291"
   http_listener_arn: "arn:aws:elasticloadbalancing:us-east-2:975049910508:listener/app/intelycx-alb-dev/d03a8658af509291/a14de0845f19d39e"
   https_listener_arn: "arn:aws:elasticloadbalancing:us-east-2:975049910508:listener/app/intelycx-alb-dev/d03a8658af509291/f2803351d3adc0d8"
+  domain_name: "dev.intelycx.com"  # Domain name that matches the SSL certificate
 
 # Database Configuration
 database:

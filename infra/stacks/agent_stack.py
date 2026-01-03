@@ -100,6 +100,11 @@ class AgentStack(Stack):
             get_config_value(yaml_config, "alb.arn") or
             "arn:aws:elasticloadbalancing:us-east-2:975049910508:loadbalancer/app/intelycx-alb-dev/d03a8658af509291"
         )
+        alb_domain_name = (
+            self.node.try_get_context("alb_domain_name") or
+            get_config_value(yaml_config, "alb.domain_name") or
+            None
+        )
 
         # Import existing VPC and networking resources
         self.vpc = ec2.Vpc.from_lookup(self, "Vpc", vpc_id=vpc_id)
@@ -180,9 +185,43 @@ class AgentStack(Stack):
         # Create ECS services
         self.services = self._create_ecs_services(env_name)
 
+        # Use domain name if configured, otherwise fall back to ALB DNS name
+        if alb_domain_name:
+            hostname = alb_domain_name
+        else:
+            # Look up ALB DNS name as fallback
+            try:
+                import boto3
+                elbv2_client = boto3.client('elbv2', region_name=self.stack_region)
+                alb_response = elbv2_client.describe_load_balancers(
+                    LoadBalancerArns=[alb_arn]
+                )
+                hostname = alb_response['LoadBalancers'][0]['DNSName']
+            except Exception as e:
+                Annotations.of(self).add_warning(f"Could not look up ALB DNS name: {e}")
+                hostname = "ALB_DNS_NAME_NOT_AVAILABLE"
+
         # Outputs
         CfnOutput(self, "ClusterName", value=cluster_name)
         CfnOutput(self, "VpcId", value=vpc_id)
+        CfnOutput(
+            self, 
+            "WebSocketUrlWSS", 
+            value=f"wss://{hostname}/aris/ws",
+            description="WebSocket URL (WSS - Secure) for ARIS Agent - Use this domain name that matches SSL certificate"
+        )
+        CfnOutput(
+            self, 
+            "WebSocketUrlWS", 
+            value=f"ws://{hostname}/aris/ws",
+            description="WebSocket URL (WS - Non-secure) for ARIS Agent"
+        )
+        CfnOutput(
+            self,
+            "AgentHealthUrl",
+            value=f"https://{hostname}/aris/agent/health",
+            description="Health check endpoint URL for ARIS Agent"
+        )
         for service_name, service in self.services.items():
             CfnOutput(self, f"{service_name}ServiceArn", value=service.service_arn)
 
@@ -651,7 +690,7 @@ class AgentStack(Stack):
                 },
                 secrets=self._get_secrets(service_name, env_name),
                 health_check=ecs.HealthCheck(
-                    command=["CMD-SHELL", f"curl -f http://localhost:{config['port']}{config['health_check_path']} || exit 1"],
+                    command=["CMD-SHELL", f"curl -f {'-k https' if config['port'] == 443 else 'http'}://localhost:{config['port']}{config['health_check_path']} || exit 1"],
                     interval=Duration.seconds(30),
                     timeout=Duration.seconds(5),
                     retries=3,

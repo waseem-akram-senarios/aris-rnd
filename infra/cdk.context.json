@@ -90,5 +90,8 @@
   "security-group:account=975049910508:region=us-east-2:securityGroupId=sg-0bbdbdf305674fe64": {
     "securityGroupId": "sg-0bbdbdf305674fe64",
     "allowAllOutbound": false
-  }
+  },
+  "acknowledged-issue-numbers": [
+    34892
+  ]
 }
