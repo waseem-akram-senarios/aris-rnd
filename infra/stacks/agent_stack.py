@@ -750,8 +750,10 @@ class AgentStack(Stack):
         Returns a dictionary mapping service names to their listener rules.
         """
         # Path patterns for routing (adjust based on your needs)
+        # Note: ALB path patterns with /* require a trailing path segment
+        # So we need both exact matches and wildcard patterns
         path_patterns = {
-            "aris-agent": ["/aris/agent/*", "/aris/ws/*"],  # WebSocket and API
+            "aris-agent": ["/aris/agent/*", "/aris/ws", "/aris/ws/*"],  # WebSocket and API - include exact /aris/ws match
             "aris-mcp-intelycx-core": ["/aris/core/*", "/aris/mcp/core/*"],
             "aris-mcp-intelycx-email": ["/aris/email/*", "/aris/mcp/email/*"],
             "aris-mcp-intelycx-file-generator": ["/aris/file/*", "/aris/mcp/file/*"],
@@ -792,8 +794,10 @@ class AgentStack(Stack):
         }
 
         # Create rules for HTTP listener (port 80) using CloudFormation resources
+        # Use priority 25-35 to ensure ARIS rules are evaluated before catch-all rule (priority 40)
+        # We have 11 path patterns total, so starting at 25 gives us 25-35 range (11 priorities)
         if http_listener_arn:
-            priority = 100
+            priority = 25
             for service_name, target_group in target_groups.items():
                 patterns = path_patterns.get(service_name, [f"/aris/{service_name.replace('aris-', '')}/*"])
                 for pattern in patterns:
@@ -821,8 +825,10 @@ class AgentStack(Stack):
             Annotations.of(self).add_warning("HTTP listener ARN not provided - listener rules will need to be created manually")
 
         # Create rules for HTTPS listener (port 443) using CloudFormation resources
+        # Use priority 25-35 to ensure ARIS rules are evaluated before catch-all rule (priority 40)
+        # We have 11 path patterns total, so starting at 25 gives us 25-35 range (11 priorities)
         if https_listener_arn:
-            priority = 100
+            priority = 25
             for service_name, target_group in target_groups.items():
                 patterns = path_patterns.get(service_name, [f"/aris/{service_name.replace('aris-', '')}/*"])
                 for pattern in patterns:
@@ -869,6 +875,9 @@ class AgentStack(Stack):
                 "INTELYCX_CORE_MCP_URL": f"http://aris-mcp-intelycx-core-{env_name}:8080",
                 "INTELYCX_EMAIL_MCP_URL": f"http://aris-mcp-intelycx-email-{env_name}:8081",
                 "DATABASE_URL": f"postgresql+asyncpg://aris:${{DB_PASSWORD}}@{self.database_host}:5432/aris_agent",
+                # Cognito authentication settings
+                "USER_POOL_ID": f"us-east-2_M29tS1Dvv",  # From token: iss contains this
+                "USER_POOL_CLIENT_ID": "6uasnmke0urf1b00jkkm2nma3i",  # From token: client_id
             },
             "aris-mcp-intelycx-core": {
                 "HOST": "0.0.0.0",

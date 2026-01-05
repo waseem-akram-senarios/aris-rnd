@@ -11,6 +11,19 @@ from ..database import init_database, close_database
 from ..version import get_version
 
 
+class HealthCheckAccessLogFilter(logging.Filter):
+    """Filter to exclude health check requests from access logs."""
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Filter out health check paths from access logs
+        if hasattr(record, 'msg'):
+            msg = str(record.msg)
+            # Exclude /health and /aris/agent/health paths
+            if '/health' in msg and ('GET /health' in msg or 'GET /aris/agent/health' in msg):
+                return False
+        return True
+
+
 def create_app() -> web.Application:
     settings = load_settings()
 
@@ -36,8 +49,13 @@ def create_app() -> web.Application:
     app.on_startup.append(startup_handler)
     app.on_cleanup.append(cleanup_handler)
     
+    # Health check endpoints - support both direct and ALB-prefixed paths
     app.router.add_get("/health", healthcheck)
+    app.router.add_get("/aris/agent/health", healthcheck)
+    
+    # WebSocket endpoints - support both direct and ALB-prefixed paths
     app.router.add_get("/ws", handler.handle_connection)
+    app.router.add_get("/aris/ws", handler.handle_connection)
 
     return app
 
@@ -47,6 +65,10 @@ def _configure_logging() -> None:
         level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO),
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
+    
+    # Filter out health check requests from access logs
+    access_logger = logging.getLogger("aiohttp.access")
+    access_logger.addFilter(HealthCheckAccessLogFilter())
 
 
 def main() -> None:

@@ -69,34 +69,42 @@ class DatabaseSessionMemoryManager:
                 # Ensure chat exists
                 await self._ensure_chat_exists(session)
                 
-                # Upsert memory item
-                stmt = insert(SessionMemory).values(
-                    chat_id=self.chat_id,
-                    memory_key=key,
-                    tool_name=tool_name,
-                    tags=tags or [],
-                    value=json_value,
-                    size_bytes=size_bytes,
-                    expires_at=expires_at,
-                    access_count=0,
-                    last_accessed_at=datetime.utcnow()
+                # Check if record exists
+                existing = await session.execute(
+                    select(SessionMemory)
+                    .where(
+                        and_(
+                            SessionMemory.chat_id == self.chat_id,
+                            SessionMemory.memory_key == key
+                        )
+                    )
                 )
+                existing_item = existing.scalar_one_or_none()
                 
-                # On conflict, update the existing record
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=['chat_id', 'memory_key'],
-                    set_={
-                        'tool_name': stmt.excluded.tool_name,
-                        'tags': stmt.excluded.tags,
-                        'value': stmt.excluded.value,
-                        'size_bytes': stmt.excluded.size_bytes,
-                        'updated_at': func.now(),
-                        'expires_at': stmt.excluded.expires_at
-                    }
-                )
-                
-                await session.execute(stmt)
-                await session.commit()
+                if existing_item:
+                    # Update existing record
+                    existing_item.tool_name = tool_name
+                    existing_item.tags = tags or []
+                    existing_item.value = json_value
+                    existing_item.size_bytes = size_bytes
+                    existing_item.updated_at = datetime.utcnow()
+                    existing_item.expires_at = expires_at
+                    await session.commit()
+                else:
+                    # Insert new record
+                    new_item = SessionMemory(
+                        chat_id=self.chat_id,
+                        memory_key=key,
+                        tool_name=tool_name,
+                        tags=tags or [],
+                        value=json_value,
+                        size_bytes=size_bytes,
+                        expires_at=expires_at,
+                        access_count=0,
+                        last_accessed_at=datetime.utcnow()
+                    )
+                    session.add(new_item)
+                    await session.commit()
                 
                 # Only log successful storage for large items
                 if size_bytes > 1000:

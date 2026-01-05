@@ -10,7 +10,7 @@ Version bumping rules:
 - MAJOR (2.0.0 -> 3.0.0): Breaking changes, only upon user request
 """
 
-__version__ = "2.0.21"
+__version__ = "2.0.25"
 
 
 def get_version() -> str:
