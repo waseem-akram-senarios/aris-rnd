@@ -2233,10 +2233,22 @@ class RetrievalEngine:
             extraction_method = 'metadata' if source_confidence >= 0.7 else ('text_marker' if source_confidence >= 0.3 else 'fallback')
             
             # Get similarity score if available (for ranking) - improved matching
+            # Priority order: OpenSearch score (from hybrid_search) > doc_scores > order_scores > position-based
             similarity_score = None
             import hashlib
             
-            if chunk_text:
+            # PRIORITY 1: Check metadata for OpenSearch score from hybrid_search (most accurate)
+            if hasattr(doc, 'metadata') and doc.metadata:
+                # Check for OpenSearch score from hybrid_search (highest priority)
+                if '_opensearch_score' in doc.metadata:
+                    similarity_score = doc.metadata.get('_opensearch_score')
+                    logger.debug(f"Citation {i}: Using OpenSearch score from metadata: {similarity_score:.4f}")
+                elif 'similarity_score' in doc.metadata:
+                    similarity_score = doc.metadata.get('similarity_score')
+                    logger.debug(f"Citation {i}: Using similarity_score from metadata: {similarity_score:.4f}")
+            
+            # PRIORITY 2: Try to match from doc_scores (from similarity_search_with_score)
+            if similarity_score is None and chunk_text:
                 doc_content_200 = chunk_text[:200]
                 doc_content_100 = chunk_text[:100]
                 content_hash = hashlib.md5(chunk_text.encode('utf-8')).hexdigest()
@@ -2245,12 +2257,16 @@ class RetrievalEngine:
                 # Try multiple matching strategies (most specific first)
                 if doc_content_200 in doc_scores:
                     similarity_score = doc_scores[doc_content_200]
+                    logger.debug(f"Citation {i}: Using doc_scores match (200 chars): {similarity_score:.4f}")
                 elif content_hash in doc_scores:
                     similarity_score = doc_scores[content_hash]
+                    logger.debug(f"Citation {i}: Using doc_scores match (content hash): {similarity_score:.4f}")
                 elif doc_content_100 in doc_scores:
                     similarity_score = doc_scores[doc_content_100]
+                    logger.debug(f"Citation {i}: Using doc_scores match (100 chars): {similarity_score:.4f}")
                 elif content_hash_200 in doc_scores:
                     similarity_score = doc_scores[content_hash_200]
+                    logger.debug(f"Citation {i}: Using doc_scores match (hash 200): {similarity_score:.4f}")
                 # Try source + content matching
                 elif hasattr(doc, 'metadata') and doc.metadata:
                     source = doc.metadata.get('source', '')
@@ -2258,36 +2274,26 @@ class RetrievalEngine:
                         source_content_key = f"{source}:{chunk_text[:50]}"
                         if source_content_key in doc_scores:
                             similarity_score = doc_scores[source_content_key]
-                
-                # Use order-based score as fallback
-                if similarity_score is None:
-                    if doc_content_200 in doc_order_scores:
-                        order_score = doc_order_scores[doc_content_200]
-                        similarity_score = 0.5 + (order_score * 0.5)  # Map 0.0-1.0 order to 0.5-1.0 similarity
-                    elif content_hash in doc_order_scores:
-                        order_score = doc_order_scores[content_hash]
-                        similarity_score = 0.5 + (order_score * 0.5)
-                
-                # Also try to get from metadata if stored there (e.g., from hybrid_search)
-                if similarity_score is None and hasattr(doc, 'metadata') and doc.metadata:
-                    # Check for OpenSearch score from hybrid_search
-                    if '_opensearch_score' in doc.metadata:
-                        similarity_score = doc.metadata.get('_opensearch_score')
-                        logger.debug(f"Using OpenSearch score from metadata: {similarity_score:.4f}")
-                    elif 'similarity_score' in doc.metadata:
-                        similarity_score = doc.metadata.get('similarity_score')
-                
-                # Final fallback: Use retrieval position as similarity proxy
-                # Earlier documents = higher similarity (normalized to 0.5-1.0 range)
-                if similarity_score is None:
-                    # Use index position (i starts at 1, so first doc gets highest score)
-                    position_score = 1.0 - ((i - 1) / max(len(relevant_docs), 1)) * 0.5
-                    similarity_score = 0.5 + position_score  # Map to 0.5-1.0 range
-                    logger.debug(f"Using position-based similarity score {similarity_score:.3f} for citation {i}")
-            else:
-                # No chunk text - use position-based score
+                            logger.debug(f"Citation {i}: Using doc_scores match (source+content): {similarity_score:.4f}")
+            
+            # PRIORITY 3: Use order-based score as fallback
+            if similarity_score is None and chunk_text:
+                if doc_content_200 in doc_order_scores:
+                    order_score = doc_order_scores[doc_content_200]
+                    similarity_score = 0.5 + (order_score * 0.5)  # Map 0.0-1.0 order to 0.5-1.0 similarity
+                    logger.debug(f"Citation {i}: Using order-based score: {similarity_score:.4f}")
+                elif content_hash in doc_order_scores:
+                    order_score = doc_order_scores[content_hash]
+                    similarity_score = 0.5 + (order_score * 0.5)
+                    logger.debug(f"Citation {i}: Using order-based score (hash): {similarity_score:.4f}")
+            
+            # PRIORITY 4: Final fallback - Use retrieval position as similarity proxy
+            # Earlier documents = higher similarity (normalized to 0.5-1.0 range)
+            if similarity_score is None:
+                # Use index position (i starts at 1, so first doc gets highest score)
                 position_score = 1.0 - ((i - 1) / max(len(relevant_docs), 1)) * 0.5
-                similarity_score = 0.5 + position_score
+                similarity_score = 0.5 + position_score  # Map to 0.5-1.0 range
+                logger.warning(f"Citation {i}: Using position-based similarity score {similarity_score:.3f} (no actual score available)")
             
             # Ensure page is always set (fallback to 1 if None)
             if page is None:
@@ -4127,7 +4133,7 @@ Answer:"""
     
     def _extract_page_number(self, doc, chunk_text: str) -> tuple:
         """
-        Extract and validate page number from multiple sources.
+        Extract and validate page number from multiple sources with enhanced accuracy.
         
         Args:
             doc: Document object with metadata
@@ -4135,7 +4141,7 @@ Answer:"""
         
         Returns:
             Tuple of (page_number, confidence_score)
-            confidence: 1.0 (source_page metadata) > 0.8 (page metadata) > 0.6 (text marker --- Page X ---) > 0.4 (text marker Page X)
+            confidence: 1.0 (source_page metadata) > 0.9 (page_blocks cross-validation) > 0.8 (page metadata) > 0.6 (text marker --- Page X ---) > 0.4 (text marker Page X)
             Returns (None, 0.0) if page is invalid or not found
         """
         import re
@@ -4170,14 +4176,56 @@ Answer:"""
                 return False
             return True
         
+        # Cross-validate with page_blocks metadata if available (enhanced accuracy)
+        def get_page_from_page_blocks(chunk_text: str, page_blocks: list) -> Optional[int]:
+            """Extract page number from page_blocks metadata by matching chunk content."""
+            if not page_blocks or not chunk_text:
+                return None
+            
+            # Get first 200 chars of chunk for matching
+            chunk_preview = chunk_text[:200].strip()
+            if not chunk_preview:
+                return None
+            
+            # Try to find matching page block
+            for block in page_blocks:
+                if isinstance(block, dict):
+                    block_text = block.get('text', '')
+                    block_page = block.get('page')
+                    
+                    # Check if chunk text appears in block text (or vice versa)
+                    if block_text and block_page:
+                        # Simple substring match (first 100 chars)
+                        block_preview = block_text[:100].strip()
+                        if chunk_preview[:100] in block_text or block_preview in chunk_text:
+                            return int(block_page)
+            
+            return None
+        
         # Try source_page metadata first (highest confidence: 1.0)
         page = doc.metadata.get('source_page', None)
         if page is not None:
             if validate_against_doc(page):
+                # Cross-validate with page_blocks if available
+                page_blocks = doc.metadata.get('page_blocks', [])
+                if page_blocks:
+                    page_from_blocks = get_page_from_page_blocks(chunk_text, page_blocks)
+                    if page_from_blocks and page_from_blocks == int(page):
+                        logger.debug(f"Page {page} validated with page_blocks metadata")
+                    elif page_from_blocks and page_from_blocks != int(page):
+                        logger.warning(f"Page mismatch: source_page={page} vs page_blocks={page_from_blocks}, using source_page")
                 logger.debug(f"Page extracted from source_page metadata: {page}")
                 return int(page), 1.0
             else:
                 logger.warning(f"Invalid page number in source_page metadata: {page} (doc has {doc_pages} pages)")
+        
+        # Try page_blocks cross-validation (confidence: 0.9) - NEW ENHANCEMENT
+        page_blocks = doc.metadata.get('page_blocks', [])
+        if page_blocks:
+            page_from_blocks = get_page_from_page_blocks(chunk_text, page_blocks)
+            if page_from_blocks and validate_against_doc(page_from_blocks):
+                logger.debug(f"Page extracted from page_blocks cross-validation: {page_from_blocks}")
+                return int(page_from_blocks), 0.9
         
         # Try page metadata (confidence: 0.8)
         page = doc.metadata.get('page', None)
@@ -4189,7 +4237,7 @@ Answer:"""
                 logger.warning(f"Invalid page number in page metadata: {page} (doc has {doc_pages} pages)")
         
         # Extract from text markers: "--- Page X ---" (confidence: 0.6)
-        # BUT validate against document pages
+        # Enhanced pattern matching with better validation
         page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
         if page_match:
             page_num = int(page_match.group(1))
@@ -4200,7 +4248,8 @@ Answer:"""
                 logger.warning(f"Page from text marker {page_num} exceeds document pages {doc_pages}")
         
         # Extract from text markers: "Page X" (confidence: 0.4)
-        page_match = re.search(r'Page\s+(\d+)', chunk_text, re.IGNORECASE)
+        # Enhanced: Look for "Page X" but avoid false matches in content
+        page_match = re.search(r'(?:^|\n)\s*Page\s+(\d+)(?:\s|$|\.|,|;|:)', chunk_text, re.IGNORECASE | re.MULTILINE)
         if page_match:
             page_num = int(page_match.group(1))
             if validate_against_doc(page_num):
@@ -4218,6 +4267,22 @@ Answer:"""
                 return page_num, 0.4
             else:
                 logger.warning(f"Page from page range {page_num} exceeds document pages {doc_pages}")
+        
+        # Try to extract from chunk_index if available (confidence: 0.3) - NEW
+        chunk_index = doc.metadata.get('chunk_index', None)
+        if chunk_index is not None and page_blocks:
+            # Estimate page from chunk position (rough heuristic)
+            try:
+                # If we have page_blocks, try to infer page from chunk position
+                total_chunks = len([b for b in page_blocks if isinstance(b, dict) and b.get('text')])
+                if total_chunks > 0:
+                    # Rough estimate: assume chunks are distributed evenly across pages
+                    estimated_page = min(int((chunk_index / max(total_chunks, 1)) * (doc_pages or 1)) + 1, doc_pages or 1)
+                    if validate_against_doc(estimated_page):
+                        logger.debug(f"Page estimated from chunk_index: {estimated_page}")
+                        return estimated_page, 0.3
+            except Exception:
+                pass
         
         # No valid page found - use fallback: page 1 with low confidence
         # This ensures every citation has a page number, even if we can't determine it
@@ -4381,7 +4446,7 @@ Answer:"""
     
     def _extract_semantic_snippet(self, text: str, query: str, max_length: int) -> str:
         """
-        Extract snippet using semantic similarity - generic approach for any document.
+        Extract snippet using semantic similarity - enhanced approach for better accuracy.
         
         Args:
             text: Full text to extract from
@@ -4393,36 +4458,59 @@ Answer:"""
         """
         import re
         
-        # Split into sentences
-        sentence_pattern = r'(?<=[.!?])\s+'
+        # Split into sentences with better pattern matching
+        # Enhanced: Handle abbreviations, decimals, and other edge cases
+        sentence_pattern = r'(?<=[.!?])\s+(?=[A-Z])|(?<=\d)\.\s+(?=[A-Z])'
         sentences = re.split(sentence_pattern, text)
-        sentences = [s.strip() for s in sentences if s.strip()]
+        sentences = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 5]
         
         if not sentences:
             return text[:max_length] + ("..." if len(text) > max_length else "")
         
-        # Score each sentence by semantic similarity to query
+        # Score each sentence by semantic similarity to query (enhanced)
         scored_sentences = []
+        query_lower = query.lower()
+        query_words = set(re.findall(r'\b\w+\b', query_lower))
+        
         for sentence in sentences:
             if len(sentence) < 10:  # Skip very short sentences
                 continue
+            
+            # Calculate semantic similarity
             similarity = self._calculate_semantic_similarity(sentence, query)
-            scored_sentences.append((similarity, sentence))
+            
+            # Boost score if query keywords appear in sentence (hybrid approach)
+            sentence_lower = sentence.lower()
+            sentence_words = set(re.findall(r'\b\w+\b', sentence_lower))
+            keyword_overlap = len(query_words.intersection(sentence_words))
+            keyword_boost = min(0.2, keyword_overlap * 0.05)  # Max 0.2 boost
+            
+            # Combined score: semantic similarity + keyword boost
+            combined_score = min(1.0, similarity + keyword_boost)
+            
+            scored_sentences.append((combined_score, similarity, sentence))
         
         if not scored_sentences:
             return text[:max_length] + ("..." if len(text) > max_length else "")
         
-        # Sort by similarity (highest first)
-        scored_sentences.sort(key=lambda x: x[0], reverse=True)
+        # Sort by combined score (highest first), then by semantic similarity
+        scored_sentences.sort(key=lambda x: (x[0], x[1]), reverse=True)
         
-        # Select top sentences up to max_length
+        # Select top sentences up to max_length (using combined score)
         selected = []
         total_length = 0
-        for similarity, sentence in scored_sentences:
+        for combined_score, semantic_score, sentence in scored_sentences:
             if total_length + len(sentence) + 1 <= max_length:
                 selected.append(sentence)
                 total_length += len(sentence) + 1
             else:
+                # Try to fit partial sentence if close to max_length
+                remaining = max_length - total_length - 3  # Reserve for "..."
+                if remaining > 50 and len(sentence) > remaining:
+                    # Try to break at sentence boundary
+                    partial = sentence[:remaining].rsplit('.', 1)[0]
+                    if partial and len(partial) > 30:
+                        selected.append(partial + "...")
                 break
         
         if selected:
@@ -4432,7 +4520,11 @@ Answer:"""
             return snippet
         
         # Fallback: return highest scoring sentence
-        return scored_sentences[0][1][:max_length] + "..."
+        if scored_sentences:
+            return scored_sentences[0][2][:max_length] + ("..." if len(scored_sentences[0][2]) > max_length else "")
+        
+        # Last resort: return beginning of text
+        return text[:max_length] + ("..." if len(text) > max_length else "")
     
     def _extract_sentences_snippet(self, text: str, max_length: int, keywords: Optional[List[str]] = None, query: Optional[str] = None) -> str:
         """
@@ -4732,23 +4824,28 @@ Answer:"""
             logger.warning(f"Detected position-based fallback scores (range: {min_score:.3f}-{max_score:.3f}). "
                           f"Actual similarity scores may not be available. Consider using similarity_search_with_score.")
         
-        # Sort by similarity score
+        # Sort by similarity score with enhanced tie-breaking
         # For distance-based scores (lower = more similar), sort ascending
         # For similarity-based scores (higher = more similar), sort descending
+        # Enhanced: Use page_confidence and source_confidence as tie-breakers for better accuracy
         if is_distance_based:
             # Distance-based: lower score = more similar, so sort ascending
             citations.sort(key=lambda c: (
                 c.get('similarity_score', 999) if c.get('similarity_score') is not None else 999,  # Primary: similarity (ascending for distance)
-                c.get('id', 0)  # Secondary: original order (ascending) for tie-breaking
+                -c.get('page_confidence', 0.0),  # Secondary: higher page confidence = better (descending)
+                -c.get('source_confidence', 0.0),  # Tertiary: higher source confidence = better (descending)
+                c.get('id', 0)  # Quaternary: original order (ascending) for final tie-breaking
             ))
-            logger.debug(f"Sorted citations by distance-based similarity (ascending - lower distance = more similar)")
+            logger.debug(f"Sorted citations by distance-based similarity with confidence tie-breakers")
         else:
             # Similarity-based: higher score = more similar, so sort descending
             citations.sort(key=lambda c: (
                 -c.get('similarity_score', -999) if c.get('similarity_score') is not None else 999,  # Primary: similarity (descending for similarity)
-                c.get('id', 0)  # Secondary: original order (ascending) for tie-breaking
+                -c.get('page_confidence', 0.0),  # Secondary: higher page confidence = better (descending)
+                -c.get('source_confidence', 0.0),  # Tertiary: higher source confidence = better (descending)
+                c.get('id', 0)  # Quaternary: original order (ascending) for final tie-breaking
             ))
-            logger.debug(f"Sorted citations by similarity-based score (descending - higher score = more similar)")
+            logger.debug(f"Sorted citations by similarity-based score with confidence tie-breakers")
         
         # Get sorted scores for validation and percentage calculation
         sorted_scores = [c.get('similarity_score') for c in citations if c.get('similarity_score') is not None]

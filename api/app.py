@@ -399,7 +399,7 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         index_name=final_index_name if 'final_index_name' in locals() else opensearch_index
                     )
                     
-                    # Clear processing status
+                    # Clear processing status immediately after completion
                     processing_status.empty()
                     
                     # Verify result is valid
@@ -1252,7 +1252,7 @@ with st.sidebar:
             # Only clear if no pending choices
             if not has_pending_choice:
                 del st.session_state[process_key]
-                # Force UI refresh to show completion
+                # Force UI refresh to show completion and clear processing messages
                 st.rerun()
     
     st.divider()
@@ -1725,8 +1725,12 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     citation_id = citation.get('id', '?')
                     source_name = citation.get('source', 'Unknown')
                     page = citation.get('page') or 1
+                    similarity_percentage = citation.get('similarity_percentage')
                     # Always show page number - page is guaranteed to be >= 1
-                    citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
+                    if similarity_percentage is not None:
+                        citation_refs.append(f"[{citation_id}] {source_name}, Page {page} ({similarity_percentage:.1f}%)")
+                    else:
+                        citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
                 
                 if citation_refs:
                     st.caption("**📎 References:** " + " | ".join(citation_refs))
@@ -1744,19 +1748,31 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                         if relevance_score is None:
                             relevance_score = 0
                         
-                        # Display citation header with relevance ranking
+                        # Get similarity percentage for display
+                        similarity_percentage = citation.get('similarity_percentage')
+                        similarity_score = citation.get('similarity_score')
+                        
+                        # Display citation header with similarity percentage and page number
                         citation_header = f"**[{citation_id}] {source_name}**"
                         citation_header += f" - **Page {page or 1}**"
                         
-                        # Show relevance score prominently
-                        if relevance_score > 0:
-                            if relevance_score >= 0.7:
-                                st.success(f"⭐ **Rank {citation_id} - High Relevance ({relevance_score:.0%})** - {source_name}")
-                            elif relevance_score >= 0.4:
-                                st.info(f"📊 **Rank {citation_id} - Medium Relevance ({relevance_score:.0%})** - {source_name}")
+                        # Show similarity percentage prominently if available
+                        if similarity_percentage is not None:
+                            # Color-code based on similarity percentage
+                            if similarity_percentage >= 80:
+                                st.success(f"⭐ **Rank {citation_id} - Similarity: {similarity_percentage:.1f}%** - {source_name} - Page {page or 1}")
+                            elif similarity_percentage >= 50:
+                                st.info(f"📊 **Rank {citation_id} - Similarity: {similarity_percentage:.1f}%** - {source_name} - Page {page or 1}")
                             else:
-                                st.caption(f"📋 **Rank {citation_id} - Low Relevance ({relevance_score:.0%})** - {source_name}")
+                                st.caption(f"📋 **Rank {citation_id} - Similarity: {similarity_percentage:.1f}%** - {source_name} - Page {page or 1}")
+                        elif similarity_score is not None:
+                            # Fallback to similarity score if percentage not available
+                            st.info(f"📊 **Rank {citation_id} - Score: {similarity_score:.4f}** - {source_name} - Page {page or 1}")
+                        else:
+                            # No similarity data available
+                            st.markdown(f"**Rank {citation_id}** - {source_name} - Page {page or 1}")
                         
+                        # Show source location with page number
                         if page:
                             st.success(f"📍 **Source Location:** {source_location}")
                         else:
@@ -2187,14 +2203,39 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                                     st.info("No page number")
                             
                             with confidence_cols[2]:
+                                similarity_percentage = item.get('similarity_percentage')
                                 similarity_score = item.get('similarity_score')
-                                if similarity_score is not None:
-                                    st.info(f"🔍 Similarity: {similarity_score:.3f}")
+                                if similarity_percentage is not None:
+                                    # Color-code based on similarity percentage
+                                    if similarity_percentage >= 80:
+                                        st.success(f"⭐ Similarity: {similarity_percentage:.1f}%")
+                                    elif similarity_percentage >= 50:
+                                        st.info(f"📊 Similarity: {similarity_percentage:.1f}%")
+                                    else:
+                                        st.caption(f"📋 Similarity: {similarity_percentage:.1f}%")
+                                elif similarity_score is not None:
+                                    st.info(f"🔍 Score: {similarity_score:.3f}")
                                 else:
                                     st.caption("🔍 Similarity: N/A")
                             
-                            # Show relevance ranking prominently
-                            if relevance_score > 0:
+                            # Show similarity percentage prominently at the top
+                            similarity_percentage = item.get('similarity_percentage')
+                            similarity_score = item.get('similarity_score')
+                            if similarity_percentage is not None:
+                                st.markdown("---")
+                                if similarity_percentage >= 80:
+                                    st.success(f"⭐ **Rank #{citation_id} - Similarity: {similarity_percentage:.1f}%** - {source_name} - Page {page or 1} (Most relevant)")
+                                elif similarity_percentage >= 50:
+                                    st.info(f"📊 **Rank #{citation_id} - Similarity: {similarity_percentage:.1f}%** - {source_name} - Page {page or 1}")
+                                else:
+                                    st.caption(f"📋 **Rank #{citation_id} - Similarity: {similarity_percentage:.1f}%** - {source_name} - Page {page or 1}")
+                                st.markdown("---")
+                            elif similarity_score is not None:
+                                st.markdown("---")
+                                st.info(f"📊 **Rank #{citation_id} - Score: {similarity_score:.4f}** - {source_name} - Page {page or 1}")
+                                st.markdown("---")
+                            # Show relevance ranking prominently (fallback if similarity not available)
+                            elif relevance_score > 0:
                                 st.markdown("---")
                                 if relevance_score >= 0.7:
                                     st.success(f"🏆 **Rank #{citation_id} - High Relevance Score: {relevance_score:.1%}** (Most relevant citation)")
