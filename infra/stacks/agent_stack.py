@@ -718,6 +718,11 @@ class AgentStack(Stack):
                 security_groups=[self.security_group],
                 assign_public_ip=False,  # Private subnets
                 health_check_grace_period=Duration.seconds(60),
+                # Add Cloud Map service discovery for internal service communication
+                cloud_map_options=ecs.CloudMapOptions(
+                    name=f"{service_name}-{env_name}",
+                    cloud_map_namespace=self.namespace,
+                ) if service_name != "aris-agent" else None,  # Agent doesn't need service discovery
             )
 
             # Register service with target group
@@ -872,12 +877,15 @@ class AgentStack(Stack):
                 "AGENT_TYPE": "manufacturing",
                 "HOST": "0.0.0.0",
                 "PORT": "443",
-                "INTELYCX_CORE_MCP_URL": f"http://aris-mcp-intelycx-core-{env_name}:8080",
-                "INTELYCX_EMAIL_MCP_URL": f"http://aris-mcp-intelycx-email-{env_name}:8081",
                 "DATABASE_URL": f"postgresql+asyncpg://aris:${{DB_PASSWORD}}@{self.database_host}:5432/aris_agent",
                 # Cognito authentication settings
                 "USER_POOL_ID": f"us-east-2_M29tS1Dvv",  # From token: iss contains this
                 "USER_POOL_CLIENT_ID": "6uasnmke0urf1b00jkkm2nma3i",  # From token: client_id
+                # MCP server URLs using Cloud Map service discovery DNS names
+                "MCP_SERVER_INTELYCX_CORE_URL": f"http://aris-mcp-intelycx-core-{env_name}.aris-{env_name}.local:8080/mcp",
+                "MCP_SERVER_INTELYCX_EMAIL_URL": f"http://aris-mcp-intelycx-email-{env_name}.aris-{env_name}.local:8081/mcp",
+                "MCP_SERVER_INTELYCX_FILE_GENERATOR_URL": f"http://aris-mcp-intelycx-file-generator-{env_name}.aris-{env_name}.local:8080/mcp",
+                "MCP_SERVER_INTELYCX_RAG_URL": f"http://aris-mcp-intelycx-rag-{env_name}.aris-{env_name}.local:8082/mcp",
             },
             "aris-mcp-intelycx-core": {
                 "HOST": "0.0.0.0",

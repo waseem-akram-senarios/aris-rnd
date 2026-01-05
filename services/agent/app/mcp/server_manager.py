@@ -49,30 +49,67 @@ class MCPServerManager:
         self._load_config()
     
     def _load_config(self):
-        """Load MCP server configuration from file."""
+        """Load MCP server configuration from file and environment variables.
+        
+        Environment variables take precedence over the JSON file.
+        Format: MCP_SERVER_<SERVER_NAME>_URL (e.g., MCP_SERVER_INTELYCX_CORE_URL)
+        
+        Servers can be configured in three ways:
+        1. Environment variable only (MCP_SERVER_<NAME>_URL) - works without JSON file
+        2. JSON file only - for local development with Docker Compose
+        3. Both - env var overrides JSON file URL
+        """
         try:
+            # Load base configuration from file
+            base_config = {}
             if Path(self.config_path).exists():
                 with open(self.config_path, 'r') as f:
                     config = json.load(f)
+                    base_config = config.get("mcpServers", {})
+            
+            # Process servers from JSON file
+            for server_name, server_config in base_config.items():
+                # Check for environment variable override
+                # Convert server name to env var format: intelycx-core -> INTELYCX_CORE
+                env_var_name = f"MCP_SERVER_{server_name.upper().replace('-', '_')}_URL"
+                url = os.environ.get(env_var_name)
                 
-                mcp_servers = config.get("mcpServers", {})
-                for server_name, server_config in mcp_servers.items():
-                    if "url" in server_config:
-                        # HTTP-based server (simple configuration)
+                if not url and "url" in server_config:
+                    # Use URL from JSON file if no env var
+                    url = server_config["url"]
+                
+                if url:
+                    # HTTP-based server (simple configuration)
+                    self.servers[server_name] = MCPServerConfig(
+                        name=server_name,
+                        command="",
+                        url=url
+                    )
+                    if env_var_name in os.environ:
+                        self.logger.info(f"Using environment variable {env_var_name} for {server_name}: {url}")
+                else:
+                    # Process-based server (not supported yet)
+                    self.logger.warning(f"Process-based server {server_name} not yet supported with FastMCP")
+                    continue
+            
+            # Also check for servers configured ONLY via environment variables
+            # Look for all MCP_SERVER_*_URL environment variables
+            for env_key, url in os.environ.items():
+                if env_key.startswith("MCP_SERVER_") and env_key.endswith("_URL"):
+                    # Extract server name from env var: MCP_SERVER_INTELYCX_CORE_URL -> intelycx-core
+                    server_name_part = env_key.replace("MCP_SERVER_", "").replace("_URL", "")
+                    server_name = server_name_part.lower().replace("_", "-")
+                    
+                    # Only add if not already loaded from JSON file
+                    if server_name not in self.servers:
                         self.servers[server_name] = MCPServerConfig(
                             name=server_name,
                             command="",
-                            url=server_config["url"]
+                            url=url
                         )
-                    else:
-                        # Process-based server (not supported yet)
-                        self.logger.warning(f"Process-based server {server_name} not yet supported with FastMCP")
-                        continue
-                
-                
-                self.logger.info(f"Loaded {len(self.servers)} MCP server configurations")
-            else:
-                self.logger.warning(f"MCP config file not found: {self.config_path}")
+                        self.logger.info(f"Loaded server {server_name} from environment variable {env_key}: {url}")
+            
+            self.logger.info(f"Loaded {len(self.servers)} MCP server configurations")
                 
         except Exception as e:
             self.logger.error(f"Error loading MCP config: {str(e)}")
