@@ -115,6 +115,12 @@ s3:
 logs:
   retention_days: 30
 
+# Intelycx Core API Configuration
+intelycx_core:
+  base_url: "http://intelycx-api-1:8002"  # Default internal Docker network URL
+  username: "Nemanja"  # Set via environment variable or AWS Secrets Manager
+  password: "Intel100"  # Set via environment variable or AWS Secrets Manager
+
 # Secrets Manager Configuration
 secrets:
   database:
@@ -123,4 +129,7 @@ secrets:
   aws_credentials:
     name: "intelycx-aris-dev-aws-credentials"
     # AWS credentials stored in AWS Secrets Manager
+  intelycx_core:
+    name: "intelycx-aris-dev-intelycx-core"  # Optional: store credentials in Secrets Manager
+    # Username and password stored in AWS Secrets Manager
 

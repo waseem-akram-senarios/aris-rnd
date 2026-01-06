@@ -21,6 +21,7 @@ from aws_cdk import (
     aws_secretsmanager as secretsmanager,
     aws_ssm as ssm,
     aws_servicediscovery as servicediscovery,
+    CfnResource,
 )
 from constructs import Construct
 
@@ -126,13 +127,15 @@ class AgentStack(Stack):
             self, "AlbSecurityGroup", security_group_id=alb_security_group_id
         )
         
-        # Add ingress rule for PostgreSQL (port 5432) within the security group
-        # This allows services to connect to PostgreSQL
-        self.security_group.add_ingress_rule(
-            peer=self.security_group,
-            connection=ec2.Port.tcp(5432),
-            description="Allow PostgreSQL connections within security group"
-        )
+        # Add ingress rules for inter-service communication within the security group
+        # This allows services to connect to each other
+        inter_service_ports = [5432, 8080, 8081, 8082]  # PostgreSQL, Core, Email, RAG, FileGen
+        for port in inter_service_ports:
+            self.security_group.add_ingress_rule(
+                peer=self.security_group,
+                connection=ec2.Port.tcp(port),
+                description=f"Allow inter-service communication on port {port} within security group"
+            )
         
         # Add ingress rules for ALB to reach ECS tasks on service ports
         # This allows ALB health checks and traffic routing
@@ -177,6 +180,10 @@ class AgentStack(Stack):
         self.log_groups = self._create_log_groups(env_name)
 
         # Create service discovery namespace for internal service communication
+        # We're importing an existing namespace. The old resource (ServiceDiscoveryNamespace8AEF4AC1)
+        # may remain in CloudFormation. To clean it up manually, use:
+        # aws cloudformation update-stack --stack-name intelycx-aris-agent-dev --use-previous-template
+        # Then remove the old namespace resource from the template, or leave it (it's harmless)
         self.namespace = self._create_service_discovery_namespace(env_name)
 
         # Create PostgreSQL service first (other services depend on it)
@@ -458,13 +465,17 @@ class AgentStack(Stack):
         return log_groups
 
     def _create_service_discovery_namespace(self, env_name: str) -> servicediscovery.PrivateDnsNamespace:
-        """Create Cloud Map namespace for service discovery."""
-        return servicediscovery.PrivateDnsNamespace(
+        """Import existing Cloud Map namespace for service discovery."""
+        # Import existing namespace instead of creating a new one
+        # Namespace ARN: arn:aws:servicediscovery:us-east-2:975049910508:namespace/ns-qfmnahdiqqcnzfnp
+        # Namespace Name: aris-dev.local
+        # Using different logical ID to avoid CDK trying to delete the old resource
+        return servicediscovery.PrivateDnsNamespace.from_private_dns_namespace_attributes(
             self,
-            "ServiceDiscoveryNamespace",
-            name=f"aris-{env_name}.local",
-            vpc=self.vpc,
-            description=f"Service discovery namespace for ARIS {env_name} environment",
+            "ImportedServiceDiscoveryNamespace",
+            namespace_arn="arn:aws:servicediscovery:us-east-2:975049910508:namespace/ns-qfmnahdiqqcnzfnp",
+            namespace_id="ns-qfmnahdiqqcnzfnp",
+            namespace_name=f"aris-{env_name}.local",
         )
 
     def _create_postgres_service(self, env_name: str) -> ecs.FargateService:
@@ -872,6 +883,12 @@ class AgentStack(Stack):
             "LOG_LEVEL": "INFO",
         }
 
+        # Load Intelycx Core configuration from YAML config
+        yaml_config = getattr(self, 'yaml_config', {})
+        intelycx_core_base_url = get_config_value(yaml_config, "intelycx_core.base_url") or "http://intelycx-api-1:8002"
+        intelycx_core_username = get_config_value(yaml_config, "intelycx_core.username") or ""
+        intelycx_core_password = get_config_value(yaml_config, "intelycx_core.password") or ""
+
         service_specific = {
             "aris-agent": {
                 "AGENT_TYPE": "manufacturing",
@@ -886,11 +903,18 @@ class AgentStack(Stack):
                 "MCP_SERVER_INTELYCX_EMAIL_URL": f"http://aris-mcp-intelycx-email-{env_name}.aris-{env_name}.local:8081/mcp",
                 "MCP_SERVER_INTELYCX_FILE_GENERATOR_URL": f"http://aris-mcp-intelycx-file-generator-{env_name}.aris-{env_name}.local:8080/mcp",
                 "MCP_SERVER_INTELYCX_RAG_URL": f"http://aris-mcp-intelycx-rag-{env_name}.aris-{env_name}.local:8082/mcp",
+                # Intelycx Core credentials for agent to use when calling intelycx_login tool
+                "INTELYCX_CORE_USERNAME": intelycx_core_username,
+                "INTELYCX_CORE_PASSWORD": intelycx_core_password,
             },
             "aris-mcp-intelycx-core": {
                 "HOST": "0.0.0.0",
                 "PORT": "8080",
                 "UVICORN_ACCESS_LOG": "false",
+                # Intelycx Core API configuration
+                "INTELYCX_CORE_BASE_URL": intelycx_core_base_url,
+                "INTELYCX_CORE_USERNAME": intelycx_core_username,
+                "INTELYCX_CORE_PASSWORD": intelycx_core_password,
             },
             "aris-mcp-intelycx-email": {
                 "HOST": "0.0.0.0",
