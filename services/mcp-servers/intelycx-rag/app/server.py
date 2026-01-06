@@ -22,6 +22,24 @@ from .models import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Filter to exclude health check requests from uvicorn access logs
+class HealthCheckAccessLogFilter(logging.Filter):
+    """Filter to exclude health check requests from access logs."""
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Filter out health check paths from uvicorn access logs
+        # Format: "172.31.23.238:51492 - \"GET /health HTTP/1.1\" 200 OK"
+        if hasattr(record, 'msg'):
+            msg = str(record.msg)
+            # Exclude /health paths from uvicorn access logs
+            if 'GET /health' in msg or '"GET /health' in msg:
+                return False
+        return True
+
+# Apply filter to uvicorn access logger
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.addFilter(HealthCheckAccessLogFilter())
+
 # Create FastMCP server with enhanced configuration
 mcp = FastMCP(
     "Intelycx RAG Knowledge Base",
