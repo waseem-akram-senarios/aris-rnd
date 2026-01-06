@@ -501,7 +501,7 @@ async def health_check(request: Request) -> JSONResponse:
         return JSONResponse(content=health_status, status_code=200)
         
     except Exception as e:
-        logger.error(f"❌ Health check failed: {e}")
+        # Don't log health check failures to reduce noise
         return JSONResponse(
             content={"status": "unhealthy", "error": str(e)},
             status_code=500
