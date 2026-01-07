@@ -65,7 +65,7 @@ if 'active_loaded_docs' not in st.session_state:
 def process_uploaded_files(uploaded_files, use_cerebras, parser_preference, 
                           embedding_model, openai_model, cerebras_model,
                           vector_store_type, opensearch_domain, opensearch_index,
-                          chunk_size, chunk_overlap):
+                          chunk_size, chunk_overlap, document_language="eng"):
     """Process uploaded files with real-time progress tracking"""
     if not uploaded_files:
         return False
@@ -393,7 +393,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         file_name=file_name,
                         parser_preference=parser_preference,
                         progress_callback=progress_callback,
-                        index_name=final_index_name if 'final_index_name' in locals() else opensearch_index
+                        index_name=final_index_name if 'final_index_name' in locals() else opensearch_index,
+                        language=document_language
                     )
                     
                     # Clear processing status immediately after completion

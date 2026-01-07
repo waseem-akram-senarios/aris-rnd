@@ -74,13 +74,14 @@ class ParserFactory:
         cls._registered = True
     
     @classmethod
-    def get_parser(cls, file_path: str, preferred_parser: Optional[str] = None) -> Optional[BaseParser]:
+    def get_parser(cls, file_path: str, preferred_parser: Optional[str] = None, language: str = "eng") -> Optional[BaseParser]:
         """
         Get an appropriate parser for the given file.
         
         Args:
             file_path: Path to the file
-            preferred_parser: Optional preferred parser name ('pymupdf', 'docling', 'textract', 'auto')
+            preferred_parser: Optional preferred parser name ('pymupdf', 'docling', 'textract', 'ocrmypdf', 'llama-scan', 'auto')
+            language: Language code for OCR (default: 'eng'). Use '+' for multiple.
         
         Returns:
             BaseParser instance or None if no suitable parser found
@@ -102,18 +103,23 @@ class ParserFactory:
                     return PyMuPDFParser()
                 elif preferred_parser.lower() == 'docling':
                     from .docling_parser import DoclingParser
-                    return DoclingParser()
+                    if DoclingParser().is_available():
+                        return DoclingParser()
                 elif preferred_parser.lower() == 'textract':
                     from .textract_parser import TextractParser
-                    return TextractParser()
+                    if TextractParser().is_available():
+                        return TextractParser()
                 elif preferred_parser.lower() == 'ocrmypdf':
                     from .ocrmypdf_parser import OCRmyPDFParser
-                    return OCRmyPDFParser()
-                elif preferred_parser.lower() == 'llamascan':
+                    if OCRmyPDFParser().is_available():
+                        return OCRmyPDFParser(languages=language)
+                elif preferred_parser.lower() == 'llama-scan':
                     from .llama_scan_parser import LlamaScanParser
-                    return LlamaScanParser()
-            except ImportError:
-                pass  # Fall through to default selection
+                    if LlamaScanParser().is_available():
+                        return LlamaScanParser()
+            except ImportError as e:
+                logger.warning(f"Could not load preferred parser {preferred_parser}: {e}")
+                # Fall back to auto selection
         
         # Default: return first registered parser for this extension
         if ext in cls._parsers:

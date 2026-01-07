@@ -3498,7 +3498,13 @@ CRITICAL RULES:
 - DO NOT repeat phrases or sentences
 - DO NOT include "Best regards", "Thank you", or similar endings
 - DO NOT make up information not in the context
-- End your answer when you have provided the information - do not add unnecessary text"""
+- End your answer when you have provided the information - do not add unnecessary text
+
+MULTILINGUAL INSTRUCTIONS:
+- Detect the language of the user's question.
+- ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
+- If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
+- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
         
             # Add document filtering instruction to user prompt if specific document mentioned
             user_doc_filter_instruction = ""
@@ -5642,7 +5648,13 @@ CRITICAL RULES:
 - DO NOT repeat phrases or sentences
 - DO NOT include "Best regards", "Thank you", or similar endings
 - DO NOT make up information not in the context
-- End your answer when you have provided the information - do not add unnecessary text"""
+- End your answer when you have provided the information - do not add unnecessary text
+
+MULTILINGUAL INSTRUCTIONS:
+- Detect the language of the user's question.
+- ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
+- If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
+- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
             
             user_prompt = f"""Original Question: {question}
 

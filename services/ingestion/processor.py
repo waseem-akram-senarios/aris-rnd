@@ -42,7 +42,8 @@ class DocumentProcessor:
         parser_preference: Optional[str] = None,
         document_id: Optional[str] = None,
         progress_callback: Optional[callable] = None,
-        index_name: Optional[str] = None
+        index_name: Optional[str] = None,
+        language: str = "eng"
     ) -> ProcessingResult:
         """
         Process a single document.
@@ -54,6 +55,8 @@ class DocumentProcessor:
             parser_preference: Preferred parser ('auto', 'pymupdf', 'docling', 'textract')
             document_id: Optional document ID for strict indexing and registry persistence
             progress_callback: Optional callback function(status, progress) for updates
+            index_name: Optional explicit OpenSearch index name
+            language: Language code for OCR (default: 'eng'). Use '+' for multiple (e.g. 'eng+spa')
         
         Returns:
             ProcessingResult with processing statistics
@@ -190,9 +193,12 @@ class DocumentProcessor:
             
             parse_start = time.time()
             try:
-                # Log parser selection
-                parser_name = parser_preference or "auto"
-                logger.info(f"[STEP 2.1] DocumentProcessor: Parser selection - preference: {parser_name}")
+                # Get parser from factory with language preference
+                parser = ParserFactory.get_parser(
+                    parser_preference or 'auto',
+                    language=language
+                )
+                logger.info(f"[STEP 2.1] Parser selected: {parser.get_name()} (Language: {language})")
                 if parser_preference:
                     logger.info(f"[STEP 2.1] Explicit parser selected: {parser_preference} (will NOT fall back)")
                 
