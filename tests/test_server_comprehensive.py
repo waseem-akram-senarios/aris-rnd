@@ -81,7 +81,7 @@ def test_rag_system_initialization():
     print_test("RAG System Initialization")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         # Test with default settings
         rag = RAGSystem()
@@ -142,7 +142,7 @@ def test_document_number_extraction():
     print_test("Document Number Extraction")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         
@@ -174,7 +174,7 @@ def test_image_storage_method():
     print_test("Image Storage Method")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         
@@ -257,7 +257,7 @@ def test_document_processor():
     
     try:
         from ingestion.document_processor import DocumentProcessor
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         processor = DocumentProcessor(rag_system=rag)
@@ -315,7 +315,7 @@ def test_query_methods():
     print_test("Query Methods Signature")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         import inspect
         
         rag = RAGSystem()

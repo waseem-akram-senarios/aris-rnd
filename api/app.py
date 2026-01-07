@@ -19,7 +19,6 @@ import json
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from api.rag_system import RAGSystem
 from services.ingestion.processor import DocumentProcessor
 from services.ingestion.parsers.parser_factory import ParserFactory
 from metrics.metrics_collector import MetricsCollector
@@ -42,8 +41,6 @@ st.set_page_config(
 )
 
 # Initialize session state
-if 'rag_system' not in st.session_state:
-    st.session_state.rag_system = None
 if 'documents_processed' not in st.session_state:
     st.session_state.documents_processed = False
 if 'chat_history' not in st.session_state:
@@ -73,30 +70,30 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
     if not uploaded_files:
         return False
     
-    # Initialize or update ServiceContainer (which manages RAGSystem and DocumentProcessor)
+    # Initialize or update ServiceContainer (which manages GatewayService and DocumentProcessor)
     # Recreate if API, models, embedding model, vector store, or chunking changed
-    current_rag = st.session_state.rag_system
+    container = st.session_state.get('service_container')
     
     needs_reinit = (
-        current_rag is None or
-        (hasattr(current_rag, 'use_cerebras') and current_rag.use_cerebras != use_cerebras) or
-        (hasattr(current_rag, 'embedding_model') and current_rag.embedding_model != embedding_model) or
-        (hasattr(current_rag, 'openai_model') and current_rag.openai_model != openai_model) or
-        (hasattr(current_rag, 'cerebras_model') and current_rag.cerebras_model != cerebras_model) or
-        (hasattr(current_rag, 'vector_store_type') and current_rag.vector_store_type != vector_store_type.lower()) or
-        (hasattr(current_rag, 'opensearch_domain') and current_rag.opensearch_domain != opensearch_domain) or
-        (hasattr(current_rag, 'chunk_size') and current_rag.chunk_size != chunk_size) or
-        (hasattr(current_rag, 'chunk_overlap') and current_rag.chunk_overlap != chunk_overlap)
+        container is None or
+        (hasattr(container.gateway_service, 'use_cerebras') and container.gateway_service.use_cerebras != use_cerebras) or
+        (hasattr(container.gateway_service, 'embedding_model') and container.gateway_service.embedding_model != embedding_model) or
+        (hasattr(container.gateway_service, 'openai_model') and container.gateway_service.openai_model != openai_model) or
+        (hasattr(container.gateway_service, 'cerebras_model') and container.gateway_service.cerebras_model != cerebras_model) or
+        (hasattr(container.gateway_service, 'vector_store_type') and container.gateway_service.vector_store_type != vector_store_type.lower()) or
+        (hasattr(container.gateway_service, 'opensearch_domain') and container.gateway_service.opensearch_domain != opensearch_domain) or
+        (hasattr(container.gateway_service, 'chunk_size') and getattr(container.gateway_service, 'chunk_size', None) != chunk_size) or
+        (hasattr(container.gateway_service, 'chunk_overlap') and getattr(container.gateway_service, 'chunk_overlap', None) != chunk_overlap)
     )
     
     if needs_reinit:
         # Warn if switching vector stores and data exists
-        if (current_rag is not None and 
-            hasattr(current_rag, 'vector_store_type') and
-            current_rag.vector_store_type != vector_store_type.lower() and
-            current_rag.vectorstore is not None):
+        if (container is not None and 
+            hasattr(container.gateway_service, 'vector_store_type') and
+            container.gateway_service.vector_store_type != vector_store_type.lower() and
+            hasattr(container.gateway_service, 'vectorstore') and container.gateway_service.vectorstore is not None):
             st.warning(
-                f"⚠️ Switching vector store from {current_rag.vector_store_type.upper()} to {vector_store_type.upper()}. "
+                f"⚠️ Switching vector store from {container.gateway_service.vector_store_type.upper()} to {vector_store_type.upper()}. "
                 f"Data in the previous store will not be accessible. You may need to reprocess documents."
             )
         
@@ -108,7 +105,6 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
             container = st.session_state.service_container
         
         # Bind components for compatibility
-        st.session_state.rag_system = container.rag_system
         st.session_state.document_processor = container.document_processor
         st.session_state.metrics_collector = getattr(container, 'metrics_collector', MetricsCollector())
         st.session_state.document_registry = container.document_registry
@@ -119,7 +115,7 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
             # load_vectorstore now uses model-specific paths internally
             if os.path.exists(vectorstore_path) or os.path.exists(ARISConfig.get_vectorstore_path(embedding_model)):
                 try:
-                    loaded = st.session_state.rag_system.load_vectorstore(vectorstore_path)
+                    loaded = container.gateway_service.load_vectorstore(vectorstore_path)
                     if loaded:
                         st.session_state.vectorstore_loaded = True
                         st.session_state.documents_processed = True
@@ -290,7 +286,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         detailed_status.info(f"📊 {detailed_message}")
                 
                 # Handle OpenSearch index name generation from document name
-                if vector_store_type.lower() == 'opensearch' and st.session_state.rag_system:
+                container = st.session_state.get('service_container')
+                if vector_store_type.lower() == 'opensearch' and container:
                     try:
                         # Use static method for sanitization only - no instantiation
                         from vectorstores.opensearch_store import OpenSearchVectorStore
@@ -308,8 +305,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                             # Check if index exists via Gateway/Ingestion service
                             # Using Gateway's proxy to avoid direct DB connection from UI
                             index_exists = False
-                            if hasattr(st.session_state.rag_system, 'index_exists'):
-                                index_exists = st.session_state.rag_system.index_exists(base_index_name)
+                            if hasattr(container.gateway_service, 'index_exists'):
+                                index_exists = container.gateway_service.index_exists(base_index_name)
                             
                             # If index exists, ask user what to do
                             if index_exists:
@@ -343,9 +340,9 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                 # Index doesn't exist, use the base name
                                 final_index_name = base_index_name
                                 # Set opensearch_index if it's settable
-                                if hasattr(st.session_state.rag_system, 'opensearch_index'):
+                                if hasattr(container.gateway_service, 'opensearch_index'):
                                     try:
-                                        st.session_state.rag_system.opensearch_index = final_index_name
+                                        container.gateway_service.opensearch_index = final_index_name
                                     except AttributeError:
                                         # If it's a read-only property, log warning but continue
                                         logger.warning(f"Could not set opensearch_index (read-only), using: {final_index_name}")
@@ -361,8 +358,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                 final_index_name = base_index_name
                             elif st.session_state[choice_key] == "new":
                                 # Find next available index name via Gateway
-                                if hasattr(st.session_state.rag_system, 'find_next_available_index_name'):
-                                    final_index_name = st.session_state.rag_system.find_next_available_index_name(base_index_name)
+                                if hasattr(container.gateway_service, 'find_next_available_index_name'):
+                                    final_index_name = container.gateway_service.find_next_available_index_name(base_index_name)
                                 else:
                                     final_index_name = f"{base_index_name}-1"
                             else:
@@ -370,9 +367,9 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                 final_index_name = base_index_name
                             
                             # Update RAGSystem's opensearch_index
-                            if hasattr(st.session_state.rag_system, 'opensearch_index'):
+                            if hasattr(container.gateway_service, 'opensearch_index'):
                                 try:
-                                    st.session_state.rag_system.opensearch_index = final_index_name
+                                    container.gateway_service.opensearch_index = final_index_name
                                 except AttributeError:
                                     # If it's a read-only property, log warning but continue
                                     logger.warning(f"Could not set opensearch_index (read-only), using: {final_index_name}")
@@ -481,6 +478,9 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
     
     if successful_results:
         st.session_state.documents_processed = True
+        # Ensure container exists in session state after processing
+        if 'service_container' not in st.session_state:
+            st.session_state.service_container = ServiceContainer()
         total_chunks = sum(r.chunks_created for r in successful_results)
         total_tokens = sum(r.tokens_extracted for r in successful_results)
         st.success(
@@ -494,39 +494,50 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
             if last_doc_name:
                 st.session_state.active_sources = [last_doc_name]
                 st.session_state.active_loaded_docs = [last_doc_name]
-                if st.session_state.rag_system:
-                    st.session_state.rag_system.active_sources = [last_doc_name]
+                container = st.session_state.get('service_container')
+                if container:
+                    # Set active sources for filtering
+                    container.gateway_service.active_sources = [last_doc_name]
                     # For OpenSearch, ensure per-document index selection is active
-                    if getattr(st.session_state.rag_system, 'vector_store_type', '').lower() == 'opensearch':
+                    if getattr(container.gateway_service, 'vector_store_type', '').lower() == 'opensearch':
                         try:
-                            st.session_state.rag_system.load_selected_documents(
+                            result = container.gateway_service.load_selected_documents(
                                 document_names=[last_doc_name],
                                 path=ARISConfig.VECTORSTORE_PATH
                             )
-                        except Exception:
-                            pass
-        except Exception:
-            pass
+                            # Log success for debugging
+                            if result.get('loaded'):
+                                logger.info(f"✅ OpenSearch document loaded: {result.get('message', '')}")
+                        except Exception as e:
+                            logger.warning(f"Could not load OpenSearch document: {e}")
+                    # Mark vectorstore as loaded for both FAISS and OpenSearch
+                    st.session_state.vectorstore_loaded = True
+        except Exception as e:
+            logger.warning(f"Error setting active sources: {e}")
         
         # Save vectorstore to disk for sharing with FastAPI (FAISS only)
         # OpenSearch stores data in cloud, so no local save needed
-        if (st.session_state.rag_system and 
-            st.session_state.rag_system.vectorstore and 
-            st.session_state.rag_system.vector_store_type.lower() == 'faiss'):
+        container = st.session_state.get('service_container')
+        if (container and 
+            hasattr(container.gateway_service, 'vectorstore') and container.gateway_service.vectorstore and 
+            container.gateway_service.vector_store_type.lower() == 'faiss'):
             try:
                 vectorstore_path = ARISConfig.get_vectorstore_path()
-                st.session_state.rag_system.save_vectorstore(vectorstore_path)
+                container.gateway_service.save_vectorstore(vectorstore_path)
                 st.session_state.vectorstore_loaded = True
                 st.caption("💾 Vectorstore saved to shared storage")
             except Exception as e:
                 st.warning(f"⚠️ Could not save vectorstore: {e}")
-        elif (st.session_state.rag_system and 
-              st.session_state.rag_system.vectorstore and 
-              st.session_state.rag_system.vector_store_type.lower() == 'opensearch'):
+        elif (container and 
+              container.gateway_service.vector_store_type.lower() == 'opensearch'):
             # OpenSearch stores data in cloud - already persisted
-            opensearch_domain = getattr(st.session_state.rag_system, 'opensearch_domain', 'N/A')
-            opensearch_index = getattr(st.session_state.rag_system, 'opensearch_index', 'N/A')
+            st.session_state.vectorstore_loaded = True
+            opensearch_domain = getattr(container.gateway_service, 'opensearch_domain', 'N/A')
+            opensearch_index = getattr(container.gateway_service, 'opensearch_index', 'N/A')
             st.caption(f"☁️ Vectorstore saved to OpenSearch Cloud (Domain: {opensearch_domain}, Index: {opensearch_index})")
+        elif container:
+            # For any other case, still mark as loaded if container exists
+            st.session_state.vectorstore_loaded = True
         
         return True
     else:
@@ -732,9 +743,11 @@ with st.sidebar:
             st.divider()
             st.subheader("🔄 Load Stored Documents")
 
+            # Get container from session state
+            container = st.session_state.get('service_container')
             docs_loaded = (
-                st.session_state.rag_system is not None and
-                st.session_state.rag_system.vectorstore is not None and
+                container is not None and
+                hasattr(container.gateway_service, 'vectorstore') and container.gateway_service.vectorstore is not None and
                 st.session_state.documents_processed
             )
 
@@ -751,8 +764,8 @@ with st.sidebar:
             
             # Auto-clear active_sources when "(None)" is selected
             if selected_single == "(None)":
-                if st.session_state.rag_system:
-                    st.session_state.rag_system.active_sources = None  # Clear filter
+                if container:
+                    container.gateway_service.active_sources = None  # Clear filter
                 st.session_state.active_sources = []
 
             # Buttons for per-document actions
@@ -767,8 +780,8 @@ with st.sidebar:
                                 # Get vector store type from session state, existing RAG system, or config
                                 if 'vector_store_choice' in st.session_state:
                                     current_vector_store = st.session_state.vector_store_choice.lower()
-                                elif st.session_state.rag_system and hasattr(st.session_state.rag_system, 'vector_store_type'):
-                                    current_vector_store = st.session_state.rag_system.vector_store_type.lower()
+                                elif container and hasattr(container.gateway_service, 'vector_store_type'):
+                                    current_vector_store = container.gateway_service.vector_store_type.lower()
                                 else:
                                     # Fallback to config default
                                     current_vector_store = ARISConfig.VECTOR_STORE_TYPE.lower()
@@ -795,11 +808,11 @@ with st.sidebar:
                                                 break
 
                                 # Priority 2: If not found in document, try existing RAG system
-                                if not opensearch_domain and st.session_state.rag_system:
-                                    if hasattr(st.session_state.rag_system, 'opensearch_domain'):
-                                        opensearch_domain = st.session_state.rag_system.opensearch_domain
-                                    if hasattr(st.session_state.rag_system, 'opensearch_index'):
-                                        opensearch_index = st.session_state.rag_system.opensearch_index
+                                if not opensearch_domain and container:
+                                    if hasattr(container.gateway_service, 'opensearch_domain'):
+                                        opensearch_domain = container.gateway_service.opensearch_domain
+                                    if hasattr(container.gateway_service, 'opensearch_index'):
+                                        opensearch_index = container.gateway_service.opensearch_index
 
                                 # Priority 3: If still not found and using OpenSearch, get from config
                                 if not opensearch_domain and current_vector_store == 'opensearch':
@@ -822,11 +835,11 @@ with st.sidebar:
                                     st.session_state.service_container = ServiceContainer()
                                 
                                 # Compatibility bindings
-                                st.session_state.rag_system = st.session_state.service_container.rag_system
-                                st.session_state.document_processor = st.session_state.service_container.document_processor
+                                container = st.session_state.service_container
+                                st.session_state.document_processor = container.document_processor
                                 
                                 # Set active sources for filtering
-                                st.session_state.rag_system.active_sources = selected_sources
+                                container.gateway_service.active_sources = selected_sources
                                 
                                 vectorstore_base_path = ARISConfig.VECTORSTORE_PATH
                                 
@@ -840,10 +853,10 @@ with st.sidebar:
                                         st.stop()
                                 
                                 # Enforce single-document load
-                                st.session_state.rag_system.active_sources = selected_sources
+                                container.gateway_service.active_sources = selected_sources
                                 
                                 # Load the selected document
-                                result = st.session_state.rag_system.load_selected_documents(
+                                result = container.gateway_service.load_selected_documents(
                                     document_names=selected_sources[:1],
                                     path=vectorstore_base_path  # Pass base path, method handles model-specific
                                 )
@@ -870,7 +883,8 @@ with st.sidebar:
                                         st.write(f"**Vectorstore exists:** {os.path.exists(ARISConfig.get_vectorstore_path(current_embedding))}")
                                         # Show available document sources if possible
                                         try:
-                                            if st.session_state.rag_system and hasattr(st.session_state.rag_system, 'vectorstore'):
+                                            container = st.session_state.get('service_container')
+                                            if container and hasattr(container.gateway_service, 'vectorstore'):
                                                 st.write("**Note:** Make sure the document name matches exactly what's stored in the vectorstore.")
                                         except:
                                             pass
@@ -884,25 +898,27 @@ with st.sidebar:
                 if st.button("🧹 Clear Loaded Selection", use_container_width=True):
                     st.session_state.active_sources = []
                     st.session_state.active_loaded_docs = []
-                    if st.session_state.rag_system:
-                        st.session_state.rag_system.active_sources = []
+                    container = st.session_state.get('service_container')
+                    if container:
+                        container.gateway_service.active_sources = []
                     st.info("Selection cleared. Choose documents and load again to start Q&A.")
 
             # Status of currently loaded docs - Enhanced with active document indicator
-            if st.session_state.rag_system and st.session_state.rag_system.active_sources:
-                active_docs = st.session_state.rag_system.active_sources
+            container = st.session_state.get('service_container')
+            if container and container.gateway_service.active_sources:
+                active_docs = container.gateway_service.active_sources
                 if active_docs:
                     st.info(f"📄 **Active Document:** {', '.join(active_docs)}\n\n"
                             f"Queries will only search within this document. Select '(None)' to search all documents.")
             elif st.session_state.active_loaded_docs:
                 st.success(f"✅ Loaded for Q&A: {', '.join(st.session_state.active_loaded_docs)}")
                 try:
-                    vs = st.session_state.rag_system.vectorstore if st.session_state.rag_system else None
+                    vs = container.gateway_service.vectorstore if container else None
                     if vs and hasattr(vs, 'index') and hasattr(vs.index, 'ntotal'):
                         st.caption(f"📊 {vs.index.ntotal:,} chunks loaded")
                 except Exception:
                     pass
-            elif st.session_state.rag_system and st.session_state.rag_system.vectorstore:
+            elif container and hasattr(container.gateway_service, 'vectorstore') and container.gateway_service.vectorstore:
                 # Show status when all documents are active (no filter)
                 st.info("📚 **All Documents Active**\n\n"
                         "Queries will search across all uploaded documents.")
@@ -984,11 +1000,12 @@ with st.sidebar:
                 vector_store_type = 'faiss'
                 opensearch_domain = None
                 opensearch_index = None
-                if st.session_state.rag_system:
-                    vector_store_type = getattr(st.session_state.rag_system, 'vector_store_type', 'faiss')
+                container = st.session_state.get('service_container')
+                if container:
+                    vector_store_type = getattr(container.gateway_service, 'vector_store_type', 'faiss')
                     if vector_store_type.lower() == 'opensearch':
-                        opensearch_domain = getattr(st.session_state.rag_system, 'opensearch_domain', None)
-                        opensearch_index = getattr(st.session_state.rag_system, 'opensearch_index', None)
+                        opensearch_domain = getattr(container.gateway_service, 'opensearch_domain', None)
+                        opensearch_index = getattr(container.gateway_service, 'opensearch_index', None)
                 
                 if vector_store_type.lower() == 'opensearch':
                     st.info("""
@@ -1252,6 +1269,17 @@ with st.sidebar:
             # Only clear if no pending choices
             if not has_pending_choice:
                 del st.session_state[process_key]
+                # Ensure container and state are preserved before rerun
+                if 'service_container' not in st.session_state:
+                    if st.session_state.documents_processed:
+                        # Re-initialize container if missing but documents were processed
+                        st.session_state.service_container = ServiceContainer()
+                        # Restore active sources if they were set
+                        if st.session_state.active_sources:
+                            st.session_state.service_container.gateway_service.active_sources = st.session_state.active_sources
+                    else:
+                        # Initialize container even if documents not processed yet (might be needed)
+                        st.session_state.service_container = ServiceContainer()
                 # Force UI refresh to show completion and clear processing messages
                 st.rerun()
     
@@ -1260,11 +1288,21 @@ with st.sidebar:
     # Comprehensive Metrics Dashboard
     st.header("📊 R&D Metrics & Analytics")
     
-    if st.session_state.documents_processed and st.session_state.rag_system:
+    # Ensure container is available if documents were processed
+    container = st.session_state.get('service_container')
+    if st.session_state.documents_processed and not container:
+        # Re-initialize container if documents were processed but container is missing
+        try:
+            st.session_state.service_container = ServiceContainer()
+            container = st.session_state.service_container
+        except Exception as e:
+            logger.warning(f"Could not re-initialize container: {e}")
+    
+    if st.session_state.documents_processed and container:
         # Get all metrics
         # Fetch metrics from Gateway Service if available, otherwise use local collector
-        if hasattr(st.session_state.rag_system, 'get_all_metrics'):
-            all_metrics = st.session_state.rag_system.get_all_metrics()
+        if hasattr(container.gateway_service, 'get_all_metrics'):
+            all_metrics = container.gateway_service.get_all_metrics()
         else:
             all_metrics = st.session_state.metrics_collector.get_all_metrics()
             
@@ -1276,25 +1314,25 @@ with st.sidebar:
         st.subheader("🤖 Current Models")
         col1, col2, col3, col4, col5 = st.columns(5)
         with col1:
-            st.info(f"**Embedding:**\n{st.session_state.rag_system.embedding_model}")
+            st.info(f"**Embedding:**\n{container.gateway_service.embedding_model}")
         with col2:
-            if st.session_state.rag_system.use_cerebras:
-                st.info(f"**LLM:**\n{st.session_state.rag_system.cerebras_model}")
+            if container.gateway_service.use_cerebras:
+                st.info(f"**LLM:**\n{container.gateway_service.cerebras_model}")
             else:
-                st.info(f"**LLM:**\n{st.session_state.rag_system.openai_model}")
+                st.info(f"**LLM:**\n{container.gateway_service.openai_model}")
         with col3:
-            api_name = "Cerebras" if st.session_state.rag_system.use_cerebras else "OpenAI"
+            api_name = "Cerebras" if container.gateway_service.use_cerebras else "OpenAI"
             st.info(f"**API:**\n{api_name}")
         with col4:
-            vector_store_type = getattr(st.session_state.rag_system, 'vector_store_type', 'faiss')
+            vector_store_type = getattr(container.gateway_service, 'vector_store_type', 'faiss')
             store_display = vector_store_type.upper()
             if vector_store_type == "opensearch":
-                domain = getattr(st.session_state.rag_system, 'opensearch_domain', 'N/A')
+                domain = getattr(container.gateway_service, 'opensearch_domain', 'N/A')
                 store_display += f"\n({domain})"
             st.info(f"**Vector Store:**\n{store_display}")
         with col5:
-            chunk_size = getattr(st.session_state.rag_system, 'chunk_size', 384)
-            chunk_overlap = getattr(st.session_state.rag_system, 'chunk_overlap', 75)
+            chunk_size = getattr(container.gateway_service, 'chunk_size', ARISConfig.DEFAULT_CHUNK_SIZE)
+            chunk_overlap = getattr(container.gateway_service, 'chunk_overlap', ARISConfig.DEFAULT_CHUNK_OVERLAP)
             st.info(f"**Chunking:**\n{chunk_size} tokens\n({chunk_overlap} overlap)")
         
         # Basic Stats
@@ -1413,9 +1451,9 @@ with st.sidebar:
                         st.write(f"- {api.capitalize()}: {count}")
         
         # Token Analysis Section
-        if st.session_state.rag_system and st.session_state.rag_system.vectorstore:
+        if container and hasattr(container.gateway_service, 'vectorstore') and container.gateway_service.vectorstore:
             st.subheader("🔢 Token Analysis")
-            chunk_stats = st.session_state.rag_system.get_chunk_token_stats()
+            chunk_stats = container.gateway_service.get_chunk_token_stats()
             
             if chunk_stats['total_chunks'] > 0:
                 # Show configured vs actual chunk sizes
@@ -1571,7 +1609,8 @@ with st.sidebar:
                 st.caption("Last Update: Never")
         with col3:
             vectorstore_path = ARISConfig.get_vectorstore_path()
-            vectorstore_exists = os.path.exists(vectorstore_path) if st.session_state.rag_system and st.session_state.rag_system.vector_store_type.lower() == 'faiss' else False
+            container = st.session_state.get('service_container')
+            vectorstore_exists = os.path.exists(vectorstore_path) if container and container.gateway_service.vector_store_type.lower() == 'faiss' else False
             if vectorstore_exists:
                 st.success("✅ Vectorstore synced")
             else:
@@ -1581,10 +1620,11 @@ with st.sidebar:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("💾 Save Vectorstore", help="Save current vectorstore to shared storage"):
-                if st.session_state.rag_system and st.session_state.rag_system.vectorstore:
-                    if st.session_state.rag_system.vector_store_type.lower() == 'faiss':
+                container = st.session_state.get('service_container')
+                if container and hasattr(container.gateway_service, 'vectorstore') and container.gateway_service.vectorstore:
+                    if container.gateway_service.vector_store_type.lower() == 'faiss':
                         try:
-                            st.session_state.rag_system.save_vectorstore(vectorstore_path)
+                            container.gateway_service.save_vectorstore(vectorstore_path)
                             st.success("✅ Vectorstore saved to shared storage")
                             st.session_state.vectorstore_loaded = True
                             st.rerun()
@@ -1597,7 +1637,8 @@ with st.sidebar:
         
         with col2:
             if st.button("🔄 Reload Vectorstore", help="Reload vectorstore from shared storage"):
-                if st.session_state.rag_system and st.session_state.rag_system.vector_store_type.lower() == 'faiss':
+                container = st.session_state.get('service_container')
+                if container and container.gateway_service.vector_store_type.lower() == 'faiss':
                     try:
                         # Check for conflicts before reloading
                         conflict = st.session_state.document_registry.check_for_conflicts()
@@ -1605,7 +1646,7 @@ with st.sidebar:
                             st.warning(f"⚠️ {conflict['message']}. Reloading anyway...")
                             st.session_state.document_registry.reload_from_disk()
                         
-                        loaded = st.session_state.rag_system.load_vectorstore(vectorstore_path)
+                        loaded = container.gateway_service.load_vectorstore(vectorstore_path)
                         if loaded:
                             st.success("✅ Vectorstore reloaded from shared storage")
                             st.session_state.vectorstore_loaded = True
@@ -1686,7 +1727,8 @@ with st.sidebar:
     
     # Clear button
     if st.button("Clear All", type="secondary"):
-        st.session_state.rag_system = None
+        if 'service_container' in st.session_state:
+            del st.session_state.service_container
         st.session_state.documents_processed = False
         st.session_state.chat_history = []
         st.session_state.citations_history = []
@@ -1696,7 +1738,38 @@ with st.sidebar:
         st.rerun()
 
 # Main content area
-if st.session_state.documents_processed and st.session_state.rag_system:
+# Ensure container is available if documents were processed
+container = st.session_state.get('service_container')
+if st.session_state.documents_processed and not container:
+    # Re-initialize container if documents were processed but container is missing
+    try:
+        st.session_state.service_container = ServiceContainer()
+        container = st.session_state.service_container
+        # Restore active sources if they were set
+        if st.session_state.active_sources:
+            container.gateway_service.active_sources = st.session_state.active_sources
+            # For OpenSearch, reload the selected documents
+            if getattr(container.gateway_service, 'vector_store_type', '').lower() == 'opensearch':
+                try:
+                    container.gateway_service.load_selected_documents(
+                        document_names=st.session_state.active_sources,
+                        path=ARISConfig.VECTORSTORE_PATH
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not reload OpenSearch documents: {e}")
+        # Try to reload vectorstore if it was saved (FAISS only)
+        elif st.session_state.vectorstore_loaded:
+            try:
+                vectorstore_path = ARISConfig.get_vectorstore_path()
+                if hasattr(container.gateway_service, 'load_vectorstore'):
+                    container.gateway_service.load_vectorstore(vectorstore_path)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Could not re-initialize container: {e}")
+
+# Final check: ensure container exists and documents_processed is set
+if st.session_state.documents_processed and container:
     st.header("💬 Ask Questions")
     
     # Display chat history with enhanced citations
@@ -1730,7 +1803,7 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     if similarity_percentage is not None:
                         citation_refs.append(f"[{citation_id}] {source_name}, Page {page} ({similarity_percentage:.1f}%)")
                     else:
-                        citation_refs.append(f"[{citation_id}] {source_name}, Page {page}")
+                        citation_refs.append(f"[{citation_id}] {source_name}, Page {page} (N/A)")
                 
                 if citation_refs:
                     st.caption("**📎 References:** " + " | ".join(citation_refs))
@@ -1839,8 +1912,9 @@ if st.session_state.documents_processed and st.session_state.rag_system:
     st.session_state['max_tokens'] = max_tokens
     
     # Search mode selection (for hybrid search) - only show for OpenSearch
-    if hasattr(st.session_state.rag_system, 'vector_store_type') and \
-       st.session_state.rag_system.vector_store_type.lower() == 'opensearch':
+    container = st.session_state.get('service_container')
+    if container and hasattr(container.gateway_service, 'vector_store_type') and \
+       container.gateway_service.vector_store_type.lower() == 'opensearch':
         st.subheader("🔍 Search Mode")
         search_mode = st.radio(
             "Select search mode:",
@@ -1878,7 +1952,8 @@ if st.session_state.documents_processed and st.session_state.rag_system:
     if question and question.lower().strip():
         is_summary_like = any(kw in question.lower() for kw in ['summary', 'summarize', 'overview', 'what is this document about', 'what does this document contain'])
         if is_summary_like:
-            if not st.session_state.rag_system or not st.session_state.rag_system.active_sources:
+            container = st.session_state.get('service_container')
+            if not container or not container.gateway_service.active_sources:
                 st.info("💡 **Tip:** Select a document from the sidebar to get a summary of that specific document. Currently searching all documents.")
     
     if question:
@@ -1898,16 +1973,20 @@ if st.session_state.documents_processed and st.session_state.rag_system:
                     search_mode_param = "hybrid"
                 
                 # Check if hybrid search is available and provide feedback
+                container = st.session_state.get('service_container')
                 if search_mode_param in ["hybrid", "keyword"] and \
-                   hasattr(st.session_state.rag_system, 'vector_store_type') and \
-                   st.session_state.rag_system.vector_store_type.lower() != 'opensearch':
+                   container and hasattr(container.gateway_service, 'vector_store_type') and \
+                   container.gateway_service.vector_store_type.lower() != 'opensearch':
                     st.info("ℹ️ Hybrid search is only available for OpenSearch. Using semantic search instead.")
                     search_mode_param = "semantic"
                     semantic_weight = 1.0
                 
                 # Use maximum accuracy settings: more chunks, optimized MMR
                 # k and use_mmr will use config defaults optimized for accuracy
-                result = st.session_state.rag_system.query_with_rag(
+                if not container:
+                    st.error("Service container not initialized. Please upload a document first.")
+                    st.stop()
+                result = container.gateway_service.query_with_rag(
                     question,
                     use_hybrid_search=(search_mode_param == "hybrid" or search_mode_param == "keyword"),
                     semantic_weight=semantic_weight,

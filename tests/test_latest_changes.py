@@ -58,7 +58,7 @@ def test_document_number_extraction():
     print_test("Document Number Extraction")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         rag = RAGSystem()
         
         # Test cases
@@ -91,7 +91,7 @@ def test_document_filtering():
     print_test("Document Filtering in Queries")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         rag = RAGSystem()
         
         # Mock document names
@@ -259,7 +259,7 @@ def test_ocr_extraction_limits():
     print_test("OCR Extraction Without Limits")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         # Check the extraction code
         import inspect
@@ -302,7 +302,7 @@ def test_image_content_separation():
     print_test("Image Content Separation")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         import inspect
         rag = RAGSystem()

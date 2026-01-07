@@ -17,7 +17,7 @@ class TestSmokeBasic:
         try:
             # Try importing main modules
             from api.service import ServiceContainer
-            from rag_system import RAGSystem
+            from services.retrieval.engine import RetrievalEngine as RAGSystem
             from parsers.parser_factory import ParserFactory
             from vectorstores.vector_store_factory import VectorStoreFactory
             from shared.config.settings import ARISConfig

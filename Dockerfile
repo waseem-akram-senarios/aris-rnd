@@ -64,7 +64,6 @@ COPY vectorstores/ ./vectorstores/
 COPY api/ ./api/
 COPY .streamlit/ ./.streamlit/
 COPY app.py .
-COPY rag_system.py .
 
 # Copy and set entrypoint
 COPY scripts/docker_entrypoint.sh /app/entrypoint.sh

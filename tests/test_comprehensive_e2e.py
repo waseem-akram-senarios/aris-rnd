@@ -124,7 +124,7 @@ def test_imports_and_structure():
     print_section("TEST 1: Import and Basic Structure")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         from parsers.docling_parser import DoclingParser
         from parsers.pymupdf_parser import PyMuPDFParser
         from parsers.textract_parser import TextractParser
@@ -322,7 +322,7 @@ def test_rag_system_initialization():
     print_section("TEST 6: RAG System Initialization")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem(chunk_size=512, chunk_overlap=100)
         log_test("RAGSystem initialization", True)
@@ -579,7 +579,7 @@ def test_rag_integration():
     print_section("TEST 12: RAG System Integration")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         from shared.utils.tokenizer import TokenTextSplitter
         
         rag = RAGSystem(chunk_size=512, chunk_overlap=100)

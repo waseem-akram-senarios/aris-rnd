@@ -816,7 +816,23 @@ class OpenSearchVectorStore:
             for hit in results:
                 source = hit.get("_source", {})
                 text = source.get("text", "")
+                
+                # CRITICAL FIX: LangChain stores metadata fields at TOP LEVEL of _source,
+                # not nested under 'metadata'. Check both locations for compatibility.
                 metadata = source.get("metadata", {})
+                
+                # Also check top-level _source for essential metadata fields
+                # (LangChain OpenSearchVectorSearch stores metadata at top level)
+                essential_metadata_fields = [
+                    'source', 'page', 'source_page', 'chunk_index', 'total_chunks',
+                    'parser_used', 'pages', 'images_detected', 'extraction_percentage',
+                    'start_char', 'end_char', 'token_count', 'page_extraction_method',
+                    'has_image', 'image_ref', 'image_index', 'image_bbox', 'image_info',
+                    'content_type'
+                ]
+                for field in essential_metadata_fields:
+                    if field not in metadata and field in source:
+                        metadata[field] = source[field]
                 
                 # Extract similarity score from hit if available
                 # Priority: hybrid_score (from RRF) > _score (from OpenSearch) > None

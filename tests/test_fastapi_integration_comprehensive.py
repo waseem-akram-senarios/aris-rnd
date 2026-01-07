@@ -255,7 +255,7 @@ def test_rag_system_methods():
     print_test("RAG System Methods")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         

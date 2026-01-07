@@ -55,7 +55,7 @@ try:
     from api.service import ServiceContainer, create_service_container
     from shared.config.settings import ARISConfig
     from storage.document_registry import DocumentRegistry
-    from rag_system import RAGSystem
+    from services.retrieval.engine import RetrievalEngine as RAGSystem
     from ingestion.document_processor import DocumentProcessor
 except ImportError as e:
     # Allow tests to run even if some modules fail to import
@@ -177,7 +177,7 @@ def rag_system_faiss(mock_embeddings, temp_dir: Path) -> Generator:
     """RAG system with FAISS vector store"""
     try:
         with patch('langchain_openai.OpenAIEmbeddings', return_value=mock_embeddings):
-            rag = RAGSystem(
+            rag = RetrievalEngine(
                 embedding_model="text-embedding-3-small",
                 openai_model="gpt-3.5-turbo",
                 vector_store_type="faiss",

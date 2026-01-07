@@ -678,8 +678,16 @@ class TokenTextSplitter:
                         token_count = min(token_count, self.chunk_size)
                 
                 # Calculate character offsets for citation support
+                # CRITICAL: Always set start_char and end_char for accurate page matching
                 chunk_start_char = text_start_pos
                 chunk_end_char = text_start_pos + len(chunk_text)
+                
+                # Ensure we have valid character positions
+                if chunk_start_char is None:
+                    chunk_start_char = 0
+                if chunk_end_char is None or chunk_end_char < chunk_start_char:
+                    chunk_end_char = chunk_start_char + len(chunk_text)
+                
                 text_start_pos = chunk_end_char  # Update for next chunk (accounting for overlap)
                 
                 # Determine page number for this chunk and check for image references
@@ -761,19 +769,44 @@ class TokenTextSplitter:
                             cumulative_pos = page_end
                     
                     # ENHANCED: Select dominant page (page with most content in chunk)
+                    # Improved algorithm: consider both absolute overlap and percentage
                     if page_content_overlap:
-                        dominant_page = max(page_content_overlap.keys(), key=lambda p: page_content_overlap[p])
+                        # Calculate total chunk size for percentage calculation
+                        chunk_size = chunk_end_char - chunk_start_char
+                        
+                        # Score each page: combine absolute overlap and percentage
+                        page_scores = {}
+                        for page_num, overlap_chars in page_content_overlap.items():
+                            overlap_ratio = overlap_chars / chunk_size if chunk_size > 0 else 0.0
+                            # Weighted score: 70% absolute overlap, 30% percentage
+                            score = (overlap_chars * 0.7) + (overlap_ratio * chunk_size * 0.3)
+                            page_scores[page_num] = {
+                                'score': score,
+                                'overlap_chars': overlap_chars,
+                                'overlap_ratio': overlap_ratio
+                            }
+                        
+                        # Select page with highest score
+                        dominant_page = max(page_scores.keys(), key=lambda p: page_scores[p]['score'])
                         chunk_page = dominant_page
                         page_extraction_method = 'page_blocks_dominant'
                         
                         # Log if chunk spans multiple pages
                         if len(page_content_overlap) > 1:
+                            dominant_info = page_scores[dominant_page]
                             total_overlap = sum(page_content_overlap.values())
-                            dominant_ratio = page_content_overlap[dominant_page] / total_overlap if total_overlap > 0 else 1.0
-                            if dominant_ratio < 0.8:  # Log warning if significant content from other pages
+                            dominant_ratio = dominant_info['overlap_ratio']
+                            
+                            if dominant_ratio < 0.7:  # Log warning if <70% content from dominant page
                                 logger.debug(
                                     f"Tokenizer: Chunk {chunk_idx} spans pages {list(page_content_overlap.keys())}, "
-                                    f"using dominant page {dominant_page} ({dominant_ratio:.1%} of content)"
+                                    f"using dominant page {dominant_page} ({dominant_ratio:.1%} of content, "
+                                    f"{dominant_info['overlap_chars']}/{chunk_size} chars)"
+                                )
+                            else:
+                                logger.debug(
+                                    f"Tokenizer: Chunk {chunk_idx} assigned to page {dominant_page} "
+                                    f"({dominant_ratio:.1%} overlap, {dominant_info['overlap_chars']} chars)"
                                 )
                 
                 # If page not found from page_blocks, try to extract from text markers

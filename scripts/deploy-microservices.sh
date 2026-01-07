@@ -12,7 +12,16 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SERVER_IP="${SERVER_IP:-44.221.84.58}"
 SERVER_USER="${SERVER_USER:-ec2-user}"
 SERVER_DIR="${SERVER_DIR:-/opt/aris-rag}"
-PEM_FILE="$SCRIPT_DIR/all_scripts/ec2_wah_pk.pem"
+# Try multiple possible PEM file locations
+if [ -f "$SCRIPT_DIR/ec2_wah_pk.pem" ]; then
+    PEM_FILE="$SCRIPT_DIR/ec2_wah_pk.pem"
+elif [ -f "$SCRIPT_DIR/all_scripts/ec2_wah_pk.pem" ]; then
+    PEM_FILE="$SCRIPT_DIR/all_scripts/ec2_wah_pk.pem"
+elif [ -f "$SCRIPT_DIR/keys/ec2_wah_pk.pem" ]; then
+    PEM_FILE="$SCRIPT_DIR/keys/ec2_wah_pk.pem"
+else
+    PEM_FILE="$SCRIPT_DIR/all_scripts/ec2_wah_pk.pem"  # Default fallback
+fi
 
 # Colors
 GREEN='\033[0;32m'

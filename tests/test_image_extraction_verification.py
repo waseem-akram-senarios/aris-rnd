@@ -8,7 +8,7 @@ sys.path.insert(0, '.')
 
 from parsers.docling_parser import DoclingParser
 from ingestion.document_processor import DocumentProcessor
-from rag_system import RAGSystem
+from services.retrieval.engine import RetrievalEngine as RAGSystem
 from shared.config.settings import ARISConfig
 
 def test_parser_extraction():

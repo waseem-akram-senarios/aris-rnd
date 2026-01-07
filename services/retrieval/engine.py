@@ -1621,7 +1621,8 @@ class RetrievalEngine:
             # Determine which index(es) to search
             indexes_to_search = []
             
-            if self.active_sources:
+            # IMPORTANT: use request-scoped active_sources (not only self.active_sources)
+            if active_sources:
                 # Search only indexes for selected documents
                 # First, check if we have direct document_id -> index mapping
                 if hasattr(self, '_document_id_to_index') and self._document_id_to_index:
@@ -1630,7 +1631,7 @@ class RetrievalEngine:
                         logger.info(f"Using direct index mapping: {doc_id} -> {index_name}")
                 
                 # Also try document_name lookup
-                for doc_name in self.active_sources:
+                for doc_name in active_sources:
                     if doc_name in self.document_index_map:
                         index_name = self.document_index_map[doc_name]
                         if index_name not in indexes_to_search:
@@ -1656,6 +1657,7 @@ class RetrievalEngine:
                     else:
                         # Clear filter and search all
                         self.active_sources = None
+                        active_sources = None
                         indexes_to_search = list(self.document_index_map.values()) if self.document_index_map else []
                     logger.info(f"Document filter not available, using fallback: {len(indexes_to_search)} index(es)")
             else:
@@ -4131,9 +4133,158 @@ Answer:"""
         logger.warning(f"Could not extract source from chunk. Metadata keys: {list(doc.metadata.keys()) if hasattr(doc, 'metadata') else 'N/A'}")
         return 'Unknown', 0.0
     
+    def _get_page_from_char_position(self, start_char: Optional[int], end_char: Optional[int], 
+                                     page_blocks: List[Dict]) -> Optional[int]:
+        """
+        Find page number using precise character position matching.
+        This is the most accurate method when character positions are available.
+        
+        Args:
+            start_char: Starting character position of chunk in document
+            end_char: Ending character position of chunk in document
+            page_blocks: List of page block dictionaries with start_char, end_char, page
+        
+        Returns:
+            Page number with maximum overlap, or None if no match found
+        """
+        if start_char is None or not page_blocks:
+            return None
+        
+        # Use end_char if available, otherwise estimate from start_char
+        chunk_end = end_char if end_char is not None else start_char + 500  # Estimate 500 chars
+        
+        # Calculate overlap with each page
+        page_overlaps = {}
+        
+        for block in page_blocks:
+            if not isinstance(block, dict):
+                continue
+            
+            block_start = block.get('start_char')
+            block_end = block.get('end_char')
+            block_page = block.get('page')
+            
+            # Skip if missing required fields
+            if block_start is None or block_page is None:
+                continue
+            
+            # Use block_end if available, otherwise estimate
+            if block_end is None:
+                block_text = block.get('text', '')
+                block_end = block_start + len(block_text) if block_text else block_start + 1000
+            
+            # Calculate overlap
+            overlap_start = max(start_char, block_start)
+            overlap_end = min(chunk_end, block_end)
+            
+            if overlap_start < overlap_end:
+                overlap_chars = overlap_end - overlap_start
+                chunk_size = chunk_end - start_char
+                
+                # Calculate overlap percentage
+                if chunk_size > 0:
+                    overlap_ratio = overlap_chars / chunk_size
+                    
+                    # Track page with maximum overlap
+                    if block_page not in page_overlaps:
+                        page_overlaps[block_page] = {
+                            'overlap_chars': 0,
+                            'overlap_ratio': 0.0,
+                            'start_char': block_start,
+                            'end_char': block_end
+                        }
+                    
+                    # Accumulate overlap for this page
+                    page_overlaps[block_page]['overlap_chars'] += overlap_chars
+                    if overlap_ratio > page_overlaps[block_page]['overlap_ratio']:
+                        page_overlaps[block_page]['overlap_ratio'] = overlap_ratio
+        
+        if not page_overlaps:
+            return None
+        
+        # Find page with maximum overlap
+        # Prefer page with most character overlap, then highest ratio
+        best_page = max(page_overlaps.keys(), 
+                       key=lambda p: (page_overlaps[p]['overlap_chars'], 
+                                     page_overlaps[p]['overlap_ratio']))
+        
+        # Only return if there's significant overlap (>10% of chunk)
+        if page_overlaps[best_page]['overlap_ratio'] > 0.1:
+            return int(best_page)
+        
+        return None
+
+    def _validate_page_assignment(self, page: int, doc, chunk_text: str, page_blocks: List[Dict]) -> tuple:
+        """
+        Cross-validate a proposed page number against multiple signals to improve accuracy.
+
+        Returns:
+            (validated_page, confidence_score)
+        """
+        import re
+        from scripts.setup_logging import get_logger
+
+        logger = get_logger("aris_rag.rag_system")
+
+        validation_sources = []
+
+        # 1) source_page metadata
+        source_page = doc.metadata.get("source_page", None)
+        if source_page is not None:
+            try:
+                if int(source_page) == int(page):
+                    validation_sources.append(("source_page", 1.0))
+            except Exception:
+                pass
+
+        # 2) page metadata
+        page_meta = doc.metadata.get("page", None)
+        if page_meta is not None:
+            try:
+                if int(page_meta) == int(page):
+                    validation_sources.append(("page_metadata", 0.8))
+            except Exception:
+                pass
+
+        # 3) character-position match (highest quality when available)
+        start_char = doc.metadata.get("start_char", None)
+        end_char = doc.metadata.get("end_char", None)
+        if start_char is not None and page_blocks:
+            try:
+                page_from_pos = self._get_page_from_char_position(start_char, end_char, page_blocks)
+                if page_from_pos is not None and int(page_from_pos) == int(page):
+                    validation_sources.append(("char_position", 1.0))
+            except Exception:
+                pass
+
+        # 4) explicit text marker in chunk
+        page_match = re.search(r"---\s*Page\s+(\d+)\s*---", chunk_text or "")
+        if page_match:
+            try:
+                if int(page_match.group(1)) == int(page):
+                    validation_sources.append(("text_marker", 0.6))
+            except Exception:
+                pass
+
+        if len(validation_sources) >= 2:
+            max_conf = max(s[1] for s in validation_sources)
+            confidence = min(1.0, max_conf + 0.1)  # small boost when signals agree
+            logger.debug(f"Page {page} validated by multiple sources: {validation_sources} (confidence={confidence:.2f})")
+            return int(page), confidence
+
+        if len(validation_sources) == 1:
+            src, conf = validation_sources[0]
+            logger.debug(f"Page {page} validated by {src} (confidence={conf:.2f})")
+            return int(page), conf
+
+        # No corroboration; still return the candidate but with reduced confidence
+        logger.debug(f"Page {page} could not be corroborated; returning lower confidence")
+        return int(page), 0.5
+    
     def _extract_page_number(self, doc, chunk_text: str) -> tuple:
         """
         Extract and validate page number from multiple sources with enhanced accuracy.
+        PRIORITY: Character position matching > source_page > page_blocks > page > text markers
         
         Args:
             doc: Document object with metadata
@@ -4141,10 +4292,10 @@ Answer:"""
         
         Returns:
             Tuple of (page_number, confidence_score)
-            confidence: 1.0 (source_page metadata) > 0.9 (page_blocks cross-validation) > 0.8 (page metadata) > 0.6 (text marker --- Page X ---) > 0.4 (text marker Page X)
-            Returns (None, 0.0) if page is invalid or not found
+            confidence: 1.0 (char position) > 1.0 (source_page) > 0.9 (page_blocks) > 0.8 (page) > 0.6 (text marker) > 0.4 (fallback)
         """
         import re
+        from typing import Optional
         from scripts.setup_logging import get_logger
         logger = get_logger("aris_rag.rag_system")
         
@@ -4176,63 +4327,131 @@ Answer:"""
                 return False
             return True
         
+        # PRIORITY 1: Character position-based matching (HIGHEST ACCURACY)
+        start_char = doc.metadata.get('start_char', None)
+        end_char = doc.metadata.get('end_char', None)
+        page_blocks = doc.metadata.get('page_blocks', [])
+        
+        if start_char is not None and page_blocks:
+            page_from_position = self._get_page_from_char_position(start_char, end_char, page_blocks)
+            if page_from_position and validate_against_doc(page_from_position):
+                logger.debug(f"Page extracted from character position: {page_from_position} (start_char={start_char}, end_char={end_char})")
+                return int(page_from_position), 1.0  # Highest confidence for position-based matching
+        
         # Cross-validate with page_blocks metadata if available (enhanced accuracy)
         def get_page_from_page_blocks(chunk_text: str, page_blocks: list) -> Optional[int]:
-            """Extract page number from page_blocks metadata by matching chunk content."""
-            if not page_blocks or not chunk_text:
+            """Extract page number from page_blocks metadata using character positions or text matching."""
+            if not page_blocks:
                 return None
             
-            # Get first 200 chars of chunk for matching
+            # PRIORITY: Character position matching (most accurate)
+            if start_char is not None:
+                page_from_pos = self._get_page_from_char_position(start_char, end_char, page_blocks)
+                if page_from_pos:
+                    logger.debug(f"Page from character position matching: {page_from_pos}")
+                    return page_from_pos
+            
+            # Fallback: Text-based matching (for chunks without character positions)
+            if not chunk_text:
+                return None
+            
             chunk_preview = chunk_text[:200].strip()
             if not chunk_preview:
                 return None
             
-            # Try to find matching page block
+            # Enhanced text matching: try to match with page-level blocks
+            # Some page_blocks have nested structure with 'blocks' array
+            best_match = None
+            best_match_score = 0.0
+            
             for block in page_blocks:
-                if isinstance(block, dict):
-                    block_text = block.get('text', '')
-                    block_page = block.get('page')
-                    
-                    # Check if chunk text appears in block text (or vice versa)
-                    if block_text and block_page:
-                        # Simple substring match (first 100 chars)
-                        block_preview = block_text[:100].strip()
-                        if chunk_preview[:100] in block_text or block_preview in chunk_text:
-                            return int(block_page)
+                if not isinstance(block, dict):
+                    continue
+                
+                block_page = block.get('page')
+                if not block_page:
+                    continue
+                
+                # Check page-level text
+                block_text = block.get('text', '')
+                if block_text:
+                    # Calculate text similarity
+                    chunk_words = set(chunk_preview[:100].lower().split())
+                    block_words = set(block_text[:200].lower().split())
+                    if chunk_words and block_words:
+                        overlap = len(chunk_words.intersection(block_words))
+                        total = len(chunk_words.union(block_words))
+                        similarity = overlap / total if total > 0 else 0.0
+                        
+                        if similarity > best_match_score and similarity > 0.3:  # 30% threshold
+                            best_match_score = similarity
+                            best_match = int(block_page)
+                
+                # Also check nested blocks if available
+                nested_blocks = block.get('blocks', [])
+                if isinstance(nested_blocks, list):
+                    for nested_block in nested_blocks:
+                        if isinstance(nested_block, dict):
+                            nested_text = nested_block.get('text', '')
+                            if nested_text:
+                                chunk_words = set(chunk_preview[:100].lower().split())
+                                nested_words = set(nested_text[:150].lower().split())
+                                if chunk_words and nested_words:
+                                    overlap = len(chunk_words.intersection(nested_words))
+                                    total = len(chunk_words.union(nested_words))
+                                    similarity = overlap / total if total > 0 else 0.0
+                                    
+                                    if similarity > best_match_score and similarity > 0.3:
+                                        best_match_score = similarity
+                                        best_match = int(block_page)
+            
+            if best_match:
+                logger.debug(f"Page from text matching: {best_match} (similarity: {best_match_score:.2f})")
+                return best_match
             
             return None
         
-        # Try source_page metadata first (highest confidence: 1.0)
+        # PRIORITY 2: Try source_page metadata (high confidence: 1.0)
         page = doc.metadata.get('source_page', None)
         if page is not None:
             if validate_against_doc(page):
-                # Cross-validate with page_blocks if available
-                page_blocks = doc.metadata.get('page_blocks', [])
-                if page_blocks:
-                    page_from_blocks = get_page_from_page_blocks(chunk_text, page_blocks)
-                    if page_from_blocks and page_from_blocks == int(page):
-                        logger.debug(f"Page {page} validated with page_blocks metadata")
-                    elif page_from_blocks and page_from_blocks != int(page):
-                        logger.warning(f"Page mismatch: source_page={page} vs page_blocks={page_from_blocks}, using source_page")
-                logger.debug(f"Page extracted from source_page metadata: {page}")
-                return int(page), 1.0
+                # Cross-validate with character position if available
+                validated_page, validated_confidence = self._validate_page_assignment(
+                    int(page), doc, chunk_text, page_blocks
+                )
+                if validated_confidence >= 0.8:
+                    logger.debug(f"Page {validated_page} validated from source_page with cross-validation (confidence: {validated_confidence:.2f})")
+                    return validated_page, validated_confidence
+                else:
+                    logger.debug(f"Page extracted from source_page metadata: {page}")
+                    return int(page), 1.0
             else:
                 logger.warning(f"Invalid page number in source_page metadata: {page} (doc has {doc_pages} pages)")
         
-        # Try page_blocks cross-validation (confidence: 0.9) - NEW ENHANCEMENT
+        # PRIORITY 3: Try page_blocks (confidence: 0.9 baseline; boosted if corroborated)
         page_blocks = doc.metadata.get('page_blocks', [])
         if page_blocks:
             page_from_blocks = get_page_from_page_blocks(chunk_text, page_blocks)
             if page_from_blocks and validate_against_doc(page_from_blocks):
-                logger.debug(f"Page extracted from page_blocks cross-validation: {page_from_blocks}")
-                return int(page_from_blocks), 0.9
+                validated_page, validated_confidence = self._validate_page_assignment(
+                    int(page_from_blocks), doc, chunk_text, page_blocks
+                )
+                logger.debug(
+                    f"Page extracted from page_blocks: {validated_page} "
+                    f"(confidence: {validated_confidence:.2f})"
+                )
+                return validated_page, max(0.9, validated_confidence)
         
-        # Try page metadata (confidence: 0.8)
+        # PRIORITY 4: Try page metadata (confidence: 0.8)
         page = doc.metadata.get('page', None)
         if page is not None:
             if validate_against_doc(page):
-                logger.debug(f"Page extracted from page metadata: {page}")
-                return int(page), 0.8
+                # Cross-validate
+                validated_page, validated_confidence = self._validate_page_assignment(
+                    int(page), doc, chunk_text, page_blocks
+                )
+                logger.debug(f"Page extracted from page metadata: {validated_page} (confidence: {validated_confidence:.2f})")
+                return validated_page, validated_confidence
             else:
                 logger.warning(f"Invalid page number in page metadata: {page} (doc has {doc_pages} pages)")
         
@@ -4247,8 +4466,20 @@ Answer:"""
             else:
                 logger.warning(f"Page from text marker {page_num} exceeds document pages {doc_pages}")
         
-        # Extract from text markers: "Page X" (confidence: 0.4)
-        # Enhanced: Look for "Page X" but avoid false matches in content
+        # Extract from text markers: "Page X" or "Document Page X" or "VUORMAR Page X" (confidence: 0.4)
+        # Enhanced: Look for "Page X" patterns including document name prefixes
+        # Pattern 1: "VUORMAR Page 10" or "Document Page 5" (document name + Page + number)
+        # Handle both with and without newlines/whitespace
+        page_match = re.search(r'(\w+)\s+Page\s+(\d+)', chunk_text, re.IGNORECASE | re.MULTILINE)
+        if page_match:
+            page_num = int(page_match.group(2))
+            # More lenient validation - if doc_pages is None, still accept reasonable page numbers
+            if doc_pages is None or page_num <= doc_pages:
+                if validate_page(page_num):  # Basic range check (1-10000)
+                    logger.info(f"Page extracted from text marker ({page_match.group(1)} Page {page_num}): {page_num}")
+                    return page_num, 0.5  # Slightly higher confidence for document name + page pattern
+        
+        # Pattern 2: Standalone "Page X" at line start or after newline
         page_match = re.search(r'(?:^|\n)\s*Page\s+(\d+)(?:\s|$|\.|,|;|:)', chunk_text, re.IGNORECASE | re.MULTILINE)
         if page_match:
             page_num = int(page_match.group(1))
@@ -4257,6 +4488,14 @@ Answer:"""
                 return page_num, 0.4
             else:
                 logger.warning(f"Page from text marker {page_num} exceeds document pages {doc_pages}")
+        
+        # Pattern 3: "Page X of Y" or "Page X/Y" (take first number)
+        page_match = re.search(r'Page\s+(\d+)(?:\s+of\s+\d+|\s*/\s*\d+)', chunk_text, re.IGNORECASE)
+        if page_match:
+            page_num = int(page_match.group(1))
+            if validate_against_doc(page_num):
+                logger.debug(f"Page extracted from text marker (Page X of Y): {page_num}")
+                return page_num, 0.4
         
         # Try page range patterns: "Page 5-7" or "Pages 10-12" (take first page, confidence: 0.4)
         page_range_match = re.search(r'Pages?\s+(\d+)[-\s]+(\d+)', chunk_text, re.IGNORECASE)
@@ -4895,22 +5134,25 @@ Answer:"""
                         # Invert: (worst - current) / (worst - best) * 100
                         if score_range > 0.0001:  # Use small epsilon to avoid division issues
                             similarity_percentage = ((worst_score - sim_score) / score_range) * 100.0
+                            # Ensure percentage is in valid range
+                            similarity_percentage = max(0.0, min(100.0, similarity_percentage))
+                            citation['similarity_percentage'] = round(similarity_percentage, 2)
                         else:
-                            # All same distance - assign 100% to all
-                            similarity_percentage = 100.0
+                            # All same distance - cannot compute meaningful percentage
+                            citation['similarity_percentage'] = None  # Will display as "N/A" in UI
+                            logger.debug(f"Citation {citation.get('id')}: All scores equal (distance={sim_score:.4f}), setting similarity_percentage to None")
                     else:
                         # For similarity: higher score = higher percentage
                         # Normalize: (current - worst) / (best - worst) * 100
                         if score_range > 0.0001:  # Use small epsilon to avoid division issues
                             similarity_percentage = ((sim_score - worst_score) / score_range) * 100.0
+                            # Ensure percentage is in valid range
+                            similarity_percentage = max(0.0, min(100.0, similarity_percentage))
+                            citation['similarity_percentage'] = round(similarity_percentage, 2)
                         else:
-                            # All same similarity - assign 100% to all
-                            similarity_percentage = 100.0
-                    
-                    # Ensure percentage is in valid range
-                    similarity_percentage = max(0.0, min(100.0, similarity_percentage))
-                    # Store percentage - this happens BEFORE re-numbering
-                    citation['similarity_percentage'] = round(similarity_percentage, 2)
+                            # All same similarity - cannot compute meaningful percentage
+                            citation['similarity_percentage'] = None  # Will display as "N/A" in UI
+                            logger.debug(f"Citation {citation.get('id')}: All scores equal (similarity={sim_score:.4f}), setting similarity_percentage to None")
                     
                     # Debug logging for all citations to see what's happening
                     if citation.get('id', 0) <= 6:

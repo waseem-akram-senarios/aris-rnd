@@ -50,7 +50,7 @@ def test_rag_query_basic():
     print_test("Basic RAG Query")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         
@@ -88,7 +88,7 @@ def test_document_filtering_query():
     print_test("Document Filtering Query")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         
@@ -133,7 +133,7 @@ def test_image_content_extraction():
     print_test("Image Content Extraction")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         
@@ -174,7 +174,7 @@ def test_image_storage_at_query_time():
     print_test("Image Storage at Query Time")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         
@@ -217,7 +217,7 @@ def test_query_methods_with_parameters():
     print_test("Query Methods Parameters")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         import inspect
         
         rag = RAGSystem()
@@ -276,7 +276,7 @@ def test_error_handling():
     print_test("Error Handling")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         

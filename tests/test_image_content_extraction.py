@@ -17,7 +17,7 @@ sys.path.insert(0, '.')
 import logging
 from parsers.docling_parser import DoclingParser
 from parsers.parser_factory import ParserFactory
-from rag_system import RAGSystem
+from services.retrieval.engine import RetrievalEngine as RAGSystem
 from shared.utils.tokenizer import TokenTextSplitter
 from langchain_core.documents import Document
 

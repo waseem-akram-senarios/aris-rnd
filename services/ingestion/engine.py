@@ -228,6 +228,13 @@ class IngestionEngine:
         num_blocks = len(page_blocks)
         
         for chunk in chunks:
+            # If chunk already has a valid page number (from DocumentProcessor's page-level processing), use it
+            if 'page' in chunk.metadata and chunk.metadata['page']:
+                # Ensure source_page is also set
+                if 'source_page' not in chunk.metadata:
+                    chunk.metadata['source_page'] = chunk.metadata['page']
+                continue
+                
             start_index = chunk.metadata.get('start_index', 0)
             
             # Fast-forward to the block that might contain this start_index

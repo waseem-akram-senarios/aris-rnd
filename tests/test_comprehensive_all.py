@@ -108,7 +108,7 @@ def test_imports_and_config():
     print_section("TEST 1: Imports and Configuration")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         from shared.config.settings import ARISConfig
         from ingestion.document_processor import DocumentProcessor
         from storage.document_registry import DocumentRegistry
@@ -191,7 +191,7 @@ def test_document_processing_faiss():
     print_section("TEST 3: Document Processing (FAISS)")
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         from ingestion.document_processor import DocumentProcessor
         from metrics.metrics_collector import MetricsCollector
         
@@ -277,7 +277,7 @@ def test_opensearch_processing(OPENSEARCH_AVAILABLE):
         return None
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         from shared.config.settings import ARISConfig
         
         opensearch_config = ARISConfig.get_opensearch_config()
@@ -522,7 +522,7 @@ def test_opensearch_add_documents_fix(OPENSEARCH_AVAILABLE):
     
     try:
         import inspect
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         # Check code structure - verify conditional logic exists
         source = inspect.getsource(RAGSystem.process_documents)
@@ -925,7 +925,7 @@ def test_agentic_rag_error_handling(rag_system):
         # Test deduplication (if chunks are retrieved)
         try:
             # This tests the _deduplicate_chunks method indirectly
-            from rag_system import RAGSystem
+            from services.retrieval.engine import RetrievalEngine as RAGSystem
             from langchain_core.documents import Document
             
             # Create test chunks with duplicates

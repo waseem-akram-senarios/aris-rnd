@@ -169,6 +169,13 @@ async def query_rag(
     service: GatewayService = Depends(get_service)
 ):
     """Query the Retrieval service"""
+    # Ensure request-scoped document filtering is forwarded to retrieval (critical for citation/page accuracy)
+    if request.active_sources is not None:
+        service.active_sources = request.active_sources
+    elif request.document_id is not None:
+        # Backward-compatible: treat document_id as a single active source for strict filtering
+        service.active_sources = [request.document_id]
+
     result = await service.query_text_only(
         question=request.question,
         k=request.k,

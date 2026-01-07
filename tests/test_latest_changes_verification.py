@@ -19,7 +19,7 @@ def test_document_number_extraction():
     logger.info("=" * 60)
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         
@@ -60,7 +60,7 @@ def test_document_filtering_logic():
     logger.info("=" * 60)
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         import re
         
         rag = RAGSystem()
@@ -149,7 +149,7 @@ def test_strict_filtering_implementation():
     logger.info("=" * 60)
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         import inspect
         
         rag = RAGSystem()
@@ -221,7 +221,7 @@ def test_rag_system_methods():
     logger.info("=" * 60)
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag = RAGSystem()
         

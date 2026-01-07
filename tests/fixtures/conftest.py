@@ -31,7 +31,7 @@ load_dotenv()
 from api.service import ServiceContainer, create_service_container
 from shared.config.settings import ARISConfig
 from storage.document_registry import DocumentRegistry
-from rag_system import RAGSystem
+from services.retrieval.engine import RetrievalEngine
 from ingestion.document_processor import DocumentProcessor
 
 
@@ -120,8 +120,8 @@ def service_container_faiss(mock_embeddings, temp_dir: Path) -> ServiceContainer
             chunk_size=384,
             chunk_overlap=75
         )
-        # Override vectorstore path to temp directory
-        container.rag_system.vectorstore_path = str(temp_dir / "vectorstore")
+        # Note: In microservices, vectorstore path is managed by services
+        # This fixture is for compatibility testing
         yield container
 
 
@@ -165,7 +165,7 @@ def service_container(service_container_faiss: ServiceContainer) -> ServiceConta
 def rag_system_faiss(mock_embeddings, temp_dir: Path) -> RAGSystem:
     """RAG system with FAISS vector store"""
     with patch('api.rag_system.OpenAIEmbeddings', return_value=mock_embeddings):
-        rag = RAGSystem(
+        rag = RetrievalEngine(
             embedding_model="text-embedding-3-small",
             openai_model="gpt-3.5-turbo",
             vector_store_type="faiss",

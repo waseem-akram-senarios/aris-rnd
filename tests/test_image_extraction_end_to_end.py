@@ -152,7 +152,7 @@ def test_document_processor_integration():
     
     try:
         from ingestion.document_processor import DocumentProcessor
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         # Check if method exists
         assert hasattr(DocumentProcessor, '_store_images_in_opensearch'), \
@@ -206,7 +206,7 @@ def test_rag_system_image_storage():
     logger.info("=" * 60)
     
     try:
-        from rag_system import RAGSystem
+        from services.retrieval.engine import RetrievalEngine as RAGSystem
         
         rag_system = RAGSystem(
             vector_store_type="faiss",  # Use FAISS to avoid OpenSearch requirement

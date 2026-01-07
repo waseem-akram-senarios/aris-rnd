@@ -4,7 +4,7 @@ Script to extract detailed information from documents in the RAG system.
 """
 import os
 import sys
-from rag_system import RAGSystem
+from services.retrieval.engine import RetrievalEngine as RAGSystem
 from ingestion.document_processor import DocumentProcessor
 
 def extract_detailed_info(pdf_path, output_file=None):
