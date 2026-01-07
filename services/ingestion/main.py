@@ -134,6 +134,7 @@ async def ingest_document(
     file: UploadFile = File(...),
     parser_preference: Optional[str] = Form(default=None),
     index_name: Optional[str] = Form(default=None),
+    language: Optional[str] = Form(default="eng"),
     background_tasks: BackgroundTasks = None,
     processor: DocumentProcessor = Depends(get_processor)
 ):
@@ -176,7 +177,8 @@ async def ingest_document(
                 file_name=file.filename,
                 parser_preference=parser_preference,
                 document_id=document_id,
-                index_name=index_name
+                index_name=index_name,
+                language=language or "eng"
             )
         else:
             # Synchronous processing if background_tasks is not available (unlikely in FastAPI)
@@ -186,7 +188,8 @@ async def ingest_document(
                 file_name=file.filename,
                 parser_preference=parser_preference,
                 document_id=document_id,
-                index_name=index_name
+                index_name=index_name,
+                language=language or "eng"
             )
             
         return DocumentMetadata(
@@ -204,6 +207,7 @@ async def process_document_sync(
     file: UploadFile = File(...),
     parser_preference: Optional[str] = Form(default=None),
     index_name: Optional[str] = Form(default=None),
+    language: Optional[str] = Form(default="eng"),
     processor: DocumentProcessor = Depends(get_processor)
 ):
     """
@@ -233,7 +237,8 @@ async def process_document_sync(
             file_name=file.filename,
             parser_preference=parser_preference,
             document_id=document_id,
-            index_name=index_name
+            index_name=index_name,
+            language=language or "eng"
         )
         
         return result

@@ -327,13 +327,15 @@ class GatewayService:
                 "total_tokens": 0
             }
 
-    async def ingest_document(self, file_content: bytes, file_name: str, parser_preference: Optional[str] = None, index_name: Optional[str] = None) -> Dict:
+    async def ingest_document(self, file_content: bytes, file_name: str, parser_preference: Optional[str] = None, index_name: Optional[str] = None, language: str = "eng") -> Dict:
         """Proxies ingestion to Ingestion Service"""
         async with httpx.AsyncClient(timeout=300.0) as client:
             files = {"file": (file_name, file_content)}
             data = {"parser_preference": parser_preference} if parser_preference else {}
             if index_name:
                 data["index_name"] = index_name
+            if language:
+                data["language"] = language
             try:
                 response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data)
                 response.raise_for_status()
@@ -368,7 +370,7 @@ class GatewayService:
                 logger.error(f"Error calling retrieval service (images): {e}")
                 return []
 
-    def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None) -> "ProcessingResult":
+    def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng") -> "ProcessingResult":
         """Proxies process_document for compatibility with UI - falls back to direct processing if microservice unavailable"""
         logger.info(f"Gateway: Processing document {file_name}")
         try:
@@ -385,8 +387,10 @@ class GatewayService:
                     data = {"parser_preference": parser_preference} if parser_preference else {}
                     if index_name:
                         data["index_name"] = index_name
+                    if language:
+                        data["language"] = language
                     
-                    logger.info(f"Gateway: Starting async ingestion for {file_name} with index {index_name}")
+                    logger.info(f"Gateway: Starting async ingestion for {file_name} with index {index_name} (lang={language})")
                     response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data)
                     response.raise_for_status()
                     
@@ -463,13 +467,13 @@ class GatewayService:
         except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError, httpx.HTTPStatusError) as e:
             # Microservice not available - fall back to direct processing
             logger.warning(f"Microservice unavailable ({e}), falling back to direct processing")
-            return self._process_document_direct(file_path, file_content, file_name, parser_preference, progress_callback, index_name)
+            return self._process_document_direct(file_path, file_content, file_name, parser_preference, progress_callback, index_name, language)
         except Exception as e:
             # Check if it's a connection-related error
             error_msg = str(e).lower()
             if any(keyword in error_msg for keyword in ['connection', 'connect', 'refused', 'failed', 'unreachable', 'timeout']):
                 logger.warning(f"Connection error ({e}), falling back to direct processing")
-                return self._process_document_direct(file_path, file_content, file_name, parser_preference, progress_callback, index_name)
+                return self._process_document_direct(file_path, file_content, file_name, parser_preference, progress_callback, index_name, language)
             
             logger.error(f"Error in Gateway process_document: {e}")
             from shared.schemas import ProcessingResult as SchemaResult
@@ -507,7 +511,7 @@ class GatewayService:
         except RuntimeError:
             return asyncio.run(_fetch())
 
-    def _process_document_direct(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None) -> "ProcessingResult":
+    def _process_document_direct(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng") -> "ProcessingResult":
         """Direct document processing fallback when microservice is unavailable"""
         logger.info(f"Gateway: Using direct processing for {file_name}")
         try:
@@ -545,7 +549,8 @@ class GatewayService:
                 file_name=file_name,
                 parser_preference=parser_preference,
                 progress_callback=progress_callback,
-                index_name=index_name
+                index_name=index_name,
+                language=language
             )
         except Exception as e:
             logger.error(f"Direct processing also failed: {e}")

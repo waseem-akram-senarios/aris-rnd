@@ -131,7 +131,8 @@ class ParserFactory:
     @classmethod
     def parse_with_fallback(cls, file_path: str, file_content: Optional[bytes] = None, 
                            preferred_parser: Optional[str] = None,
-                           progress_callback: Optional[callable] = None) -> ParsedDocument:
+                           progress_callback: Optional[callable] = None,
+                           language: str = "eng") -> ParsedDocument:
         """
         Parse a document using fallback chain.
         
@@ -144,6 +145,8 @@ class ParserFactory:
             file_path: Path to the file
             file_content: Optional file content as bytes
             preferred_parser: Optional preferred parser name
+            progress_callback: Optional progress callback function
+            language: Language code for OCR (default: 'eng'). Use '+' for multiple.
         
         Returns:
             ParsedDocument with best result
@@ -155,10 +158,10 @@ class ParserFactory:
         ext = ext.lstrip('.')
         
         if ext == 'pdf':
-            return cls._parse_pdf_with_fallback(file_path, file_content, preferred_parser, progress_callback)
+            return cls._parse_pdf_with_fallback(file_path, file_content, preferred_parser, progress_callback, language)
         else:
             # For non-PDF files, use single parser
-            parser = cls.get_parser(file_path, preferred_parser)
+            parser = cls.get_parser(file_path, preferred_parser, language=language)
             if parser is None:
                 raise ValueError(f"No parser available for file type: {ext}")
             # Try to pass progress_callback if parser supports it
@@ -172,7 +175,8 @@ class ParserFactory:
     @classmethod
     def _parse_pdf_with_fallback(cls, file_path: str, file_content: Optional[bytes] = None,
                                 preferred_parser: Optional[str] = None,
-                                progress_callback: Optional[callable] = None) -> ParsedDocument:
+                                progress_callback: Optional[callable] = None,
+                                language: str = "eng") -> ParsedDocument:
         """Parse PDF with fallback chain."""
         from .pdf_type_detector import detect_pdf_type, is_image_heavy_pdf
         
@@ -184,7 +188,7 @@ class ParserFactory:
             if preferred_parser.lower() == 'ocrmypdf':
                 try:
                     from .ocrmypdf_parser import OCRmyPDFParser
-                    parser = OCRmyPDFParser()
+                    parser = OCRmyPDFParser(languages=language)
                     if not parser.is_available():
                         raise ValueError(
                             "OCRmyPDF or Tesseract not installed. "
@@ -208,7 +212,7 @@ class ParserFactory:
                     )
                     parser = None
             else:
-                parser = cls.get_parser(file_path, preferred_parser)
+                parser = cls.get_parser(file_path, preferred_parser, language=language)
             
             if parser:
                 logger.info(f"[STEP 2.2] ParserFactory: Using {preferred_parser} parser (no fallback)")

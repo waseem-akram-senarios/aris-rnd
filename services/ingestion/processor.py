@@ -194,10 +194,25 @@ class DocumentProcessor:
             parse_start = time.time()
             try:
                 # Get parser from factory with language preference
+                # Note: get_parser requires file_path as first argument, then preferred_parser
                 parser = ParserFactory.get_parser(
+                    file_path,
                     parser_preference or 'auto',
                     language=language
                 )
+                
+                # Guard against None parser - provide clear error message
+                if parser is None:
+                    if parser_preference and parser_preference.lower() == 'ocrmypdf':
+                        raise ValueError(
+                            "OCRmyPDF selected but not available. "
+                            "Ensure ocrmypdf and tesseract-ocr are installed: "
+                            "sudo apt-get install tesseract-ocr && pip install ocrmypdf"
+                        )
+                    else:
+                        file_ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+                        raise ValueError(f"No parser available for file extension: {file_ext}")
+                
                 logger.info(f"[STEP 2.1] Parser selected: {parser.get_name()} (Language: {language})")
                 if parser_preference:
                     logger.info(f"[STEP 2.1] Explicit parser selected: {parser_preference} (will NOT fall back)")
@@ -233,7 +248,8 @@ class DocumentProcessor:
                     file_path,
                     file_content,
                     preferred_parser=parser_preference,
-                    progress_callback=parser_progress_callback if progress_callback else None
+                    progress_callback=parser_progress_callback if progress_callback else None,
+                    language=language
                 )
                 
                 # Log successful parsing

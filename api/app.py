@@ -1212,6 +1212,9 @@ with st.sidebar:
                 })
             
             # Store processing parameters in session state (with file contents, not file objects)
+            # Get document_language from ocr_languages variable (defined earlier), default to "eng"
+            # ocr_languages is set based on parser choice (line ~677)
+            document_language = ocr_languages if 'ocr_languages' in locals() else 'eng'
             st.session_state[process_key] = {
                 'files_data': files_data,  # Store file contents, not file objects
                 'use_cerebras': use_cerebras,
@@ -1223,7 +1226,8 @@ with st.sidebar:
                 'opensearch_domain': opensearch_domain,
                 'opensearch_index': opensearch_index,
                 'chunk_size': chunk_size,
-                'chunk_overlap': chunk_overlap
+                'chunk_overlap': chunk_overlap,
+                'document_language': document_language
             }
             should_process = True
             params = st.session_state[process_key]
@@ -1252,7 +1256,8 @@ with st.sidebar:
             mock_uploaded_files, params['use_cerebras'], params['parser_preference'],
             params['embedding_model'], params['openai_model'], params['cerebras_model'],
             params['vector_store_type'], params['opensearch_domain'], params['opensearch_index'],
-            params['chunk_size'], params['chunk_overlap']
+            params['chunk_size'], params['chunk_overlap'],
+            params.get('document_language', 'eng')  # Get document_language from params, default to 'eng'
         )
         # Only clear the flag if processing completed successfully (no user interaction needed)
         # If user interaction is needed (duplicate index), the flag stays so processing can continue after choice
