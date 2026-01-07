@@ -117,7 +117,7 @@ logs:
 
 # Intelycx Core API Configuration
 intelycx_core:
-  base_url: "http://intelycx-api-1:8002"  # Default internal Docker network URL
+  base_url: "https://dev.intelycx.com/api"  # Default internal Docker network URL
   username: "Nemanja"  # Set via environment variable or AWS Secrets Manager
   password: "Intel100"  # Set via environment variable or AWS Secrets Manager
 
