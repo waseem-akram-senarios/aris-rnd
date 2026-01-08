@@ -526,21 +526,21 @@ class GatewayService:
                             progress = state.get("progress", 0.0)
                             detailed_msg = state.get("detailed_message", "")
                             
-                        # We update if progress increased OR if we have a new detailed message
-                        if progress_callback and (progress > last_progress or detailed_msg):
-                            last_progress = progress
-                            # Ensure we don't block the async loop too much
-                            try:
-                                # Handle both function and method callbacks
-                                import inspect
-                                sig = inspect.signature(progress_callback)
-                                if len(sig.parameters) > 2:
-                                    progress_callback(status, progress, detailed_message=detailed_msg)
-                                else:
-                                    progress_callback(status, progress)
-                            except Exception as cb_err:
-                                logger.warning(f"Progress callback error: {cb_err}")
+                            # Report progress via callback if there's an update
+                            if progress_callback and (progress > last_progress or detailed_msg):
+                                last_progress = progress
+                                try:
+                                    # Handle both function and method callbacks
+                                    import inspect
+                                    sig = inspect.signature(progress_callback)
+                                    if len(sig.parameters) > 2:
+                                        progress_callback(status, progress, detailed_message=detailed_msg)
+                                    else:
+                                        progress_callback(status, progress)
+                                except Exception as cb_err:
+                                    logger.warning(f"Progress callback error: {cb_err}")
                             
+                            # ALWAYS check for completion status (success/failed) - not just when progress updates
                             if status == "success":
                                 logger.info(f"Gateway: Ingestion successful for {doc_id}")
                                 result_data = state.get("result")
