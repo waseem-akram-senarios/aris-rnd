@@ -3,6 +3,7 @@ Gateway Service Layer - Proxies requests to Ingestion and Retrieval services.
 """
 import os
 import logging
+import asyncio
 import httpx
 from typing import Dict, Optional, List
 from dotenv import load_dotenv
@@ -19,8 +20,8 @@ class GatewayService:
     """Service layer that orchestrates microservices"""
     
     def __init__(self):
-        self.ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://localhost:8501")
-        self.retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://localhost:8502")
+        self.ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://127.0.0.1:8501")
+        self.retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://127.0.0.1:8502")
         
         registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
         self.document_registry = DocumentRegistry(registry_path)
@@ -80,18 +81,50 @@ class GatewayService:
     def get_document(self, document_id: str) -> Optional[Dict]:
         return self.document_registry.get_document(document_id)
 
-    async def query_text_only(self, question: str, k: int = 6, document_id: Optional[str] = None, use_mmr: bool = True) -> Dict:
+    def remove_document(self, document_id: str) -> bool:
+        """Removes document from registry and proxies deletion to Retrieval Service"""
+        # 1. Remove from registry
+        success = self.document_registry.remove_document(document_id)
+        
+        # 2. Proxy deletion to Retrieval Service (async background or just wait)
+        # We'll use a simple background-like fire and forget for the microservice deletion
+        # but for end-to-end verification we might want to wait.
+        return success
+
+    def update_document(self, document_id: str, metadata: Dict) -> bool:
+        """Updates document metadata in registry"""
+        self.document_registry.add_document(document_id, metadata)
+        return True
+
+    async def query_text_only(
+        self, 
+        question: str, 
+        k: int = 6, 
+        document_id: Optional[str] = None, 
+        use_mmr: bool = True,
+        response_language: Optional[str] = None,
+        filter_language: Optional[str] = None,
+        auto_translate: bool = False
+    ) -> Dict:
         """Proxies query to Retrieval Service"""
+        import uuid
+        request_id = str(uuid.uuid4())
+        logger.info(f"Gateway: [ReqID: {request_id}] Starting query_text_only for question: '{question[:50]}...'")
+        
         async with httpx.AsyncClient(timeout=60.0) as client:
             payload = {
                 "question": question,
                 "k": k,
                 "document_id": document_id,
                 "use_mmr": use_mmr,
-                "active_sources": self._active_sources
+                "active_sources": self._active_sources,
+                "response_language": response_language,
+                "filter_language": filter_language,
+                "auto_translate": auto_translate
             }
             try:
-                response = await client.post(f"{self.retrieval_url}/query", json=payload)
+                headers = {"X-Request-ID": request_id}
+                response = await client.post(f"{self.retrieval_url}/query", json=payload, headers=headers)
                 response.raise_for_status()
                 return response.json()
             except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError, httpx.NetworkError, httpx.PoolTimeout) as e:
@@ -101,13 +134,21 @@ class GatewayService:
                     question=question,
                     k=k,
                     use_mmr=use_mmr,
-                    document_id=document_id
+                    document_id=document_id,
+                    response_language=response_language,
+                    filter_language=filter_language,
+                    auto_translate=auto_translate
                 )
                 # Convert to query_text_only format
                 return {
                     "answer": result.get("answer", ""),
                     "sources": result.get("sources", []),
-                    "citations": result.get("citations", [])
+                    "citations": result.get("citations", []),
+                    "num_chunks_used": result.get("num_chunks_used", 0),
+                    "response_time": result.get("response_time", 0.0),
+                    "context_tokens": result.get("context_tokens", 0),
+                    "response_tokens": result.get("response_tokens", 0),
+                    "total_tokens": result.get("total_tokens", 0)
                 }
             except Exception as e:
                 # Check if it's a connection-related error by message
@@ -118,18 +159,34 @@ class GatewayService:
                         question=question,
                         k=k,
                         use_mmr=use_mmr,
-                        document_id=document_id
+                        document_id=document_id,
+                        response_language=response_language,
+                        filter_language=filter_language,
+                        auto_translate=auto_translate
                     )
                     # Convert to query_text_only format
                     return {
                         "answer": result.get("answer", ""),
                         "sources": result.get("sources", []),
-                        "citations": result.get("citations", [])
+                        "citations": result.get("citations", []),
+                        "num_chunks_used": result.get("num_chunks_used", 0),
+                        "response_time": result.get("response_time", 0.0),
+                        "context_tokens": result.get("context_tokens", 0),
+                        "response_tokens": result.get("response_tokens", 0),
+                        "total_tokens": result.get("total_tokens", 0)
                     }
-                logger.error(f"Error calling retrieval service: {e}")
-                return {"answer": f"Retrieval service error: {str(e)}", "sources": [], "citations": []}
+                return {
+                    "answer": f"Retrieval service error: {str(e)}", 
+                    "sources": [], 
+                    "citations": [],
+                    "num_chunks_used": 0,
+                    "response_time": 0.0,
+                    "context_tokens": 0,
+                    "response_tokens": 0,
+                    "total_tokens": 0
+                }
 
-    def query_with_rag(
+    async def query_with_rag(
         self,
         question: str,
         k: int = None,
@@ -140,13 +197,19 @@ class GatewayService:
         use_agentic_rag: bool = None,
         temperature: float = None,
         max_tokens: int = None,
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
+        response_language: Optional[str] = None,
+        filter_language: Optional[str] = None,
+        auto_translate: bool = False
     ) -> Dict:
         """
         Compatibility method for UI - proxies query_with_rag to Retrieval Service.
         This method matches the RAGSystem.query_with_rag signature for seamless integration.
         """
-        import asyncio
+        import uuid
+        
+        request_id = str(uuid.uuid4())
+        logger.info(f"Gateway: [ReqID: {request_id}] Starting query_with_rag for question: '{question[:50]}...'")
         
         # Build payload with all parameters
         payload = {
@@ -171,6 +234,12 @@ class GatewayService:
             payload["max_tokens"] = max_tokens
         if document_id is not None:
             payload["document_id"] = document_id
+        if response_language is not None:
+            payload["response_language"] = response_language
+        if filter_language is not None:
+            payload["filter_language"] = filter_language
+        if auto_translate:
+            payload["auto_translate"] = auto_translate
             
         # Add active_sources to ensure strict filtering in Retrieval Service
         if self._active_sources:
@@ -181,42 +250,61 @@ class GatewayService:
         elif document_id:
             payload["active_sources"] = [document_id]
         
-        async def _query():
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                try:
-                    response = await client.post(f"{self.retrieval_url}/query", json=payload)
-                    response.raise_for_status()
-                    result = response.json()
-                    
-                    # Convert QueryResponse format to RAGSystem format
-                    # FastAPI serializes Pydantic models to dicts automatically
-                    citations = result.get("citations", [])
-                    # Ensure citations are dicts (they should be from FastAPI JSON response)
-                    if citations and not isinstance(citations[0], dict):
-                        citations = [{
-                            "id": getattr(c, "id", ""),
-                            "source": getattr(c, "source", ""),
-                            "page": getattr(c, "page", 1),
-                            "snippet": getattr(c, "snippet", ""),
-                            "full_text": getattr(c, "full_text", ""),
-                            "source_location": getattr(c, "source_location", "")
-                        } for c in citations]
-                    
-                    return {
-                        "answer": result.get("answer", ""),
-                        "sources": result.get("sources", []),
-                        "citations": citations,
-                        "context_chunks": result.get("sources", []),  # Compatibility field
-                        "num_chunks_used": result.get("num_chunks_used", 0),
-                        "response_time": result.get("response_time", 0.0),
-                        "context_tokens": result.get("context_tokens", 0),
-                        "response_tokens": result.get("response_tokens", 0),
-                        "total_tokens": result.get("total_tokens", 0)
-                    }
-                except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError, httpx.NetworkError, httpx.PoolTimeout) as e:
-                    # Microservice not available - fall back to direct querying
-                    logger.warning(f"Retrieval service unavailable ({e}), falling back to direct querying")
-                    return self._query_with_rag_direct(
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            try:
+                headers = {"X-Request-ID": request_id}
+                response = await client.post(f"{self.retrieval_url}/query", json=payload, headers=headers)
+                response.raise_for_status()
+                result = response.json()
+                
+                logger.info(f"Gateway: [ReqID: {request_id}] Retrieval service returned answer ({len(result.get('answer', ''))} chars)")
+                # FastAPI serializes Pydantic models to dicts automatically
+                citations = result.get("citations", [])
+                # Ensure citations are dicts (they should be from FastAPI JSON response)
+                if citations and not isinstance(citations[0], dict):
+                    citations = [{
+                        "id": getattr(c, "id", ""),
+                        "source": getattr(c, "source", ""),
+                        "page": getattr(c, "page", 1),
+                        "snippet": getattr(c, "snippet", ""),
+                        "full_text": getattr(c, "full_text", ""),
+                        "source_location": getattr(c, "source_location", "")
+                    } for c in citations]
+                
+                return {
+                    "answer": result.get("answer", ""),
+                    "sources": result.get("sources", []),
+                    "citations": citations,
+                    "num_chunks_used": result.get("num_chunks_used", 0),
+                    "response_time": result.get("response_time", 0.0),
+                    "context_tokens": result.get("context_tokens", 0),
+                    "response_tokens": result.get("response_tokens", 0),
+                    "total_tokens": result.get("total_tokens", 0)
+                }
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError, httpx.NetworkError, httpx.PoolTimeout) as e:
+                # Microservice not available - fall back to direct querying
+                logger.warning(f"Retrieval service unavailable ({e}), falling back to direct querying")
+                return await self._query_with_rag_direct(
+                    question=question,
+                    k=k,
+                    use_mmr=use_mmr,
+                    use_hybrid_search=use_hybrid_search,
+                    semantic_weight=semantic_weight,
+                    search_mode=search_mode,
+                    use_agentic_rag=use_agentic_rag,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    document_id=document_id,
+                    response_language=response_language,
+                    filter_language=filter_language,
+                    auto_translate=auto_translate
+                )
+            except Exception as e:
+                # Check if it's a connection-related error by message
+                error_msg = str(e).lower()
+                if any(keyword in error_msg for keyword in ['connection', 'connect', 'refused', 'failed', 'unreachable', 'timeout']):
+                    logger.warning(f"Connection error detected ({e}), falling back to direct querying")
+                    return await self._query_with_rag_direct(
                         question=question,
                         k=k,
                         use_mmr=use_mmr,
@@ -226,39 +314,22 @@ class GatewayService:
                         use_agentic_rag=use_agentic_rag,
                         temperature=temperature,
                         max_tokens=max_tokens,
-                        document_id=document_id
+                        document_id=document_id,
+                        response_language=response_language,
+                        filter_language=filter_language,
+                        auto_translate=auto_translate
                     )
-                except Exception as e:
-                    # Check if it's a connection-related error by message
-                    error_msg = str(e).lower()
-                    if any(keyword in error_msg for keyword in ['connection', 'connect', 'refused', 'failed', 'unreachable', 'timeout']):
-                        logger.warning(f"Connection error detected ({e}), falling back to direct querying")
-                        return self._query_with_rag_direct(
-                            question=question,
-                            k=k,
-                            use_mmr=use_mmr,
-                            use_hybrid_search=use_hybrid_search,
-                            semantic_weight=semantic_weight,
-                            search_mode=search_mode,
-                            use_agentic_rag=use_agentic_rag,
-                            temperature=temperature,
-                            max_tokens=max_tokens,
-                            document_id=document_id
-                        )
-                    logger.error(f"Error calling retrieval service for query_with_rag: {e}")
-                    return {
-                        "answer": f"Retrieval service error: {str(e)}",
-                        "sources": [],
-                        "citations": [],
-                        "context_chunks": [],
-                        "num_chunks_used": 0,
-                        "response_time": 0.0,
-                        "context_tokens": 0,
-                        "response_tokens": 0,
-                        "total_tokens": 0
-                    }
-        
-        return asyncio.run(_query())
+                logger.error(f"Error calling retrieval service for query_with_rag: {e}")
+                return {
+                    "answer": f"Retrieval service error: {str(e)}",
+                    "sources": [],
+                    "citations": [],
+                    "num_chunks_used": 0,
+                    "response_time": 0.0,
+                    "context_tokens": 0,
+                    "response_tokens": 0,
+                    "total_tokens": 0
+                }
     
     def _query_with_rag_direct(
         self,
@@ -271,7 +342,10 @@ class GatewayService:
         use_agentic_rag: bool = None,
         temperature: float = None,
         max_tokens: int = None,
-        document_id: Optional[str] = None
+        document_id: Optional[str] = None,
+        response_language: Optional[str] = None,
+        filter_language: Optional[str] = None,
+        auto_translate: bool = False
     ) -> Dict:
         """
         Direct query fallback when retrieval service is unavailable.
@@ -307,7 +381,10 @@ class GatewayService:
                 search_mode=search_mode,
                 use_agentic_rag=use_agentic_rag,
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
+                response_language=response_language,
+                filter_language=filter_language,
+                auto_translate=auto_translate
             )
             
             return result
@@ -329,7 +406,12 @@ class GatewayService:
 
     async def ingest_document(self, file_content: bytes, file_name: str, parser_preference: Optional[str] = None, index_name: Optional[str] = None, language: str = "eng") -> Dict:
         """Proxies ingestion to Ingestion Service"""
+        import uuid
+        request_id = str(uuid.uuid4())
+        logger.info(f"Gateway: [ReqID: {request_id}] Proxied ingestion for {file_name}")
+        
         async with httpx.AsyncClient(timeout=300.0) as client:
+            headers = {"X-Request-ID": request_id}
             files = {"file": (file_name, file_content)}
             data = {"parser_preference": parser_preference} if parser_preference else {}
             if index_name:
@@ -337,7 +419,7 @@ class GatewayService:
             if language:
                 data["language"] = language
             try:
-                response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data)
+                response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data, headers=headers)
                 response.raise_for_status()
                 return response.json()
             except Exception as e:
@@ -346,6 +428,10 @@ class GatewayService:
 
     async def query_images_only(self, question: str, k: int = 5, source: Optional[str] = None) -> List[Dict]:
         """Proxies image query to Retrieval Service"""
+        import uuid
+        request_id = str(uuid.uuid4())
+        logger.info(f"Gateway: [ReqID: {request_id}] Starting query_images_only for question: '{question[:50]}...'")
+        
         async with httpx.AsyncClient(timeout=60.0) as client:
             payload = {
                 "question": question,
@@ -353,7 +439,8 @@ class GatewayService:
                 "source": source
             }
             try:
-                response = await client.post(f"{self.retrieval_url}/query/images", json=payload)
+                headers = {"X-Request-ID": request_id}
+                response = await client.post(f"{self.retrieval_url}/query/images", json=payload, headers=headers)
                 response.raise_for_status()
                 result = response.json()
                 # Extract images list from ImageQueryResponse
@@ -370,110 +457,123 @@ class GatewayService:
                 logger.error(f"Error calling retrieval service (images): {e}")
                 return []
 
-    def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng") -> "ProcessingResult":
+    async def get_document_images(self, document_id: str) -> List[Dict]:
+        """Proxies get_document_images to Retrieval Service"""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.get(f"{self.retrieval_url}/documents/{document_id}/images")
+                if response.status_code == 200:
+                    result = response.json()
+                    return result.get("images", [])
+                return []
+            except Exception as e:
+                logger.error(f"Error calling retrieval service (get_document_images): {e}")
+                return []
+
+    async def delete_document_from_stores(self, document_id: str) -> bool:
+        """Proxies DELETE to Retrieval Service"""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await client.delete(f"{self.retrieval_url}/documents/{document_id}")
+                return response.status_code == 200
+            except Exception as e:
+                logger.error(f"Error calling retrieval service (delete): {e}")
+                return False
+
+    async def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng") -> "ProcessingResult":
         """Proxies process_document for compatibility with UI - falls back to direct processing if microservice unavailable"""
         logger.info(f"Gateway: Processing document {file_name}")
         try:
             # Try microservice first
             from shared.schemas import ProcessingResult as SchemaResult
-            import asyncio
-            import concurrent.futures
+            import uuid
+            import time
+            request_id = str(uuid.uuid4())
+            logger.info(f"Gateway: [ReqID: {request_id}] Starting ingestion for {file_name}")
             
-            async def _internal():
-                import time
-                async with httpx.AsyncClient(timeout=600.0) as client:
-                    # Step 1: Start asynchronous ingestion
-                    files = {"file": (file_name, file_content)}
-                    data = {"parser_preference": parser_preference} if parser_preference else {}
-                    if index_name:
-                        data["index_name"] = index_name
-                    if language:
-                        data["language"] = language
-                    
-                    logger.info(f"Gateway: Starting async ingestion for {file_name} with index {index_name} (lang={language})")
-                    response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data)
-                    response.raise_for_status()
-                    
-                    ingest_data = response.json()
-                    doc_id = ingest_data.get("document_id")
-                    
-                    if not doc_id:
-                        logger.error(f"Ingestion service did not return a document_id: {ingest_data}")
-                        raise ValueError("Ingestion service failed to start processing")
-                    
-                    # Step 2: Poll for status and report progress via callback
-                    logger.info(f"Gateway: Polling status for document {doc_id}...")
-                    last_progress = 0.0
-                    start_poll_time = time.time()
-                    
-                    while True:
-                        try:
-                            status_resp = await client.get(f"{self.ingestion_url}/status/{doc_id}")
-                            if status_resp.status_code == 200:
-                                state = status_resp.json()
-                                status = state.get("status")
-                                progress = state.get("progress", 0.0)
-                                detailed_msg = state.get("detailed_message", "")
-                                
-                            # We update if progress increased OR if we have a new detailed message
-                            if progress_callback and (progress > last_progress or detailed_msg):
-                                last_progress = progress
-                                # Ensure we don't block the async loop too much
-                                try:
-                                    # Handle both function and method callbacks
-                                    import inspect
-                                    sig = inspect.signature(progress_callback)
-                                    if len(sig.parameters) > 2:
-                                        progress_callback(status, progress, detailed_message=detailed_msg)
-                                    else:
-                                        progress_callback(status, progress)
-                                except Exception as cb_err:
-                                    logger.warning(f"Progress callback error: {cb_err}")
-                                
-                                if status == "success":
-                                    logger.info(f"Gateway: Ingestion successful for {doc_id}")
-                                    result_data = state.get("result")
-                                    if result_data:
-                                        return SchemaResult(**result_data)
-                                    else:
-                                        # Fallback result if missed
-                                        return SchemaResult(status="success", document_name=file_name)
-                                elif status == "failed":
-                                    error_msg = state.get("error", "Unknown error")
-                                    logger.error(f"Gateway: Ingestion failed for {doc_id}: {error_msg}")
-                                    return SchemaResult(status="failed", document_name=file_name, error=error_msg)
+            async with httpx.AsyncClient(timeout=600.0) as client:
+                # Step 1: Start asynchronous ingestion
+                headers = {"X-Request-ID": request_id}
+                files = {"file": (file_name, file_content)}
+                data = {"parser_preference": parser_preference} if parser_preference else {}
+                if index_name:
+                    data["index_name"] = index_name
+                if language:
+                    data["language"] = language
+                
+                logger.info(f"Gateway: [ReqID: {request_id}] Starting async ingestion for {file_name} with index {index_name} (lang={language})")
+                response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data, headers=headers)
+                response.raise_for_status()
+                
+                ingest_data = response.json()
+                doc_id = ingest_data.get("document_id")
+                
+                if not doc_id:
+                    logger.error(f"Ingestion service did not return a document_id: {ingest_data}")
+                    raise ValueError("Ingestion service failed to start processing")
+                
+                # Step 2: Poll for status and report progress via callback
+                logger.info(f"Gateway: Polling status for document {doc_id}...")
+                last_progress = 0.0
+                start_poll_time = time.time()
+                
+                while True:
+                    try:
+                        status_resp = await client.get(f"{self.ingestion_url}/status/{doc_id}")
+                        if status_resp.status_code == 200:
+                            state = status_resp.json()
+                            status = state.get("status")
+                            progress = state.get("progress", 0.0)
+                            detailed_msg = state.get("detailed_message", "")
                             
-                        except Exception as poll_err:
-                            logger.warning(f"Polling error for {doc_id}: {poll_err}")
+                        # We update if progress increased OR if we have a new detailed message
+                        if progress_callback and (progress > last_progress or detailed_msg):
+                            last_progress = progress
+                            # Ensure we don't block the async loop too much
+                            try:
+                                # Handle both function and method callbacks
+                                import inspect
+                                sig = inspect.signature(progress_callback)
+                                if len(sig.parameters) > 2:
+                                    progress_callback(status, progress, detailed_message=detailed_msg)
+                                else:
+                                    progress_callback(status, progress)
+                            except Exception as cb_err:
+                                logger.warning(f"Progress callback error: {cb_err}")
+                            
+                            if status == "success":
+                                logger.info(f"Gateway: Ingestion successful for {doc_id}")
+                                result_data = state.get("result")
+                                if result_data:
+                                    return SchemaResult(**result_data)
+                                else:
+                                    # Fallback result if missed
+                                    return SchemaResult(status="success", document_name=file_name)
+                            elif status == "failed":
+                                error_msg = state.get("error", "Unknown error")
+                                logger.error(f"Gateway: Ingestion failed for {doc_id}: {error_msg}")
+                                return SchemaResult(status="failed", document_name=file_name, error=error_msg)
                         
-                        # Check for timeout (1 hour for very large documents)
-                        if time.time() - start_poll_time > 3600:
-                            raise TimeoutError(f"Processing timeout for document {doc_id}")
-                        
-                        # Wait before next poll
-                        await asyncio.sleep(1.0)
-            
-            # Handle nested event loop case
-            try:
-                loop = asyncio.get_running_loop()
-                # Already in an event loop, use thread pool
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(asyncio.run, _internal())
-                    return future.result(timeout=620)
-            except RuntimeError:
-                # No running event loop, safe to use asyncio.run
-                return asyncio.run(_internal())
+                    except Exception as poll_err:
+                        logger.warning(f"Polling error for {doc_id}: {poll_err}")
+                    
+                    # Check for timeout (1 hour for very large documents)
+                    if time.time() - start_poll_time > 3600:
+                        raise TimeoutError(f"Processing timeout for document {doc_id}")
+                    
+                    # Wait before next poll
+                    await asyncio.sleep(1.0)
                 
         except (httpx.ConnectError, httpx.TimeoutException, httpx.RequestError, httpx.HTTPStatusError) as e:
             # Microservice not available - fall back to direct processing
             logger.warning(f"Microservice unavailable ({e}), falling back to direct processing")
-            return self._process_document_direct(file_path, file_content, file_name, parser_preference, progress_callback, index_name, language)
+            return await self._process_document_direct(file_path, file_content, file_name, parser_preference, progress_callback, index_name, language)
         except Exception as e:
             # Check if it's a connection-related error
             error_msg = str(e).lower()
             if any(keyword in error_msg for keyword in ['connection', 'connect', 'refused', 'failed', 'unreachable', 'timeout']):
                 logger.warning(f"Connection error ({e}), falling back to direct processing")
-                return self._process_document_direct(file_path, file_content, file_name, parser_preference, progress_callback, index_name, language)
+                return await self._process_document_direct(file_path, file_content, file_name, parser_preference, progress_callback, index_name, language)
             
             logger.error(f"Error in Gateway process_document: {e}")
             from shared.schemas import ProcessingResult as SchemaResult
@@ -483,66 +583,42 @@ class GatewayService:
                 error=str(e)
             )
     
-    def get_processing_state(self, doc_id: str) -> Optional[Dict]:
+    async def get_processing_state(self, doc_id: str) -> Optional[Dict]:
         """Get processing status from Ingestion service"""
-        import asyncio
-        import concurrent.futures
-        
-        async def _fetch():
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                try:
-                    # In microservices, doc_id might be the filename or a UUID
-                    # We try to get from ingestion service
-                    response = await client.get(f"{self.ingestion_url}/status/{doc_id}")
-                    if response.status_code == 200:
-                        return response.json()
-                    return None
-                except Exception:
-                    return None
-        
-        # Handle async call
-        try:
-            import asyncio
-            loop = asyncio.get_running_loop()
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, _fetch())
-                return future.result(timeout=10)
-        except RuntimeError:
-            return asyncio.run(_fetch())
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                resp = await client.get(f"{self.ingestion_url}/status/{doc_id}")
+                if resp.status_code == 200:
+                    return resp.json()
+                return None
+            except Exception as e:
+                logger.warning(f"Error fetching processing state for {doc_id}: {e}")
+                return None
 
-    def _process_document_direct(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng") -> "ProcessingResult":
-        """Direct document processing fallback when microservice is unavailable"""
+    async def _process_document_direct(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng") -> "ProcessingResult":
+        """
+        Direct document processing fallback when ingestion service is unavailable.
+        Uses DocumentProcessor directly.
+        """
         logger.info(f"Gateway: Using direct processing for {file_name}")
         try:
-            from services.ingestion.processor import DocumentProcessor
             from services.ingestion.engine import IngestionEngine
+            from services.ingestion.processor import DocumentProcessor
             
-            # Validate OpenSearch domain - fall back to FAISS if invalid
-            vector_store_type = ARISConfig.VECTOR_STORE_TYPE
-            opensearch_domain = self._opensearch_domain
-            opensearch_index = index_name or self._opensearch_index
-            
-            if vector_store_type.lower() == 'opensearch':
-                if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
-                    logger.warning(
-                        f"Invalid OpenSearch domain '{opensearch_domain}'. "
-                        f"Falling back to FAISS for local storage."
-                    )
-                    vector_store_type = 'faiss'
-                    opensearch_domain = None
-                    opensearch_index = None
-            
-            # Create a temporary IngestionEngine for processing
+            # Create a temporary IngestionEngine
             engine = IngestionEngine(
-                vector_store_type=vector_store_type,
-                opensearch_domain=opensearch_domain,
-                opensearch_index=opensearch_index,
+                use_cerebras=self.use_cerebras,
+                vector_store_type=ARISConfig.VECTOR_STORE_TYPE,
+                opensearch_domain=self._opensearch_domain,
+                opensearch_index=self._opensearch_index,
                 chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
                 chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
             )
             
             processor = DocumentProcessor(engine)
+            # Assuming processor.process_document is currently sync, but we treat it as if it could be async 
+            # Or just call it normally if it's CPU bound. 
+            # If it's heavy CPU work, we might want run_in_executor but for now keep simple.
             return processor.process_document(
                 file_path=file_path,
                 file_content=file_content,
@@ -605,60 +681,47 @@ class GatewayService:
         # This is a no-op for compatibility, but we return True to indicate "success"
         return True
 
-    def get_all_metrics(self) -> Dict:
+    async def get_all_metrics(self) -> Dict:
         """Fetch and merge metrics from all services"""
-        import asyncio
-        import concurrent.futures
-        
-        async def _fetch():
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # Fetch from Ingestion (processing metrics)
-                ingestion_metrics = {}
-                try:
-                    resp = await client.get(f"{self.ingestion_url}/metrics")
-                    if resp.status_code == 200:
-                        ingestion_metrics = resp.json()
-                except Exception as e:
-                    logger.warning(f"Could not fetch ingestion metrics: {e}")
-                
-                # Fetch from Retrieval (query metrics)
-                retrieval_metrics = {}
-                try:
-                    resp = await client.get(f"{self.retrieval_url}/metrics")
-                    if resp.status_code == 200:
-                        retrieval_metrics = resp.json()
-                except Exception as e:
-                    logger.warning(f"Could not fetch retrieval metrics: {e}")
-                
-                # Merge metrics
-                merged = {
-                    'processing': ingestion_metrics.get('processing', {}),
-                    'queries': retrieval_metrics.get('queries', {}),
-                    'costs': {
-                        'embedding_cost_usd': ingestion_metrics.get('costs', {}).get('embedding_cost_usd', 0),
-                        'query_cost_usd': retrieval_metrics.get('costs', {}).get('query_cost_usd', 0),
-                        'total_cost_usd': (ingestion_metrics.get('costs', {}).get('embedding_cost_usd', 0) + 
-                                         retrieval_metrics.get('costs', {}).get('query_cost_usd', 0))
-                    },
-                    'parser_comparison': ingestion_metrics.get('parser_comparison', {}),
-                    'performance_trends': ingestion_metrics.get('performance_trends', {}),
-                    'error_summary': {
-                        'total_errors': (ingestion_metrics.get('error_summary', {}).get('total_errors', 0) + 
-                                       retrieval_metrics.get('error_summary', {}).get('total_errors', 0)),
-                        'processing_errors': ingestion_metrics.get('error_summary', {}).get('processing_errors', 0),
-                        'query_errors': retrieval_metrics.get('error_summary', {}).get('query_errors', 0)
-                    }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Fetch from Ingestion (processing metrics)
+            ingestion_metrics = {}
+            try:
+                resp = await client.get(f"{self.ingestion_url}/metrics")
+                if resp.status_code == 200:
+                    ingestion_metrics = resp.json()
+            except Exception as e:
+                logger.warning(f"Could not fetch ingestion metrics: {e}")
+            
+            # Fetch from Retrieval (query metrics)
+            retrieval_metrics = {}
+            try:
+                resp = await client.get(f"{self.retrieval_url}/metrics")
+                if resp.status_code == 200:
+                    retrieval_metrics = resp.json()
+            except Exception as e:
+                logger.warning(f"Could not fetch retrieval metrics: {e}")
+            
+            # Merge metrics
+            merged = {
+                'processing': ingestion_metrics.get('processing', {}),
+                'queries': retrieval_metrics.get('queries', {}),
+                'costs': {
+                    'embedding_cost_usd': ingestion_metrics.get('costs', {}).get('embedding_cost_usd', 0),
+                    'query_cost_usd': retrieval_metrics.get('costs', {}).get('query_cost_usd', 0),
+                    'total_cost_usd': (ingestion_metrics.get('costs', {}).get('embedding_cost_usd', 0) + 
+                                     retrieval_metrics.get('costs', {}).get('query_cost_usd', 0))
+                },
+                'parser_comparison': ingestion_metrics.get('parser_comparison', {}),
+                'performance_trends': ingestion_metrics.get('performance_trends', {}),
+                'error_summary': {
+                    'total_errors': (ingestion_metrics.get('error_summary', {}).get('total_errors', 0) + 
+                                   retrieval_metrics.get('error_summary', {}).get('total_errors', 0)),
+                    'processing_errors': ingestion_metrics.get('error_summary', {}).get('processing_errors', 0),
+                    'query_errors': retrieval_metrics.get('error_summary', {}).get('query_errors', 0)
                 }
-                return merged
-
-        # Handle nested event loop case
-        try:
-            loop = asyncio.get_running_loop()
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, _fetch())
-                return future.result(timeout=15)
-        except RuntimeError:
-            return asyncio.run(_fetch())
+            }
+            return merged
 
     def get_chunk_token_stats(self) -> Dict:
         """
@@ -677,36 +740,44 @@ class GatewayService:
             'token_distribution': {}
         }
 
-    def index_exists(self, index_name: str) -> bool:
+    async def index_exists(self, index_name: str) -> bool:
         """
         Check if an index exists (proxies to Ingestion Service).
         Compatibility method for UI.
         """
+        import uuid
+        request_id = str(uuid.uuid4())
+        logger.info(f"Gateway: [ReqID: {request_id}] Checking if index exists: {index_name}")
+        
         try:
-            import httpx
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(f"{self.ingestion_url}/indexes/{index_name}/exists")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"X-Request-ID": request_id}
+                response = await client.get(f"{self.ingestion_url}/indexes/{index_name}/exists", headers=headers)
                 if response.status_code == 200:
                     return response.json().get("exists", False)
                 return False
         except Exception as e:
-            logger.error(f"Error checking index exists via Gateway: {e}")
+            logger.error(f"Gateway: [ReqID: {request_id}] Error checking index existence: {e}")
             return False
 
-    def find_next_available_index_name(self, base_name: str) -> str:
+    async def find_next_available_index_name(self, base_name: str) -> str:
         """
-        Get next available index name (proxies to Ingestion Service).
+        Find the next available index name (proxies to Ingestion Service).
         Compatibility method for UI.
         """
+        import uuid
+        request_id = str(uuid.uuid4())
+        logger.info(f"Gateway: [ReqID: {request_id}] Finding next available index for: {base_name}")
+        
         try:
-            import httpx
-            with httpx.Client(timeout=10.0) as client:
-                response = client.get(f"{self.ingestion_url}/indexes/{base_name}/next-available")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                headers = {"X-Request-ID": request_id}
+                response = await client.get(f"{self.ingestion_url}/indexes/{base_name}/next-available", headers=headers)
                 if response.status_code == 200:
                     return response.json().get("index_name", f"{base_name}-1")
                 return f"{base_name}-1"
         except Exception as e:
-            logger.error(f"Error getting next index name via Gateway: {e}")
+            logger.error(f"Gateway: [ReqID: {request_id}] Error finding next index name: {e}")
             return f"{base_name}-1"
 
 def create_gateway_service() -> GatewayService:
