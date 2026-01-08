@@ -83,6 +83,24 @@ class ARISConfig:
     OPENSEARCH_BULK_SIZE: int = int(os.getenv('OPENSEARCH_BULK_SIZE', '5000'))  # Increased to handle large documents
     MAX_PAGE_BLOCKS_PER_DOC: int = int(os.getenv('MAX_PAGE_BLOCKS_PER_DOC', '2000'))
     
+    # Multilingual Configuration
+    ENABLE_AUTO_TRANSLATE: bool = os.getenv('ENABLE_AUTO_TRANSLATE', 'false').lower() == 'true'
+    TRANSLATE_DOCUMENTS_ON_INGESTION: bool = os.getenv('TRANSLATE_DOCUMENTS_ON_INGESTION', 'false').lower() == 'true'
+    TRANSLATION_PROVIDER: str = os.getenv('TRANSLATION_PROVIDER', 'openai')  # 'openai' or 'aws'
+    DEFAULT_DOCUMENT_LANGUAGE: str = os.getenv('DEFAULT_DOCUMENT_LANGUAGE', 'eng')  # ISO 639-3
+    SUPPORTED_LANGUAGES: str = os.getenv('SUPPORTED_LANGUAGES', 'eng,spa,fra,deu,por,ita')  # Comma-separated
+    
+    @classmethod
+    def get_multilingual_config(cls) -> dict:
+        """Get multilingual configuration"""
+        return {
+            'enable_auto_translate': cls.ENABLE_AUTO_TRANSLATE,
+            'translate_on_ingestion': cls.TRANSLATE_DOCUMENTS_ON_INGESTION,
+            'translation_provider': cls.TRANSLATION_PROVIDER,
+            'default_language': cls.DEFAULT_DOCUMENT_LANGUAGE,
+            'supported_languages': [lang.strip() for lang in cls.SUPPORTED_LANGUAGES.split(',')]
+        }
+    
     @classmethod
     def get_vectorstore_path(cls, embedding_model: Optional[str] = None) -> str:
         """Get vectorstore path, optionally with model-specific subdirectory"""

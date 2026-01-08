@@ -19,12 +19,16 @@ class QueryRequest(BaseModel):
     max_tokens: Optional[int] = Field(default=None, ge=1, le=4000, description="Maximum tokens for LLM response (1-4000)")
     document_id: Optional[str] = Field(default=None, description="Optional document ID to filter query to specific document. If not provided, queries all documents in the RAG system.")
     active_sources: Optional[List[str]] = Field(default=None, description="Optional list of document names/IDs to filter query to. Overrides document_id if provided.")
+    response_language: Optional[str] = Field(default=None, description="Language for the LLM response (e.g. 'English', 'Spanish', 'fr').")
+    filter_language: Optional[str] = Field(default=None, description="Filter results by document language code (e.g. 'eng', 'spa', 'fra').")
+    auto_translate: bool = Field(default=True, description="Automatically translate non-English queries to English for better semantic search.")
 
 
 class ProcessingResult(BaseModel):
     """Result of document processing."""
     status: str  # 'success', 'failed', 'processing'
     document_name: str
+    language: str = "eng"
     chunks_created: int = 0
     tokens_extracted: int = 0
     parser_used: Optional[str] = None
@@ -63,11 +67,11 @@ class QueryResponse(BaseModel):
     answer: str
     sources: List[str]
     citations: List[Citation]
-    num_chunks_used: int
-    response_time: float
-    context_tokens: int
-    response_tokens: int
-    total_tokens: int
+    num_chunks_used: int = 0
+    response_time: float = 0.0
+    context_tokens: int = 0
+    response_tokens: int = 0
+    total_tokens: int = 0
 
 
 class DocumentMetadata(BaseModel):
@@ -75,6 +79,7 @@ class DocumentMetadata(BaseModel):
     document_id: Optional[str] = None
     document_name: str
     status: str
+    language: str = "eng"
     chunks_created: int = 0
     tokens_extracted: int = 0
     parser_used: Optional[str] = None

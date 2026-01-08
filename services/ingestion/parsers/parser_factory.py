@@ -61,7 +61,8 @@ class ParserFactory:
 
         try:
             from .llama_scan_parser import LlamaScanParser
-            # Llama-Scan is also for PDF, but we'll handle it in get_parser
+            cls.register_parser('llamascan', LlamaScanParser)
+            # Llama-Scan is also for PDF, handled in get_parser
         except ImportError:
             pass
 
@@ -113,7 +114,7 @@ class ParserFactory:
                     from .ocrmypdf_parser import OCRmyPDFParser
                     if OCRmyPDFParser().is_available():
                         return OCRmyPDFParser(languages=language)
-                elif preferred_parser.lower() == 'llama-scan':
+                elif preferred_parser.lower() in ['llama-scan', 'llamascan']:
                     from .llama_scan_parser import LlamaScanParser
                     if LlamaScanParser().is_available():
                         return LlamaScanParser()

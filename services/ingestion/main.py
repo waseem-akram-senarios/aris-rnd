@@ -9,7 +9,7 @@ import hashlib
 import time as time_module
 from contextlib import asynccontextmanager
 from typing import Optional, Dict, Any, List
-from fastapi import BackgroundTasks, FastAPI, UploadFile, File, HTTPException, Form, Depends
+from fastapi import BackgroundTasks, FastAPI, UploadFile, File, HTTPException, Form, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -72,6 +72,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", "internal")
+    logger.info(f"Ingestion: [ReqID: {request_id}] Incoming {request.method} {request.url.path}")
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
 def get_processor() -> DocumentProcessor:
     if processor is None:
         raise HTTPException(status_code=500, detail="Processor not initialized")
@@ -131,6 +139,7 @@ async def health_check():
 
 @app.post("/ingest", response_model=DocumentMetadata, status_code=201)
 async def ingest_document(
+    request: Request,
     file: UploadFile = File(...),
     parser_preference: Optional[str] = Form(default=None),
     index_name: Optional[str] = Form(default=None),
@@ -141,7 +150,8 @@ async def ingest_document(
     """
     Ingest a document (asynchronous).
     """
-    logger.info(f"POST /ingest - File: {file.filename}")
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    logger.info(f"POST /ingest - [ReqID: {request_id}] File: {file.filename}")
     
     # Validate file type
     allowed_extensions = {'.pdf', '.txt', '.docx', '.doc'}
@@ -168,6 +178,21 @@ async def ingest_document(
         with open(file_path, "wb") as f:
             f.write(content)
         
+        # Immediate registry registration for status tracking
+        try:
+            from storage.document_registry import DocumentRegistry
+            registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+            registry.add_document(document_id, {
+                'document_id': document_id,
+                'document_name': file.filename,
+                'status': 'processing',
+                'progress': 0.0,
+                'created_at': time_module.time()
+            })
+            logger.info(f"Ingestion: Registered document {document_id} in registry before background processing")
+        except Exception as e:
+            logger.warning(f"Ingestion: [ReqID: {request_id}] Could not pre-register document: {e}")
+            
         # Start background processing
         if background_tasks:
             background_tasks.add_task(
@@ -204,6 +229,7 @@ async def ingest_document(
 
 @app.post("/process", response_model=ProcessingResult)
 async def process_document_sync(
+    request: Request,
     file: UploadFile = File(...),
     parser_preference: Optional[str] = Form(default=None),
     index_name: Optional[str] = Form(default=None),
@@ -213,7 +239,8 @@ async def process_document_sync(
     """
     Synchronously process a document and return results.
     """
-    logger.info(f"POST /process - File: {file.filename}")
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    logger.info(f"POST /process - [ReqID: {request_id}] File: {file.filename}")
     
     try:
         # Generate document ID

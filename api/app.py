@@ -305,8 +305,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                             # Check if index exists via Gateway/Ingestion service
                             # Using Gateway's proxy to avoid direct DB connection from UI
                             index_exists = False
-                            if hasattr(container.gateway_service, 'index_exists'):
-                                index_exists = container.gateway_service.index_exists(base_index_name)
+                            if hasattr(container, 'index_exists'):
+                                index_exists = container.index_exists(base_index_name)
                             
                             # If index exists, ask user what to do
                             if index_exists:
@@ -340,9 +340,9 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                 # Index doesn't exist, use the base name
                                 final_index_name = base_index_name
                                 # Set opensearch_index if it's settable
-                                if hasattr(container.gateway_service, 'opensearch_index'):
+                                if hasattr(container, 'opensearch_index'):
                                     try:
-                                        container.gateway_service.opensearch_index = final_index_name
+                                        container.opensearch_index = final_index_name
                                     except AttributeError:
                                         # If it's a read-only property, log warning but continue
                                         logger.warning(f"Could not set opensearch_index (read-only), using: {final_index_name}")
@@ -358,8 +358,8 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                 final_index_name = base_index_name
                             elif st.session_state[choice_key] == "new":
                                 # Find next available index name via Gateway
-                                if hasattr(container.gateway_service, 'find_next_available_index_name'):
-                                    final_index_name = container.gateway_service.find_next_available_index_name(base_index_name)
+                                if hasattr(container, 'find_next_available_index_name'):
+                                    final_index_name = container.find_next_available_index_name(base_index_name)
                                 else:
                                     final_index_name = f"{base_index_name}-1"
                             else:
@@ -367,9 +367,9 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                                 final_index_name = base_index_name
                             
                             # Update RAGSystem's opensearch_index
-                            if hasattr(container.gateway_service, 'opensearch_index'):
+                            if hasattr(container, 'opensearch_index'):
                                 try:
-                                    container.gateway_service.opensearch_index = final_index_name
+                                    container.opensearch_index = final_index_name
                                 except AttributeError:
                                     # If it's a read-only property, log warning but continue
                                     logger.warning(f"Could not set opensearch_index (read-only), using: {final_index_name}")
@@ -631,6 +631,36 @@ with st.sidebar:
     with st.expander("ℹ️ Embedding Model Description", expanded=False):
         st.write(f"**{embedding_model}**")
         st.write(embedding_models[embedding_model])
+    
+    # Multilingual selection
+    st.divider()
+    st.header("🌍 Multilingual Settings")
+    
+    # Response Language
+    response_languages = ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch", "Russian", "Chinese", "Japanese", "Korean", "Arabic", "Hindi"]
+    response_language = st.selectbox(
+        "Response Language:",
+        options=response_languages,
+        index=0,
+        help="Language for the final answer. The system will translate retrieved info if needed."
+    )
+    
+    # Auto-Translation Toggle
+    auto_translate = st.toggle(
+        "Auto-Translate Queries",
+        value=True,
+        help="If enabled, non-English queries are translated to English for better semantic search retrieval."
+    )
+    
+    # Language Filter
+    filter_language = st.selectbox(
+        "Filter by Document Language:",
+        options=["All"] + response_languages,
+        index=0,
+        help="Restrict search to documents of a specific language."
+    )
+    if filter_language == "All":
+        filter_language = None
     
     # Parser selection
     st.divider()
@@ -929,7 +959,7 @@ with st.sidebar:
                 # Sort by creation date (newest first)
                 sorted_docs = sorted(
                     existing_docs, 
-                    key=lambda x: x.get('created_at', ''), 
+                    key=lambda x: str(x.get('created_at', '')), 
                     reverse=True
                 )
                 
@@ -939,10 +969,13 @@ with st.sidebar:
                     chunks = doc.get('chunks_created', 0)
                     tokens = doc.get('tokens_extracted', 0)
                     parser = doc.get('parser_used', 'unknown')
-                    created = doc.get('created_at', 'N/A')
+                    created = str(doc.get('created_at', 'N/A'))
                     pages = doc.get('pages', 'N/A')
                     status = doc.get('status', 'unknown')
-                    processing_time = doc.get('processing_time', 0)
+                    try:
+                        processing_time = float(doc.get('processing_time', 0))
+                    except (TypeError, ValueError):
+                        processing_time = 0.0
                     
                     # Format date
                     if created and len(created) > 10:
@@ -1182,6 +1215,15 @@ with st.sidebar:
     
     # Document upload
     st.header("📄 Upload Documents")
+    
+    # Document Language Selector for Ingestion
+    ingestion_language = st.selectbox(
+        "Document Language:",
+        options=["eng", "spa", "fra", "deu", "ita", "por", "nld", "rus", "chi", "jpn", "kor", "ara", "hin"],
+        index=0,
+        help="Language of the documents being uploaded. Used for language-aware chunking and OCR."
+    )
+    
     uploaded_files = st.file_uploader(
         "Choose files",
         type=['pdf', 'txt', 'docx', 'doc'],
@@ -1212,9 +1254,8 @@ with st.sidebar:
                 })
             
             # Store processing parameters in session state (with file contents, not file objects)
-            # Get document_language from ocr_languages variable (defined earlier), default to "eng"
-            # ocr_languages is set based on parser choice (line ~677)
-            document_language = ocr_languages if 'ocr_languages' in locals() else 'eng'
+            # Use explicit document language from upload section
+            document_language = ingestion_language
             st.session_state[process_key] = {
                 'files_data': files_data,  # Store file contents, not file objects
                 'use_cerebras': use_cerebras,
@@ -1992,14 +2033,17 @@ if st.session_state.documents_processed and container:
                 if not container:
                     st.error("Service container not initialized. Please upload a document first.")
                     st.stop()
-                result = container.gateway_service.query_with_rag(
+                result = container.query_with_rag(
                     question,
                     use_hybrid_search=(search_mode_param == "hybrid" or search_mode_param == "keyword"),
                     semantic_weight=semantic_weight,
                     search_mode=search_mode_param,
                     use_agentic_rag=use_agentic_rag,
                     temperature=temperature,  # NEW: Pass UI temperature
-                    max_tokens=max_tokens  # NEW: Pass UI max_tokens
+                    max_tokens=max_tokens,  # NEW: Pass UI max_tokens
+                    response_language=response_language,
+                    filter_language=filter_language,
+                    auto_translate=auto_translate
                 )
                 answer = result["answer"]
                 sources = result.get("sources", [])

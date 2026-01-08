@@ -67,6 +67,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", "internal")
+    # For future log formatting, we can use contextvars or simply log it here
+    logger.info(f"Retrieval: [ReqID: {request_id}] Incoming {request.method} {request.url.path}")
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
 def get_engine() -> RetrievalEngine:
     if engine is None:
         raise HTTPException(status_code=500, detail="Retrieval engine not initialized")
@@ -110,20 +119,22 @@ async def health_check():
 
 @app.post("/query", response_model=QueryResponse)
 async def query_rag(
-    request: QueryRequest,
+    request: Request,
+    query_request: QueryRequest,
     engine: RetrievalEngine = Depends(get_engine)
 ):
     """
     Execute a RAG query.
     """
-    logger.info(f"POST /query - Question: {request.question[:50]}...")
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    logger.info(f"POST /query - [ReqID: {request_id}] Question: {query_request.question[:50]}...")
     
     try:
         # Determine active sources for filtering
-        active_sources = request.active_sources
+        active_sources = query_request.active_sources
         
         # If document_id is provided but no active_sources, use document_id as the filter
-        if not active_sources and request.document_id:
+        if not active_sources and query_request.document_id:
             # Check and reload document_index_map to get latest mappings
             try:
                 engine._check_and_reload_document_index_map()
@@ -148,16 +159,19 @@ async def query_rag(
 
         # Execute query
         result = engine.query_with_rag(
-            question=request.question,
-            k=request.k,
-            use_mmr=request.use_mmr,
+            question=query_request.question,
+            k=query_request.k,
+            use_mmr=query_request.use_mmr,
             active_sources=active_sources,
-            use_hybrid_search=request.use_hybrid_search,
-            semantic_weight=request.semantic_weight,
-            search_mode=request.search_mode,
-            use_agentic_rag=request.use_agentic_rag,
-            temperature=request.temperature if hasattr(request, 'temperature') else None,
-            max_tokens=request.max_tokens if hasattr(request, 'max_tokens') else None
+            use_hybrid_search=query_request.use_hybrid_search,
+            semantic_weight=query_request.semantic_weight,
+            search_mode=query_request.search_mode,
+            use_agentic_rag=query_request.use_agentic_rag,
+            temperature=query_request.temperature if hasattr(query_request, 'temperature') else None,
+            max_tokens=query_request.max_tokens if hasattr(query_request, 'max_tokens') else None,
+            response_language=query_request.response_language,
+            filter_language=query_request.filter_language,
+            auto_translate=query_request.auto_translate
         )
         
         # Build citations for response schema
@@ -194,20 +208,22 @@ async def query_rag(
 
 @app.post("/query/images", response_model=ImageQueryResponse)
 async def query_images(
-    request: ImageQueryRequest,
+    request: Request,
+    image_request: ImageQueryRequest,
     engine: RetrievalEngine = Depends(get_engine)
 ):
     """
     Search for images in the document corpus using semantic search on OCR text.
     """
-    logger.info(f"POST /query/images - Query: {request.question[:50]}...")
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    logger.info(f"POST /query/images - [ReqID: {request_id}] Query: {image_request.question[:50]}...")
     
     try:
         # Use the engine's query_images method
         results = engine.query_images(
-            question=request.question,
-            source=request.source,
-            k=request.k
+            question=image_request.question,
+            source=image_request.source,
+            k=image_request.k
         )
         
         # Convert to ImageResult format
@@ -231,7 +247,82 @@ async def query_images(
     except Exception as e:
         logger.error(f"Error querying images: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error querying images: {str(e)}")
+@app.get("/documents/{document_id}/images", response_model=ImageQueryResponse)
+async def get_document_images(
+    document_id: str,
+    limit: int = 100,
+    engine: RetrievalEngine = Depends(get_engine)
+):
+    """
+    Get all images for a specific document.
+    """
+    try:
+        # Get document metadata to get source name
+        registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+        doc_metadata = registry.get_document(document_id)
+        if not doc_metadata:
+            raise HTTPException(status_code=404, detail=f"Document {document_id} not found in registry")
+        
+        source = doc_metadata.get('document_name', '')
+        if not source:
+            raise HTTPException(status_code=404, detail=f"Source name for document {document_id} not found")
+            
+        results = engine.get_document_images(source=source, limit=limit)
+        
+        # Convert to ImageResult format
+        image_results = []
+        for r in results:
+            image_results.append(ImageResult(
+                image_id=r.get("image_id", ""),
+                source=r.get("source", ""),
+                image_number=r.get("image_number", 0),
+                page=max(1, r.get("page", 1)),
+                ocr_text=r.get("ocr_text", ""),
+                metadata=r.get("metadata", {}),
+                score=r.get("score")
+            ))
+        
+        return ImageQueryResponse(
+            images=image_results,
+            total=len(image_results),
+            message=f"Retrieved {len(image_results)} images for document {document_id}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting images for document {document_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.delete("/documents/{document_id}")
+async def delete_document(
+    document_id: str,
+    engine: RetrievalEngine = Depends(get_engine)
+):
+    """
+    Delete a document and its images from vector stores.
+    """
+    try:
+        # Get document metadata to get source name
+        registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+        doc_metadata = registry.get_document(document_id)
+        if not doc_metadata:
+            raise HTTPException(status_code=404, detail=f"Document {document_id} not found in registry")
+        
+        source = doc_metadata.get('document_name', '')
+        if not source:
+            # Fallback to document_id if name missing
+            source = document_id
+            
+        success = engine.delete_document(source=source)
+        if success:
+            return {"status": "success", "message": f"Document {document_id} and its images deleted from vector stores"}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete document from vector stores")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document {document_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 @app.get("/metrics")
 async def get_metrics():
     """

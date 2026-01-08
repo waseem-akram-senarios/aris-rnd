@@ -60,11 +60,39 @@ class LlamaScanParser(BaseParser):
             logger.warning("llama-scan is not installed. Install with: pip install llama-scan")
 
     def _check_ollama_server(self) -> bool:
-        try:
-            resp = requests.get(f"{self.server_url}/api/tags", timeout=3)
-            return resp.status_code == 200
-        except Exception:
-            return False
+        """Checks if Ollama server is reachable and model is available."""
+        # Step 1: Check connectivity
+        urls_to_try = [self.server_url]
+        
+        # If localhost fails and we're likely in Docker, try host.docker.internal as fallback
+        if "localhost" in self.server_url or "127.0.0.1" in self.server_url:
+            urls_to_try.append(self.server_url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal"))
+
+        for url in urls_to_try:
+            try:
+                resp = requests.get(f"{url}/api/tags", timeout=3)
+                if resp.status_code == 200:
+                    # Connection successful, now check if the specific model exists
+                    data = resp.json()
+                    models = [m.get("name") for m in data.get("models", [])]
+                    
+                    # Exact match or base name match (e.g., qwen2.5vl matches qwen2.5vl:latest)
+                    model_match = any(self.model in m or m in self.model for m in models)
+                    
+                    if not model_match:
+                        logger.warning(f"Llama-Scan: Ollama reachable at {url}, but model '{self.model}' not found in {models}")
+                        return False
+                    
+                    if url != self.server_url:
+                        logger.info(f"Llama-Scan: Successfully connected to Ollama via fallback URL: {url}")
+                        self.server_url = url # Update for future calls
+                    return True
+            except Exception as e:
+                logger.debug(f"Llama-Scan: Connection attempt to {url} failed: {e}")
+                continue
+        
+        logger.warning(f"Llama-Scan: Could not connect to Ollama server at any of {urls_to_try}")
+        return False
 
     def is_available(self) -> bool:
         return self._check_ollama_server()

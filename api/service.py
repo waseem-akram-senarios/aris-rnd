@@ -48,14 +48,28 @@ class ServiceContainer:
         """Clear all documents"""
         self.document_registry.clear_all()
     
-    def query_text_only(self, question: str, k: int = 6, document_id: Optional[str] = None, use_mmr: bool = True) -> Dict:
+    def query_text_only(
+        self, 
+        question: str, 
+        k: int = 6, 
+        document_id: Optional[str] = None, 
+        use_mmr: bool = True,
+        response_language: Optional[str] = None,
+        filter_language: Optional[str] = None,
+        auto_translate: bool = False
+    ) -> Dict:
         """Query Gateway for text results"""
         logger.info(f"[UI] ServiceContainer: Proxying text query to Gateway: {question[:50]}...")
         try:
             import concurrent.futures
             
             async def _query():
-                return await self.gateway_service.query_text_only(question, k, document_id, use_mmr)
+                return await self.gateway_service.query_text_only(
+                    question, k, document_id, use_mmr,
+                    response_language=response_language,
+                    filter_language=filter_language,
+                    auto_translate=auto_translate
+                )
             
             # Handle nested event loop case
             try:
@@ -94,6 +108,64 @@ class ServiceContainer:
             logger.error(f"Gateway image query failed: {e}")
             return []
 
+    def query_with_rag(
+        self,
+        question: str,
+        k: int = None,
+        use_mmr: bool = None,
+        use_hybrid_search: bool = None,
+        semantic_weight: float = None,
+        search_mode: str = None,
+        use_agentic_rag: bool = None,
+        temperature: float = None,
+        max_tokens: int = None,
+        document_id: Optional[str] = None,
+        response_language: Optional[str] = None,
+        filter_language: Optional[str] = None,
+        auto_translate: bool = False
+    ) -> Dict:
+        """Query Gateway with full RAG parameters"""
+        logger.info(f"[UI] ServiceContainer: Proxying full RAG query to Gateway: {question[:50]}...")
+        try:
+            async def _query():
+                return await self.gateway_service.query_with_rag(
+                    question=question,
+                    k=k,
+                    use_mmr=use_mmr,
+                    use_hybrid_search=use_hybrid_search,
+                    semantic_weight=semantic_weight,
+                    search_mode=search_mode,
+                    use_agentic_rag=use_agentic_rag,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    document_id=document_id,
+                    response_language=response_language,
+                    filter_language=filter_language,
+                    auto_translate=auto_translate
+                )
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _query())
+                    return future.result(timeout=120)
+            except RuntimeError:
+                return asyncio.run(_query())
+        except Exception as e:
+            logger.error(f"Gateway query_with_rag failed: {e}")
+            return {"answer": f"Error: {e}", "citations": [], "num_chunks_used": 0}
+
+    @property
+    def opensearch_index(self) -> str:
+        """Get current OpenSearch index"""
+        return self.gateway_service.opensearch_index
+
+    @opensearch_index.setter
+    def opensearch_index(self, value: str):
+        """Set current OpenSearch index"""
+        self.gateway_service.opensearch_index = value
+
     @property
     def rag_system(self):
         """Compatibility property for RAG logic"""
@@ -102,7 +174,79 @@ class ServiceContainer:
     @property
     def document_processor(self):
         """Compatibility property for processor logic"""
-        return self.gateway_service
+        return self
+
+    def index_exists(self, index_name: str) -> bool:
+        """Check if index exists (proxies to Gateway)"""
+        try:
+            async def _check():
+                return await self.gateway_service.index_exists(index_name)
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _check())
+                    return future.result(timeout=10)
+            except RuntimeError:
+                return asyncio.run(_check())
+        except Exception:
+            return False
+
+    def find_next_available_index_name(self, base_name: str) -> str:
+        """Find next available index name (proxies to Gateway)"""
+        try:
+            async def _find():
+                return await self.gateway_service.find_next_available_index_name(base_name)
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _find())
+                    return future.result(timeout=10)
+            except RuntimeError:
+                return asyncio.run(_find())
+        except Exception:
+            return f"{base_name}-1"
+
+    def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng"):
+        """Process document (proxies to Gateway)"""
+        try:
+            async def _process():
+                return await self.gateway_service.process_document(
+                    file_path, file_content, file_name, parser_preference, progress_callback, index_name, language
+                )
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _process())
+                    return future.result(timeout=600)
+            except RuntimeError:
+                return asyncio.run(_process())
+        except Exception as e:
+            logger.error(f"Processing failed: {e}")
+            from shared.schemas import ProcessingResult
+            return ProcessingResult(status="failed", document_name=file_name, error=str(e))
+
+    def get_all_metrics(self) -> Dict:
+        """Fetch all metrics (proxies to Gateway)"""
+        try:
+            async def _metrics():
+                return await self.gateway_service.get_all_metrics()
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _metrics())
+                    return future.result(timeout=15)
+            except RuntimeError:
+                return asyncio.run(_metrics())
+        except Exception:
+            return {}
 
     def get_storage_status(self, document_id: str) -> Dict:
         """Get storage status from registry (simplified)"""

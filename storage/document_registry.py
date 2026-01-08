@@ -37,6 +37,8 @@ class DocumentRegistry:
         if ARISConfig.ENABLE_S3_STORAGE:
             self._sync_from_s3()
             
+        self._last_loaded_version = 0.0
+        self._lock_file = f"{self.registry_path}.lock"
         self._load_registry()
     
     def _ensure_directory(self):
@@ -49,11 +51,24 @@ class DocumentRegistry:
             try:
                 with open(self.registry_path, 'r', encoding='utf-8') as f:
                     self._documents = json.load(f)
+                
+                # Update last loaded version from version file
+                if os.path.exists(self._version_file):
+                    try:
+                        with open(self._version_file, 'r') as vf:
+                            self._last_loaded_version = float(vf.read().strip())
+                    except:
+                        self._last_loaded_version = os.path.getmtime(self.registry_path)
+                else:
+                    self._last_loaded_version = os.path.getmtime(self.registry_path)
+                    
             except (json.JSONDecodeError, IOError) as e:
                 # If file is corrupted or can't be read, start fresh
                 self._documents = {}
+                self._last_loaded_version = 0.0
         else:
             self._documents = {}
+            self._last_loaded_version = 0.0
 
     def _sync_from_s3(self):
         """Try to download the registry from S3 if it's newer or local is missing."""
@@ -73,33 +88,37 @@ class DocumentRegistry:
             logger.warning(f"⚠️ Failed to sync registry from S3: {e}")
     
     def _save_registry(self):
-        """Save registry to disk with file locking"""
+        """Save registry to disk - simplified atomic write without flock for debugging"""
         try:
             # Write to temp file first, then rename (atomic operation)
             temp_path = f"{self.registry_path}.tmp"
             with open(temp_path, 'w', encoding='utf-8') as f:
-                # Try to acquire file lock (non-blocking)
-                try:
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except (IOError, OSError):
-                    # Lock failed, wait a bit and retry
-                    time.sleep(0.1)
-                    fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                
                 json.dump(self._documents, f, indent=2, ensure_ascii=False)
-                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             
             os.replace(temp_path, self.registry_path)
             
-            # Update version file
+            # Update version file and memory bookmark
+            current_time = time.time()
             with open(self._version_file, 'w') as vf:
-                fcntl.flock(vf.fileno(), fcntl.LOCK_EX)
-                vf.write(str(time.time()))
-                fcntl.flock(vf.fileno(), fcntl.LOCK_UN)
+                vf.write(str(current_time))
+            
+            self._last_loaded_version = current_time
                 
             # Sync to S3 if enabled
             if ARISConfig.ENABLE_S3_STORAGE:
                 self._sync_to_s3()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Failed to save document registry: {e}")
+                
+            # Sync to S3 if enabled
+            if ARISConfig.ENABLE_S3_STORAGE:
+                self._sync_to_s3()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Failed to save document registry: {e}")
                 
         except IOError as e:
             # Log error but don't fail
@@ -225,7 +244,7 @@ class DocumentRegistry:
     
     def get_document(self, document_id: str) -> Optional[Dict]:
         """
-        Get document metadata by ID.
+        Get document metadata by ID. Auto-reloads if modified on disk.
         
         Args:
             document_id: Document identifier
@@ -233,16 +252,26 @@ class DocumentRegistry:
         Returns:
             Document metadata or None if not found
         """
+        # Check for external changes before reading
+        conflict = self.check_for_conflicts()
+        if conflict:
+            self.reload_from_disk()
+            
         with self._lock:
             return self._documents.get(document_id)
     
     def list_documents(self) -> List[Dict]:
         """
-        List all documents.
+        List all documents. Auto-reloads if modified on disk.
         
         Returns:
             List of document metadata dictionaries (with document_id included)
         """
+        # Check for external changes before reading
+        conflict = self.check_for_conflicts()
+        if conflict:
+            self.reload_from_disk()
+            
         with self._lock:
             # Include document_id in each document
             result = []
@@ -325,11 +354,10 @@ class DocumentRegistry:
                     disk_version = float(vf.read().strip())
                 
                 # Get current in-memory version
-                current_status = self.get_sync_status()
-                memory_version = current_status.get('version_timestamp')
+                memory_version = self._last_loaded_version
                 
                 # If disk version is newer, there's a conflict
-                if memory_version and disk_version > memory_version:
+                if disk_version > memory_version:
                     return {
                         'conflict': True,
                         'message': 'Registry was modified externally',

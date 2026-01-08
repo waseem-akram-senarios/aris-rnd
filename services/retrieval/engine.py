@@ -198,9 +198,27 @@ class RetrievalEngine:
         self.ranker = None
         if Ranker:
             try:
-                # Use a high-quality but fast model
-                self.ranker = Ranker(model_name="ms-marco-MiniLM-L-12-v2", cache_dir="models/cache")
-                logger.info("✅ FlashRank Reranker initialized (ms-marco-MiniLM-L-12-v2)")
+                # Get reranker config from settings
+                multilingual_config = ARISConfig.get_multilingual_config()
+                
+                # Determine model name
+                # Default to English model if not specified, but switch to multilingual if auto-translate or ingestion translation is on
+                model_name = "ms-marco-MiniLM-L-12-v2"  # Default English
+                
+                if (multilingual_config.get('enable_auto_translate') or 
+                    multilingual_config.get('translate_on_ingestion')):
+                    # Use a model with better multilingual capabilities if available in FlashRank
+                    # For now, we stick to the high-quality model but allow config override
+                    # Ideal: "ms-marco-MultiBERT-L-12" if supported by FlashRank cache
+                    pass
+                
+                # Allow env override
+                config_model = os.getenv('RERANKER_MODEL_NAME')
+                if config_model:
+                    model_name = config_model
+                
+                self.ranker = Ranker(model_name=model_name, cache_dir="models/cache")
+                logger.info(f"✅ FlashRank Reranker initialized ({model_name})")
             except Exception as e:
                 logger.warning(f"⚠️ FlashRank init failed: {e}")
         
@@ -295,7 +313,6 @@ class RetrievalEngine:
         """
         from scripts.setup_logging import get_logger
         from langchain_community.docstore.in_memory import InMemoryDocstore
-        from shared.config.settings import ARISConfig
         logger = get_logger("aris_rag.rag_system")
 
         if not document_names:
@@ -899,7 +916,6 @@ class RetrievalEngine:
         Returns:
             Tuple of (is_summary_query, expanded_query, suggested_k)
         """
-        from shared.config.settings import ARISConfig
         
         question_lower = question.lower().strip()
         
@@ -938,7 +954,6 @@ class RetrievalEngine:
             List of document names that were uploaded recently
         """
         try:
-            from shared.config.settings import ARISConfig
             import json
             from datetime import datetime, timedelta
 
@@ -1258,7 +1273,10 @@ class RetrievalEngine:
         use_agentic_rag: bool = None,
         temperature: float = None,  # NEW: UI temperature
         max_tokens: int = None,  # NEW: UI max_tokens
-        active_sources: Optional[List[str]] = None  # NEW: Document filtering
+        active_sources: Optional[List[str]] = None,  # NEW: Document filtering
+        response_language: Optional[str] = None,  # NEW: Response language
+        filter_language: Optional[str] = None,  # NEW: Language filtering
+        auto_translate: bool = False  # NEW: Auto-detect and translate queries
     ) -> Dict:
         """
         Query the RAG system with maximum accuracy settings.
@@ -1270,11 +1288,12 @@ class RetrievalEngine:
             use_hybrid_search: Use hybrid search combining semantic and keyword (default from config)
             semantic_weight: Weight for semantic search in hybrid mode (0.0-1.0, default 0.7)
             search_mode: Search mode - 'semantic', 'keyword', or 'hybrid' (default from config)
+            response_language: Language to answer in (e.g. 'Spanish')
+            filter_language: Filter retrieval by language code (e.g. 'spa')
         
         Returns:
             Dict with answer, sources, and context chunks
         """
-        from shared.config.settings import ARISConfig
         
         # Use accuracy-optimized defaults if not specified
         if k is None:
@@ -1303,6 +1322,10 @@ class RetrievalEngine:
         keyword_weight = 1.0 - semantic_weight
         
         query_start_time = time_module.time()
+        # [NEW] Track request ID on instance for sub-methods to use
+        import uuid
+        self.current_request_id = getattr(self, 'current_request_id', str(uuid.uuid4()))
+        req_id = self.current_request_id
         
         # Determine active sources for this request
         if active_sources is None:
@@ -1312,8 +1335,48 @@ class RetrievalEngine:
         self.ui_config = {
             'temperature': temperature if temperature is not None else ARISConfig.DEFAULT_TEMPERATURE,
             'max_tokens': max_tokens if max_tokens is not None else ARISConfig.DEFAULT_MAX_TOKENS,
-            'active_sources': active_sources
+            'active_sources': active_sources,
+            'response_language': response_language
         }
+        
+        # Auto-translation: Detect language and translate query to English for better search
+        original_question = question
+        detected_language = None
+        needs_response_translation = False
+        
+        if auto_translate:
+            try:
+                from services.language.detector import get_detector
+                from services.language.translator import get_translator
+                
+                trans_start = time_module.time()
+                detector = get_detector()
+                detected_language = detector.detect(question)
+                
+                # If query is not English, translate for better search matching
+                if detected_language and detected_language != "en":
+                    translator = get_translator()
+                    translated_question = translator.translate(question, target_lang="en", source_lang=detected_language)
+                    
+                    trans_time = time_module.time() - trans_start
+                    # Improvement 2 & 5: Dual-Language Search
+                    # Combine original (for keyword match on original text) and translated (for semantic match on English embeddings)
+                    # We pass the translated question as the primary for semantic search, but append original for keyword boosts
+                    logger.info(f"Retrieval: [ReqID: {getattr(self, 'current_request_id', 'unknown')}] Translated query from {detected_language} to English in {trans_time:.2f}s: '{translated_question}'")
+                    
+                    # Use English for retrieval but keep context
+                    original_question = question
+                    question = translated_question
+                    
+                    # Set response language to original if not explicitly specified
+                    if not response_language:
+                        response_language = detector.get_language_name(detected_language)
+                        self.ui_config['response_language'] = response_language
+                        needs_response_translation = True
+                        logger.info(f"Retrieval: Will translate response back to {response_language}")
+            except Exception as e:
+                logger.warning(f"Retrieval: Auto-translation failed, using original query: {e}")
+                question = original_question
         
         if self.vectorstore is None:
             # For OpenSearch, the authoritative storage is in the cloud; initialize on demand.
@@ -1333,7 +1396,6 @@ class RetrievalEngine:
                             # Check document registry to provide better error message
                             try:
                                 from storage.document_registry import DocumentRegistry
-                                from shared.config.settings import ARISConfig
                                 registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
                                 docs = registry.list_documents()
                                 if docs:
@@ -1401,7 +1463,6 @@ class RetrievalEngine:
             if self.vectorstore is None:
                 try:
                     from storage.document_registry import DocumentRegistry
-                    from shared.config.settings import ARISConfig
                     registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
                     docs = registry.list_documents()
                     if docs:
@@ -1616,6 +1677,27 @@ class RetrievalEngine:
         skip_retriever_logic = False
         retriever = None  # Initialize retriever to None
         
+        # Prepare filter for OpenSearch (early initialization for all paths)
+        opensearch_filter = None
+        if self.vector_store_type.lower() == "opensearch":
+            # Construct OpenSearch filters
+            filters = []
+            
+            # Language filtering (Global filter logic)
+            if filter_language:
+                 filters.append({"term": {"metadata.language.keyword": filter_language}})
+            
+            # Note: active_sources source filtering is handled differently per path:
+            # - For per-document indexes: Handled by selecting specific indexes
+            # - For standard/fallback: Handled by adding metadata filter (see below)
+            
+            # Combine early filters (like language)
+            if filters:
+                 if len(filters) == 1:
+                     opensearch_filter = filters[0]
+                 else:
+                     opensearch_filter = {"bool": {"must": filters}}
+        
         # For OpenSearch: Use per-document indexes instead of metadata filtering
         if self.vector_store_type == "opensearch":
             # Determine which index(es) to search
@@ -1705,64 +1787,88 @@ class RetrievalEngine:
                     try:
                         from vectorstores.opensearch_store import OpenSearchVectorStore
                         query_vector = self.embeddings.embed_query(retrieval_question)
+                        search_timer = time_module.time()
                         relevant_docs = store.hybrid_search(
                             query=retrieval_question,
                             query_vector=query_vector,
                             k=k,
                             semantic_weight=semantic_weight,
                             keyword_weight=keyword_weight,
-                            filter=None  # No filter needed with per-document indexes
+                            filter=opensearch_filter, # Apply global filters
+                            alternate_query=original_question if original_question != retrieval_question else None
                         )
-                        logger.info(f"Hybrid search completed: {len(relevant_docs)} results from index '{index_name}'")
+                        search_duration = time_module.time() - search_timer
+                        logger.info(f"Retrieval: [ReqID: {req_id}] Hybrid search completed in {search_duration:.2f}s: {len(relevant_docs)} results from index '{index_name}'")
                     except Exception as e:
                         logger.warning(f"Hybrid search failed, falling back to standard search: {e}")
                         # Fall through to standard search
                         if use_mmr:
-                            from shared.config.settings import ARISConfig
                             fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                             lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
+                            
+                            search_kwargs = {
+                                "k": k,
+                                "fetch_k": fetch_k,
+                                "lambda_mult": lambda_mult
+                            }
+                            if opensearch_filter:
+                                search_kwargs["filter"] = opensearch_filter
+                                
                             retriever = store.vectorstore.as_retriever(
                                 search_type="mmr",
-                                search_kwargs={
-                                    "k": k,
-                                    "fetch_k": fetch_k,
-                                    "lambda_mult": lambda_mult
-                                }
+                                search_kwargs=search_kwargs
                             )
                         else:
+                            search_kwargs = {"k": k}
+                            if opensearch_filter:
+                                search_kwargs["filter"] = opensearch_filter
+                                
                             retriever = store.vectorstore.as_retriever(
-                                search_kwargs={"k": k}
+                                search_kwargs=search_kwargs
                             )
                         relevant_docs = retriever.invoke(retrieval_question)
                 else:
                     # Standard search
                     if use_mmr:
-                        from shared.config.settings import ARISConfig
                         fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                         lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
+                        
+                        search_kwargs = {
+                            "k": k,
+                            "fetch_k": fetch_k,
+                            "lambda_mult": lambda_mult
+                        }
+                        if opensearch_filter:
+                            search_kwargs["filter"] = opensearch_filter
+                            
                         retriever = store.vectorstore.as_retriever(
                             search_type="mmr",
-                            search_kwargs={
-                                "k": k,
-                                "fetch_k": fetch_k,
-                                "lambda_mult": lambda_mult
-                            }
+                            search_kwargs=search_kwargs
                         )
                     else:
+                        search_kwargs = {"k": k}
+                        if opensearch_filter:
+                            search_kwargs["filter"] = opensearch_filter
+                            
                         retriever = store.vectorstore.as_retriever(
-                            search_kwargs={"k": k}
+                            search_kwargs=search_kwargs
                         )
                     relevant_docs = retriever.invoke(retrieval_question)
             else:
                 # Multiple indexes - search across all
-                from shared.config.settings import ARISConfig
                 relevant_docs = self.multi_index_manager.search_across_indexes(
                     query=retrieval_question,
                     index_names=indexes_to_search,
                     k=k,
                     use_mmr=use_mmr,
+                    # Pass hybrid search parameters for Maximum Accuracy
+                    use_hybrid_search=use_hybrid_search,
+                    semantic_weight=semantic_weight,
+                    keyword_weight=keyword_weight,
+                    alternate_query=original_question if original_question != retrieval_question else None,
                     fetch_k=ARISConfig.DEFAULT_MMR_FETCH_K if use_mmr else 50,
-                    lambda_mult=ARISConfig.DEFAULT_MMR_LAMBDA if use_mmr else 0.3
+                    lambda_mult=ARISConfig.DEFAULT_MMR_LAMBDA if use_mmr else 0.3,
+                    filter=opensearch_filter # Apply global filters (e.g. language)
                 )
             
             logger.info(f"Searched {len(indexes_to_search)} index(es): {indexes_to_search}, found {len(relevant_docs)} results")
@@ -1778,16 +1884,29 @@ class RetrievalEngine:
             # FAISS or OpenSearch without per-document indexes: Use existing filter logic
             # Prepare filter for OpenSearch (different syntax than FAISS)
             opensearch_filter = None
-            if active_sources and self.vector_store_type.lower() == "opensearch":
-                # Filter out None/empty values and construct OpenSearch filter
-                valid_sources = [s for s in active_sources if s and s.strip()]
-                if valid_sources:
-                    if len(valid_sources) == 1:
-                        # Single source: use term filter
-                        opensearch_filter = {"term": {"metadata.source.keyword": valid_sources[0]}}
+            if self.vector_store_type.lower() == "opensearch":
+                # Construct OpenSearch filters
+                filters = []
+                
+                # Source filtering
+                if active_sources:
+                    valid_sources = [s for s in active_sources if s and s.strip()]
+                    if valid_sources:
+                        if len(valid_sources) == 1:
+                            filters.append({"term": {"metadata.source.keyword": valid_sources[0]}})
+                        else:
+                            filters.append({"terms": {"metadata.source.keyword": valid_sources}})
+                            
+                # Language filtering
+                if filter_language:
+                     filters.append({"term": {"metadata.language.keyword": filter_language}})
+                
+                # Combine filters
+                if filters:
+                    if len(filters) == 1:
+                        opensearch_filter = filters[0]
                     else:
-                        # Multiple sources: use terms filter
-                        opensearch_filter = {"terms": {"metadata.source.keyword": valid_sources}}
+                        opensearch_filter = {"bool": {"must": filters}}
             
             # Use hybrid search if enabled and OpenSearch is available (for non-per-doc path)
             if use_hybrid_search and self.vector_store_type.lower() == "opensearch":
@@ -1836,7 +1955,6 @@ class RetrievalEngine:
             # Retrieve relevant documents with MMR optimized for maximum accuracy
             if use_mmr:
                 # Use MMR with accuracy-optimized parameters
-                from shared.config.settings import ARISConfig
                 fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                 lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
                 
@@ -1978,46 +2096,6 @@ class RetrievalEngine:
             
             if invalid_sources:
                 logger.warning(f"Document mixing detected! Found invalid sources in filtered results: {invalid_sources}")
-                # Remove invalid sources
-                filtered_docs = [
-                    doc for doc in filtered_docs 
-                    if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
-                ]
-
-            # If none found, retry with a broader pull and then filter
-            if not filtered_docs:
-                try:
-                    # Use effective_k if available (from FAISS filtering), otherwise use k * 4
-                    retry_k = effective_k if 'effective_k' in locals() else k * 4
-                    alt_docs = self.vectorstore.similarity_search(retrieval_question, k=max(retry_k, 20))
-                    filtered_docs = [
-                        doc for doc in alt_docs 
-                        if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
-                    ]
-                except Exception:
-                    filtered_docs = []
-
-            if not filtered_docs:
-                return {
-                    "answer": (
-                        "No chunks were found for the selected document(s). "
-                        "Try selecting a different document or load all documents."
-                    ),
-                    "sources": [],
-                    "citations": [],
-                    "context_chunks": []
-                }
-            
-            # Final validation: Log document isolation status
-            # For OpenSearch: Validate that native filtering worked correctly (safety check)
-            # For FAISS: This is the primary filtering mechanism
-            final_sources = set(doc.metadata.get('source', 'Unknown') for doc in filtered_docs[:k])
-            logger.info(f"Document filtering: Retrieved {len(filtered_docs)} docs, limiting to {k}. Final sources: {final_sources}")
-            
-            # Validate document isolation (should be empty for both OpenSearch and FAISS)
-            invalid_final_sources = final_sources - allowed_sources
-            if invalid_final_sources:
-                logger.error(f"CRITICAL: Document mixing detected! Allowed: {allowed_sources}, Found: {final_sources}, Invalid: {invalid_final_sources}")
                 # For OpenSearch, this shouldn't happen if filtering is working correctly
                 if self.vector_store_type.lower() == "opensearch":
                     logger.error(f"OpenSearch native filtering may have failed! Filter was: {opensearch_filter}")
@@ -2526,7 +2604,7 @@ class RetrievalEngine:
                             break
         
         # IMPORTANT: Always check for image markers in retrieved chunks, not just for image questions
-        # This ensures image content is extracted even if question doesn't explicitly mention "image"
+        # This ensures image content is retrieved even if similarity search doesn't explicitly mention "image"
         # Also expand search to find chunks with image markers if documents have images OR it's an image question OR tool/item question
         additional_image_docs = []
         should_search_for_images = should_extract_image_content or len(documents_with_images) > 0
@@ -2755,6 +2833,7 @@ class RetrievalEngine:
         try:
             with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
                 import json
+                marker_count = chunk_text.count('<!-- image -->')
                 f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"C","location":"rag_system.py:2314","message":"Chunks with markers count","data":{"chunks_with_markers":chunks_with_markers,"total_chunks":len(chunks_to_check)},"timestamp":int(time_module.time()*1000)})+"\n")
         except: pass
         # #endregion
@@ -3258,15 +3337,17 @@ class RetrievalEngine:
         # #endregion
         
         if self.use_cerebras:
-            answer, response_tokens = self._query_cerebras(question, context, relevant_docs, mentioned_documents, question_doc_number)
+            answer, response_tokens = self._query_cerebras(question, context, relevant_docs, mentioned_documents, question_doc_number, response_language=response_language)
         else:
             if not self.openai_api_key:
                 answer, response_tokens = self._query_offline(question, context, relevant_docs)
             else:
-                answer, response_tokens = self._query_openai(question, context, relevant_docs, mentioned_documents, question_doc_number)
+                answer, response_tokens = self._query_openai(question, context, relevant_docs, mentioned_documents, question_doc_number, response_language=response_language)
         
         response_time = time_module.time() - query_start_time
         total_tokens = context_tokens + response_tokens
+        
+        logger.info(f"Retrieval: [ReqID: {req_id}] Query finished in {response_time:.2f}s. Tokens: {total_tokens} ({context_tokens} context, {response_tokens} response)")
         
         # Deduplicate and rank citations
         if citations:
@@ -3326,7 +3407,7 @@ class RetrievalEngine:
         answer = "OpenAI is not configured (missing OPENAI_API_KEY). Retrieved context:\n" + "\n".join(parts)
         return answer, self.count_tokens(answer)
     
-    def _query_openai(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None) -> tuple:
+    def _query_openai(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None, response_language: str = None) -> tuple:
         """
         Query OpenAI with maximum accuracy settings.
         
@@ -3336,9 +3417,9 @@ class RetrievalEngine:
             relevant_docs: List of relevant documents (for metadata)
             mentioned_documents: List of documents mentioned in the question (for filtering)
             question_doc_number: Document number extracted from question (e.g., 1, 2)
+            response_language: Language to answer in
         """
         from openai import OpenAI
-        from shared.config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         
         # Truncate context if it exceeds model's token limit
@@ -3404,9 +3485,21 @@ class RetrievalEngine:
                                'what does this document contain', 'what is in this document',
                                'tell me about', 'describe', 'explain this document'])
         
+        # Build language instruction
+        language_instruction = ""
+        if response_language:
+            language_instruction = f"\n\nCRITICAL: You MUST answer strictly in {response_language}. Translate any information from the context into {response_language} if necessary. Do not answer in any other language."
+        else:
+            language_instruction = """
+MULTILINGUAL INSTRUCTIONS:
+- Detect the language of the user's question.
+- ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
+- If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
+- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
+
         if is_summary_query:
             # Use synthesis-friendly prompt for summaries
-            system_prompt = """You are a document summarization assistant. Your task is to synthesize information from the provided context to create a comprehensive summary.
+            system_prompt = f"""You are a document summarization assistant. Your task is to synthesize information from the provided context to create a comprehensive summary.{language_instruction}
 
 CRITICAL RULES:
 - Synthesize information from ALL provided context chunks to create a coherent summary
@@ -3447,7 +3540,7 @@ CRITICAL DOCUMENT FILTERING: The question specifically asks about "{mentioned_do
 - Only answer based on the specified document: {mentioned_doc_name}
 - If the specified document is not in the context, state that clearly"""
             
-            system_prompt = f"""You are a precise technical assistant that provides accurate, detailed answers by synthesizing information from the provided context. 
+            system_prompt = f"""You are a precise technical assistant that provides accurate, detailed answers by synthesizing information from the provided context.{language_instruction}
 
 IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first. If the metadata shows "exact count not available" but images are detected, state that images are present but the exact count requires re-processing the document.{document_filter_instruction}
 
@@ -3498,13 +3591,7 @@ CRITICAL RULES:
 - DO NOT repeat phrases or sentences
 - DO NOT include "Best regards", "Thank you", or similar endings
 - DO NOT make up information not in the context
-- End your answer when you have provided the information - do not add unnecessary text
-
-MULTILINGUAL INSTRUCTIONS:
-- Detect the language of the user's question.
-- ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
-- If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
-- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
+- End your answer when you have provided the information - do not add unnecessary text"""
         
             # Add document filtering instruction to user prompt if specific document mentioned
             user_doc_filter_instruction = ""
@@ -3602,7 +3689,7 @@ Answer:"""
                 error_answer = f"Error querying OpenAI: {error_msg}"
             return error_answer, self.count_tokens(error_answer)
     
-    def _query_cerebras(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None) -> tuple:
+    def _query_cerebras(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None, response_language: str = None) -> tuple:
         """Query Cerebras API with maximum accuracy settings
         
         Args:
@@ -3611,10 +3698,23 @@ Answer:"""
             relevant_docs: List of relevant documents (for metadata)
             mentioned_documents: List of documents mentioned in the question (for filtering)
             question_doc_number: Document number extracted from question (e.g., 1, 2)
+            response_language: Language to answer in
         """
-        from shared.config.settings import ARISConfig
+        
+        # Build language instruction
+        language_instruction = ""
+        if response_language:
+            language_instruction = f"\n\nCRITICAL: You MUST answer strictly in {response_language}. Translate any information from the context into {response_language} if necessary. Do not answer in any other language."
+        else:
+             language_instruction = """
+MULTILINGUAL INSTRUCTIONS:
+- Detect the language of the user's question.
+- ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
+- If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
+- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
+
         # Synthesis-friendly prompt for Cerebras
-        prompt = f"""You are a precise technical assistant. Synthesize information from the provided context to answer the question. Be specific and accurate.
+        prompt = f"""You are a precise technical assistant. Synthesize information from the provided context to answer the question. Be specific and accurate.{language_instruction}
 
 CITATION RULES:
 1. For EVERY technical claim, fact, or specification you provide, you MUST include a citation.
@@ -3842,7 +3942,6 @@ Answer:"""
                 
                 # Standard search
                 if use_mmr:
-                    from shared.config.settings import ARISConfig
                     fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                     lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
                     retriever = store.vectorstore.as_retriever(
@@ -6193,3 +6292,81 @@ Answer:"""
         except Exception as e:
             logger.error(f"Failed to search images: {str(e)}")
             return []
+    def get_document_images(self, source: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Retrieve all images for a specific document source.
+        """
+        if (not hasattr(self, 'vector_store_type') or 
+            self.vector_store_type.lower() != 'opensearch'):
+            return []
+            
+        try:
+            from vectorstores.opensearch_images_store import OpenSearchImagesStore
+            from langchain_openai import OpenAIEmbeddings
+            
+            embeddings = OpenAIEmbeddings(
+                openai_api_key=os.getenv('OPENAI_API_KEY'),
+                model=self.embedding_model
+            )
+            
+            images_store = OpenSearchImagesStore(
+                embeddings=embeddings,
+                domain=self.opensearch_domain,
+                region=getattr(self, 'region', None)
+            )
+            
+            return images_store.get_images_by_source(source, limit)
+        except Exception as e:
+            logger.error(f"Error getting images for source {source}: {e}")
+            return []
+
+    def delete_document(self, source: str) -> bool:
+        """
+        Delete a document and its images from vector stores.
+        """
+        success = True
+        
+        # 1. Delete from main vector store
+        try:
+            if self.vectorstore:
+                # We need a way to delete by source
+                # In OpenSearch this usually involves a delete_by_query
+                client = self.vectorstore.client if hasattr(self.vectorstore, 'client') else None
+                if client:
+                    index_name = self.opensearch_index
+                    query = {"query": {"term": {"metadata.source.keyword": source}}}
+                    client.delete_by_query(index=index_name, body=query)
+                    logger.info(f"Deleted document {source} from {index_name}")
+                else:
+                    logger.warning(f"Could not delete {source}: No client available")
+        except Exception as e:
+            logger.error(f"Error deleting document {source} from main store: {e}")
+            success = False
+
+        # 2. Delete from images store
+        try:
+            from vectorstores.opensearch_images_store import OpenSearchImagesStore
+            from langchain_openai import OpenAIEmbeddings
+            
+            embeddings = OpenAIEmbeddings(
+                openai_api_key=os.getenv('OPENAI_API_KEY'),
+                model=self.embedding_model
+            )
+            
+            images_store = OpenSearchImagesStore(
+                embeddings=embeddings,
+                domain=self.opensearch_domain,
+                region=getattr(self, 'region', None)
+            )
+            
+            # Need to implement delete_by_source in images_store or use client directly
+            client = images_store.vectorstore.vectorstore.client
+            image_index = images_store.index_name
+            query = {"query": {"term": {"metadata.source.keyword": source}}}
+            client.delete_by_query(index=image_index, body=query)
+            logger.info(f"Deleted images for {source} from {image_index}")
+        except Exception as e:
+            logger.error(f"Error deleting images for {source}: {e}")
+            # Don't strictly fail if images deletion fails
+            
+        return success

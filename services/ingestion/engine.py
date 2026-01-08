@@ -428,7 +428,7 @@ class IngestionEngine:
                             model_name=self.embedding_model,
                             chunk_size=adaptive_chunk_size,
                             chunk_overlap=adaptive_chunk_overlap,
-                            separators=["\n\n", "\n", " ", ""],
+                            separators=self._get_language_separators(metadatas),  # Language-aware separators
                             disallowed_special=(),  # Allow special tokens in documents
                             add_start_index=True    # CRITICAL: Track offsets for page mapping
                         )
@@ -1580,3 +1580,49 @@ class IngestionEngine:
         except Exception as e:
             logger.warning(f"Error finding next index name: {e}")
             return f"{base_name}-1"
+
+    def _get_language_separators(self, metadatas: Optional[List[Dict]] = None) -> List[str]:
+        """
+        Get language-aware separators for text splitting.
+        
+        Args:
+            metadatas: Optional list of metadata dictionaries to detect language
+            
+        Returns:
+            List of separator strings optimized for the detected language
+        """
+        # Default separators (English/Western)
+        separators = ["\n\n", "\n", " ", ""]
+        
+        if not metadatas:
+            return separators
+            
+        # Detect predominant language
+        languages = [m.get('language', 'eng') for m in metadatas if m]
+        if not languages:
+            return separators
+            
+        # Get most common language
+        from collections import Counter
+        most_common_lang = Counter(languages).most_common(1)[0][0]
+        
+        # Improvement 4: Language-Aware Chunking
+        # Adjust separators based on language family
+        
+        # Asian languages (Chinese, Japanese) - no spaces between words
+        if most_common_lang in ['zho', 'chi', 'jpn', 'kor']:
+            separators = ["\n\n", "\n", "。", "！", "？", "；", "，", " ", ""]
+            
+        # Thai - no spaces, specialized boundaries
+        elif most_common_lang in ['tha']:
+            separators = ["\n\n", "\n", " ", ""]  # Thai usually needs specialized tokenizer
+            
+        # German - long compound words, split on hyphens if needed
+        elif most_common_lang in ['deu', 'ger']:
+            separators = ["\n\n", "\n", " ", "-", ""]
+            
+        # Arabic - specialized punctuation
+        elif most_common_lang in ['ara']:
+            separators = ["\n\n", "\n", "؛", "،", " ", ""]
+        
+        return separators

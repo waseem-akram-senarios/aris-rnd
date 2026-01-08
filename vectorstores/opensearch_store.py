@@ -320,7 +320,9 @@ class OpenSearchVectorStore:
                 'source', 'page', 'source_page', 'chunk_index', 'total_chunks',
                 'parser_used', 'pages', 'images_detected', 'extraction_percentage',
                 'start_char', 'end_char', 'token_count',
-                'has_image', 'image_ref', 'image_index', 'image_bbox', 'image_info'
+                'has_image', 'image_ref', 'image_index', 'image_bbox', 'image_info',
+                # Multilingual support fields
+                'language', 'text_original', 'text_english'
             ]
             
             if doc.metadata:
@@ -708,23 +710,20 @@ class OpenSearchVectorStore:
         k: int = 10,
         semantic_weight: float = 0.7,
         keyword_weight: float = 0.3,
-        filter: Optional[Dict] = None
+        filter: Optional[Dict] = None,
+        alternate_query: Optional[str] = None  # Improvement 2: Support for original language query
     ) -> List[Document]:
         """
         Perform hybrid search combining semantic (vector) and keyword (text) search.
         
-        Uses OpenSearch's native query capabilities to combine k-NN and text search.
-        
         Args:
-            query: Text query for keyword search
+            query: Text query for keyword search (usually English)
             query_vector: Embedding vector for semantic search
             k: Number of results to return
-            semantic_weight: Weight for semantic search results (0.0-1.0)
-            keyword_weight: Weight for keyword search results (0.0-1.0)
-            filter: Optional OpenSearch filter for document source selection
-            
-        Returns:
-            List of Document objects with combined results
+            semantic_weight: Weight for semantic search results
+            keyword_weight: Weight for keyword search results
+            filter: Optional OpenSearch filter
+            alternate_query: Optional query in original language (for dual-language search)
         """
         if self.vectorstore is None:
             raise ValueError("Vector store not initialized. Process documents first.")
@@ -732,7 +731,7 @@ class OpenSearchVectorStore:
         try:
             client = self.vectorstore.client
             
-            # Normalize weights
+            # Normalize weights... (omitted for brevity, same as before)
             total_weight = semantic_weight + keyword_weight
             if total_weight > 0:
                 semantic_weight = semantic_weight / total_weight
@@ -741,51 +740,60 @@ class OpenSearchVectorStore:
                 semantic_weight = 0.5
                 keyword_weight = 0.5
             
-            # Build hybrid query
-            # OpenSearch supports combining k-NN and text queries
-            # For OpenSearch, we need to use separate queries and combine results
+            # Semantic search (k-NN) remains the same...
             semantic_results = []
-            keyword_results = []
-            
-            # Perform semantic (k-NN) search
             if semantic_weight > 0:
                 try:
-                    # OpenSearch k-NN query structure
-                    # The field name is typically "vector" for LangChain OpenSearchVectorSearch
+                    # ... (k-NN query construction)
                     knn_query = {
                         "size": int(k * (1 + semantic_weight)),
                         "knn": {
-                            "field": "vector",  # Field name in the index
+                            "field": "vector",
                             "vector": query_vector,
                             "k": int(k * (1 + semantic_weight))
                         }
                     }
                     if filter:
                         knn_query["knn"]["filter"] = filter
-                    
                     semantic_response = client.search(index=self.index_name, body=knn_query)
                     semantic_results = semantic_response.get("hits", {}).get("hits", [])
                 except Exception as e:
                     logger.warning(f"Semantic search failed: {str(e)}")
                     semantic_results = []
             
-            # Perform keyword (text) search
+            # Text search with Dual-Language Support
+            keyword_results = []
             if keyword_weight > 0:
                 try:
+                    should_clauses = [
+                        {
+                            "multi_match": {
+                                "query": query,
+                                # Main query (English) matches English fields strongly
+                                "fields": ["text^2", "metadata.text_english^1.5", "metadata.source"],
+                                "type": "best_fields",
+                                "fuzziness": "AUTO"
+                            }
+                        }
+                    ]
+                    
+                    # If we have an alternate query (e.g. original Spanish query), match it against original text
+                    if alternate_query and alternate_query != query:
+                        should_clauses.append({
+                            "multi_match": {
+                                "query": alternate_query,
+                                "fields": ["metadata.text_original^2", "text^0.5"],  # Boost original text match
+                                "type": "best_fields",
+                                "fuzziness": "AUTO"
+                            }
+                        })
+                    
                     text_query = {
                         "size": int(k * (1 + keyword_weight)),
                         "query": {
                             "bool": {
-                                "should": [
-                                    {
-                                        "multi_match": {
-                                            "query": query,
-                                            "fields": ["text^2", "metadata.source"],
-                                            "type": "best_fields",
-                                            "fuzziness": "AUTO"
-                                        }
-                                    }
-                                ]
+                                "should": should_clauses,
+                                "minimum_should_match": 1
                             }
                         }
                     }
@@ -1065,6 +1073,11 @@ class OpenSearchMultiIndexManager:
         use_mmr: bool = False,
         fetch_k: int = 50,
         lambda_mult: float = 0.3,
+        use_hybrid_search: bool = False,
+        semantic_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+        filter: Optional[Dict] = None,
+        alternate_query: Optional[str] = None,
         **kwargs
     ) -> List[Document]:
         """Search across multiple indexes and combine results."""
@@ -1074,21 +1087,46 @@ class OpenSearchMultiIndexManager:
         for index_name in index_names:
             try:
                 store = self.get_or_create_index_store(index_name)
-                if use_mmr:
+                
+                if use_hybrid_search:
+                    # Use hybrid search with dual-language support
+                    # We need to embed the query here if not passed, but hybrid_search expects vector
+                    # Note: engine.py usually passes embeddings, but here we might need to generate it
+                    # Optimization: Generate vector once outside loop? 
+                    # engine.py calls this method with 'query' string.
+                    # We can use store.embeddings to embed
+                    query_vector = store.embeddings.embed_query(query)
+                    
+                    results = store.hybrid_search(
+                        query=query,
+                        query_vector=query_vector,
+                        k=results_per_index,
+                        semantic_weight=semantic_weight,
+                        keyword_weight=keyword_weight,
+                        filter=filter,
+                        alternate_query=alternate_query
+                    )
+                elif use_mmr:
                     retriever = store.vectorstore.as_retriever(
                         search_type="mmr",
                         search_kwargs={
                             "k": results_per_index,
                             "fetch_k": fetch_k,
-                            "lambda_mult": lambda_mult
+                            "lambda_mult": lambda_mult,
+                            "filter": filter
                         }
                     )
+                    results = retriever.invoke(query)
                 else:
+                    search_kwargs={"k": results_per_index}
+                    if filter:
+                        search_kwargs["filter"] = filter
+                        
                     retriever = store.vectorstore.as_retriever(
-                        search_kwargs={"k": results_per_index}
+                        search_kwargs=search_kwargs
                     )
+                    results = retriever.invoke(query)
                 
-                results = retriever.invoke(query)
                 all_results.extend(results)
                 logger.debug(f"Found {len(results)} results in index '{index_name}'")
             except Exception as e:

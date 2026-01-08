@@ -131,6 +131,22 @@ class DocumentProcessor:
             'detailed_message': 'Starting...'
         }
         
+        # Immediate registry persistence for status tracking
+        if doc_id:
+            try:
+                from storage.document_registry import DocumentRegistry
+                registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+                registry.add_document(doc_id, {
+                    'document_id': doc_id,
+                    'document_name': doc_name,
+                    'status': 'processing',
+                    'progress': 0.0,
+                    'created_at': os.path.getctime(file_path) if os.path.exists(file_path) else time.time()
+                })
+                logger.info(f"Registered document {doc_id} in registry with 'processing' status")
+            except Exception as e:
+                logger.warning(f"Could not register document {doc_id} on startup: {e}")
+        
         def update_status(status, progress, detailed_message=None):
             """Internal helper to update state and call callback"""
             self.processing_state[doc_id].update({
@@ -169,6 +185,7 @@ class DocumentProcessor:
             # [NEW] Upload to S3 if enabled
             if hasattr(self.rag_system, 's3_service') and self.rag_system.s3_service.enabled:
                 try:
+                    s3_start = time.time()
                     update_status('processing', 0.1, f"Backing up {doc_name} to S3...")
                     # Use a clean folder structure: documents/doc_id/filename
                     s3_key = f"documents/{doc_id}/{doc_name}"
@@ -179,11 +196,12 @@ class DocumentProcessor:
                     else:
                         upload_success = self.rag_system.s3_service.upload_file(file_path, s3_key)
                         
+                    s3_time = time.time() - s3_start
                     if upload_success:
                         s3_url = f"s3://{self.rag_system.s3_service.bucket_name}/{s3_key}"
-                        logger.info(f"✅ [STEP 1.2] Document backed up to S3: {s3_url}")
+                        logger.info(f"✅ [STEP 1.2] Document backed up to S3 in {s3_time:.2f}s: {s3_url}")
                     else:
-                        logger.warning(f"⚠️ [STEP 1.2] S3 backup failed for {doc_name}, continuing with local processing")
+                        logger.warning(f"⚠️ [STEP 1.2] S3 backup failed for {doc_name} after {s3_time:.2f}s, continuing with local processing")
                 except Exception as e:
                     logger.warning(f"⚠️ [STEP 1.2] S3 upload error (non-critical): {e}")
             
@@ -203,7 +221,13 @@ class DocumentProcessor:
                 
                 # Guard against None parser - provide clear error message
                 if parser is None:
-                    if parser_preference and parser_preference.lower() == 'ocrmypdf':
+                    if parser_preference and parser_preference.lower() in ['llamascan', 'llama-scan']:
+                        raise ValueError(
+                            "Llama-Scan parser selected but Ollama server is not reachable or vision model is missing. "
+                            "Please ensure Ollama is running (default: http://localhost:11434 or host.docker.internal) "
+                            "and the vision model (default: qwen2.5vl:latest) is pulled."
+                        )
+                    elif parser_preference and parser_preference.lower() == 'ocrmypdf':
                         raise ValueError(
                             "OCRmyPDF selected but not available. "
                             "Ensure ocrmypdf and tesseract-ocr are installed: "
@@ -271,15 +295,18 @@ class DocumentProcessor:
                     
                     if extracted_images_list and len(extracted_images_list) > 0:
                         logger.info(f"[STEP 2.4] Storing {len(extracted_images_list)} images in OpenSearch...")
+                        img_store_start = time.time()
                         try:
                             self._store_images_in_opensearch(
                                 extracted_images_list,
                                 doc_name,
                                 parsed_doc.parser_used
                             )
-                            logger.info(f"✅ [STEP 2.4] Successfully stored {len(extracted_images_list)} images in OpenSearch")
+                            img_store_time = time.time() - img_store_start
+                            logger.info(f"✅ [STEP 2.4] Successfully stored {len(extracted_images_list)} images in OpenSearch in {img_store_time:.2f}s")
                         except Exception as e:
-                            logger.warning(f"⚠️ [STEP 2.4] Failed to store images in OpenSearch: {str(e)}")
+                            img_store_time = time.time() - img_store_start
+                            logger.warning(f"⚠️ [STEP 2.4] Failed to store images in OpenSearch after {img_store_time:.2f}s: {str(e)}")
                             import traceback
                             logger.debug(f"[STEP 2.4] Storage error details: {traceback.format_exc()}")
                             # Don't fail processing if image storage fails
@@ -368,6 +395,80 @@ class DocumentProcessor:
             
             logger.info(f"✅ [STEP 3] Document validation completed - {len(doc_text):,} characters ready for processing")
             
+            # Step 3.5: Language Detection and Optional Translation
+            detected_language = language  # Use provided language as default
+            english_translation = None
+            
+            try:
+                from shared.config.settings import ARISConfig
+                multilingual_config = ARISConfig.get_multilingual_config()
+                
+                # Auto-detect language if not explicitly set to a non-default value
+                if language == "eng" and len(doc_text) > 50:
+                    try:
+                        from services.language.detector import get_detector
+                        detector = get_detector()
+                        detected_iso2 = detector.detect(doc_text[:2000])  # Use first 2000 chars
+                        detected_language = detector.detect_to_iso639_3(doc_text[:2000])
+                        
+                        if detected_language != "eng":
+                            logger.info(f"🌐 [STEP 3.5] Auto-detected document language: {detector.get_language_name(detected_iso2)} ({detected_language})")
+                            update_status('processing', 0.45, f"Detected language: {detector.get_language_name(detected_iso2)}")
+                        else:
+                            logger.info(f"🌐 [STEP 3.5] Document language: English")
+                    except Exception as e:
+                        logger.warning(f"⚠️ [STEP 3.5] Language detection failed: {e}")
+                
+                # Optional: Translate to English for better embeddings (if enabled)
+                if (multilingual_config.get('translate_on_ingestion', False) and 
+                    detected_language != "eng" and 
+                    len(doc_text) > 0):
+                    try:
+                        from services.language.translator import get_translator
+                        update_status('processing', 0.47, f"Translating document to English...")
+                        
+                        translator = get_translator(provider=multilingual_config.get('translation_provider', 'openai'))
+                        
+                        # Store original text BEFORE translation for dual-language storage
+                        original_text = doc_text
+                        
+                        # Translate in chunks to handle large documents
+                        max_chunk_size = 4000  # OpenAI limit consideration
+                        if len(doc_text) > max_chunk_size:
+                            # Translate in chunks
+                            translated_chunks = []
+                            for i in range(0, len(doc_text), max_chunk_size):
+                                chunk = doc_text[i:i+max_chunk_size]
+                                translated_chunk = translator.translate(chunk, target_lang="en")
+                                translated_chunks.append(translated_chunk)
+                            english_translation = " ".join(translated_chunks)
+                        else:
+                            english_translation = translator.translate(doc_text, target_lang="en")
+                        
+                        logger.info(f"✅ [STEP 3.5] Document translated to English ({len(english_translation):,} chars)")
+                        
+                        # Use English translation for embedding (better search quality)
+                        # UPDATE: User requested Native Language Embeddings
+                        # We keep doc_text as original but store translation in metadata
+                        # doc_text = english_translation
+                        
+                    except Exception as e:
+                        logger.warning(f"⚠️ [STEP 3.5] Translation failed, using original: {e}")
+                        original_text = doc_text
+                        english_translation = None
+                else:
+                    # No translation needed - document is already English or translation disabled
+                    original_text = doc_text
+                    english_translation = doc_text if detected_language == "eng" else None
+                        
+            except ImportError as e:
+                logger.debug(f"Language services not available: {e}")
+                original_text = doc_text
+                english_translation = None
+            
+            # Store language in metadata
+            language = detected_language
+            
             # Step 4: Process with RAG system (chunking and embedding)
             logger.info("[STEP 4] DocumentProcessor: Starting chunking and embedding process...")
             update_status('chunking', 0.5, "Starting chunking phase...")
@@ -404,12 +505,16 @@ class DocumentProcessor:
                 base_metadata = {
                     'source': doc_name,
                     'document_id': document_id,
+                    'language': language,
                     'parser_used': getattr(parsed_doc, 'parser_used', 'unknown'),
                     'pages': getattr(parsed_doc, 'pages', 0),
                     'images_detected': getattr(parsed_doc, 'images_detected', False),
                     'image_count': getattr(parsed_doc, 'image_count', 0),  # Store image count for queries
                     'extraction_percentage': getattr(parsed_doc, 'extraction_percentage', 0.0),
-                    's3_url': s3_url
+                    's3_url': s3_url,
+                    # Dual-language storage for maximum accuracy multilingual search
+                    'text_original': original_text[:5000] if len(original_text) > 5000 else original_text,  # Truncate to prevent metadata bloat
+                    'text_english': english_translation[:5000] if english_translation and len(english_translation) > 5000 else english_translation
                 }
                 
                 # NEW LOGIC: Use page_blocks if available for accurate citations
@@ -521,6 +626,7 @@ class DocumentProcessor:
             result = ProcessingResult(
                 status='success',
                 document_name=doc_name,
+                language=language,
                 chunks_created=stats['chunks_created'],
                 tokens_extracted=stats['tokens_added'],
                 parser_used=parsed_doc.parser_used,
@@ -557,6 +663,7 @@ class DocumentProcessor:
                     'document_id': doc_id,
                     'document_name': doc_name,
                     'status': 'success',
+                    'language': language,
                     'chunks_created': stats['chunks_created'],
                     'tokens_extracted': stats['tokens_added'],
                     'parser_used': parsed_doc.parser_used,

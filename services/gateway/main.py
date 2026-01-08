@@ -59,6 +59,11 @@ def get_service() -> GatewayService:
         raise HTTPException(status_code=500, detail="Gateway service not initialized")
     return gateway_service
 
+@app.get("/")
+async def root():
+    """Root endpoint for basic connectivity check (matches test script expectation)"""
+    return {"message": "ARIS RAG System API Gateway", "status": "online"}
+
 @app.get("/health")
 async def health_check(service: GatewayService = Depends(get_service)):
     """Health check with registry sync verification"""
@@ -82,6 +87,7 @@ async def health_check(service: GatewayService = Depends(get_service)):
         
         return {
             "status": "healthy",
+            "message": "ARIS RAG System API Gateway is operational",
             "service": "gateway",
             "registry_accessible": registry_accessible,
             "registry_document_count": doc_count if 'doc_count' in locals() else 0,
@@ -148,6 +154,46 @@ async def get_document(
     
     return DocumentMetadata(**formatted_doc)
 
+@app.put("/documents/{document_id}", response_model=DocumentMetadata)
+async def update_document(
+    document_id: str,
+    metadata_update: Dict[str, Any],
+    service: GatewayService = Depends(get_service)
+):
+    """Update document metadata"""
+    existing = service.get_document(document_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+    
+    updated_meta = {**existing, **metadata_update}
+    service.update_document(document_id, updated_meta)
+    return DocumentMetadata(**updated_meta)
+
+@app.delete("/documents/{document_id}")
+async def delete_document(
+    document_id: str,
+    service: GatewayService = Depends(get_service)
+):
+    """Delete document from registry and vector stores"""
+    # 1. Delete from vector stores (via retrieval service)
+    await service.delete_document_from_stores(document_id)
+    
+    # 2. Remove from registry
+    success = service.remove_document(document_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+    
+    return {"status": "success", "message": f"Document {document_id} deleted"}
+
+@app.get("/documents/{document_id}/images")
+async def get_document_images(
+    document_id: str,
+    service: GatewayService = Depends(get_service)
+):
+    """Get all images for a document"""
+    images = await service.get_document_images(document_id)
+    return {"images": images, "total": len(images)}
+
 @app.post("/documents", response_model=DocumentMetadata, status_code=201)
 async def upload_document(
     file: UploadFile = File(...),
@@ -180,9 +226,36 @@ async def query_rag(
         question=request.question,
         k=request.k,
         document_id=request.document_id,
-        use_mmr=request.use_mmr
+        use_mmr=request.use_mmr,
+        response_language=request.response_language,
+        filter_language=request.filter_language,
+        auto_translate=request.auto_translate
     )
     return QueryResponse(**result)
+
+@app.post("/query/images")
+async def query_images(
+    request: Dict[str, Any],
+    service: GatewayService = Depends(get_service)
+):
+    """Query images specifically"""
+    question = request.get("question", "")
+    k = request.get("k", 5)
+    source = request.get("source")
+    
+    images = await service.query_images_only(question, k, source)
+    return {"images": images, "total": len(images)}
+
+@app.get("/stats")
+async def get_system_stats(service: GatewayService = Depends(get_service)):
+    """Get overall system statistics"""
+    return await service.get_all_metrics()
+
+@app.get("/stats/chunks")
+async def get_chunk_stats(service: GatewayService = Depends(get_service)):
+    """Get chunk-level statistics"""
+    metrics = await service.get_all_metrics()
+    return metrics.get("processing", {})
 
 @app.get("/sync/status")
 async def sync_status(service: GatewayService = Depends(get_service)):
