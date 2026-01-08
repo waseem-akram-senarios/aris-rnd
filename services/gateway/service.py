@@ -681,47 +681,48 @@ class GatewayService:
         # This is a no-op for compatibility, but we return True to indicate "success"
         return True
 
-    async def get_all_metrics(self) -> Dict:
-        """Fetch and merge metrics from all services"""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # Fetch from Ingestion (processing metrics)
-            ingestion_metrics = {}
-            try:
-                resp = await client.get(f"{self.ingestion_url}/metrics")
+    def get_all_metrics(self) -> Dict:
+        """Fetch and merge metrics from all services (synchronous for Streamlit compatibility)"""
+        # Fetch from Ingestion (processing metrics)
+        ingestion_metrics = {}
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(f"{self.ingestion_url}/metrics")
                 if resp.status_code == 200:
                     ingestion_metrics = resp.json()
-            except Exception as e:
-                logger.warning(f"Could not fetch ingestion metrics: {e}")
-            
-            # Fetch from Retrieval (query metrics)
-            retrieval_metrics = {}
-            try:
-                resp = await client.get(f"{self.retrieval_url}/metrics")
+        except Exception as e:
+            logger.warning(f"Could not fetch ingestion metrics: {e}")
+        
+        # Fetch from Retrieval (query metrics)
+        retrieval_metrics = {}
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(f"{self.retrieval_url}/metrics")
                 if resp.status_code == 200:
                     retrieval_metrics = resp.json()
-            except Exception as e:
-                logger.warning(f"Could not fetch retrieval metrics: {e}")
-            
-            # Merge metrics
-            merged = {
-                'processing': ingestion_metrics.get('processing', {}),
-                'queries': retrieval_metrics.get('queries', {}),
-                'costs': {
-                    'embedding_cost_usd': ingestion_metrics.get('costs', {}).get('embedding_cost_usd', 0),
-                    'query_cost_usd': retrieval_metrics.get('costs', {}).get('query_cost_usd', 0),
-                    'total_cost_usd': (ingestion_metrics.get('costs', {}).get('embedding_cost_usd', 0) + 
-                                     retrieval_metrics.get('costs', {}).get('query_cost_usd', 0))
-                },
-                'parser_comparison': ingestion_metrics.get('parser_comparison', {}),
-                'performance_trends': ingestion_metrics.get('performance_trends', {}),
-                'error_summary': {
-                    'total_errors': (ingestion_metrics.get('error_summary', {}).get('total_errors', 0) + 
-                                   retrieval_metrics.get('error_summary', {}).get('total_errors', 0)),
-                    'processing_errors': ingestion_metrics.get('error_summary', {}).get('processing_errors', 0),
-                    'query_errors': retrieval_metrics.get('error_summary', {}).get('query_errors', 0)
-                }
+        except Exception as e:
+            logger.warning(f"Could not fetch retrieval metrics: {e}")
+        
+        # Merge metrics
+        merged = {
+            'processing': ingestion_metrics.get('processing', {}),
+            'queries': retrieval_metrics.get('queries', {}),
+            'costs': {
+                'embedding_cost_usd': ingestion_metrics.get('costs', {}).get('embedding_cost_usd', 0),
+                'query_cost_usd': retrieval_metrics.get('costs', {}).get('query_cost_usd', 0),
+                'total_cost_usd': (ingestion_metrics.get('costs', {}).get('embedding_cost_usd', 0) + 
+                                 retrieval_metrics.get('costs', {}).get('query_cost_usd', 0))
+            },
+            'parser_comparison': ingestion_metrics.get('parser_comparison', {}),
+            'performance_trends': ingestion_metrics.get('performance_trends', {}),
+            'error_summary': {
+                'total_errors': (ingestion_metrics.get('error_summary', {}).get('total_errors', 0) + 
+                               retrieval_metrics.get('error_summary', {}).get('total_errors', 0)),
+                'processing_errors': ingestion_metrics.get('error_summary', {}).get('processing_errors', 0),
+                'query_errors': retrieval_metrics.get('error_summary', {}).get('query_errors', 0)
             }
-            return merged
+        }
+        return merged
 
     def get_chunk_token_stats(self) -> Dict:
         """
