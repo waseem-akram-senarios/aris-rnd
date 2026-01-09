@@ -99,6 +99,7 @@ services:
       - .env
     environment:
       - SERVICE_TYPE=ui
+      - GATEWAY_URL=http://gateway:8500
       - INGESTION_SERVICE_URL=http://ingestion:8501
       - RETRIEVAL_SERVICE_URL=http://retrieval:8502
       - OPENAI_API_KEY=${OPENAI_API_KEY}

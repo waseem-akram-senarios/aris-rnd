@@ -23,12 +23,13 @@ st.set_page_config(
 )
 
 # Configuration
-GATEWAY_URL = "http://localhost:8500"  # Default gateway URL
+# In Docker, use service name; locally use localhost
+import os
+DEFAULT_GATEWAY_URL = os.getenv("GATEWAY_URL", "http://gateway:8500" if os.path.exists("/.dockerenv") else "http://localhost:8500")
 
 def get_gateway_url():
     """Get gateway URL from session state or environment."""
-    import os
-    return os.getenv("GATEWAY_URL", GATEWAY_URL)
+    return os.getenv("GATEWAY_URL", DEFAULT_GATEWAY_URL)
 
 
 # ============================================================================

@@ -62,6 +62,7 @@ COPY scripts/ ./scripts/
 COPY metrics/ ./metrics/
 COPY vectorstores/ ./vectorstores/
 COPY api/ ./api/
+COPY pages/ ./pages/
 COPY .streamlit/ ./.streamlit/
 COPY app.py .
 
