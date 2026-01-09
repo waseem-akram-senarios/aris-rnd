@@ -170,6 +170,9 @@ class DocumentProcessor:
         update_status('processing', 0.0, "Starting document processing...")
         
         try:
+            # Initialize images_stored_count at higher scope for registry access
+            images_stored_count = 0
+            
             # Get file size
             logger.info("[STEP 1.1] DocumentProcessor: Validating and preparing document...")
             file_size = len(file_content) if file_content else 0
@@ -297,13 +300,13 @@ class DocumentProcessor:
                         logger.info(f"[STEP 2.4] Storing {len(extracted_images_list)} images in OpenSearch...")
                         img_store_start = time.time()
                         try:
-                            self._store_images_in_opensearch(
+                            images_stored_count = self._store_images_in_opensearch(
                                 extracted_images_list,
                                 doc_name,
                                 parsed_doc.parser_used
                             )
                             img_store_time = time.time() - img_store_start
-                            logger.info(f"✅ [STEP 2.4] Successfully stored {len(extracted_images_list)} images in OpenSearch in {img_store_time:.2f}s")
+                            logger.info(f"✅ [STEP 2.4] Successfully stored {images_stored_count} images in OpenSearch in {img_store_time:.2f}s")
                         except Exception as e:
                             img_store_time = time.time() - img_store_start
                             logger.warning(f"⚠️ [STEP 2.4] Failed to store images in OpenSearch after {img_store_time:.2f}s: {str(e)}")
@@ -683,6 +686,16 @@ class DocumentProcessor:
                     ).hexdigest()[:16]
                     doc_id = f"{doc_name}_{content_hash}"
                 
+                # Get image count from parsed document or extracted images
+                actual_image_count = getattr(parsed_doc, 'image_count', 0)
+                if hasattr(parsed_doc, 'metadata') and isinstance(parsed_doc.metadata, dict):
+                    extracted_images = parsed_doc.metadata.get('extracted_images', [])
+                    if extracted_images:
+                        actual_image_count = max(actual_image_count, len(extracted_images))
+                
+                # Use images_stored_count from image storage phase
+                images_stored = images_stored_count
+                
                 # Save comprehensive metadata to registry
                 doc_metadata = {
                     'document_id': doc_id,
@@ -695,6 +708,8 @@ class DocumentProcessor:
                     'processing_time': processing_time,
                     'extraction_percentage': parsed_doc.extraction_percentage,
                     'images_detected': parsed_doc.images_detected,
+                    'image_count': actual_image_count,
+                    'images_stored': images_stored,
                     'pages': parsed_doc.pages,
                     'file_size': file_size,
                     'file_type': file_type,
@@ -880,7 +895,7 @@ class DocumentProcessor:
         extracted_images: List[Dict[str, Any]],
         doc_name: str,
         parser_used: str
-    ):
+    ) -> int:
         """
         Store extracted images in OpenSearch images index.
         
@@ -888,10 +903,13 @@ class DocumentProcessor:
             extracted_images: List of image dictionaries from parser
             doc_name: Document name
             parser_used: Parser that extracted the images
+            
+        Returns:
+            Number of images successfully stored
         """
         if not extracted_images:
             logger.info(f"_store_images_in_opensearch: No images to store (list is empty or None)")
-            return
+            return 0
         
         logger.info(f"_store_images_in_opensearch: Attempting to store {len(extracted_images)} images for document: {doc_name}")
         # Log first image format for debugging
@@ -917,7 +935,7 @@ class DocumentProcessor:
 
         if not cleaned_images:
             logger.warning("_store_images_in_opensearch: Image list was empty after normalization - skipping storage")
-            return
+            return 0
 
         opensearch_domain = getattr(self.rag_system, 'opensearch_domain', None)
         if not opensearch_domain:
@@ -927,8 +945,9 @@ class DocumentProcessor:
         if not opensearch_domain:
             logger.debug("OpenSearch domain not configured - skipping image storage")
             logger.debug("To enable image storage, set OPENSEARCH_DOMAIN or AWS_OPENSEARCH_DOMAIN environment variable")
-            return
+            return 0
         
+        stored_count = 0
         try:
             from vectorstores.opensearch_images_store import OpenSearchImagesStore
             from langchain_openai import OpenAIEmbeddings
@@ -954,7 +973,7 @@ class DocumentProcessor:
             
             if not opensearch_domain:
                 logger.warning("OpenSearch domain not found - cannot store images")
-                return
+                return 0
             
             images_store = OpenSearchImagesStore(
                 embeddings=embeddings,
@@ -966,7 +985,8 @@ class DocumentProcessor:
             logger.info(f"_store_images_in_opensearch: Calling store_images_batch with {len(cleaned_images)} images")
             try:
                 image_ids = images_store.store_images_batch(cleaned_images)
-                logger.info(f"_store_images_in_opensearch: store_images_batch returned {len(image_ids) if image_ids else 0} image IDs")
+                stored_count = len(image_ids) if image_ids else 0
+                logger.info(f"_store_images_in_opensearch: store_images_batch returned {stored_count} image IDs")
                 if image_ids:
                     logger.info(f"_store_images_in_opensearch: ✅ Successfully stored images: {image_ids[:5]}...")
                 else:
@@ -981,13 +1001,15 @@ class DocumentProcessor:
             if image_logger:
                 image_logger.log_storage_success(
                     source=doc_name,
-                    images_stored=len(image_ids),
+                    images_stored=stored_count,
                     image_ids=image_ids
                 )
             
-            logger.info(f"✅ Stored {len(image_ids)} images in OpenSearch for document: {doc_name}")
+            logger.info(f"✅ Stored {stored_count} images in OpenSearch for document: {doc_name}")
+            return stored_count
         except ImportError as e:
             logger.warning(f"OpenSearch images store not available: {str(e)}")
+            return 0
         except Exception as e:
             # Log storage failure
             try:
