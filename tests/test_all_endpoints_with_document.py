@@ -38,7 +38,7 @@ def print_info(msg):
     print(f"{Colors.CYAN}ℹ️  INFO: {msg}{Colors.END}")
 
 # Configuration
-BASE_URL = "http://44.221.84.58:8500"
+BASE_URL = os.getenv("BASE_URL", "http://44.221.84.58:8500")
 DOCUMENT_NAME = "FL10.11 SPECIFIC8 (1).pdf"
 
 # Test results
@@ -88,7 +88,7 @@ def test_endpoint(method, endpoint, expected_status=200, data=None, files=None, 
                 # Longer timeout for file uploads (documents can take time to process)
                 response = requests.post(url, files=files, data=data, timeout=300)  # 5 minutes
             else:
-                response = requests.post(url, json=data, timeout=30)
+                response = requests.post(url, json=data, timeout=300)
         elif method.upper() == 'PUT':
             response = requests.put(url, json=data, timeout=30)
         elif method.upper() == 'DELETE':

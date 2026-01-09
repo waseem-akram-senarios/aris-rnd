@@ -445,3 +445,180 @@ class ImageByNumberResponse(BaseModel):
     image_id: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
+
+# ============================================================================
+# CRUD SCHEMAS - Documents and Vector Database Management
+# ============================================================================
+
+class DocumentCreateRequest(BaseModel):
+    """Request model for creating a document entry manually (without file upload)"""
+    document_name: str = Field(..., description="Name of the document")
+    document_id: Optional[str] = Field(default=None, description="Custom document ID (auto-generated if not provided)")
+    language: str = Field(default="eng", description="Document language code")
+    status: str = Field(default="pending", description="Initial status")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
+
+
+class DocumentUpdateRequest(BaseModel):
+    """Request model for updating document metadata"""
+    document_name: Optional[str] = Field(default=None, description="Updated document name")
+    status: Optional[str] = Field(default=None, description="Updated status")
+    language: Optional[str] = Field(default=None, description="Updated language code")
+    error: Optional[str] = Field(default=None, description="Updated error message")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata to merge")
+
+
+class DocumentDeleteResponse(BaseModel):
+    """Response for document deletion"""
+    success: bool
+    document_id: str
+    document_name: Optional[str] = None
+    message: str
+    vector_deleted: bool = False
+    s3_deleted: bool = False
+    registry_deleted: bool = False
+
+
+class BulkDocumentDeleteRequest(BaseModel):
+    """Request for bulk document deletion"""
+    document_ids: List[str] = Field(..., description="List of document IDs to delete")
+    delete_vectors: bool = Field(default=True, description="Also delete vector data")
+    delete_s3: bool = Field(default=True, description="Also delete S3 files")
+
+
+class BulkDocumentDeleteResponse(BaseModel):
+    """Response for bulk document deletion"""
+    success: bool
+    total_requested: int
+    total_deleted: int
+    failed: List[Dict[str, str]] = []
+    message: str
+
+
+# Vector Database CRUD Schemas
+
+class VectorIndexInfo(BaseModel):
+    """Information about a vector index"""
+    index_name: str
+    document_name: Optional[str] = None
+    document_id: Optional[str] = None
+    chunk_count: int = 0
+    created_at: Optional[str] = None
+    last_updated: Optional[str] = None
+    dimension: Optional[int] = None
+    status: str = "active"  # active, empty, error
+
+
+class VectorIndexListResponse(BaseModel):
+    """Response for listing all vector indexes"""
+    indexes: List[VectorIndexInfo]
+    total: int
+    message: Optional[str] = None
+
+
+class VectorChunkInfo(BaseModel):
+    """Information about a vector chunk"""
+    chunk_id: str
+    text: str
+    page: Optional[int] = None
+    chunk_index: Optional[int] = None
+    source: Optional[str] = None
+    language: Optional[str] = None
+    metadata: Dict[str, Any] = {}
+    score: Optional[float] = None
+
+
+class VectorChunkListResponse(BaseModel):
+    """Response for listing chunks in an index"""
+    index_name: str
+    chunks: List[VectorChunkInfo]
+    total: int
+    offset: int = 0
+    limit: int = 100
+
+
+class VectorChunkCreateRequest(BaseModel):
+    """Request for manually creating a vector chunk"""
+    text: str = Field(..., description="Text content for the chunk")
+    index_name: str = Field(..., description="Target index name")
+    page: int = Field(default=1, ge=1, description="Page number")
+    source: Optional[str] = Field(default=None, description="Source document name")
+    language: Optional[str] = Field(default="eng", description="Language code")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
+
+
+class VectorChunkUpdateRequest(BaseModel):
+    """Request for updating a vector chunk"""
+    text: Optional[str] = Field(default=None, description="Updated text content")
+    page: Optional[int] = Field(default=None, ge=1, description="Updated page number")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Metadata to merge")
+
+
+class VectorIndexDeleteRequest(BaseModel):
+    """Request for deleting a vector index"""
+    index_name: str = Field(..., description="Index name to delete")
+    confirm: bool = Field(default=False, description="Must be True to confirm deletion")
+
+
+class VectorIndexDeleteResponse(BaseModel):
+    """Response for vector index deletion"""
+    success: bool
+    index_name: str
+    chunks_deleted: int = 0
+    message: str
+
+
+class BulkVectorIndexDeleteRequest(BaseModel):
+    """Request for bulk vector index deletion"""
+    index_names: List[str] = Field(..., description="List of index names to delete")
+    confirm: bool = Field(default=False, description="Must be True to confirm deletion")
+
+
+class BulkVectorIndexDeleteResponse(BaseModel):
+    """Response for bulk vector index deletion"""
+    success: bool
+    total_requested: int
+    total_deleted: int
+    failed: List[Dict[str, str]] = []
+    total_chunks_deleted: int = 0
+    message: str
+
+
+class VectorSearchRequest(BaseModel):
+    """Request for searching vectors directly"""
+    query: str = Field(..., description="Search query")
+    index_names: Optional[List[str]] = Field(default=None, description="Specific indexes to search (None = all)")
+    k: int = Field(default=10, ge=1, le=100, description="Number of results")
+    use_hybrid: bool = Field(default=True, description="Use hybrid search")
+    semantic_weight: float = Field(default=0.7, ge=0.0, le=1.0, description="Semantic search weight")
+
+
+class VectorSearchResponse(BaseModel):
+    """Response for vector search"""
+    query: str
+    results: List[VectorChunkInfo]
+    total: int
+    indexes_searched: List[str]
+    search_time_ms: float
+
+
+class IndexMapEntry(BaseModel):
+    """Entry in the document-to-index map"""
+    document_name: str
+    index_name: str
+    document_id: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class IndexMapResponse(BaseModel):
+    """Response for getting the index map"""
+    entries: List[IndexMapEntry]
+    total: int
+
+
+class IndexMapUpdateRequest(BaseModel):
+    """Request for updating the index map"""
+    document_name: str = Field(..., description="Document name")
+    index_name: str = Field(..., description="Index name to map to")
+    document_id: Optional[str] = Field(default=None, description="Optional document ID")
+

@@ -1,0 +1,45 @@
+    def _get_language_separators(self, metadatas: Optional[List[Dict]] = None) -> List[str]:
+        """
+        Get language-aware separators for text splitting.
+        
+        Args:
+            metadatas: Optional list of metadata dictionaries to detect language
+            
+        Returns:
+            List of separator strings optimized for the detected language
+        """
+        # Default separators (English/Western)
+        separators = ["\n\n", "\n", " ", ""]
+        
+        if not metadatas:
+            return separators
+            
+        # Detect predominant language
+        languages = [m.get('language', 'eng') for m in metadatas if m]
+        if not languages:
+            return separators
+            
+        # Get most common language
+        from collections import Counter
+        most_common_lang = Counter(languages).most_common(1)[0][0]
+        
+        # Improvement 4: Language-Aware Chunking
+        # Adjust separators based on language family
+        
+        # Asian languages (Chinese, Japanese) - no spaces between words
+        if most_common_lang in ['zho', 'chi', 'jpn', 'kor']:
+            separators = ["\n\n", "\n", "。", "！", "？", "；", "，", " ", ""]
+            
+        # Thai - no spaces, specialized boundaries
+        elif most_common_lang in ['tha']:
+            separators = ["\n\n", "\n", " ", ""]  # Thai usually needs specialized tokenizer
+            
+        # German - long compound words, split on hyphens if needed
+        elif most_common_lang in ['deu', 'ger']:
+            separators = ["\n\n", "\n", " ", "-", ""]
+            
+        # Arabic - specialized punctuation
+        elif most_common_lang in ['ara']:
+            separators = ["\n\n", "\n", "؛", "،", " ", ""]
+        
+        return separators

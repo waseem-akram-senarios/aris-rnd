@@ -1151,3 +1151,762 @@ class OpenSearchMultiIndexManager:
         """Get list of all managed index names."""
         return list(self.index_stores.keys())
 
+
+class OpenSearchCRUDManager:
+    """
+    CRUD operations manager for OpenSearch vector indexes.
+    Provides comprehensive management capabilities for documents and vectors.
+    """
+    
+    def __init__(self, embeddings, domain: str, region: Optional[str] = None, endpoint: Optional[str] = None):
+        """
+        Initialize CRUD manager.
+        
+        Args:
+            embeddings: Embeddings model to use
+            domain: OpenSearch domain name
+            region: AWS region
+            endpoint: Direct endpoint URL (optional)
+        """
+        self.embeddings = embeddings
+        self.domain = domain
+        self.region = region or os.getenv('AWS_OPENSEARCH_REGION', 'us-east-2')
+        self.endpoint = endpoint
+        self._client = None
+        self._initialize_client()
+    
+    def _initialize_client(self):
+        """Initialize OpenSearch client."""
+        try:
+            from opensearchpy import OpenSearch, RequestsHttpConnection
+            from requests_aws4auth import AWS4Auth
+            
+            access_key = os.getenv('AWS_OPENSEARCH_ACCESS_KEY_ID')
+            secret_key = os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY')
+            
+            if not access_key or not secret_key:
+                raise ValueError("OpenSearch credentials not configured")
+            
+            # Get endpoint if not provided
+            if not self.endpoint:
+                opensearch_client = boto3.client(
+                    'opensearch',
+                    aws_access_key_id=access_key,
+                    aws_secret_access_key=secret_key,
+                    region_name=self.region
+                )
+                domain_info = opensearch_client.describe_domain(DomainName=self.domain)
+                domain_status = domain_info.get('DomainStatus', {})
+                
+                if 'Endpoint' in domain_status:
+                    self.endpoint = domain_status['Endpoint']
+                elif 'Endpoints' in domain_status:
+                    endpoints = domain_status['Endpoints']
+                    self.endpoint = list(endpoints.values())[0] if endpoints else None
+                
+                if not self.endpoint:
+                    raise ValueError(f"Could not find endpoint for OpenSearch domain: {self.domain}")
+            
+            if not self.endpoint.startswith('http'):
+                self.endpoint = f"https://{self.endpoint}"
+            
+            # Create auth
+            awsauth = AWS4Auth(access_key, secret_key, self.region, 'es')
+            
+            # Parse host from endpoint
+            from urllib.parse import urlparse
+            parsed = urlparse(self.endpoint)
+            host = parsed.netloc or parsed.path
+            
+            self._client = OpenSearch(
+                hosts=[{'host': host, 'port': 443}],
+                http_auth=awsauth,
+                use_ssl=True,
+                verify_certs=True,
+                connection_class=RequestsHttpConnection
+            )
+            
+            logger.info(f"OpenSearch CRUD Manager initialized: {self.endpoint}")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenSearch CRUD client: {e}")
+            raise
+    
+    # ==================== INDEX OPERATIONS ====================
+    
+    def list_all_indexes(self, prefix: str = "aris-") -> List[Dict[str, Any]]:
+        """
+        List all OpenSearch indexes matching prefix.
+        
+        Args:
+            prefix: Index name prefix to filter (default: "aris-")
+            
+        Returns:
+            List of index information dicts
+        """
+        try:
+            # Get all indexes
+            indices = self._client.cat.indices(format='json')
+            
+            result = []
+            for idx in indices:
+                index_name = idx.get('index', '')
+                if index_name.startswith(prefix):
+                    # Get detailed mapping info
+                    try:
+                        mapping = self._client.indices.get_mapping(index=index_name)
+                        index_mapping = mapping.get(index_name, {}).get('mappings', {})
+                        properties = index_mapping.get('properties', {})
+                        
+                        # Find vector dimension
+                        dimension = None
+                        for field_name, field_config in properties.items():
+                            if field_config.get('type') == 'knn_vector':
+                                dimension = field_config.get('dimension')
+                                break
+                    except:
+                        dimension = None
+                    
+                    result.append({
+                        'index_name': index_name,
+                        'chunk_count': int(idx.get('docs.count', 0) or 0),
+                        'size': idx.get('store.size', '0b'),
+                        'status': idx.get('health', 'unknown'),
+                        'dimension': dimension,
+                        'created_at': None  # OpenSearch doesn't store creation time directly
+                    })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to list indexes: {e}")
+            return []
+    
+    def get_index_info(self, index_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get detailed information about a specific index.
+        
+        Args:
+            index_name: Name of the index
+            
+        Returns:
+            Index information dict or None
+        """
+        try:
+            if not self._client.indices.exists(index=index_name):
+                return None
+            
+            # Get index stats
+            stats = self._client.indices.stats(index=index_name)
+            index_stats = stats.get('indices', {}).get(index_name, {})
+            
+            # Get mapping
+            mapping = self._client.indices.get_mapping(index=index_name)
+            index_mapping = mapping.get(index_name, {}).get('mappings', {})
+            properties = index_mapping.get('properties', {})
+            
+            # Find vector dimension
+            dimension = None
+            for field_name, field_config in properties.items():
+                if field_config.get('type') == 'knn_vector':
+                    dimension = field_config.get('dimension')
+                    break
+            
+            primaries = index_stats.get('primaries', {})
+            docs = primaries.get('docs', {})
+            store = primaries.get('store', {})
+            
+            return {
+                'index_name': index_name,
+                'exists': True,
+                'chunk_count': docs.get('count', 0),
+                'deleted_docs': docs.get('deleted', 0),
+                'size_bytes': store.get('size_in_bytes', 0),
+                'dimension': dimension,
+                'properties': list(properties.keys()),
+                'status': 'active'
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get index info for '{index_name}': {e}")
+            return None
+    
+    def delete_index(self, index_name: str) -> Dict[str, Any]:
+        """
+        Delete an OpenSearch index.
+        
+        Args:
+            index_name: Name of the index to delete
+            
+        Returns:
+            Result dict with success status
+        """
+        try:
+            if not self._client.indices.exists(index=index_name):
+                return {
+                    'success': False,
+                    'index_name': index_name,
+                    'message': f"Index '{index_name}' does not exist",
+                    'chunks_deleted': 0
+                }
+            
+            # Get doc count before deletion
+            count_resp = self._client.count(index=index_name)
+            chunks_count = count_resp.get('count', 0)
+            
+            # Delete the index
+            self._client.indices.delete(index=index_name)
+            
+            logger.info(f"Deleted index '{index_name}' with {chunks_count} chunks")
+            
+            return {
+                'success': True,
+                'index_name': index_name,
+                'message': f"Successfully deleted index '{index_name}'",
+                'chunks_deleted': chunks_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to delete index '{index_name}': {e}")
+            return {
+                'success': False,
+                'index_name': index_name,
+                'message': f"Failed to delete index: {str(e)}",
+                'chunks_deleted': 0
+            }
+    
+    def delete_indexes_bulk(self, index_names: List[str]) -> Dict[str, Any]:
+        """
+        Delete multiple OpenSearch indexes.
+        
+        Args:
+            index_names: List of index names to delete
+            
+        Returns:
+            Result dict with bulk deletion status
+        """
+        results = {
+            'success': True,
+            'total_requested': len(index_names),
+            'total_deleted': 0,
+            'total_chunks_deleted': 0,
+            'failed': [],
+            'message': ''
+        }
+        
+        for index_name in index_names:
+            result = self.delete_index(index_name)
+            if result['success']:
+                results['total_deleted'] += 1
+                results['total_chunks_deleted'] += result['chunks_deleted']
+            else:
+                results['failed'].append({
+                    'index_name': index_name,
+                    'error': result['message']
+                })
+        
+        if results['failed']:
+            results['success'] = len(results['failed']) < len(index_names)
+            results['message'] = f"Deleted {results['total_deleted']}/{len(index_names)} indexes, {len(results['failed'])} failed"
+        else:
+            results['message'] = f"Successfully deleted all {results['total_deleted']} indexes"
+        
+        return results
+    
+    # ==================== CHUNK OPERATIONS ====================
+    
+    def list_chunks(
+        self, 
+        index_name: str, 
+        offset: int = 0, 
+        limit: int = 100,
+        source_filter: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        List chunks in an index with pagination.
+        
+        Args:
+            index_name: Index name to query
+            offset: Starting offset
+            limit: Maximum results
+            source_filter: Optional source document filter
+            
+        Returns:
+            Dict with chunks and pagination info
+        """
+        try:
+            if not self._client.indices.exists(index=index_name):
+                return {
+                    'index_name': index_name,
+                    'chunks': [],
+                    'total': 0,
+                    'offset': offset,
+                    'limit': limit,
+                    'error': f"Index '{index_name}' does not exist"
+                }
+            
+            # Build query
+            query = {"match_all": {}}
+            if source_filter:
+                query = {
+                    "bool": {
+                        "must": [{"match": {"source": source_filter}}]
+                    }
+                }
+            
+            # Execute search
+            response = self._client.search(
+                index=index_name,
+                body={
+                    "query": query,
+                    "from": offset,
+                    "size": limit,
+                    "sort": [{"_id": "asc"}]
+                }
+            )
+            
+            hits = response.get('hits', {})
+            total = hits.get('total', {})
+            total_count = total.get('value', 0) if isinstance(total, dict) else total
+            
+            chunks = []
+            for hit in hits.get('hits', []):
+                source = hit.get('_source', {})
+                chunks.append({
+                    'chunk_id': hit.get('_id'),
+                    'text': source.get('text', ''),
+                    'page': source.get('page') or source.get('metadata', {}).get('page'),
+                    'chunk_index': source.get('chunk_index') or source.get('metadata', {}).get('chunk_index'),
+                    'source': source.get('source') or source.get('metadata', {}).get('source'),
+                    'language': source.get('language') or source.get('metadata', {}).get('language'),
+                    'metadata': source.get('metadata', {}),
+                    'score': hit.get('_score')
+                })
+            
+            return {
+                'index_name': index_name,
+                'chunks': chunks,
+                'total': total_count,
+                'offset': offset,
+                'limit': limit
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to list chunks in '{index_name}': {e}")
+            return {
+                'index_name': index_name,
+                'chunks': [],
+                'total': 0,
+                'offset': offset,
+                'limit': limit,
+                'error': str(e)
+            }
+    
+    def get_chunk(self, index_name: str, chunk_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific chunk by ID.
+        
+        Args:
+            index_name: Index name
+            chunk_id: Document/chunk ID
+            
+        Returns:
+            Chunk data or None
+        """
+        try:
+            response = self._client.get(index=index_name, id=chunk_id)
+            source = response.get('_source', {})
+            
+            return {
+                'chunk_id': response.get('_id'),
+                'text': source.get('text', ''),
+                'page': source.get('page') or source.get('metadata', {}).get('page'),
+                'chunk_index': source.get('chunk_index') or source.get('metadata', {}).get('chunk_index'),
+                'source': source.get('source') or source.get('metadata', {}).get('source'),
+                'language': source.get('language') or source.get('metadata', {}).get('language'),
+                'metadata': source.get('metadata', {})
+            }
+            
+        except Exception as e:
+            logger.warning(f"Chunk '{chunk_id}' not found in '{index_name}': {e}")
+            return None
+    
+    def create_chunk(
+        self,
+        index_name: str,
+        text: str,
+        page: int = 1,
+        source: Optional[str] = None,
+        language: str = "eng",
+        metadata: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Create a new chunk with embedding.
+        
+        Args:
+            index_name: Target index
+            text: Text content
+            page: Page number
+            source: Source document name
+            language: Language code
+            metadata: Additional metadata
+            
+        Returns:
+            Result dict with chunk ID
+        """
+        try:
+            # Generate embedding
+            embedding = self.embeddings.embed_query(text)
+            
+            # Prepare document
+            doc = {
+                'text': text,
+                'vector': embedding,
+                'page': page,
+                'source': source,
+                'language': language,
+                'content_type': 'text',
+                'metadata': metadata or {}
+            }
+            
+            # Index document
+            response = self._client.index(index=index_name, body=doc)
+            
+            chunk_id = response.get('_id')
+            logger.info(f"Created chunk '{chunk_id}' in index '{index_name}'")
+            
+            return {
+                'success': True,
+                'chunk_id': chunk_id,
+                'index_name': index_name,
+                'message': f"Successfully created chunk"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to create chunk in '{index_name}': {e}")
+            return {
+                'success': False,
+                'chunk_id': None,
+                'index_name': index_name,
+                'message': f"Failed to create chunk: {str(e)}"
+            }
+    
+    def update_chunk(
+        self,
+        index_name: str,
+        chunk_id: str,
+        text: Optional[str] = None,
+        page: Optional[int] = None,
+        metadata: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        """
+        Update an existing chunk.
+        
+        Args:
+            index_name: Index name
+            chunk_id: Chunk ID to update
+            text: New text content (regenerates embedding if provided)
+            page: New page number
+            metadata: Metadata to merge
+            
+        Returns:
+            Result dict
+        """
+        try:
+            # Build update doc
+            update_doc = {}
+            
+            if text is not None:
+                update_doc['text'] = text
+                # Regenerate embedding
+                embedding = self.embeddings.embed_query(text)
+                update_doc['vector'] = embedding
+            
+            if page is not None:
+                update_doc['page'] = page
+            
+            if metadata:
+                # Get existing doc to merge metadata
+                existing = self._client.get(index=index_name, id=chunk_id)
+                existing_metadata = existing.get('_source', {}).get('metadata', {})
+                existing_metadata.update(metadata)
+                update_doc['metadata'] = existing_metadata
+            
+            if not update_doc:
+                return {
+                    'success': False,
+                    'chunk_id': chunk_id,
+                    'message': 'No fields to update'
+                }
+            
+            # Execute update
+            self._client.update(
+                index=index_name,
+                id=chunk_id,
+                body={'doc': update_doc}
+            )
+            
+            logger.info(f"Updated chunk '{chunk_id}' in index '{index_name}'")
+            
+            return {
+                'success': True,
+                'chunk_id': chunk_id,
+                'index_name': index_name,
+                'message': 'Successfully updated chunk'
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to update chunk '{chunk_id}' in '{index_name}': {e}")
+            return {
+                'success': False,
+                'chunk_id': chunk_id,
+                'index_name': index_name,
+                'message': f"Failed to update chunk: {str(e)}"
+            }
+    
+    def delete_chunk(self, index_name: str, chunk_id: str) -> Dict[str, Any]:
+        """
+        Delete a specific chunk.
+        
+        Args:
+            index_name: Index name
+            chunk_id: Chunk ID to delete
+            
+        Returns:
+            Result dict
+        """
+        try:
+            self._client.delete(index=index_name, id=chunk_id)
+            
+            logger.info(f"Deleted chunk '{chunk_id}' from index '{index_name}'")
+            
+            return {
+                'success': True,
+                'chunk_id': chunk_id,
+                'index_name': index_name,
+                'message': 'Successfully deleted chunk'
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to delete chunk '{chunk_id}' from '{index_name}': {e}")
+            return {
+                'success': False,
+                'chunk_id': chunk_id,
+                'index_name': index_name,
+                'message': f"Failed to delete chunk: {str(e)}"
+            }
+    
+    def delete_chunks_by_source(self, index_name: str, source: str) -> Dict[str, Any]:
+        """
+        Delete all chunks from a specific source document.
+        
+        Args:
+            index_name: Index name
+            source: Source document name
+            
+        Returns:
+            Result dict with deletion count
+        """
+        try:
+            # Delete by query
+            response = self._client.delete_by_query(
+                index=index_name,
+                body={
+                    "query": {
+                        "bool": {
+                            "should": [
+                                {"match": {"source": source}},
+                                {"match": {"metadata.source": source}}
+                            ]
+                        }
+                    }
+                }
+            )
+            
+            deleted = response.get('deleted', 0)
+            logger.info(f"Deleted {deleted} chunks from source '{source}' in index '{index_name}'")
+            
+            return {
+                'success': True,
+                'index_name': index_name,
+                'source': source,
+                'chunks_deleted': deleted,
+                'message': f"Successfully deleted {deleted} chunks"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to delete chunks from source '{source}' in '{index_name}': {e}")
+            return {
+                'success': False,
+                'index_name': index_name,
+                'source': source,
+                'chunks_deleted': 0,
+                'message': f"Failed to delete chunks: {str(e)}"
+            }
+    
+    # ==================== SEARCH OPERATIONS ====================
+    
+    def search_vectors(
+        self,
+        query: str,
+        index_names: Optional[List[str]] = None,
+        k: int = 10,
+        use_hybrid: bool = True,
+        semantic_weight: float = 0.7
+    ) -> Dict[str, Any]:
+        """
+        Search vectors across indexes.
+        
+        Args:
+            query: Search query
+            index_names: Specific indexes to search (None = all aris- indexes)
+            k: Number of results
+            use_hybrid: Use hybrid search
+            semantic_weight: Weight for semantic search
+            
+        Returns:
+            Search results dict
+        """
+        import time
+        start_time = time.time()
+        
+        try:
+            # Get indexes to search
+            if not index_names:
+                all_indexes = self.list_all_indexes()
+                index_names = [idx['index_name'] for idx in all_indexes]
+            
+            if not index_names:
+                return {
+                    'query': query,
+                    'results': [],
+                    'total': 0,
+                    'indexes_searched': [],
+                    'search_time_ms': 0
+                }
+            
+            # Generate query embedding
+            query_vector = self.embeddings.embed_query(query)
+            
+            all_results = []
+            
+            for index_name in index_names:
+                try:
+                    if use_hybrid:
+                        # Hybrid search with semantic and keyword
+                        knn_results = self._client.search(
+                            index=index_name,
+                            body={
+                                "size": k,
+                                "knn": {
+                                    "field": "vector",
+                                    "vector": query_vector,
+                                    "k": k
+                                }
+                            }
+                        )
+                        
+                        text_results = self._client.search(
+                            index=index_name,
+                            body={
+                                "size": k,
+                                "query": {
+                                    "multi_match": {
+                                        "query": query,
+                                        "fields": ["text", "metadata.source"],
+                                        "fuzziness": "AUTO"
+                                    }
+                                }
+                            }
+                        )
+                        
+                        # Combine with RRF-like scoring
+                        seen_ids = {}
+                        for rank, hit in enumerate(knn_results.get('hits', {}).get('hits', []), 1):
+                            doc_id = hit['_id']
+                            rrf_score = semantic_weight / (60 + rank)
+                            seen_ids[doc_id] = {'hit': hit, 'score': rrf_score}
+                        
+                        keyword_weight = 1 - semantic_weight
+                        for rank, hit in enumerate(text_results.get('hits', {}).get('hits', []), 1):
+                            doc_id = hit['_id']
+                            rrf_score = keyword_weight / (60 + rank)
+                            if doc_id in seen_ids:
+                                seen_ids[doc_id]['score'] += rrf_score
+                            else:
+                                seen_ids[doc_id] = {'hit': hit, 'score': rrf_score}
+                        
+                        # Sort by combined score
+                        sorted_results = sorted(seen_ids.values(), key=lambda x: x['score'], reverse=True)
+                        
+                        for item in sorted_results[:k]:
+                            hit = item['hit']
+                            source = hit.get('_source', {})
+                            all_results.append({
+                                'chunk_id': hit['_id'],
+                                'text': source.get('text', ''),
+                                'page': source.get('page') or source.get('metadata', {}).get('page'),
+                                'chunk_index': source.get('chunk_index') or source.get('metadata', {}).get('chunk_index'),
+                                'source': source.get('source') or source.get('metadata', {}).get('source'),
+                                'language': source.get('language') or source.get('metadata', {}).get('language'),
+                                'metadata': source.get('metadata', {}),
+                                'score': item['score'],
+                                'index': index_name
+                            })
+                    else:
+                        # Semantic-only search
+                        response = self._client.search(
+                            index=index_name,
+                            body={
+                                "size": k,
+                                "knn": {
+                                    "field": "vector",
+                                    "vector": query_vector,
+                                    "k": k
+                                }
+                            }
+                        )
+                        
+                        for hit in response.get('hits', {}).get('hits', []):
+                            source = hit.get('_source', {})
+                            all_results.append({
+                                'chunk_id': hit['_id'],
+                                'text': source.get('text', ''),
+                                'page': source.get('page') or source.get('metadata', {}).get('page'),
+                                'chunk_index': source.get('chunk_index') or source.get('metadata', {}).get('chunk_index'),
+                                'source': source.get('source') or source.get('metadata', {}).get('source'),
+                                'language': source.get('language') or source.get('metadata', {}).get('language'),
+                                'metadata': source.get('metadata', {}),
+                                'score': hit.get('_score'),
+                                'index': index_name
+                            })
+                
+                except Exception as e:
+                    logger.warning(f"Error searching index '{index_name}': {e}")
+                    continue
+            
+            # Sort all results by score and limit
+            all_results.sort(key=lambda x: x.get('score', 0) or 0, reverse=True)
+            final_results = all_results[:k]
+            
+            search_time_ms = (time.time() - start_time) * 1000
+            
+            return {
+                'query': query,
+                'results': final_results,
+                'total': len(final_results),
+                'indexes_searched': index_names,
+                'search_time_ms': search_time_ms
+            }
+            
+        except Exception as e:
+            logger.error(f"Vector search failed: {e}")
+            return {
+                'query': query,
+                'results': [],
+                'total': 0,
+                'indexes_searched': index_names or [],
+                'search_time_ms': (time.time() - start_time) * 1000,
+                'error': str(e)
+            }
+
