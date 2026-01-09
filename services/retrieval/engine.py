@@ -3066,6 +3066,62 @@ class RetrievalEngine:
                                 'ocr_text': chunk_text  # Store FULL OCR text
                             })
         
+        # CRITICAL FIX: Also query OpenSearch images index directly
+        # This ensures we get image content even if text chunks don't have image markers
+        try:
+            from vectorstores.opensearch_images_store import OpenSearchImagesStore
+            from langchain_openai import OpenAIEmbeddings
+            
+            if self.opensearch_domain:
+                embeddings = OpenAIEmbeddings(
+                    openai_api_key=os.getenv('OPENAI_API_KEY'),
+                    model=self.embedding_model
+                )
+                
+                images_store = OpenSearchImagesStore(
+                    embeddings=embeddings,
+                    domain=self.opensearch_domain,
+                    region=getattr(self, 'region', None)
+                )
+                
+                # Query images index with the question
+                image_results = images_store.search_images(
+                    query=question,
+                    source=self.active_sources[0] if self.active_sources and len(self.active_sources) == 1 else None,
+                    k=min(10, k * 2) if k else 10
+                )
+                
+                if image_results:
+                    logger.info(f"📷 Found {len(image_results)} images from OpenSearch images index")
+                    
+                    # Add images to image_content_map
+                    for img in image_results:
+                        source = img.get('source', 'Unknown')
+                        image_number = img.get('image_number', 1)
+                        ocr_text = img.get('ocr_text', '')
+                        page = img.get('page', 1)
+                        
+                        if ocr_text and len(ocr_text) > 20:  # Only add if meaningful OCR text
+                            key = (source, image_number)
+                            if key not in image_content_map:
+                                image_content_map[key] = []
+                            
+                            # Check if this OCR text is not already in the map
+                            existing_ocr = [c.get('ocr_text', '')[:100] for c in image_content_map[key]]
+                            if ocr_text[:100] not in existing_ocr:
+                                image_content_map[key].append({
+                                    'content': f"[IMAGE {image_number} - From OpenSearch Images Index]\n{ocr_text}",
+                                    'page': page,
+                                    'full_chunk': ocr_text,
+                                    'ocr_text': ocr_text,
+                                    'source': 'opensearch_images'
+                                })
+                                logger.debug(f"📷 Added image {image_number} from {source} ({len(ocr_text)} chars OCR)")
+        except ImportError:
+            logger.debug("OpenSearch images store not available for query integration")
+        except Exception as e:
+            logger.warning(f"Could not query OpenSearch images index: {e}")
+        
         # Enhanced logging for image content extraction results
         if image_content_map:
             total_images = sum(len(contents) for contents in image_content_map.values())
