@@ -5343,7 +5343,9 @@ Answer:"""
                     
                     # Debug logging for all citations to see what's happening
                     if citation.get('id', 0) <= 6:
-                        logger.info(f"Citation {citation.get('id')}: score={sim_score:.4f}, calculated_percentage={similarity_percentage:.2f}%, source={citation.get('source', 'Unknown')[:40]}")
+                        sim_pct = citation.get('similarity_percentage')
+                        sim_pct_str = f"{sim_pct:.2f}%" if sim_pct is not None else "N/A"
+                        logger.info(f"Citation {citation.get('id')}: score={sim_score:.4f}, calculated_percentage={sim_pct_str}, source={citation.get('source', 'Unknown')[:40]}")
                 else:
                     citation['similarity_percentage'] = 0.0  # No score = 0%
                     logger.warning(f"Citation {citation.get('id')} has no similarity_score, setting percentage to 0%")
