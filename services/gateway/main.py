@@ -223,7 +223,7 @@ async def query_rag(
     request: QueryRequest,
     service: GatewayService = Depends(get_service)
 ):
-    """Query the Retrieval service"""
+    """Query the Retrieval service with hybrid search as default"""
     # Ensure request-scoped document filtering is forwarded to retrieval (critical for citation/page accuracy)
     if request.active_sources is not None:
         service.active_sources = request.active_sources
@@ -231,11 +231,19 @@ async def query_rag(
         # Backward-compatible: treat document_id as a single active source for strict filtering
         service.active_sources = [request.document_id]
 
+    # Use hybrid search by default if not specified
+    search_mode = request.search_mode if request.search_mode else "hybrid"
+    use_hybrid_search = request.use_hybrid_search if request.use_hybrid_search is not None else True
+    semantic_weight = request.semantic_weight if request.semantic_weight is not None else 0.7
+
     result = await service.query_text_only(
         question=request.question,
         k=request.k,
         document_id=request.document_id,
         use_mmr=request.use_mmr,
+        use_hybrid_search=use_hybrid_search,
+        semantic_weight=semantic_weight,
+        search_mode=search_mode,
         response_language=request.response_language,
         filter_language=request.filter_language,
         auto_translate=request.auto_translate

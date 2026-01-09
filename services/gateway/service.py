@@ -102,14 +102,17 @@ class GatewayService:
         k: int = 6, 
         document_id: Optional[str] = None, 
         use_mmr: bool = True,
+        use_hybrid_search: bool = True,  # Default to hybrid search
+        semantic_weight: float = 0.7,
+        search_mode: str = "hybrid",  # Default to hybrid mode
         response_language: Optional[str] = None,
         filter_language: Optional[str] = None,
         auto_translate: bool = False
     ) -> Dict:
-        """Proxies query to Retrieval Service"""
+        """Proxies query to Retrieval Service with hybrid search as default"""
         import uuid
         request_id = str(uuid.uuid4())
-        logger.info(f"Gateway: [ReqID: {request_id}] Starting query_text_only for question: '{question[:50]}...'")
+        logger.info(f"Gateway: [ReqID: {request_id}] Starting query_text_only for question: '{question[:50]}...' (search_mode={search_mode})")
         
         async with httpx.AsyncClient(timeout=60.0) as client:
             payload = {
@@ -117,6 +120,9 @@ class GatewayService:
                 "k": k,
                 "document_id": document_id,
                 "use_mmr": use_mmr,
+                "use_hybrid_search": use_hybrid_search,
+                "semantic_weight": semantic_weight,
+                "search_mode": search_mode,  # Pass search mode to retrieval
                 "active_sources": self._active_sources,
                 "response_language": response_language,
                 "filter_language": filter_language,

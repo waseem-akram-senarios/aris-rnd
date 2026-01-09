@@ -44,10 +44,11 @@ class Citation(BaseModel):
     id: int
     source: str
     page: int = Field(default=1, ge=1, description="Page number (always >= 1, defaults to 1 if not available)")
+    image_number: Optional[int] = Field(default=None, description="Image number if citation is from an image")
     snippet: str
     full_text: str
-    source_location: str
-    content_type: str = "text"
+    source_location: str = Field(description="Human-readable location: 'Page X' or 'Page X, Image Y'")
+    content_type: str = Field(default="text", description="Type of content: 'text' or 'image'")
     image_ref: Optional[Dict[str, Any]] = None
     image_info: Optional[str] = None
     # Additional optional fields that may be present

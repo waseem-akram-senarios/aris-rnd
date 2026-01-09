@@ -1241,15 +1241,25 @@ class RetrievalEngine:
                 page = 1
                 logger.debug(f"find_all_occurrences citation {idx}: page was None, using fallback page 1")
             
+            # Extract image_number
+            image_number = occ.get('image_index') or occ.get('image_number')
+            
+            # Build source_location with page and image info
+            if image_number is not None:
+                source_location = f"Page {page}, Image {image_number}"
+            else:
+                source_location = f"Page {page}"
+            
             citations.append({
                 'id': idx,
                 'source': occ.get('source') or source_name,
                 'page': page,  # Always guaranteed to be an integer >= 1
+                'image_number': image_number,  # Image number if from image content
                 'snippet': occ.get('snippet'),
                 'full_text': occ.get('snippet') or '',
-                'source_location': f"Page {page}",
-                'content_type': 'image' if occ.get('image_index') is not None else 'text',
-                'image_ref': {'image_index': occ.get('image_index'), 'page': page} if occ.get('image_index') is not None else None,
+                'source_location': source_location,  # Now includes "Page X, Image Y" when applicable
+                'content_type': 'image' if image_number is not None else 'text',
+                'image_ref': {'image_index': image_number, 'page': page} if image_number is not None else None,
             })
 
         sources = [source_name]
@@ -2385,12 +2395,28 @@ class RetrievalEngine:
             # Get page_extraction_method from chunk metadata for debugging
             page_extraction_method = doc.metadata.get('page_extraction_method', 'unknown')
             
+            # Extract image_number from image_ref or metadata
+            image_number = None
+            if image_ref and isinstance(image_ref, dict):
+                image_number = image_ref.get('image_index')
+            elif doc.metadata.get('image_index') is not None:
+                image_number = doc.metadata.get('image_index')
+            elif doc.metadata.get('image_number') is not None:
+                image_number = doc.metadata.get('image_number')
+            
+            # Build enhanced source_location with page AND image number
+            if image_number is not None:
+                source_location = f"Page {page}, Image {image_number}"
+            else:
+                source_location = f"Page {page}"
+            
             # Build citation entry with enhanced metadata including confidence scores
             citation = {
                 'id': i,
                 'source': source if source and source != 'Unknown' else 'Unknown',
                 'source_confidence': source_confidence,
                 'page': page,  # Always guaranteed to be an integer >= 1
+                'image_number': image_number,  # Image number if from image content
                 'page_confidence': page_confidence,
                 'page_extraction_method': page_extraction_method,  # How page was determined
                 'section': section,
@@ -2401,8 +2427,8 @@ class RetrievalEngine:
                 'chunk_index': doc.metadata.get('chunk_index', None),
                 'image_ref': image_ref,  # Image reference if available
                 'image_info': image_info,  # Human-readable image info
-                'source_location': source_location,  # Certification field: exact location
-                'content_type': 'image' if image_ref else 'text',  # Type of content
+                'source_location': source_location,  # Certification field: exact location (Page X or Page X, Image Y)
+                'content_type': 'image' if image_ref or image_number else 'text',  # Type of content
                 'extraction_method': extraction_method,  # How source was extracted
                 'similarity_score': similarity_score,  # Vector similarity score for ranking
                 's3_url': doc.metadata.get('s3_url')
@@ -5585,11 +5611,27 @@ Answer:"""
             # Get page_extraction_method from chunk metadata for debugging
             page_extraction_method = doc.metadata.get('page_extraction_method', 'unknown')
             
+            # Extract image_number from image_ref or metadata (agentic RAG)
+            image_number = None
+            if image_ref and isinstance(image_ref, dict):
+                image_number = image_ref.get('image_index')
+            elif doc.metadata.get('image_index') is not None:
+                image_number = doc.metadata.get('image_index')
+            elif doc.metadata.get('image_number') is not None:
+                image_number = doc.metadata.get('image_number')
+            
+            # Build enhanced source_location with page AND image number (agentic RAG)
+            if image_number is not None:
+                source_location = f"Page {page}, Image {image_number}"
+            else:
+                source_location = f"Page {page}"
+            
             citation = {
                 'id': i,
                 'source': source if source and source != 'Unknown' else 'Unknown',
                 'source_confidence': source_confidence,
                 'page': page,  # Always guaranteed to be an integer >= 1
+                'image_number': image_number,  # Image number if from image content
                 'page_confidence': page_confidence,
                 'page_extraction_method': page_extraction_method,  # How page was determined
                 'section': section,
@@ -5601,12 +5643,12 @@ Answer:"""
                 'chunk_index': doc.metadata.get('chunk_index', None),
                 'image_ref': image_ref,
                 'image_info': image_info,
-                'source_location': source_location,
-                'content_type': 'image' if image_ref else 'text',
+                'source_location': source_location,  # Now includes "Page X, Image Y" when applicable
+                'content_type': 'image' if image_ref or image_number else 'text',
                 'extraction_method': extraction_method
             }
             citations.append(citation)
-            logger.debug(f"Agentic RAG Citation {i}: source='{source}', page={page}, method={page_extraction_method}, chunk_index={citation.get('chunk_index', 'N/A')}")
+            logger.debug(f"Agentic RAG Citation {i}: source='{source}', page={page}, image={image_number}, method={page_extraction_method}, chunk_index={citation.get('chunk_index', 'N/A')}")
             
             page_info = f" (Page {page})"  # page is always set
             context_parts.append(f"[Source {i}: {source}{page_info}]\n{chunk_text}")

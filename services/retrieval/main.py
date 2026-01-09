@@ -180,19 +180,39 @@ async def query_rag(
             auto_translate=query_request.auto_translate
         )
         
-        # Build citations for response schema
+        # Build citations for response schema with full metadata including image_number
         citations = []
         for i, src in enumerate(result.get("citations", [])):
+            # Extract image_number from source data
+            image_number = src.get('image_number')
+            if image_number is None and src.get('image_ref'):
+                image_ref = src.get('image_ref')
+                if isinstance(image_ref, dict):
+                    image_number = image_ref.get('image_index')
+            
+            # Build source_location with page and image info
+            page = src.get("page", 1)
+            if image_number is not None:
+                source_location = f"Page {page}, Image {image_number}"
+            else:
+                source_location = src.get("source_location", f"Page {page}")
+            
             citations.append(
                 Citation(
                     id=src.get('id', i) if isinstance(src.get('id'), int) else i,
                     source=src.get("source", ""),
-                    page=src.get("page", 1),
+                    page=page,
+                    image_number=image_number,
                     snippet=src.get("snippet", ""),
                     full_text=src.get("full_text", ""),
-                    source_location=src.get("source_location", f"Page {src.get('page', 1)}"),
+                    source_location=source_location,
+                    content_type=src.get("content_type", "image" if image_number else "text"),
+                    image_ref=src.get("image_ref"),
+                    image_info=src.get("image_info"),
                     similarity_score=src.get("similarity_score"),
-                    similarity_percentage=src.get("similarity_percentage")
+                    similarity_percentage=src.get("similarity_percentage"),
+                    chunk_index=src.get("chunk_index"),
+                    extraction_method=src.get("extraction_method")
                 )
             )
             
