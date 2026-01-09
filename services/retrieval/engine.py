@@ -5366,7 +5366,7 @@ Answer:"""
                 logger.debug(f"Rank {i}: similarity={sim_str} ({sim_percent}%), "
                             f"source={citation.get('source', 'Unknown')[:50]}")
         
-        top_3_scores = [f'{c.get("similarity_score", "N/A")} ({c.get("similarity_percentage", 0):.1f}%)' for c in citations[:3]]
+        top_3_scores = [f'{c.get("similarity_score", "N/A")} ({c.get("similarity_percentage") or 0:.1f}%)' for c in citations[:3]]
         logger.info(f"Ranked {len(citations)} citations by similarity (highest to lowest). Top 3: {top_3_scores}")
         return citations
     
