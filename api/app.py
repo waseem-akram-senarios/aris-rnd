@@ -636,28 +636,84 @@ with st.sidebar:
     st.divider()
     st.header("🌍 Multilingual Settings")
     
-    # Response Language
-    response_languages = ["English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch", "Russian", "Chinese", "Japanese", "Korean", "Arabic", "Hindi"]
+    # Response Language with more options
+    response_language_options = {
+        "Auto": "🔄 Auto (same as query language)",
+        "English": "🇬🇧 English",
+        "Spanish": "🇪🇸 Spanish",
+        "French": "🇫🇷 French",
+        "German": "🇩🇪 German",
+        "Italian": "🇮🇹 Italian",
+        "Portuguese": "🇵🇹 Portuguese",
+        "Dutch": "🇳🇱 Dutch",
+        "Russian": "🇷🇺 Russian",
+        "Chinese": "🇨🇳 Chinese",
+        "Japanese": "🇯🇵 Japanese",
+        "Korean": "🇰🇷 Korean",
+        "Arabic": "🇸🇦 Arabic",
+        "Hindi": "🇮🇳 Hindi",
+        "Turkish": "🇹🇷 Turkish",
+        "Vietnamese": "🇻🇳 Vietnamese",
+        "Thai": "🇹🇭 Thai",
+        "Greek": "🇬🇷 Greek",
+        "Polish": "🇵🇱 Polish",
+        "Ukrainian": "🇺🇦 Ukrainian",
+    }
+    response_languages = list(response_language_options.keys())
+    
     response_language = st.selectbox(
-        "Response Language:",
+        "Preferred Response Language:",
         options=response_languages,
+        format_func=lambda x: response_language_options.get(x, x),
         index=0,
-        help="Language for the final answer. The system will translate retrieved info if needed."
+        help="Language for the AI's response. Select 'Auto' to respond in the same language as your query."
     )
+    
+    # Handle 'Auto' response language
+    if response_language == "Auto":
+        response_language = None  # Will be set dynamically based on query language
     
     # Auto-Translation Toggle
-    auto_translate = st.toggle(
-        "Auto-Translate Queries",
-        value=True,
-        help="If enabled, non-English queries are translated to English for better semantic search retrieval."
-    )
+    col1, col2 = st.columns(2)
     
-    # Language Filter
+    with col1:
+        auto_translate = st.toggle(
+            "Auto-Translate Queries",
+            value=True,
+            help="If enabled, non-English queries are translated to English for better semantic search retrieval. "
+                 "The original query is preserved for keyword matching (dual-search)."
+        )
+    
+    with col2:
+        enable_dual_search = st.toggle(
+            "Dual-Language Search",
+            value=True,
+            help="When enabled, searches use both the translated query (for semantic search) and original query "
+                 "(for keyword matching). This improves cross-lingual retrieval accuracy."
+        )
+    
+    # Language Filter with expanded options
+    filter_language_options = {
+        "All": "🌐 All Languages",
+        "eng": "🇬🇧 English",
+        "spa": "🇪🇸 Spanish",
+        "fra": "🇫🇷 French",
+        "deu": "🇩🇪 German",
+        "ita": "🇮🇹 Italian",
+        "por": "🇵🇹 Portuguese",
+        "rus": "🇷🇺 Russian",
+        "zho": "🇨🇳 Chinese",
+        "jpn": "🇯🇵 Japanese",
+        "kor": "🇰🇷 Korean",
+        "ara": "🇸🇦 Arabic",
+    }
+    
     filter_language = st.selectbox(
         "Filter by Document Language:",
-        options=["All"] + response_languages,
+        options=list(filter_language_options.keys()),
+        format_func=lambda x: filter_language_options.get(x, x),
         index=0,
-        help="Restrict search to documents of a specific language."
+        help="Restrict search to documents of a specific language. Documents are tagged with language during ingestion."
     )
     if filter_language == "All":
         filter_language = None
@@ -1216,13 +1272,45 @@ with st.sidebar:
     # Document upload
     st.header("📄 Upload Documents")
     
-    # Document Language Selector for Ingestion
+    # Document Language Selector for Ingestion (Enhanced multilingual support)
+    # Language options with friendly names
+    language_options = {
+        "eng": "🇬🇧 English",
+        "spa": "🇪🇸 Spanish",
+        "fra": "🇫🇷 French",
+        "deu": "🇩🇪 German",
+        "ita": "🇮🇹 Italian",
+        "por": "🇵🇹 Portuguese",
+        "nld": "🇳🇱 Dutch",
+        "rus": "🇷🇺 Russian",
+        "ukr": "🇺🇦 Ukrainian",
+        "pol": "🇵🇱 Polish",
+        "zho": "🇨🇳 Chinese (Simplified)",
+        "jpn": "🇯🇵 Japanese",
+        "kor": "🇰🇷 Korean",
+        "ara": "🇸🇦 Arabic",
+        "heb": "🇮🇱 Hebrew",
+        "hin": "🇮🇳 Hindi",
+        "tha": "🇹🇭 Thai",
+        "vie": "🇻🇳 Vietnamese",
+        "tur": "🇹🇷 Turkish",
+        "ell": "🇬🇷 Greek",
+        "ces": "🇨🇿 Czech",
+        "auto": "🔍 Auto-detect",
+    }
+    
     ingestion_language = st.selectbox(
         "Document Language:",
-        options=["eng", "spa", "fra", "deu", "ita", "por", "nld", "rus", "chi", "jpn", "kor", "ara", "hin"],
+        options=list(language_options.keys()),
+        format_func=lambda x: language_options.get(x, x),
         index=0,
-        help="Language of the documents being uploaded. Used for language-aware chunking and OCR."
+        help="Language of the documents being uploaded. Used for language-aware OCR, chunking, and indexing. "
+             "Select 'Auto-detect' to let the system detect the language automatically."
     )
+    
+    # Convert 'auto' to 'eng' for backend processing (auto-detection happens in processor)
+    if ingestion_language == "auto":
+        ingestion_language = "eng"  # Default to English, processor will auto-detect
     
     uploaded_files = st.file_uploader(
         "Choose files",

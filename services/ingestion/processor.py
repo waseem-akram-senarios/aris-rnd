@@ -395,29 +395,49 @@ class DocumentProcessor:
             
             logger.info(f"✅ [STEP 3] Document validation completed - {len(doc_text):,} characters ready for processing")
             
-            # Step 3.5: Language Detection and Optional Translation
+            # Step 3.5: Enhanced Language Detection and Optional Translation
             detected_language = language  # Use provided language as default
+            secondary_language = None
+            script_type = "latin"
             english_translation = None
             
             try:
                 from shared.config.settings import ARISConfig
                 multilingual_config = ARISConfig.get_multilingual_config()
                 
-                # Auto-detect language if not explicitly set to a non-default value
-                if language == "eng" and len(doc_text) > 50:
+                # Auto-detect language if enabled and not explicitly set
+                if multilingual_config.get('auto_detect_language', True) and language == "eng" and len(doc_text) > 50:
                     try:
                         from services.language.detector import get_detector
                         detector = get_detector()
-                        detected_iso2 = detector.detect(doc_text[:2000])  # Use first 2000 chars
-                        detected_language = detector.detect_to_iso639_3(doc_text[:2000])
                         
+                        # Detect primary and secondary languages for mixed-language documents
+                        sample_text = doc_text[:5000]  # Use first 5000 chars for detection
+                        detected_iso2 = detector.detect(sample_text)
+                        detected_language = detector.detect_to_iso639_3(sample_text)
+                        
+                        # Detect primary and secondary languages
+                        primary_iso2, secondary_iso2 = detector.detect_primary_and_secondary(sample_text)
+                        if secondary_iso2:
+                            from services.language.detector import ISO_639_1_TO_639_3
+                            secondary_language = ISO_639_1_TO_639_3.get(secondary_iso2, secondary_iso2)
+                        
+                        # Get script type for metadata
+                        script_type = detector.get_script_type(detected_iso2)
+                        
+                        lang_name = detector.get_language_name(detected_iso2)
                         if detected_language != "eng":
-                            logger.info(f"🌐 [STEP 3.5] Auto-detected document language: {detector.get_language_name(detected_iso2)} ({detected_language})")
-                            update_status('processing', 0.45, f"Detected language: {detector.get_language_name(detected_iso2)}")
+                            logger.info(
+                                f"🌐 [STEP 3.5] Auto-detected document language: {lang_name} ({detected_language}), "
+                                f"script={script_type}, secondary={secondary_language}"
+                            )
+                            update_status('processing', 0.45, f"Detected language: {lang_name} ({script_type} script)")
                         else:
                             logger.info(f"🌐 [STEP 3.5] Document language: English")
+                            
                     except Exception as e:
                         logger.warning(f"⚠️ [STEP 3.5] Language detection failed: {e}")
+                        detected_language = language
                 
                 # Optional: Translate to English for better embeddings (if enabled)
                 if (multilingual_config.get('translate_on_ingestion', False) and 
@@ -447,10 +467,8 @@ class DocumentProcessor:
                         
                         logger.info(f"✅ [STEP 3.5] Document translated to English ({len(english_translation):,} chars)")
                         
-                        # Use English translation for embedding (better search quality)
-                        # UPDATE: User requested Native Language Embeddings
-                        # We keep doc_text as original but store translation in metadata
-                        # doc_text = english_translation
+                        # Use Native Language Embeddings (don't replace doc_text)
+                        # Store translation in metadata for cross-lingual search
                         
                     except Exception as e:
                         logger.warning(f"⚠️ [STEP 3.5] Translation failed, using original: {e}")
@@ -466,7 +484,7 @@ class DocumentProcessor:
                 original_text = doc_text
                 english_translation = None
             
-            # Store language in metadata
+            # Store language in metadata (MANDATORY for language-isolated search)
             language = detected_language
             
             # Step 4: Process with RAG system (chunking and embedding)
@@ -502,17 +520,24 @@ class DocumentProcessor:
                 logger.info(f"[STEP 4.1] Text length: {len(doc_text):,} characters | Estimated chunks: ~{estimated_chunks} | Estimated tokens: ~{estimated_tokens:,}")
                 
                 # Build metadata with page_blocks for citation support
+                # MANDATORY: language field for language-isolated indexing/filtering
                 base_metadata = {
                     'source': doc_name,
                     'document_id': document_id,
-                    'language': language,
+                    # MANDATORY language metadata for isolated indexing
+                    'language': language,  # ISO 639-3 code (e.g., 'eng', 'spa')
+                    'language_detected': detected_language,  # What was auto-detected
+                    'primary_language': detected_language,
+                    'secondary_language': secondary_language,  # For mixed-language docs
+                    'script_type': script_type,  # 'latin', 'cyrillic', 'cjk', etc.
+                    # Parser and extraction info
                     'parser_used': getattr(parsed_doc, 'parser_used', 'unknown'),
                     'pages': getattr(parsed_doc, 'pages', 0),
                     'images_detected': getattr(parsed_doc, 'images_detected', False),
                     'image_count': getattr(parsed_doc, 'image_count', 0),  # Store image count for queries
                     'extraction_percentage': getattr(parsed_doc, 'extraction_percentage', 0.0),
                     's3_url': s3_url,
-                    # Dual-language storage for maximum accuracy multilingual search
+                    # Dual-language storage for cross-lingual search
                     'text_original': original_text[:5000] if len(original_text) > 5000 else original_text,  # Truncate to prevent metadata bloat
                     'text_english': english_translation[:5000] if english_translation and len(english_translation) > 5000 else english_translation
                 }

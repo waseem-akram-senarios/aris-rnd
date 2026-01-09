@@ -84,11 +84,19 @@ class ARISConfig:
     MAX_PAGE_BLOCKS_PER_DOC: int = int(os.getenv('MAX_PAGE_BLOCKS_PER_DOC', '2000'))
     
     # Multilingual Configuration
-    ENABLE_AUTO_TRANSLATE: bool = os.getenv('ENABLE_AUTO_TRANSLATE', 'false').lower() == 'true'
+    ENABLE_AUTO_TRANSLATE: bool = os.getenv('ENABLE_AUTO_TRANSLATE', 'true').lower() == 'true'
     TRANSLATE_DOCUMENTS_ON_INGESTION: bool = os.getenv('TRANSLATE_DOCUMENTS_ON_INGESTION', 'false').lower() == 'true'
     TRANSLATION_PROVIDER: str = os.getenv('TRANSLATION_PROVIDER', 'openai')  # 'openai' or 'aws'
     DEFAULT_DOCUMENT_LANGUAGE: str = os.getenv('DEFAULT_DOCUMENT_LANGUAGE', 'eng')  # ISO 639-3
-    SUPPORTED_LANGUAGES: str = os.getenv('SUPPORTED_LANGUAGES', 'eng,spa,fra,deu,por,ita')  # Comma-separated
+    DEFAULT_RESPONSE_LANGUAGE: str = os.getenv('DEFAULT_RESPONSE_LANGUAGE', 'auto')  # 'auto', 'en', 'es', etc.
+    ENABLE_DUAL_SEARCH: bool = os.getenv('ENABLE_DUAL_SEARCH', 'true').lower() == 'true'
+    AUTO_DETECT_LANGUAGE: bool = os.getenv('AUTO_DETECT_LANGUAGE', 'true').lower() == 'true'
+    SUPPORTED_LANGUAGES: str = os.getenv('SUPPORTED_LANGUAGES', 'eng,spa,fra,deu,por,ita,rus,jpn,kor,zho,ara')  # Extended
+    
+    # OCR Configuration for multilingual support
+    OCR_DEFAULT_DPI: int = int(os.getenv('OCR_DEFAULT_DPI', '300'))
+    OCR_CJK_DPI: int = int(os.getenv('OCR_CJK_DPI', '400'))  # Higher DPI for complex scripts
+    OCR_TIMEOUT_PER_PAGE: int = int(os.getenv('OCR_TIMEOUT_PER_PAGE', '180'))  # 3 minutes per page
     
     @classmethod
     def get_multilingual_config(cls) -> dict:
@@ -98,7 +106,13 @@ class ARISConfig:
             'translate_on_ingestion': cls.TRANSLATE_DOCUMENTS_ON_INGESTION,
             'translation_provider': cls.TRANSLATION_PROVIDER,
             'default_language': cls.DEFAULT_DOCUMENT_LANGUAGE,
-            'supported_languages': [lang.strip() for lang in cls.SUPPORTED_LANGUAGES.split(',')]
+            'default_response_language': cls.DEFAULT_RESPONSE_LANGUAGE,
+            'enable_dual_search': cls.ENABLE_DUAL_SEARCH,
+            'auto_detect_language': cls.AUTO_DETECT_LANGUAGE,
+            'supported_languages': [lang.strip() for lang in cls.SUPPORTED_LANGUAGES.split(',')],
+            'ocr_default_dpi': cls.OCR_DEFAULT_DPI,
+            'ocr_cjk_dpi': cls.OCR_CJK_DPI,
+            'ocr_timeout_per_page': cls.OCR_TIMEOUT_PER_PAGE,
         }
     
     @classmethod

@@ -3802,11 +3802,28 @@ Answer:"""
         semantic_weight: float,
         keyword_weight: float,
         search_mode: str,
-        active_sources: List[str] = None
+        active_sources: List[str] = None,
+        alternate_query: Optional[str] = None,  # For dual-language search (original language query)
+        filter_language: Optional[str] = None   # Filter results by language
     ) -> List:
         """
         Retrieves chunks with optional Reranking (FlashRank) for higher accuracy.
-        Wrapper around _retrieve_chunks_raw.
+        Supports dual-language search for cross-lingual retrieval.
+        
+        Args:
+            query: Primary query (typically English for semantic search)
+            k: Number of chunks to retrieve
+            use_mmr: Use Maximum Marginal Relevance
+            use_hybrid_search: Enable hybrid search
+            semantic_weight: Weight for semantic search
+            keyword_weight: Weight for keyword search
+            search_mode: 'semantic', 'keyword', or 'hybrid'
+            active_sources: Filter by document sources
+            alternate_query: Original language query for dual-search (boosts keyword matches)
+            filter_language: Filter results by language code (e.g., 'spa')
+        
+        Returns:
+            List of relevant Document chunks
         """
         # 1. Expand retrieval window for Reranking
         # Retrieve 4x chunks to give Reranker candidates to choose from
@@ -3814,7 +3831,7 @@ Answer:"""
         if self.ranker:
             initial_k = k * 4
         
-        # 2. Get Raw Candidates
+        # 2. Get Raw Candidates (with dual-language support)
         relevant_docs = self._retrieve_chunks_raw(
             query, 
             initial_k, 
@@ -3823,7 +3840,9 @@ Answer:"""
             semantic_weight, 
             keyword_weight, 
             search_mode,
-            active_sources # Pass active_sources to raw retrieval
+            active_sources,  # Pass active_sources to raw retrieval
+            alternate_query=alternate_query,  # Pass alternate query for dual-search
+            filter_language=filter_language    # Pass language filter
         )
         
         # 3. Rerank Results
@@ -3835,8 +3854,12 @@ Answer:"""
                     for i, doc in enumerate(relevant_docs)
                 ]
                 
+                # For cross-lingual reranking, use the original query if available
+                # This helps preserve relevance to the user's original intent
+                rerank_query = alternate_query if alternate_query else query
+                
                 logger.info(f"⚡ Reranking {len(passages)} chunks with FlashRank...")
-                rerank_request = RerankRequest(query=query, passages=passages)
+                rerank_request = RerankRequest(query=rerank_query, passages=passages)
                 results = self.ranker.rerank(rerank_request)
                 
                 # Reconstruct sorted document list
@@ -3867,13 +3890,15 @@ Answer:"""
         semantic_weight: float,
         keyword_weight: float,
         search_mode: str,
-        active_sources: List[str] = None
+        active_sources: List[str] = None,
+        alternate_query: Optional[str] = None,  # For dual-language search
+        filter_language: Optional[str] = None   # Filter by document language
     ) -> List:
         """
-        Retrieve chunks for a single query (used by Agentic RAG for multi-query retrieval).
+        Retrieve chunks for a single query with dual-language search support.
         
         Args:
-            query: The query to retrieve chunks for
+            query: Primary query (typically English for semantic search)
             k: Number of chunks to retrieve
             use_mmr: Use Maximum Marginal Relevance
             use_hybrid_search: Use hybrid search
@@ -3881,6 +3906,8 @@ Answer:"""
             keyword_weight: Weight for keyword search
             search_mode: Search mode
             active_sources: List of document sources to filter by (optional)
+            alternate_query: Original language query for dual-search keyword matching
+            filter_language: Filter results by language code (e.g., 'spa')
         
         Returns:
             List of Document objects
@@ -3924,17 +3951,24 @@ Answer:"""
                 index_name = indexes_to_search[0]
                 store = self.multi_index_manager.get_or_create_index_store(index_name)
                 
-                # Use hybrid search if enabled
+                # Use hybrid search if enabled (with dual-language support)
                 if use_hybrid_search:
                     try:
                         query_vector = self.embeddings.embed_query(query)
+                        
+                        # Build language filter if specified
+                        lang_filter = None
+                        if filter_language:
+                            lang_filter = {"bool": {"must": [{"term": {"metadata.language": filter_language}}]}}
+                        
                         relevant_docs = store.hybrid_search(
                             query=query,
                             query_vector=query_vector,
                             k=k,
                             semantic_weight=semantic_weight,
                             keyword_weight=keyword_weight,
-                            filter=None  # No filter needed with per-document indexes
+                            filter=lang_filter,
+                            alternate_query=alternate_query  # Pass original language query for dual-search
                         )
                         return relevant_docs
                     except Exception as e:
@@ -3959,15 +3993,26 @@ Answer:"""
                 relevant_docs = retriever.invoke(query)
                 return relevant_docs
             else:
-                # Multiple indexes - search across all
+                # Multiple indexes - search across all with dual-language support
                 from shared.config.settings import ARISConfig
+                
+                # Build language filter if specified
+                lang_filter = None
+                if filter_language:
+                    lang_filter = {"bool": {"must": [{"term": {"metadata.language": filter_language}}]}}
+                
                 relevant_docs = self.multi_index_manager.search_across_indexes(
                     query=query,
                     index_names=indexes_to_search,
                     k=k,
                     use_mmr=use_mmr,
                     fetch_k=ARISConfig.DEFAULT_MMR_FETCH_K if use_mmr else 50,
-                    lambda_mult=ARISConfig.DEFAULT_MMR_LAMBDA if use_mmr else 0.3
+                    lambda_mult=ARISConfig.DEFAULT_MMR_LAMBDA if use_mmr else 0.3,
+                    use_hybrid_search=use_hybrid_search,
+                    semantic_weight=semantic_weight,
+                    keyword_weight=keyword_weight,
+                    filter=lang_filter,
+                    alternate_query=alternate_query  # Pass for dual-language search
                 )
                 return relevant_docs
         
@@ -3989,13 +4034,24 @@ Answer:"""
                 
                 if is_opensearch:
                     query_vector = self.embeddings.embed_query(query)
+                    
+                    # Add language filter if specified
+                    combined_filter = opensearch_filter
+                    if filter_language:
+                        lang_clause = {"bool": {"must": [{"term": {"metadata.language": filter_language}}]}}
+                        if combined_filter:
+                            combined_filter = {"bool": {"must": [combined_filter, lang_clause]}}
+                        else:
+                            combined_filter = lang_clause
+                    
                     relevant_docs = self.vectorstore.hybrid_search(
                         query=query,
                         query_vector=query_vector,
                         k=k,
                         semantic_weight=semantic_weight,
                         keyword_weight=keyword_weight,
-                        filter=opensearch_filter
+                        filter=combined_filter,
+                        alternate_query=alternate_query  # Pass for dual-language search
                     )
                     return relevant_docs
             except Exception as e:

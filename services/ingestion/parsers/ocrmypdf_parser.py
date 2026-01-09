@@ -1,6 +1,7 @@
 """
 OCRmyPDF Parser with Tesseract OCR integration.
 High-accuracy OCR for scanned PDFs and image-based documents.
+Supports multilingual OCR with script-specific optimizations.
 """
 import os
 import tempfile
@@ -24,22 +25,90 @@ class OCRmyPDFParser(BaseParser):
     - Automatic deskew and rotation correction
     - Noise removal for better accuracy
     - Text layer embedding in PDFs
-    - Support for multiple languages
-    - Optimized for scanned documents
+    - Support for multiple languages including CJK and Cyrillic
+    - Optimized settings for different script types
+    - Script-specific DPI and preprocessing
     """
     
-    def __init__(self, languages: str = "eng", dpi: int = 300):
+    def __init__(self, languages: str = "eng", dpi: Optional[int] = None, auto_optimize: bool = True):
         """
         Initialize OCRmyPDF parser.
         
         Args:
-            languages: Tesseract language codes (e.g., 'eng', 'eng+spa', 'eng+fra')
-            dpi: DPI for OCR processing (300+ recommended for best accuracy)
+            languages: Tesseract language codes (e.g., 'eng', 'eng+spa', 'chi_sim+eng')
+            dpi: DPI for OCR processing (auto-optimized by default based on script type)
+            auto_optimize: If True, automatically optimize DPI for script type
         """
         super().__init__("ocrmypdf")
-        self.languages = languages
-        self.dpi = dpi
+        self.auto_optimize = auto_optimize
+        
+        # Get optimized OCR parameters based on language
+        self._optimize_for_language(languages, dpi)
         self._check_dependencies()
+    
+    def _optimize_for_language(self, languages: str, dpi: Optional[int] = None):
+        """
+        Optimize OCR parameters based on language/script type.
+        
+        Args:
+            languages: Tesseract language codes
+            dpi: Optional explicit DPI override
+        """
+        try:
+            from services.language.detector import get_detector, get_ocr_params
+            detector = get_detector()
+            
+            # Get the primary language from the languages string
+            primary_lang = languages.split('+')[0] if '+' in languages else languages
+            
+            # Get optimized parameters for this language
+            ocr_params = detector.get_ocr_params(primary_lang)
+            
+            # Set DPI (use provided or optimized)
+            self.dpi = dpi if dpi is not None else ocr_params.get("dpi", 300)
+            
+            # Store script info for later use
+            self.script_type = detector.get_script_type(primary_lang)
+            self.is_cjk = detector.is_cjk_language(primary_lang)
+            self.is_rtl = detector.is_rtl_language(primary_lang)
+            self.preprocessing = ocr_params.get("preprocessing", "standard")
+            
+            # Convert language code to Tesseract format if needed
+            self.languages = self._normalize_tesseract_languages(languages, detector)
+            
+            logger.info(
+                f"[OCRmyPDF] Optimized for language={self.languages}, "
+                f"script={self.script_type}, dpi={self.dpi}, is_cjk={self.is_cjk}"
+            )
+            
+        except ImportError:
+            # Fallback if language detector not available
+            self.languages = languages
+            self.dpi = dpi if dpi is not None else 300
+            self.script_type = "latin"
+            self.is_cjk = False
+            self.is_rtl = False
+            self.preprocessing = "standard"
+            logger.warning("[OCRmyPDF] Language detector not available, using defaults")
+    
+    def _normalize_tesseract_languages(self, languages: str, detector) -> str:
+        """
+        Normalize language codes to Tesseract format.
+        
+        Args:
+            languages: Input language string (e.g., 'eng', 'es', 'zh-cn')
+            detector: LanguageDetector instance
+            
+        Returns:
+            Tesseract-compatible language string (e.g., 'eng', 'spa', 'chi_sim')
+        """
+        if '+' in languages:
+            # Multiple languages
+            parts = languages.split('+')
+            tesseract_parts = [detector.get_ocr_language(p.strip()) for p in parts]
+            return '+'.join(tesseract_parts)
+        else:
+            return detector.get_ocr_language(languages)
     
     def _check_dependencies(self):
         """Check if OCRmyPDF and Tesseract are installed."""
@@ -121,23 +190,45 @@ class OCRmyPDFParser(BaseParser):
                 if progress_callback:
                     progress_callback("parsing", 0.1, detailed_message="Running OCR with deskew, clean, and rotate...")
                 
-                logger.info(f"[OCRmyPDF] Processing with languages={self.languages}, dpi={self.dpi}")
-                
-                # Run OCRmyPDF with optimal settings
-                ocrmypdf.ocr(
-                    input_file=input_path,
-                    output_file=output_path,
-                    deskew=True,              # Correct skewed pages
-                    clean=True,               # Remove noise
-                    rotate_pages=True,        # Fix rotated pages
-                    skip_text=True,           # Skip pages with existing text (faster)
-                    language=self.languages,  # Language support
-                    output_type='pdf',        # Output as searchable PDF
-                    optimize=1,               # Light optimization
-                    force_ocr=False,          # Only OCR pages without text
-                    progress_bar=False,       # Disable progress bar (we have our own)
-                    tesseract_timeout=180.0,  # 3 minute timeout per page
+                logger.info(
+                    f"[OCRmyPDF] Processing with languages={self.languages}, "
+                    f"dpi={self.dpi}, script={getattr(self, 'script_type', 'unknown')}"
                 )
+                
+                # Build OCR options based on script type
+                ocr_kwargs = {
+                    "input_file": input_path,
+                    "output_file": output_path,
+                    "deskew": True,              # Correct skewed pages
+                    "clean": True,               # Remove noise
+                    "rotate_pages": True,        # Fix rotated pages
+                    "skip_text": True,           # Skip pages with existing text (faster)
+                    "language": self.languages,  # Language support
+                    "output_type": "pdf",        # Output as searchable PDF
+                    "optimize": 1,               # Light optimization
+                    "force_ocr": False,          # Only OCR pages without text
+                    "progress_bar": False,       # Disable progress bar (we have our own)
+                    "tesseract_timeout": 180.0,  # 3 minute timeout per page
+                }
+                
+                # Add image-dpi for better quality with CJK/complex scripts
+                if hasattr(self, 'dpi') and self.dpi:
+                    ocr_kwargs["image_dpi"] = self.dpi
+                
+                # CJK-specific optimizations
+                if getattr(self, 'is_cjk', False):
+                    logger.info("[OCRmyPDF] Applying CJK-specific optimizations (higher quality)")
+                    # Higher quality for complex characters
+                    ocr_kwargs["oversample"] = 2  # 2x oversampling for better stroke detection
+                    ocr_kwargs["remove_background"] = True  # Better contrast for CJK
+                
+                # RTL-specific handling
+                if getattr(self, 'is_rtl', False):
+                    logger.info("[OCRmyPDF] RTL document detected")
+                    # RTL languages don't need special OCRmyPDF flags, but we log it
+                
+                # Run OCRmyPDF with optimized settings
+                ocrmypdf.ocr(**ocr_kwargs)
                 
                 if progress_callback:
                     progress_callback("parsing", 0.6, detailed_message="OCR complete, extracting text...")

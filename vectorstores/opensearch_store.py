@@ -321,8 +321,11 @@ class OpenSearchVectorStore:
                 'parser_used', 'pages', 'images_detected', 'extraction_percentage',
                 'start_char', 'end_char', 'token_count',
                 'has_image', 'image_ref', 'image_index', 'image_bbox', 'image_info',
-                # Multilingual support fields
-                'language', 'text_original', 'text_english'
+                # Multilingual support fields (MANDATORY for language-isolated search)
+                'language', 'language_detected', 'primary_language', 'secondary_language',
+                'text_original', 'text_english', 'script_type',
+                # Document tracking
+                'document_id'
             ]
             
             if doc.metadata:
