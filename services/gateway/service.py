@@ -244,8 +244,8 @@ class GatewayService:
             payload["response_language"] = response_language
         if filter_language is not None:
             payload["filter_language"] = filter_language
-        if auto_translate:
-            payload["auto_translate"] = auto_translate
+        # FIXED: Always include auto_translate in payload (even when False)
+        payload["auto_translate"] = auto_translate
             
         # Add active_sources to ensure strict filtering in Retrieval Service
         if self._active_sources:

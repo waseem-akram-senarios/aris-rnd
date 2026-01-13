@@ -149,6 +149,7 @@ async def ingest_document(
 ):
     """
     Ingest a document (asynchronous).
+    Detects duplicates and updates existing documents instead of creating new ones.
     """
     request_id = request.headers.get("X-Request-ID", "unknown")
     logger.info(f"POST /ingest - [ReqID: {request_id}] File: {file.filename}")
@@ -164,11 +165,54 @@ async def ingest_document(
         )
     
     try:
-        # Generate document ID
-        document_id = str(uuid.uuid4())
-        
-        # Read content
+        # Read content first for hash calculation
         content = await file.read()
+        
+        # Calculate file hash for duplicate detection
+        import hashlib
+        file_hash = hashlib.md5(content).hexdigest()
+        
+        # Check for existing document with same name and parser
+        from storage.document_registry import DocumentRegistry
+        registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+        
+        # Determine parser preference for duplicate check
+        effective_parser = parser_preference.lower() if parser_preference else 'pymupdf'
+        
+        # Check if document with same name and parser already exists
+        existing_doc = registry.find_document_by_name_and_parser(file.filename, effective_parser)
+        is_update = False
+        old_document_id = None
+        old_index_name = None
+        
+        if existing_doc:
+            # Check if content is actually different (by hash)
+            if existing_doc.get('file_hash') == file_hash:
+                # Same exact file - no need to re-process
+                logger.info(f"POST /ingest - [ReqID: {request_id}] Document '{file.filename}' with parser '{effective_parser}' already exists with identical content. Skipping.")
+                return DocumentMetadata(
+                    document_id=existing_doc['document_id'],
+                    document_name=file.filename,
+                    status="already_exists",
+                    message=f"Document already exists with ID {existing_doc['document_id']}. Content is identical."
+                )
+            else:
+                # Same name/parser but different content - UPDATE existing
+                is_update = True
+                old_document_id = existing_doc['document_id']
+                old_index_name = existing_doc.get('index_name')
+                logger.info(f"POST /ingest - [ReqID: {request_id}] Updating existing document '{file.filename}' (ID: {old_document_id}) with new content")
+                
+                # Use the existing document ID for the update
+                document_id = old_document_id
+        else:
+            # Check if same filename exists with any parser
+            all_versions = registry.find_documents_by_name(file.filename)
+            if all_versions:
+                logger.info(f"POST /ingest - [ReqID: {request_id}] Document '{file.filename}' exists with other parsers: {[d.get('parser_used') for d in all_versions]}. Creating new version with parser '{effective_parser}'")
+            
+            # Generate new document ID for new document
+            document_id = str(uuid.uuid4())
         
         # Save locally for reference/fallback
         upload_dir = "data/uploads"
@@ -180,16 +224,31 @@ async def ingest_document(
         
         # Immediate registry registration for status tracking
         try:
-            from storage.document_registry import DocumentRegistry
-            registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
-            registry.add_document(document_id, {
+            # Registry already initialized above for duplicate check
+            registration_data = {
                 'document_id': document_id,
                 'document_name': file.filename,
                 'status': 'processing',
                 'progress': 0.0,
-                'created_at': time_module.time()
-            })
-            logger.info(f"Ingestion: Registered document {document_id} in registry before background processing")
+                'file_hash': file_hash,
+                'is_update': is_update,
+                'created_at': time_module.time() if not is_update else existing_doc.get('created_at', time_module.time())
+            }
+            
+            if is_update:
+                registration_data['previous_version'] = {
+                    'chunks_created': existing_doc.get('chunks_created'),
+                    'parser_used': existing_doc.get('parser_used'),
+                    'updated_at': existing_doc.get('updated_at')
+                }
+                registration_data['update_reason'] = 'content_changed'
+            
+            registry.add_document(document_id, registration_data)
+            
+            if is_update:
+                logger.info(f"Ingestion: Updating document {document_id} ({file.filename}) - new content detected")
+            else:
+                logger.info(f"Ingestion: Registered new document {document_id} in registry before background processing")
         except Exception as e:
             logger.warning(f"Ingestion: [ReqID: {request_id}] Could not pre-register document: {e}")
             
@@ -203,7 +262,9 @@ async def ingest_document(
                 parser_preference=parser_preference,
                 document_id=document_id,
                 index_name=index_name,
-                language=language or "eng"
+                language=language or "eng",
+                is_update=is_update,
+                old_index_name=old_index_name
             )
         else:
             # Synchronous processing if background_tasks is not available (unlikely in FastAPI)
@@ -214,13 +275,17 @@ async def ingest_document(
                 parser_preference=parser_preference,
                 document_id=document_id,
                 index_name=index_name,
-                language=language or "eng"
+                language=language or "eng",
+                is_update=is_update,
+                old_index_name=old_index_name
             )
-            
+        
+        status_msg = "updating" if is_update else "processing"
         return DocumentMetadata(
             document_id=document_id,
             document_name=file.filename,
-            status="processing"
+            status=status_msg,
+            message=f"{'Updating existing' if is_update else 'Processing new'} document"
         )
         
     except Exception as e:
@@ -234,20 +299,69 @@ async def process_document_sync(
     parser_preference: Optional[str] = Form(default=None),
     index_name: Optional[str] = Form(default=None),
     language: Optional[str] = Form(default="eng"),
+    force_update: Optional[bool] = Form(default=False),
     processor: DocumentProcessor = Depends(get_processor)
 ):
     """
     Synchronously process a document and return results.
+    Detects duplicates and updates existing documents when content changes.
+    
+    Args:
+        force_update: If True, force re-processing even if content is identical
     """
     request_id = request.headers.get("X-Request-ID", "unknown")
     logger.info(f"POST /process - [ReqID: {request_id}] File: {file.filename}")
     
     try:
-        # Generate document ID
-        document_id = str(uuid.uuid4())
-        
-        # Read content
+        # Read content first for hash calculation
         content = await file.read()
+        
+        # Calculate file hash for duplicate detection
+        import hashlib
+        file_hash = hashlib.md5(content).hexdigest()
+        
+        # Check for existing document with same name and parser
+        from storage.document_registry import DocumentRegistry
+        registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+        
+        # Determine parser preference for duplicate check
+        effective_parser = parser_preference.lower() if parser_preference else 'pymupdf'
+        
+        # Check if document with same name and parser already exists
+        existing_doc = registry.find_document_by_name_and_parser(file.filename, effective_parser)
+        is_update = False
+        old_index_name = None
+        
+        if existing_doc and not force_update:
+            # Check if content is actually different (by hash)
+            if existing_doc.get('file_hash') == file_hash:
+                # Same exact file - return existing without re-processing
+                logger.info(f"POST /process - [ReqID: {request_id}] Document '{file.filename}' already exists with identical content. Returning existing.")
+                return ProcessingResult(
+                    document_id=existing_doc['document_id'],
+                    document_name=file.filename,
+                    file_size=len(content),
+                    file_type=os.path.splitext(file.filename)[1].lower(),
+                    parser_used=existing_doc.get('parser_used', effective_parser),
+                    pages=existing_doc.get('pages', 0),
+                    chunks_created=existing_doc.get('chunks_created', 0),
+                    tokens_extracted=existing_doc.get('tokens_extracted', 0),
+                    extraction_percentage=existing_doc.get('extraction_percentage', 0.0),
+                    confidence=existing_doc.get('confidence', 0.0),
+                    processing_time=0.0,
+                    success=True,
+                    error=None,
+                    message="Document already exists with identical content. No re-processing needed."
+                )
+            else:
+                # Different content - update existing
+                is_update = True
+                document_id = existing_doc['document_id']
+                old_index_name = existing_doc.get('index_name')
+                logger.info(f"POST /process - [ReqID: {request_id}] Updating existing document '{file.filename}' (ID: {document_id})")
+        else:
+            # New document
+            document_id = str(uuid.uuid4())
         
         # Save temp
         upload_dir = "data/uploads"
@@ -265,7 +379,9 @@ async def process_document_sync(
             parser_preference=parser_preference,
             document_id=document_id,
             index_name=index_name,
-            language=language or "eng"
+            language=language or "eng",
+            is_update=is_update,
+            old_index_name=old_index_name
         )
         
         return result

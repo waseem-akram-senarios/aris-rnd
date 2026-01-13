@@ -207,6 +207,91 @@ class DocumentRegistry:
         
         return changes
     
+    def find_duplicate(self, document_name: str, file_hash: Optional[str] = None) -> Optional[Dict]:
+        """
+        Find existing document by name or file hash.
+        
+        Args:
+            document_name: Name of the document file
+            file_hash: Optional MD5 hash of file content
+        
+        Returns:
+            Document metadata with document_id if found, None otherwise
+        """
+        with self._lock:
+            for doc_id, doc in self._documents.items():
+                # Check by exact filename match
+                if doc.get('document_name') == document_name:
+                    result = dict(doc)
+                    result['document_id'] = doc_id
+                    return result
+                
+                # Check by file hash if provided
+                if file_hash and doc.get('file_hash') == file_hash:
+                    result = dict(doc)
+                    result['document_id'] = doc_id
+                    return result
+        
+        return None
+    
+    def find_documents_by_name(self, document_name: str) -> List[Dict]:
+        """
+        Find all documents with a given name (may have multiple versions from different parsers).
+        
+        Args:
+            document_name: Name of the document file
+        
+        Returns:
+            List of document metadata dicts with document_id included
+        """
+        with self._lock:
+            results = []
+            for doc_id, doc in self._documents.items():
+                if doc.get('document_name') == document_name:
+                    result = dict(doc)
+                    result['document_id'] = doc_id
+                    results.append(result)
+            return results
+    
+    def find_document_by_name_and_parser(self, document_name: str, parser_used: str) -> Optional[Dict]:
+        """
+        Find document by name AND parser combination (unique identifier for updates).
+        
+        Args:
+            document_name: Name of the document file
+            parser_used: Parser used for processing (e.g., 'pymupdf', 'docling')
+        
+        Returns:
+            Document metadata with document_id if found, None otherwise
+        """
+        with self._lock:
+            for doc_id, doc in self._documents.items():
+                if (doc.get('document_name') == document_name and 
+                    doc.get('parser_used', '').lower() == parser_used.lower()):
+                    result = dict(doc)
+                    result['document_id'] = doc_id
+                    return result
+        
+        return None
+    
+    def mark_for_reindex(self, document_id: str) -> bool:
+        """
+        Mark a document for re-indexing (sets status to 'pending_reindex').
+        
+        Args:
+            document_id: Document identifier
+        
+        Returns:
+            True if marked, False if document not found
+        """
+        with self._lock:
+            if document_id in self._documents:
+                self._documents[document_id]['status'] = 'pending_reindex'
+                self._documents[document_id]['updated_at'] = datetime.now().isoformat()
+                self._save_registry()
+                return True
+            return False
+    
     def add_document_version(self, document_id: str, metadata: Dict):
         """
         Add new version of existing document.

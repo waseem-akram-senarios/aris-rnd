@@ -1008,6 +1008,95 @@ class RetrievalEngine:
         match = re.search(r'\((\d+)\)', basename)
         return int(match.group(1)) if match else None
 
+    def _detect_document_in_question(self, question: str, available_docs: List[str]) -> Optional[List[str]]:
+        """
+        Detect if the question mentions a specific document name.
+        
+        This helps automatically filter to the correct document when user asks
+        "What is in VUORMAR MK?" or "Tell me about EM11 document".
+        
+        Args:
+            question: The user's question
+            available_docs: List of available document names
+            
+        Returns:
+            List of detected document names, or None if no specific document mentioned
+        """
+        import re
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        if not question or not available_docs:
+            return None
+        
+        question_lower = question.lower()
+        detected = []
+        
+        # Sort documents by name length (descending) to match longer names first
+        # This ensures "VUORMAR MK" matches before "VUORMAR"
+        sorted_docs = sorted(available_docs, key=lambda x: len(x), reverse=True)
+        
+        for doc_name in sorted_docs:
+            # Get base name without extension
+            base_name = os.path.splitext(doc_name)[0].lower()
+            doc_name_lower = doc_name.lower()
+            
+            # Check various patterns:
+            # 1. Exact match (case-insensitive): "vuormar mk"
+            # 2. Without extension: "vuormar mk.pdf" -> "vuormar mk"
+            # 3. With "document" suffix: "vuormar mk document"
+            # 4. Separated words: "vuormar" and "mk" both in question
+            
+            # Pattern 1: Direct name match (most specific)
+            if base_name in question_lower or doc_name_lower.replace('.pdf', '') in question_lower:
+                # Make sure it's not a partial match of a longer document
+                # E.g., don't match "VUORMAR" when "VUORMAR MK" is also available
+                already_matched = any(
+                    base_name in os.path.splitext(d)[0].lower() and len(d) > len(doc_name)
+                    for d in detected
+                )
+                if not already_matched:
+                    detected.append(doc_name)
+                    logger.info(f"Detected document mention: '{doc_name}' (direct match)")
+                    continue
+            
+            # Pattern 2: Check if all significant words from doc name are in question
+            # Split doc name into words (remove common suffixes like MK, v1, etc.)
+            doc_words = re.split(r'[\s_\-\.]+', base_name)
+            doc_words = [w for w in doc_words if len(w) > 1]  # Filter out single chars
+            
+            if len(doc_words) >= 2:
+                # Multi-word document name - all words must be present
+                words_found = sum(1 for w in doc_words if w in question_lower)
+                if words_found == len(doc_words):
+                    # All words found - likely this document
+                    already_in_detected = doc_name in detected
+                    if not already_in_detected:
+                        detected.append(doc_name)
+                        logger.info(f"Detected document mention: '{doc_name}' (all words match: {doc_words})")
+        
+        # If we found multiple documents, prefer the most specific one (longest name with most matches)
+        if len(detected) > 1:
+            # Keep only the most specific (longest) document names
+            # E.g., if both "VUORMAR.pdf" and "VUORMAR MK.pdf" detected, keep only "VUORMAR MK.pdf"
+            # unless the question specifically mentions both
+            filtered_detected = []
+            for doc in detected:
+                base = os.path.splitext(doc)[0].lower()
+                # Check if this doc is a subset of another detected doc
+                is_subset = any(
+                    base in os.path.splitext(other)[0].lower() and len(other) > len(doc)
+                    for other in detected
+                )
+                if not is_subset:
+                    filtered_detected.append(doc)
+            
+            if filtered_detected:
+                detected = filtered_detected
+                logger.info(f"Filtered to most specific documents: {detected}")
+        
+        return detected if detected else None
+
     def _detect_occurrence_query(self, question: str) -> tuple:
         """Detect if a question is asking to find all occurrences of a term.
 
@@ -1020,43 +1109,69 @@ class RetrievalEngine:
         q = question.strip()
         ql = q.lower()
 
-        triggers = [
-            "where does",
-            "where is",
-            "find ",
-            "locate ",
-            "occurrence",
-            "occurrences",
-            "all occurrences",
-            "show me all",
-            "highlight",
-        ]
-        if not any(t in ql for t in triggers):
-            return False, ""
-
+        # FIXED: Very restrictive triggers - only for explicit "find all occurrences" type queries
+        # NOT for general questions like "Where is the email?"
         import re
-
-        # Prefer quoted term: find "Cape Verde"
+        
+        # Exclude patterns that are regular questions (not occurrence queries)
+        # These should be handled by normal RAG retrieval
+        exclusions = [
+            "what is",
+            "what are",
+            "how does",
+            "how do",
+            "explain",
+            "describe",
+            "tell me about",
+            "information about",
+            "details about",
+            "schematic",
+            "diagram",
+            "image",
+            "picture",
+            "figure",
+            "contact",
+            "email",
+            "phone",
+            "address",
+            "number",
+            "in the document",
+            "in document",
+            "document me",  # For Roman English like "document me se"
+            "btaein",  # Roman English
+            "batao",   # Roman English
+            "kya hai", # Roman English
+        ]
+        
+        # If question contains exclusion patterns, it's not an occurrence query
+        if any(e in ql for e in exclusions):
+            return False, ""
+        
+        # Only trigger for very explicit occurrence search patterns
+        # Pattern 1: Quoted term search - find "exact phrase"
         m = re.search(r'"([^"]+)"', q)
         if m and m.group(1).strip():
-            return True, m.group(1).strip()
-
-        # Patterns like: where does X appear
-        m = re.search(r"(?:where\s+does|where\s+is)\s+(.+?)\s+(?:appear|occur|show\s+up)\b", ql)
+            # Check if this is a "find all occurrences of X" type query
+            if any(t in ql for t in ["occurrence", "find all", "show me all", "highlight"]):
+                return True, m.group(1).strip()
+        
+        # Pattern 2: Explicit "occurrences of X" 
+        m = re.search(r"(?:all\s+)?occurrences?\s+of\s+(.+)$", ql)
         if m and m.group(1).strip():
             return True, q[m.start(1):m.end(1)].strip()
-
-        # Patterns like: occurrences of X
-        m = re.search(r"occurrences?\s+of\s+(.+)$", ql)
+        
+        # Pattern 3: "where does X appear/occur/show up" (very specific)
+        m = re.search(r"where\s+(?:does|do)\s+(.+?)\s+(?:appear|occur|show\s+up)\b", ql)
         if m and m.group(1).strip():
             return True, q[m.start(1):m.end(1)].strip()
-
-        # Patterns like: find X
-        m = re.search(r"\bfind\s+(.+)$", ql)
+        
+        # Pattern 4: "find all X" or "show me all X" (explicit all)
+        m = re.search(r"(?:find|show\s+me)\s+all\s+(.+)$", ql)
         if m and m.group(1).strip():
             return True, q[m.start(1):m.end(1)].strip()
-
-        return True, q.strip()
+        
+        # Default: NOT an occurrence query - let normal RAG handle it
+        return False, ""
 
     def _build_occurrence_answer(self, term: str, source: str, occurrences: List[Dict], truncated: bool) -> str:
         """Build a human-readable answer string for occurrence results."""
@@ -1329,6 +1444,23 @@ class RetrievalEngine:
         elif search_mode == 'semantic':
             use_hybrid_search = False
         
+        # IMPROVED: Auto-detect specific query types that benefit from higher keyword weight
+        # Contact info queries often have specific words (email, phone) that need keyword matching
+        question_lower = question.lower()
+        specific_info_keywords = ['email', 'phone', 'contact', 'address', 'fax', 'website', 'url', 
+                                  'correo', 'teléfono', 'contacto', 'dirección']  # Include Spanish
+        found_keywords = [kw for kw in specific_info_keywords if kw in question_lower]
+        
+        # Log for debugging
+        logger.info(f"🔍 Contact keyword check: search_mode={search_mode}, found_keywords={found_keywords}")
+        
+        # Auto-adjust semantic weight for contact-related queries (always adjust if keywords found)
+        if found_keywords and search_mode == 'hybrid':
+            # For contact-related queries, reduce semantic weight to prioritize keyword matches
+            original_semantic_weight = semantic_weight if semantic_weight is not None else 0.7
+            semantic_weight = 0.35  # Higher keyword weight (0.65) for specific info lookups
+            logger.info(f"🔧 AUTO-ADJUSTED semantic_weight {original_semantic_weight:.2f} -> {semantic_weight:.2f} for keywords: {found_keywords}")
+        
         keyword_weight = 1.0 - semantic_weight
         
         query_start_time = time_module.time()
@@ -1354,6 +1486,9 @@ class RetrievalEngine:
         detected_language = None
         needs_response_translation = False
         
+        # Log the auto_translate setting for debugging
+        logger.info(f"🌐 [AUTO-TRANSLATE] auto_translate={auto_translate}, question='{question[:50]}...'")
+        
         if auto_translate:
             try:
                 from services.language.detector import get_detector
@@ -1372,7 +1507,10 @@ class RetrievalEngine:
                     # Improvement 2 & 5: Dual-Language Search
                     # Combine original (for keyword match on original text) and translated (for semantic match on English embeddings)
                     # We pass the translated question as the primary for semantic search, but append original for keyword boosts
-                    logger.info(f"Retrieval: [ReqID: {getattr(self, 'current_request_id', 'unknown')}] Translated query from {detected_language} to English in {trans_time:.2f}s: '{translated_question}'")
+                    logger.info(f"🌐 [TRANSLATION] Detected language: {detected_language}")
+                    logger.info(f"🌐 [TRANSLATION] Original: '{question}'")
+                    logger.info(f"🌐 [TRANSLATION] Translated: '{translated_question}'")
+                    logger.info(f"🌐 [TRANSLATION] Time: {trans_time:.2f}s")
                     
                     # Use English for retrieval but keep context
                     original_question = question
@@ -1384,9 +1522,13 @@ class RetrievalEngine:
                         self.ui_config['response_language'] = response_language
                         needs_response_translation = True
                         logger.info(f"Retrieval: Will translate response back to {response_language}")
+                else:
+                    logger.info(f"🌐 [AUTO-TRANSLATE] Query already in English (detected: {detected_language}), no translation needed")
             except Exception as e:
                 logger.warning(f"Retrieval: Auto-translation failed, using original query: {e}")
                 question = original_question
+        else:
+            logger.info(f"🌐 [AUTO-TRANSLATE] Disabled - searching with original query as-is")
         
         if self.vectorstore is None:
             # For OpenSearch, the authoritative storage is in the cloud; initialize on demand.
@@ -1399,8 +1541,11 @@ class RetrievalEngine:
                         opensearch_domain=self.opensearch_domain,
                         opensearch_index=target_index
                     )
-                    # Verify index has documents
-                    if hasattr(self.vectorstore, 'count_documents'):
+                    # Verify index has documents - BUT skip this check if we have per-document indexes
+                    # Per-document indexes (aris-doc-*) are the primary storage, not the default index
+                    has_per_doc_indexes = hasattr(self, 'document_index_map') and self.document_index_map and len(self.document_index_map) > 0
+                    
+                    if not has_per_doc_indexes and hasattr(self.vectorstore, 'count_documents'):
                         doc_count = self.vectorstore.count_documents()
                         if doc_count == 0:
                             # Check document registry to provide better error message
@@ -1436,6 +1581,8 @@ class RetrievalEngine:
                                         }
                             except Exception:
                                 pass
+                    elif has_per_doc_indexes:
+                        logger.info(f"Skipping default index check - using per-document indexes ({len(self.document_index_map)} indexes available)")
                 except Exception as e:
                     logger.warning(f"Could not initialize OpenSearch vectorstore for querying: {e}")
             else:
@@ -1545,6 +1692,14 @@ class RetrievalEngine:
             logger.info(f"Document filter active: {active_sources} - queries will only search within these documents")
         else:
             logger.info("No document filter - queries will search across all documents")
+            
+            # AUTO-DETECT document mentions in question and filter accordingly
+            # This helps when user asks "What is in VUORMAR MK?" without explicitly selecting the document
+            if hasattr(self, 'document_index_map') and self.document_index_map:
+                detected_docs = self._detect_document_in_question(question, list(self.document_index_map.keys()))
+                if detected_docs:
+                    active_sources = detected_docs
+                    logger.info(f"🔍 Auto-detected document mention in question: {detected_docs} - filtering search to this document")
         
         # NEW: Detect and expand summary queries
         is_summary_query, expanded_question, suggested_k = self._detect_and_expand_query(question)
@@ -2875,7 +3030,10 @@ class RetrievalEngine:
                 if hasattr(doc, 'page_content') and hasattr(doc, 'metadata') and doc.metadata:
                     chunk_text = doc.page_content
                     source = doc.metadata.get('source', '')
-                    page = doc.metadata.get('page', 0)
+                    # CRITICAL: Ensure page is never 0 - default to 1
+                    page = doc.metadata.get('page', 1)
+                    if page == 0:
+                        page = 1
                     
                     # Check metadata flags to identify image-related chunks even without markers
                     has_image_metadata = (
@@ -3095,14 +3253,31 @@ class RetrievalEngine:
                     logger.info(f"📷 Found {len(image_results)} images from OpenSearch images index")
                     
                     # Add images to image_content_map
+                    # Use a counter for unique image numbers per source when original image_number isn't unique
+                    images_per_source = {}
                     for img in image_results:
                         source = img.get('source', 'Unknown')
-                        image_number = img.get('image_number', 1)
+                        image_number = img.get('image_number')
                         ocr_text = img.get('ocr_text', '')
                         page = img.get('page', 1)
                         
+                        # Ensure page is valid
+                        if page is None or page == 0:
+                            page = 1
+                        
+                        # Ensure image_number is valid - use page-based numbering if not
+                        if image_number is None or image_number == 0:
+                            # Use page number as a base for image numbering
+                            if source not in images_per_source:
+                                images_per_source[source] = {}
+                            if page not in images_per_source[source]:
+                                images_per_source[source][page] = 0
+                            images_per_source[source][page] += 1
+                            image_number = images_per_source[source][page]
+                        
                         if ocr_text and len(ocr_text) > 20:  # Only add if meaningful OCR text
-                            key = (source, image_number)
+                            # Use (source, page, image_number) as unique key to avoid collisions
+                            key = (source, f"{page}_{image_number}")
                             if key not in image_content_map:
                                 image_content_map[key] = []
                             
@@ -3110,13 +3285,14 @@ class RetrievalEngine:
                             existing_ocr = [c.get('ocr_text', '')[:100] for c in image_content_map[key]]
                             if ocr_text[:100] not in existing_ocr:
                                 image_content_map[key].append({
-                                    'content': f"[IMAGE {image_number} - From OpenSearch Images Index]\n{ocr_text}",
+                                    'content': f"[IMAGE {image_number} - Page {page} - From OpenSearch Images Index]\n{ocr_text}",
                                     'page': page,
                                     'full_chunk': ocr_text,
                                     'ocr_text': ocr_text,
-                                    'source': 'opensearch_images'
+                                    'source': 'opensearch_images',
+                                    'image_number': image_number  # Store explicit image_number
                                 })
-                                logger.debug(f"📷 Added image {image_number} from {source} ({len(ocr_text)} chars OCR)")
+                                logger.info(f"📷 Added image {image_number} from {os.path.basename(source)} Page {page} ({len(ocr_text)} chars OCR)")
         except ImportError:
             logger.debug("OpenSearch images store not available for query integration")
         except Exception as e:
@@ -3307,6 +3483,81 @@ class RetrievalEngine:
             import logging
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Image Content section preview: {image_content_section[:500]}...")
+            
+            # CRITICAL: Add image citations for images from the images index
+            # This ensures images used in answers get proper citation attribution
+            next_citation_id = len(citations)  # Start after existing text chunk citations
+            for key, contents in image_content_map.items():
+                # Handle both old format (source, img_idx) and new format (source, "page_img")
+                if isinstance(key, tuple) and len(key) == 2:
+                    source = key[0]
+                    key_part = key[1]
+                    # Try to parse "page_img" format
+                    if isinstance(key_part, str) and '_' in key_part:
+                        try:
+                            # New format: (source, "page_imgnum")
+                            parts = key_part.split('_')
+                            # img_idx will be extracted from content_info below
+                        except:
+                            pass
+                else:
+                    source = 'Unknown'
+                
+                for content_info in contents:
+                    # Only add citation if it's from the OpenSearch images index
+                    if content_info.get('source') == 'opensearch_images':
+                        page = content_info.get('page', 1)
+                        # Get image_number from content_info (explicit) or fallback
+                        img_idx = content_info.get('image_number', 1)
+                        ocr_text = content_info.get('ocr_text', '') or content_info.get('full_chunk', '')
+                        
+                        # CRITICAL: Try to extract correct page from OCR text
+                        # Many documents have "DOCNAME Page X" at the end of OCR
+                        if (page is None or page == 0) and ocr_text:
+                            import re
+                            # Pattern: "DOCNAME Page X" at end (most reliable - actual page marker)
+                            page_match = re.search(r'Page\s+(\d+)\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
+                            if page_match:
+                                extracted_page = int(page_match.group(1))
+                                if extracted_page > 0:
+                                    page = extracted_page
+                                    logger.info(f"📄 Extracted page {page} from OCR text (end pattern)")
+                            # NOTE: Do NOT use "Figure X" as page - Figure numbers are NOT page numbers!
+                        
+                        # Ensure valid values
+                        if page is None or page == 0:
+                            page = 1
+                        if img_idx is None or img_idx == 0:
+                            img_idx = 1
+                        
+                        # Create snippet from OCR text
+                        snippet = ocr_text[:300].strip() + "..." if len(ocr_text) > 300 else ocr_text.strip()
+                        
+                        image_citation = {
+                            'id': next_citation_id,
+                            'source': source if source else 'Unknown',
+                            'source_confidence': 1.0,  # High confidence from images index
+                            'page': page,
+                            'image_number': img_idx,
+                            'page_confidence': 1.0,
+                            'page_extraction_method': 'opensearch_images_index',
+                            'section': None,
+                            'snippet': snippet,
+                            'full_text': ocr_text,
+                            'start_char': None,
+                            'end_char': None,
+                            'chunk_index': None,
+                            'image_ref': {'image_index': img_idx, 'page': page},
+                            'image_info': f"Image {img_idx} on Page {page}",
+                            'source_location': f"Page {page}, Image {img_idx}",
+                            'content_type': 'image',
+                            'extraction_method': 'opensearch_images_index',
+                            'similarity_score': 0.85,  # Good score for direct image match
+                            's3_url': None
+                        }
+                        citations.append(image_citation)
+                        next_citation_id += 1
+                        logger.info(f"📷 Added image citation: {os.path.basename(source)} Page {page}, Image {img_idx}")
         
         # Collect document-level metadata (image counts, etc.) from all retrieved documents
         document_metadata = {}
@@ -3577,7 +3828,16 @@ MULTILINGUAL INSTRUCTIONS:
 - Detect the language of the user's question.
 - ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
 - If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
-- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
+- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to).
+
+ROMAN ENGLISH / TRANSLITERATED TEXT HANDLING:
+- If the question is in Roman English (e.g., "ye kya hai", "mujhe batao", "kaise kare") or other transliterated languages:
+  - Recognize this as a valid question in that language (e.g., Hindi/Urdu written in Latin script)
+  - Provide a DETAILED and COMPREHENSIVE answer, not a brief one
+  - Answer in the SAME format as the question (Roman English if asked in Roman English)
+  - Include all relevant details, specifications, and information from the context
+  - Do NOT provide shorter answers just because the question is in Roman/transliterated text
+  - Treat Roman English questions with the SAME importance and detail level as English questions"""
 
         if is_summary_query:
             # Use synthesis-friendly prompt for summaries
@@ -5364,44 +5624,85 @@ Answer:"""
             
             # Calculate percentage for each citation
             # Use absolute value to handle both positive and negative ranges
-            score_range = abs(worst_score - best_score) if worst_score != best_score else 1.0
+            score_range = abs(worst_score - best_score) if worst_score != best_score else 0.0
             
-            logger.info(f"Calculating percentages: best={best_score:.4f}, worst={worst_score:.4f}, range={score_range:.4f}, is_distance={is_distance_based}, num_scores={len(sorted_scores)}")
+            # IMPROVED: Detect if scores are from mixed systems (e.g., RRF 0.01 + similarity 0.85)
+            # OR if scores are so close that percentage calculation gives misleading results
+            use_rank_based = False
+            scores_are_similar = False
+            
+            if len(sorted_scores) > 1 and best_score > 0:
+                ratio = best_score / max(worst_score, 0.0001)
+                # Relative range: if score_range is < 10% of the best_score, scores are very close
+                relative_range = score_range / best_score if best_score > 0 else 0
+                
+                # Case 1: Mixed scoring systems (ratio > 50x OR one score >> other)
+                if ratio > 50 or (best_score > 0.1 and worst_score < 0.01):
+                    use_rank_based = True
+                    logger.warning(f"Detected mixed scoring systems (ratio={ratio:.1f}). Using rank-based percentages.")
+                
+                # Case 2: Scores are very close together (relative range < 10%)
+                # This prevents 100% vs 0% when scores are actually similar
+                elif relative_range < 0.15:
+                    scores_are_similar = True
+                    logger.info(f"Scores are very close (relative_range={relative_range:.3f}). Using similar-score percentages.")
+            
+            logger.info(f"Calculating percentages: best={best_score:.4f}, worst={worst_score:.4f}, range={score_range:.4f}, is_distance={is_distance_based}, num_scores={len(sorted_scores)}, rank_based={use_rank_based}, similar_scores={scores_are_similar}")
             
             # Calculate percentages for all citations
-            for citation in citations:
+            num_citations = len(citations)
+            for idx, citation in enumerate(citations):
                 sim_score = citation.get('similarity_score')
                 if sim_score is not None:
-                    if is_distance_based:
+                    # FIXED: Use rank-based percentage when mixed scoring systems are detected
+                    if use_rank_based:
+                        # Use rank-based percentage: rank 1 = 100%, decreasing by even steps
+                        # This provides more meaningful percentages when scores are from different systems
+                        if num_citations == 1:
+                            similarity_percentage = 100.0
+                        else:
+                            # Exponential decay based on rank: 100% -> ~50% -> ~25% -> ...
+                            # Or linear: 100%, 90%, 80%... depending on num_citations
+                            # Use a curve that doesn't go below 30% for top results
+                            similarity_percentage = max(30.0, 100.0 - (idx * (70.0 / max(num_citations - 1, 1))))
+                        citation['similarity_percentage'] = round(similarity_percentage, 2)
+                        logger.debug(f"Citation rank {idx+1}: Using rank-based percentage {similarity_percentage:.1f}%")
+                    elif scores_are_similar:
+                        # Scores are very close - use a gentler falloff starting from 100%
+                        # First citation gets 100%, subsequent ones decrease gently (95%, 90%, 85%...)
+                        if idx == 0:
+                            similarity_percentage = 100.0
+                        else:
+                            similarity_percentage = max(70.0, 100.0 - (idx * 5.0))
+                        citation['similarity_percentage'] = round(similarity_percentage, 2)
+                        logger.debug(f"Citation rank {idx+1}: Using similar-score percentage {similarity_percentage:.1f}%")
+                    elif score_range < 0.0001:
+                        # All scores are essentially equal - give 100% to first (best) citation, 95% to others
+                        if idx == 0:
+                            citation['similarity_percentage'] = 100.0
+                        else:
+                            citation['similarity_percentage'] = 95.0
+                        logger.debug(f"Citation {citation.get('id')}: All scores equal, assigning {citation['similarity_percentage']}%")
+                    elif is_distance_based:
                         # For distance: lower score = higher percentage
                         # Invert: (worst - current) / (worst - best) * 100
-                        if score_range > 0.0001:  # Use small epsilon to avoid division issues
-                            similarity_percentage = ((worst_score - sim_score) / score_range) * 100.0
-                            # Ensure percentage is in valid range
-                            similarity_percentage = max(0.0, min(100.0, similarity_percentage))
-                            citation['similarity_percentage'] = round(similarity_percentage, 2)
-                        else:
-                            # All same distance - cannot compute meaningful percentage
-                            citation['similarity_percentage'] = None  # Will display as "N/A" in UI
-                            logger.debug(f"Citation {citation.get('id')}: All scores equal (distance={sim_score:.4f}), setting similarity_percentage to None")
+                        similarity_percentage = ((worst_score - sim_score) / score_range) * 100.0
+                        # Ensure percentage is in valid range
+                        similarity_percentage = max(0.0, min(100.0, similarity_percentage))
+                        citation['similarity_percentage'] = round(similarity_percentage, 2)
                     else:
                         # For similarity: higher score = higher percentage
                         # Normalize: (current - worst) / (best - worst) * 100
-                        if score_range > 0.0001:  # Use small epsilon to avoid division issues
-                            similarity_percentage = ((sim_score - worst_score) / score_range) * 100.0
-                            # Ensure percentage is in valid range
-                            similarity_percentage = max(0.0, min(100.0, similarity_percentage))
-                            citation['similarity_percentage'] = round(similarity_percentage, 2)
-                        else:
-                            # All same similarity - cannot compute meaningful percentage
-                            citation['similarity_percentage'] = None  # Will display as "N/A" in UI
-                            logger.debug(f"Citation {citation.get('id')}: All scores equal (similarity={sim_score:.4f}), setting similarity_percentage to None")
+                        similarity_percentage = ((sim_score - worst_score) / score_range) * 100.0
+                        # Ensure percentage is in valid range
+                        similarity_percentage = max(0.0, min(100.0, similarity_percentage))
+                        citation['similarity_percentage'] = round(similarity_percentage, 2)
                     
                     # Debug logging for all citations to see what's happening
-                    if citation.get('id', 0) <= 6:
+                    if citation.get('id', 0) <= 6 or idx <= 5:
                         sim_pct = citation.get('similarity_percentage')
                         sim_pct_str = f"{sim_pct:.2f}%" if sim_pct is not None else "N/A"
-                        logger.info(f"Citation {citation.get('id')}: score={sim_score:.4f}, calculated_percentage={sim_pct_str}, source={citation.get('source', 'Unknown')[:40]}")
+                        logger.info(f"Citation {idx+1}: score={sim_score:.4f}, calculated_percentage={sim_pct_str}, source={citation.get('source', 'Unknown')[:40]}")
                 else:
                     citation['similarity_percentage'] = 0.0  # No score = 0%
                     logger.warning(f"Citation {citation.get('id')} has no similarity_score, setting percentage to 0%")

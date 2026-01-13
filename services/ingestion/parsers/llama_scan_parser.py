@@ -26,7 +26,8 @@ class LlamaScanParser(BaseParser):
     ):
         super().__init__("llamascan")
 
-        self.model = model or os.getenv("LLAMA_SCAN_MODEL", "qwen2.5vl:latest")
+        # Default to llava if available, fallback to qwen2.5vl
+        self.model = model or os.getenv("LLAMA_SCAN_MODEL", "llava:latest")
         self.server_url = (server_url or os.getenv("OLLAMA_SERVER_URL", "http://localhost:11434")).rstrip("/")
 
         self.start_page = int(start_page) if start_page is not None else int(os.getenv("LLAMA_SCAN_START_PAGE", "0"))
@@ -252,6 +253,28 @@ class LlamaScanParser(BaseParser):
             if progress_callback:
                 progress_callback("parsing", 1.0, detailed_message="Llama-Scan parsing complete")
 
+            # Extract images from page_blocks for OpenSearch storage
+            extracted_images = []
+            if self.include_diagrams:
+                # Look for <image> tags in the text
+                import re
+                for page_block in page_blocks:
+                    page_num = page_block.get('page', 1)
+                    page_text = page_block.get('text', '')
+                    
+                    # Find all <image> tags and their content
+                    image_matches = re.findall(r'<image>(.*?)</image>', page_text, re.DOTALL)
+                    for img_idx, img_content in enumerate(image_matches, 1):
+                        extracted_images.append({
+                            'source': os.path.basename(file_path),
+                            'image_number': len(extracted_images) + 1,
+                            'page': page_num,
+                            'ocr_text': img_content.strip(),
+                            'ocr_text_length': len(img_content.strip()),
+                            'marker_detected': True,
+                            'extraction_method': 'llamascan_ocr',
+                        })
+            
             return ParsedDocument(
                 text=full_text,
                 metadata={
@@ -264,13 +287,14 @@ class LlamaScanParser(BaseParser):
                     "llama_scan_start_page": start,
                     "llama_scan_end_page": end,
                     "include_diagrams": self.include_diagrams,
+                    "extracted_images": extracted_images,  # Add extracted images for OpenSearch
                 },
                 pages=total_pages,
-                images_detected=self.include_diagrams,
+                images_detected=self.include_diagrams and len(extracted_images) > 0,
                 parser_used="llamascan",
                 confidence=0.9,
                 extraction_percentage=float(extraction_percentage),
-                image_count=0,
+                image_count=len(extracted_images),
             )
 
         finally:

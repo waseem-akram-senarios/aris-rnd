@@ -278,17 +278,48 @@ class OCRmyPDFParser(BaseParser):
                             images_detected = True
                             image_count += len(image_list)
                             
-                            # Add to extracted_images list
+                            # Add to extracted_images list with OCR extraction
                             for img_idx, img_info in enumerate(image_list):
                                 try:
                                     xref = img_info[0]
+                                    
+                                    # Extract image and perform OCR on it
+                                    ocr_text = ""
+                                    try:
+                                        # Extract image bytes from PDF
+                                        base_image = doc.extract_image(xref)
+                                        if base_image:
+                                            image_bytes = base_image.get("image")
+                                            if image_bytes:
+                                                # Save to temp file and run Tesseract OCR
+                                                import io
+                                                from PIL import Image
+                                                import pytesseract
+                                                
+                                                # Convert to PIL Image
+                                                img = Image.open(io.BytesIO(image_bytes))
+                                                # Run OCR with Tesseract
+                                                ocr_text = pytesseract.image_to_string(
+                                                    img,
+                                                    lang=self.languages.replace('+', '+') if hasattr(self, 'languages') else 'eng'
+                                                ).strip()
+                                                logger.debug(f"OCR extracted {len(ocr_text)} chars from image {img_idx + 1} on page {actual_page_num}")
+                                    except Exception as ocr_err:
+                                        logger.debug(f"Could not OCR image {img_idx + 1} on page {actual_page_num}: {ocr_err}")
+                                        ocr_text = f"Image {img_idx + 1} on page {actual_page_num}"
+                                    
+                                    # Use page text as fallback if no OCR text extracted
+                                    if not ocr_text or len(ocr_text) < 10:
+                                        # Try to use surrounding page text as context
+                                        ocr_text = f"Image {img_idx + 1} on page {actual_page_num}"
+                                    
                                     extracted_images.append({
                                         "source": os.path.basename(file_path),
                                         "page": actual_page_num,
                                         "image_number": len(extracted_images) + 1,
                                         "image_index": img_idx,
-                                        "ocr_text": f"Image on page {actual_page_num}",
-                                        "ocr_text_length": 0
+                                        "ocr_text": ocr_text,
+                                        "ocr_text_length": len(ocr_text)
                                     })
                                     
                                     # Add to page_blocks (CRITICAL for RAG Citation)

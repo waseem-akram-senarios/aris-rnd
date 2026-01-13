@@ -43,7 +43,9 @@ class DocumentProcessor:
         document_id: Optional[str] = None,
         progress_callback: Optional[callable] = None,
         index_name: Optional[str] = None,
-        language: str = "eng"
+        language: str = "eng",
+        is_update: bool = False,
+        old_index_name: Optional[str] = None
     ) -> ProcessingResult:
         """
         Process a single document.
@@ -57,6 +59,8 @@ class DocumentProcessor:
             progress_callback: Optional callback function(status, progress) for updates
             index_name: Optional explicit OpenSearch index name
             language: Language code for OCR (default: 'eng'). Use '+' for multiple (e.g. 'eng+spa')
+            is_update: Whether this is an update to an existing document
+            old_index_name: Old index name to clean up if updating
         
         Returns:
             ProcessingResult with processing statistics
@@ -67,9 +71,18 @@ class DocumentProcessor:
         s3_url = None
         
         logger.info("=" * 60)
-        logger.info(f"[STEP 1] DocumentProcessor: Starting processing for: {doc_name}")
+        if is_update:
+            logger.info(f"[STEP 1] DocumentProcessor: UPDATING existing document: {doc_name}")
+        else:
+            logger.info(f"[STEP 1] DocumentProcessor: Starting processing for: {doc_name}")
         logger.info(f"   Document ID: {doc_id}")
+        if is_update and old_index_name:
+            logger.info(f"   Updating index: {old_index_name}")
         logger.info("=" * 60)
+        
+        # If updating, clean up old index data first
+        if is_update and old_index_name:
+            self._cleanup_old_index_data(doc_id, old_index_name, doc_name)
         
         # Handle OpenSearch index name generation from document name (for non-UI cases like API)
         # Only generate if index is not explicitly set or is the default
@@ -831,6 +844,99 @@ class DocumentProcessor:
             
             return result
     
+    def _cleanup_old_index_data(self, doc_id: str, old_index_name: str, doc_name: str) -> bool:
+        """
+        Clean up old index data when updating a document.
+        
+        Args:
+            doc_id: Document ID
+            old_index_name: Name of the old index to clean up
+            doc_name: Document name for source filtering
+        
+        Returns:
+            True if cleanup was successful, False otherwise
+        """
+        try:
+            logger.info(f"[CLEANUP] Starting cleanup of old index data for document: {doc_name}")
+            
+            # Check if RAG system has OpenSearch
+            if not hasattr(self.rag_system, 'vector_store_type'):
+                logger.warning("[CLEANUP] No vector store type configured, skipping cleanup")
+                return False
+            
+            if self.rag_system.vector_store_type.lower() != 'opensearch':
+                logger.info("[CLEANUP] Not using OpenSearch, skipping index cleanup")
+                return False
+            
+            # Get OpenSearch client
+            from vectorstores.opensearch_store import OpenSearchStore
+            
+            # Delete chunks from the old index that belong to this document
+            if hasattr(self.rag_system, 'vectorstore') and self.rag_system.vectorstore:
+                try:
+                    store = self.rag_system.vectorstore
+                    if hasattr(store, 'vectorstore') and hasattr(store.vectorstore, 'client'):
+                        client = store.vectorstore.client
+                        
+                        # Delete by source field (document name)
+                        delete_query = {
+                            "query": {
+                                "bool": {
+                                    "should": [
+                                        {"match": {"source": doc_name}},
+                                        {"match": {"metadata.source": doc_name}}
+                                    ]
+                                }
+                            }
+                        }
+                        
+                        response = client.delete_by_query(
+                            index=old_index_name,
+                            body=delete_query,
+                            conflicts='proceed'
+                        )
+                        
+                        deleted_count = response.get('deleted', 0)
+                        logger.info(f"[CLEANUP] Deleted {deleted_count} chunks from index '{old_index_name}' for document '{doc_name}'")
+                        
+                        # Also clean up from images index
+                        try:
+                            images_index = "aris-rag-images-index"
+                            images_delete_query = {
+                                "query": {
+                                    "bool": {
+                                        "should": [
+                                            {"match": {"source": doc_name}},
+                                            {"match": {"document_name": doc_name}}
+                                        ]
+                                    }
+                                }
+                            }
+                            
+                            images_response = client.delete_by_query(
+                                index=images_index,
+                                body=images_delete_query,
+                                conflicts='proceed'
+                            )
+                            
+                            images_deleted = images_response.get('deleted', 0)
+                            if images_deleted > 0:
+                                logger.info(f"[CLEANUP] Deleted {images_deleted} images from '{images_index}' for document '{doc_name}'")
+                        except Exception as img_e:
+                            logger.debug(f"[CLEANUP] Could not clean images index (may not exist): {img_e}")
+                        
+                        return True
+                except Exception as client_e:
+                    logger.warning(f"[CLEANUP] Failed to delete old chunks: {client_e}")
+                    return False
+            
+            logger.warning("[CLEANUP] No vectorstore available for cleanup")
+            return False
+            
+        except Exception as e:
+            logger.error(f"[CLEANUP] Error during cleanup: {e}")
+            return False
+    
     def process_documents_batch(
         self,
         files: List[Dict],  # List of {path, content, name}
@@ -918,6 +1024,7 @@ class DocumentProcessor:
             logger.info(f"_store_images_in_opensearch: First image keys: {list(first_img.keys())}")
             logger.info(f"_store_images_in_opensearch: First image source: {first_img.get('source', 'MISSING')}")
             logger.info(f"_store_images_in_opensearch: First image number: {first_img.get('image_number', 'MISSING')}")
+            logger.info(f"_store_images_in_opensearch: First image page: {first_img.get('page', 'MISSING')}")
             logger.info(f"_store_images_in_opensearch: First image OCR length: {len(first_img.get('ocr_text', ''))}")
         
         # Normalize and clean image payloads to ensure consistent retrieval
@@ -929,8 +1036,19 @@ class DocumentProcessor:
             cleaned = dict(img)
             # Force a canonical source so downstream retrieval can query by document name
             cleaned['source'] = normalized_source
+            # Ensure image_number is set and valid (1-based)
             cleaned['image_number'] = cleaned.get('image_number') or (idx + 1)
+            if cleaned['image_number'] == 0:
+                cleaned['image_number'] = idx + 1
+            # Ensure page is set and valid (1-based)
+            original_page = cleaned.get('page')
+            if original_page is None or original_page == 0:
+                cleaned['page'] = 1  # Default to page 1 if not specified
+            else:
+                cleaned['page'] = original_page
             cleaned['ocr_text'] = cleaned.get('ocr_text') or ""
+            # Log for debugging
+            logger.debug(f"_store_images_in_opensearch: Image {idx+1}: page={cleaned['page']}, image_number={cleaned['image_number']}")
             cleaned_images.append(cleaned)
 
         if not cleaned_images:

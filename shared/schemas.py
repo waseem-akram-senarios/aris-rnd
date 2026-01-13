@@ -26,17 +26,25 @@ class QueryRequest(BaseModel):
 
 class ProcessingResult(BaseModel):
     """Result of document processing."""
-    status: str  # 'success', 'failed', 'processing'
+    document_id: Optional[str] = None  # Unique document identifier
+    status: str = "processing"  # 'success', 'failed', 'processing', 'already_exists'
     document_name: str
     language: str = "eng"
     chunks_created: int = 0
     tokens_extracted: int = 0
     parser_used: Optional[str] = None
     error: Optional[str] = None
+    message: Optional[str] = None  # Status message for duplicates etc.
     processing_time: float = 0.0
     extraction_percentage: float = 0.0
+    confidence: float = 0.0
     images_detected: bool = False
     image_count: int = 0  # Number of images extracted
+    file_size: Optional[int] = None  # File size in bytes
+    file_type: Optional[str] = None  # File extension
+    pages: int = 0  # Number of pages
+    success: bool = True  # Whether processing succeeded
+    is_update: bool = False  # Whether this was an update to an existing document
 
 
 class Citation(BaseModel):
@@ -80,6 +88,7 @@ class DocumentMetadata(BaseModel):
     document_id: Optional[str] = None
     document_name: str
     status: str
+    message: Optional[str] = None  # Optional message for status details
     language: str = "eng"
     chunks_created: int = 0
     tokens_extracted: int = 0
@@ -90,6 +99,8 @@ class DocumentMetadata(BaseModel):
     image_count: int = 0  # Number of images extracted
     pages: Optional[int] = None
     error: Optional[str] = None
+    is_update: bool = False  # Whether this was an update to an existing document
+    file_hash: Optional[str] = None  # MD5 hash of file content for duplicate detection
     # Text and image separation fields
     text_chunks_stored: int = 0  # Number of text chunks stored
     images_stored: int = 0  # Number of images with OCR stored

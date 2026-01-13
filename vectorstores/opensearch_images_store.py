@@ -582,7 +582,7 @@ class OpenSearchImagesStore:
         k: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Perform semantic search in images.
+        Perform semantic search in images using direct OpenSearch k-NN query.
         
         Args:
             query: Search query text
@@ -597,59 +597,148 @@ class OpenSearchImagesStore:
             return []
         
         try:
-            # Use similarity search from underlying vectorstore
-            search_kwargs: Dict[str, Any] = {}
-            if source:
-                source_variants = {
-                    source,
-                    os.path.basename(source or ""),
-                    (source or "").lower(),
-                    os.path.basename(source or "").lower()
-                }
-                should_clauses = []
-                for variant in source_variants:
-                    if not variant:
-                        continue
-                    should_clauses.extend([
-                        {"term": {"metadata.source.keyword": variant}},
-                        {"term": {"metadata.source": variant}},
-                        {"match_phrase": {"metadata.source": variant}}
-                    ])
-                search_kwargs['filter'] = {
-                    "bool": {
-                        "should": should_clauses or [{"match_all": {}}],
-                        "minimum_should_match": 1
+            # Get the raw OpenSearch client
+            client = self.vectorstore.vectorstore.client
+            
+            # Generate query embedding
+            query_vector = self.embeddings.embed_query(query)
+            
+            # Try k-NN search first, fall back to text search if it fails
+            try:
+                knn_query = {
+                    "size": k,
+                    "knn": {
+                        "field": "vector_field",
+                        "vector": query_vector,
+                        "k": k
                     }
                 }
-            
-            results = self.vectorstore.vectorstore.similarity_search(
-                query,
-                k=k,
-                **search_kwargs
-            )
+                
+                # Add source filter if specified
+                if source:
+                    source_variants = [
+                        source,
+                        os.path.basename(source or ""),
+                        (source or "").lower(),
+                        os.path.basename(source or "").lower()
+                    ]
+                    should_clauses = []
+                    for variant in source_variants:
+                        if not variant:
+                            continue
+                        should_clauses.extend([
+                            {"term": {"metadata.source.keyword": variant}},
+                            {"term": {"metadata.source": variant}},
+                            {"match_phrase": {"metadata.source": variant}}
+                        ])
+                    if should_clauses:
+                        knn_query["knn"]["filter"] = {
+                            "bool": {
+                                "should": should_clauses,
+                                "minimum_should_match": 1
+                            }
+                        }
+                
+                response = client.search(index=self.index_name, body=knn_query)
+                logger.info(f"k-NN search succeeded on images index")
+            except Exception as knn_error:
+                # k-NN not supported or failed - fallback to text search
+                logger.warning(f"k-NN search failed, using text search fallback: {knn_error}")
+                
+                text_query: Dict[str, Any] = {
+                    "size": k,
+                    "query": {
+                        "multi_match": {
+                            "query": query,
+                            "fields": ["text^2", "metadata.source"],
+                            "type": "best_fields",
+                            "fuzziness": "AUTO"
+                        }
+                    }
+                }
+                
+                # Add source filter if specified
+                if source:
+                    source_variants = [
+                        source,
+                        os.path.basename(source or ""),
+                        (source or "").lower(),
+                        os.path.basename(source or "").lower()
+                    ]
+                    should_clauses = []
+                    for variant in source_variants:
+                        if not variant:
+                            continue
+                        should_clauses.extend([
+                            {"term": {"metadata.source.keyword": variant}},
+                            {"term": {"metadata.source": variant}},
+                            {"match_phrase": {"metadata.source": variant}}
+                        ])
+                    if should_clauses:
+                        text_query["query"] = {
+                            "bool": {
+                                "must": [text_query["query"]],
+                                "filter": {
+                                    "bool": {
+                                        "should": should_clauses,
+                                        "minimum_should_match": 1
+                                    }
+                                }
+                            }
+                        }
+                
+                response = client.search(index=self.index_name, body=text_query)
+            hits = response.get("hits", {}).get("hits", [])
             
             images = []
-            for doc in results:
-                metadata = doc.metadata
+            for idx, hit in enumerate(hits, start=1):
+                source_data = hit.get("_source", {})
+                metadata = source_data.get("metadata", {})
+                ocr_text = source_data.get('text', '') or ''
+                
+                # CRITICAL: Ensure image_number is never 0 - use 1-based indexing
+                stored_image_number = metadata.get('image_number')
+                if stored_image_number is None or stored_image_number == 0:
+                    # Fallback to index-based numbering (1-based)
+                    image_number = idx
+                else:
+                    image_number = stored_image_number
+                
+                # Get page - try to extract from OCR text if not in metadata
+                page = metadata.get('page')
+                if page is None or page == 0:
+                    # Try to extract page from OCR text
+                    import re
+                    # Pattern: "DOCNAME Page X" at end (most reliable - actual page marker)
+                    page_match = re.search(r'Page\s+(\d+)\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
+                    if page_match:
+                        extracted_page = int(page_match.group(1))
+                        if extracted_page > 0:
+                            page = extracted_page
+                            logger.debug(f"Extracted page {page} from end of OCR text for image {image_number}")
+                    # NOTE: Do NOT use "Figure X" as page - Figure numbers are NOT page numbers!
+                    if page is None or page == 0:
+                        page = 1  # Default to page 1 if not found
+                
                 images.append({
                     'image_id': self._create_image_id(
                         metadata.get('source', 'unknown'),
-                        metadata.get('image_number') or 0
+                        image_number
                     ),
                     'source': metadata.get('source'),
-                    'image_number': metadata.get('image_number') or 0,
-                    'page': metadata.get('page'),
-                    'ocr_text': doc.page_content or '',
+                    'image_number': image_number,
+                    'page': page,
+                    'ocr_text': ocr_text,
                     'ocr_text_length': metadata.get('ocr_text_length', 0),
-                    'metadata': metadata.get('metadata', {}) or {},
+                    'metadata': metadata,
                     'extraction_method': metadata.get('extraction_method'),
-                    'score': getattr(doc, 'score', None)  # Similarity score if available
+                    'score': hit.get('_score')  # k-NN similarity score
                 })
             
             logger.info(f"Found {len(images)} images matching query: {query[:50]}")
             return images
         except Exception as e:
-            logger.error(f"Failed to search images: {str(e)}")
+            logger.error(f"Failed to search images: {str(e)}", exc_info=True)
             return []
     
     def update_image(self, image_id: str, updates: Dict[str, Any]) -> bool:

@@ -177,11 +177,64 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
         
         temp_files.append(temp_file.name)  # Track for potential cleanup
         
+        # Calculate file hash for duplicate detection
+        import hashlib
+        file_hash = hashlib.md5(file_content).hexdigest()
+        
         files_to_process.append({
             'path': temp_file.name,  # Use actual temp file path
             'content': file_content,  # Also keep content for parsers that prefer it
-            'name': file_name
+            'name': file_name,
+            'file_hash': file_hash
         })
+    
+    # Check for duplicates before processing
+    registry = st.session_state.get('document_registry')
+    if registry is None:
+        from storage.document_registry import DocumentRegistry
+        registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+        st.session_state.document_registry = registry
+    
+    files_after_duplicate_check = []
+    effective_parser = parser_preference.lower() if parser_preference else 'pymupdf'
+    
+    for file_info in files_to_process:
+        file_name = file_info['name']
+        file_hash = file_info['file_hash']
+        
+        # Check for existing document with same name and parser
+        existing_doc = registry.find_document_by_name_and_parser(file_name, effective_parser)
+        
+        if existing_doc:
+            if existing_doc.get('file_hash') == file_hash:
+                # Exact same file - skip
+                st.warning(f"⚠️ **{file_name}** already exists with identical content (Parser: {effective_parser}). Skipping upload.")
+                # Clean up temp file
+                if os.path.exists(file_info['path']):
+                    os.unlink(file_info['path'])
+                continue
+            else:
+                # Same name/parser but different content - will update
+                file_info['is_update'] = True
+                file_info['old_document_id'] = existing_doc.get('document_id')
+                file_info['old_index_name'] = existing_doc.get('index_name')
+                st.info(f"🔄 **{file_name}** exists with different content. Will **update** the existing document.")
+        else:
+            # Check if same filename exists with different parser
+            all_versions = registry.find_documents_by_name(file_name)
+            if all_versions:
+                parser_list = [d.get('parser_used', 'unknown') for d in all_versions]
+                st.info(f"ℹ️ **{file_name}** exists with parser(s): {parser_list}. Creating new version with **{effective_parser}**.")
+            file_info['is_update'] = False
+        
+        files_after_duplicate_check.append(file_info)
+    
+    # Update files_to_process with the filtered list
+    files_to_process = files_after_duplicate_check
+    
+    if not files_to_process:
+        st.info("No new documents to process. All files already exist with identical content.")
+        return False
     
     # Process files with progress tracking
     results = []
@@ -384,7 +437,11 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                 # Process document with error handling
                 try:
                     # Show processing status immediately
-                    processing_status = st.info(f"🔄 Processing {file_name}...")
+                    is_update = file_info.get('is_update', False)
+                    old_index_name = file_info.get('old_index_name')
+                    
+                    update_msg = " (updating existing document)" if is_update else ""
+                    processing_status = st.info(f"🔄 Processing {file_name}{update_msg}...")
                     
                     # Process document (this may take time for large documents)
                     result = st.session_state.document_processor.process_document(
@@ -394,7 +451,9 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                         parser_preference=parser_preference,
                         progress_callback=progress_callback,
                         index_name=final_index_name if 'final_index_name' in locals() else opensearch_index,
-                        language=document_language
+                        language=document_language,
+                        is_update=is_update,
+                        old_index_name=old_index_name
                     )
                     
                     # Clear processing status immediately after completion
@@ -2689,6 +2748,244 @@ if st.session_state.documents_processed and container:
         }
         st.session_state.chat_history.append(history_entry)
         st.rerun()
+    
+    # ============================================
+    # CROSS-LANGUAGE QUERY COMPARISON (QA Testing)
+    # ============================================
+    st.divider()
+    st.header("🌐 Cross-Language Query Comparison (QA Testing)")
+    st.caption("Compare accuracy between auto-translated queries and native language queries")
+    
+    with st.expander("🧪 Cross-Language Accuracy Test", expanded=False):
+        st.markdown("""
+        **How it works:**
+        1. Enter the same question in both languages
+        2. The system will run both queries and compare results
+        3. See which approach retrieves better context and produces more accurate answers
+        """)
+        
+        # Test configuration
+        col_config1, col_config2 = st.columns(2)
+        
+        with col_config1:
+            test_search_mode = st.selectbox(
+                "Search Mode for Test:",
+                ["hybrid", "semantic", "keyword"],
+                index=0,
+                key="cross_lang_search_mode"
+            )
+        
+        with col_config2:
+            test_k = st.slider(
+                "Number of chunks to retrieve:",
+                min_value=3,
+                max_value=20,
+                value=10,
+                key="cross_lang_k"
+            )
+        
+        # Source language input
+        st.subheader("📝 Query Inputs")
+        
+        col_lang1, col_lang2 = st.columns(2)
+        
+        with col_lang1:
+            native_language = st.selectbox(
+                "Native Query Language:",
+                ["Spanish", "French", "German", "Italian", "Portuguese", "Chinese", "Japanese", "Arabic", "Hindi", "Russian"],
+                index=0,
+                key="native_lang_select"
+            )
+            native_query = st.text_area(
+                f"Query in {native_language}:",
+                placeholder=f"Enter your question in {native_language}...",
+                height=100,
+                key="native_query_input"
+            )
+        
+        with col_lang2:
+            english_query = st.text_area(
+                "Same Query in English:",
+                placeholder="Enter the same question in English...",
+                height=100,
+                key="english_query_input"
+            )
+        
+        # Options for comparison
+        st.subheader("🔧 Comparison Options")
+        col_opt1, col_opt2, col_opt3 = st.columns(3)
+        
+        with col_opt1:
+            test_auto_translate = st.checkbox("Test Auto-Translate", value=True, key="test_auto_translate",
+                                              help="Run native query with auto-translation enabled")
+        
+        with col_opt2:
+            test_dual_language = st.checkbox("Test Dual-Language Search", value=True, key="test_dual_lang",
+                                             help="Enable dual-language search for both queries")
+        
+        with col_opt3:
+            test_native_only = st.checkbox("Test Native Language Only", value=True, key="test_native_only",
+                                           help="Run native query without translation (pure native search)")
+        
+        # Run comparison button
+        if st.button("🔬 Run Cross-Language Comparison", key="run_cross_lang_test", type="primary"):
+            if not native_query.strip() and not english_query.strip():
+                st.error("Please enter at least one query to test.")
+            else:
+                container = st.session_state.get('service_container')
+                if not container:
+                    st.error("Service container not initialized. Please upload a document first.")
+                else:
+                    results = {}
+                    
+                    with st.spinner("Running cross-language comparison tests..."):
+                        # Test 1: English query (baseline)
+                        if english_query.strip():
+                            st.info("🔵 Running English query (baseline)...")
+                            try:
+                                result_english = container.query_with_rag(
+                                    english_query.strip(),
+                                    use_hybrid_search=(test_search_mode == "hybrid" or test_search_mode == "keyword"),
+                                    semantic_weight=0.7 if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
+                                    search_mode=test_search_mode,
+                                    use_agentic_rag=False,
+                                    temperature=0.2,
+                                    auto_translate=False
+                                )
+                                results['english'] = {
+                                    'answer': result_english.get('answer', ''),
+                                    'citations': result_english.get('citations', []),
+                                    'sources': result_english.get('sources', []),
+                                    'num_chunks': result_english.get('num_chunks_used', 0)
+                                }
+                            except Exception as e:
+                                results['english'] = {'error': str(e)}
+                        
+                        # Test 2: Native query with auto-translate
+                        if native_query.strip() and test_auto_translate:
+                            st.info(f"🟢 Running {native_language} query WITH auto-translate...")
+                            try:
+                                result_native_translated = container.query_with_rag(
+                                    native_query.strip(),
+                                    use_hybrid_search=(test_search_mode == "hybrid" or test_search_mode == "keyword"),
+                                    semantic_weight=0.7 if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
+                                    search_mode=test_search_mode,
+                                    use_agentic_rag=False,
+                                    temperature=0.2,
+                                    auto_translate=True
+                                )
+                                results['native_translated'] = {
+                                    'answer': result_native_translated.get('answer', ''),
+                                    'citations': result_native_translated.get('citations', []),
+                                    'sources': result_native_translated.get('sources', []),
+                                    'num_chunks': result_native_translated.get('num_chunks_used', 0)
+                                }
+                            except Exception as e:
+                                results['native_translated'] = {'error': str(e)}
+                        
+                        # Test 3: Native query without translation (pure native)
+                        if native_query.strip() and test_native_only:
+                            st.info(f"🟠 Running {native_language} query WITHOUT auto-translate (native only)...")
+                            try:
+                                result_native_only = container.query_with_rag(
+                                    native_query.strip(),
+                                    use_hybrid_search=(test_search_mode == "hybrid" or test_search_mode == "keyword"),
+                                    semantic_weight=0.7 if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
+                                    search_mode=test_search_mode,
+                                    use_agentic_rag=False,
+                                    temperature=0.2,
+                                    auto_translate=False
+                                )
+                                results['native_only'] = {
+                                    'answer': result_native_only.get('answer', ''),
+                                    'citations': result_native_only.get('citations', []),
+                                    'sources': result_native_only.get('sources', []),
+                                    'num_chunks': result_native_only.get('num_chunks_used', 0)
+                                }
+                            except Exception as e:
+                                results['native_only'] = {'error': str(e)}
+                    
+                    # Display comparison results
+                    st.success("✅ Comparison complete!")
+                    
+                    # Summary metrics
+                    st.subheader("📊 Comparison Summary")
+                    
+                    summary_cols = st.columns(len(results))
+                    result_names = {
+                        'english': '🔵 English Query',
+                        'native_translated': f'🟢 {native_language} + Auto-Translate',
+                        'native_only': f'🟠 {native_language} Native Only'
+                    }
+                    
+                    for idx, (key, data) in enumerate(results.items()):
+                        with summary_cols[idx]:
+                            st.markdown(f"**{result_names.get(key, key)}**")
+                            if 'error' in data:
+                                st.error(f"Error: {data['error']}")
+                            else:
+                                num_citations = len(data.get('citations', []))
+                                st.metric("Citations Found", num_citations)
+                                
+                                # Calculate average similarity
+                                citations = data.get('citations', [])
+                                if citations:
+                                    avg_similarity = sum(c.get('similarity_percentage', 0) for c in citations) / len(citations)
+                                    st.metric("Avg Similarity %", f"{avg_similarity:.1f}%")
+                                else:
+                                    st.metric("Avg Similarity %", "N/A")
+                    
+                    # Detailed results
+                    st.subheader("📝 Detailed Results")
+                    
+                    for key, data in results.items():
+                        with st.expander(f"**{result_names.get(key, key)}**", expanded=True):
+                            if 'error' in data:
+                                st.error(f"Error: {data['error']}")
+                            else:
+                                st.markdown("**Answer:**")
+                                st.write(data.get('answer', 'No answer'))
+                                
+                                st.markdown("**Citations:**")
+                                citations = data.get('citations', [])
+                                if citations:
+                                    for c in citations[:5]:  # Show top 5
+                                        sim = c.get('similarity_percentage', 0)
+                                        source = c.get('source', 'Unknown')
+                                        page = c.get('page', 1)
+                                        if sim >= 80:
+                                            st.success(f"⭐ {source} - Page {page} ({sim:.1f}%)")
+                                        elif sim >= 50:
+                                            st.info(f"📊 {source} - Page {page} ({sim:.1f}%)")
+                                        else:
+                                            st.caption(f"📋 {source} - Page {page} ({sim:.1f}%)")
+                                else:
+                                    st.caption("No citations found")
+                    
+                    # Accuracy comparison insights
+                    st.subheader("💡 Accuracy Insights")
+                    
+                    if 'english' in results and 'native_translated' in results:
+                        if 'error' not in results['english'] and 'error' not in results['native_translated']:
+                            eng_citations = len(results['english'].get('citations', []))
+                            trans_citations = len(results['native_translated'].get('citations', []))
+                            
+                            if trans_citations >= eng_citations:
+                                st.success(f"✅ Auto-translated {native_language} query retrieved **same or more** results as English ({trans_citations} vs {eng_citations} citations)")
+                            else:
+                                st.warning(f"⚠️ Auto-translated {native_language} query retrieved **fewer** results than English ({trans_citations} vs {eng_citations} citations)")
+                    
+                    if 'native_translated' in results and 'native_only' in results:
+                        if 'error' not in results['native_translated'] and 'error' not in results['native_only']:
+                            trans_citations = len(results['native_translated'].get('citations', []))
+                            native_citations = len(results['native_only'].get('citations', []))
+                            
+                            if trans_citations > native_citations:
+                                st.success(f"✅ Auto-translate improved retrieval ({trans_citations} vs {native_citations} citations)")
+                            elif trans_citations < native_citations:
+                                st.info(f"📊 Native-only search found more matches ({native_citations} vs {trans_citations} citations)")
+                            else:
+                                st.info(f"📊 Both approaches found same number of citations ({trans_citations})")
     
 else:
     # If documents are stored but not loaded, guide user to load selected docs
