@@ -65,8 +65,13 @@ if 'active_loaded_docs' not in st.session_state:
 def process_uploaded_files(uploaded_files, use_cerebras, parser_preference, 
                           embedding_model, openai_model, cerebras_model,
                           vector_store_type, opensearch_domain, opensearch_index,
-                          chunk_size, chunk_overlap, document_language="eng"):
-    """Process uploaded files with real-time progress tracking"""
+                          chunk_size, chunk_overlap, document_language="eng",
+                          force_update=False):
+    """Process uploaded files with real-time progress tracking
+    
+    Args:
+        force_update: If True, re-process documents even if they already exist with identical content
+    """
     if not uploaded_files:
         return False
     
@@ -206,13 +211,19 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
         existing_doc = registry.find_document_by_name_and_parser(file_name, effective_parser)
         
         if existing_doc:
-            if existing_doc.get('file_hash') == file_hash:
-                # Exact same file - skip
-                st.warning(f"⚠️ **{file_name}** already exists with identical content (Parser: {effective_parser}). Skipping upload.")
+            if existing_doc.get('file_hash') == file_hash and not force_update:
+                # Exact same file and force_update is False - skip
+                st.warning(f"⚠️ **{file_name}** already exists with identical content (Parser: {effective_parser}). Skipping upload. Enable 'Force Update' to re-process.")
                 # Clean up temp file
                 if os.path.exists(file_info['path']):
                     os.unlink(file_info['path'])
                 continue
+            elif existing_doc.get('file_hash') == file_hash and force_update:
+                # Exact same file but force_update is True - update anyway
+                file_info['is_update'] = True
+                file_info['old_document_id'] = existing_doc.get('document_id')
+                file_info['old_index_name'] = existing_doc.get('index_name')
+                st.info(f"🔄 **{file_name}** exists with identical content. **Force updating** (re-processing)...")
             else:
                 # Same name/parser but different content - will update
                 file_info['is_update'] = True
@@ -1371,6 +1382,14 @@ with st.sidebar:
     if ingestion_language == "auto":
         ingestion_language = "eng"  # Default to English, processor will auto-detect
     
+    # Force update option for re-processing existing documents
+    force_update = st.checkbox(
+        "🔄 Force Update (Re-process even if document exists)",
+        value=False,
+        help="If checked, documents will be re-processed even if they already exist with identical content. "
+             "This is useful when you want to re-index with a different parser or update the embeddings."
+    )
+    
     uploaded_files = st.file_uploader(
         "Choose files",
         type=['pdf', 'txt', 'docx', 'doc'],
@@ -1415,7 +1434,8 @@ with st.sidebar:
                 'opensearch_index': opensearch_index,
                 'chunk_size': chunk_size,
                 'chunk_overlap': chunk_overlap,
-                'document_language': document_language
+                'document_language': document_language,
+                'force_update': force_update  # Pass force update flag
             }
             should_process = True
             params = st.session_state[process_key]
@@ -1445,7 +1465,8 @@ with st.sidebar:
             params['embedding_model'], params['openai_model'], params['cerebras_model'],
             params['vector_store_type'], params['opensearch_domain'], params['opensearch_index'],
             params['chunk_size'], params['chunk_overlap'],
-            params.get('document_language', 'eng')  # Get document_language from params, default to 'eng'
+            params.get('document_language', 'eng'),  # Get document_language from params, default to 'eng'
+            params.get('force_update', False)  # Get force_update from params, default to False
         )
         # Only clear the flag if processing completed successfully (no user interaction needed)
         # If user interaction is needed (duplicate index), the flag stays so processing can continue after choice
