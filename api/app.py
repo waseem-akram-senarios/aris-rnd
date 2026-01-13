@@ -2886,6 +2886,20 @@ if st.session_state.documents_processed and container:
                         if native_query.strip() and test_auto_translate:
                             st.info(f"🟢 Running {native_language} query WITH auto-translate...")
                             try:
+                                # First detect and translate to show user the translated query
+                                translated_query_display = native_query.strip()
+                                try:
+                                    from services.language.detector import get_detector
+                                    from services.language.translator import get_translator
+                                    detector = get_detector()
+                                    detected_lang = detector.detect(native_query.strip())
+                                    if detected_lang and detected_lang != "en":
+                                        translator = get_translator()
+                                        translated_query_display = translator.translate(native_query.strip(), target_lang="en", source_lang=detected_lang)
+                                        st.caption(f"🔄 Detected language: **{detected_lang}** → Translated to: **\"{translated_query_display}\"**")
+                                except Exception as trans_e:
+                                    st.caption(f"⚠️ Translation preview error: {trans_e}")
+                                
                                 result_native_translated = container.query_with_rag(
                                     native_query.strip(),
                                     use_hybrid_search=(test_search_mode == "hybrid" or test_search_mode == "keyword"),
@@ -2899,7 +2913,9 @@ if st.session_state.documents_processed and container:
                                     'answer': result_native_translated.get('answer', ''),
                                     'citations': result_native_translated.get('citations', []),
                                     'sources': result_native_translated.get('sources', []),
-                                    'num_chunks': result_native_translated.get('num_chunks_used', 0)
+                                    'num_chunks': result_native_translated.get('num_chunks_used', 0),
+                                    'translated_query': translated_query_display,
+                                    'original_query': native_query.strip()
                                 }
                             except Exception as e:
                                 results['native_translated'] = {'error': str(e)}
@@ -2929,6 +2945,32 @@ if st.session_state.documents_processed and container:
                     # Display comparison results
                     st.success("✅ Comparison complete!")
                     
+                    # Check if English and translated queries are very similar
+                    english_data = results.get('english', {})
+                    translated_data = results.get('native_translated', {})
+                    
+                    if english_data and translated_data and 'translated_query' in translated_data:
+                        # Compare queries
+                        translated_q = translated_data.get('translated_query', '').lower().strip()
+                        english_q = english_query.strip().lower()
+                        
+                        if translated_q and english_q:
+                            # Simple similarity check
+                            from difflib import SequenceMatcher
+                            similarity = SequenceMatcher(None, english_q, translated_q).ratio()
+                            
+                            if similarity > 0.85:
+                                st.info(f"""
+                                ℹ️ **Note**: The translated query ("{translated_data.get('translated_query', '')}") is very similar 
+                                to the English query ({similarity*100:.0f}% match). This explains why results are similar.
+                                
+                                **This is expected behavior** - a good translation produces a query semantically equivalent to the original English.
+                                
+                                To see differences, try:
+                                - Use different phrasing in English vs native language
+                                - Compare "Native Only" (without translation) to see how untranslated queries perform
+                                """)
+                    
                     # Summary metrics
                     st.subheader("📊 Comparison Summary")
                     
@@ -2945,6 +2987,10 @@ if st.session_state.documents_processed and container:
                             if 'error' in data:
                                 st.error(f"Error: {data['error']}")
                             else:
+                                # Show translated query if available
+                                if key == 'native_translated' and 'translated_query' in data:
+                                    st.caption(f"Translated: \"{data['translated_query']}\"")
+                                
                                 num_citations = len(data.get('citations', []))
                                 st.metric("Citations Found", num_citations)
                                 
