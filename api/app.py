@@ -3074,6 +3074,56 @@ if st.session_state.documents_processed and container:
                     
                     if best_mode:
                         st.success(f"🏆 **Best Mode: {best_mode}** with {best_avg:.1f}% average similarity")
+                        
+                        # Detailed analysis and recommendations
+                        st.markdown("---")
+                        st.subheader("💡 Analysis & Recommendations")
+                        
+                        # Compare best mode to others
+                        best_data = results[best_mode]
+                        best_citations = best_data.get('citations', [])
+                        best_time = best_data.get('response_time', 0)
+                        best_sim = best_avg
+                        
+                        analysis_points = []
+                        
+                        # Check if best mode is significantly better
+                        for mode_name, data in results.items():
+                            if mode_name != best_mode and 'error' not in data:
+                                other_sim = sum(c.get('similarity_percentage', 0) for c in data.get('citations', [])) / len(data.get('citations', [])) if data.get('citations') else 0
+                                other_time = data.get('response_time', 0)
+                                
+                                if best_sim - other_sim > 10:
+                                    analysis_points.append(f"✅ **{best_mode}** is **{best_sim - other_sim:.1f}% more accurate** than {mode_name} ({other_sim:.1f}%)")
+                                
+                                if best_time < other_time * 0.7:  # At least 30% faster
+                                    speedup = ((other_time - best_time) / other_time) * 100
+                                    analysis_points.append(f"⚡ **{best_mode}** is **{speedup:.0f}% faster** than {mode_name} ({best_time:.1f}s vs {other_time:.1f}s)")
+                        
+                        # Quality vs quantity analysis
+                        if best_mode == "Semantic":
+                            if len(best_citations) < 5:
+                                analysis_points.append(f"📊 **Semantic mode** found {len(best_citations)} highly relevant citations (quality over quantity)")
+                            analysis_points.append("🎯 **Recommendation:** Use **Semantic mode** as default for conceptual/descriptive queries")
+                        
+                        elif best_mode == "Hybrid":
+                            analysis_points.append("🎯 **Recommendation:** Use **Hybrid mode** when you need both semantic understanding and keyword matching")
+                            if best_data.get('semantic_weight', 0.7) >= 0.7:
+                                analysis_points.append(f"⚖️ Current semantic weight ({best_data.get('semantic_weight', 0.7):.2f}) favors semantic search")
+                        
+                        elif best_mode == "Keyword":
+                            analysis_points.append("🎯 **Recommendation:** Use **Keyword mode** for exact term/phrase matching queries")
+                        
+                        # Performance summary
+                        if best_sim >= 90:
+                            analysis_points.append("⭐ **Excellent match quality** - Results are highly relevant to your query")
+                        elif best_sim >= 75:
+                            analysis_points.append("✅ **Good match quality** - Results are relevant with minor gaps")
+                        elif best_sim >= 60:
+                            analysis_points.append("⚠️ **Moderate match quality** - Consider refining your query for better results")
+                        
+                        for point in analysis_points:
+                            st.markdown(point)
                     
                     st.divider()
                     
