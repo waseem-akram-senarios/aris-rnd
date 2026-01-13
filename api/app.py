@@ -2666,6 +2666,137 @@ if st.session_state.documents_processed and container:
                 else:
                     # Show message if no sources found
                     st.warning("⚠️ No sources found for this answer.")
+                
+                # =====================================================
+                # R&D DETAILED METRICS - Integrated with Main Query
+                # =====================================================
+                st.markdown("---")
+                with st.expander("📊 **R&D Detailed Metrics** (click to expand)", expanded=False):
+                    import pandas as pd
+                    
+                    # Current Query Parameters
+                    st.subheader("⚙️ Query Parameters Used")
+                    param_cols = st.columns(5)
+                    param_cols[0].metric("Search Mode", search_mode_param.upper())
+                    param_cols[1].metric("Semantic Weight", f"{semantic_weight:.2f}")
+                    param_cols[2].metric("Temperature", f"{temperature:.1f}")
+                    param_cols[3].metric("Max Tokens", max_tokens)
+                    param_cols[4].metric("Chunks (k)", num_chunks)
+                    
+                    st.divider()
+                    
+                    # Detailed citation metrics
+                    if citations and len(citations) > 0:
+                        st.subheader("📈 Citation Score Analysis")
+                        
+                        # Calculate detailed stats
+                        similarities = [c.get('similarity_percentage', 0) for c in citations]
+                        
+                        if similarities and any(s > 0 for s in similarities):
+                            # Stats row
+                            stats_cols = st.columns(5)
+                            stats_cols[0].metric("Max Similarity", f"{max(similarities):.1f}%")
+                            stats_cols[1].metric("Min Similarity", f"{min(similarities):.1f}%")
+                            avg_sim = sum(similarities)/len(similarities)
+                            stats_cols[2].metric("Average", f"{avg_sim:.1f}%")
+                            
+                            # Standard deviation
+                            variance = sum((x - avg_sim) ** 2 for x in similarities) / len(similarities)
+                            std_dev = variance ** 0.5
+                            stats_cols[3].metric("Std Dev", f"{std_dev:.1f}")
+                            
+                            # Score spread
+                            spread = max(similarities) - min(similarities)
+                            stats_cols[4].metric("Spread", f"{spread:.1f}%")
+                            
+                            st.divider()
+                            
+                            # Individual scores table
+                            st.markdown("**Individual Citation Scores:**")
+                            citation_rows = []
+                            for i, c in enumerate(citations):
+                                citation_rows.append({
+                                    'Rank': i + 1,
+                                    'Similarity %': f"{c.get('similarity_percentage', 0):.1f}%",
+                                    'Score': f"{c.get('similarity_score', 0):.4f}" if c.get('similarity_score') else 'N/A',
+                                    'Source': c.get('source', 'Unknown')[:30],
+                                    'Page': c.get('page', 1),
+                                    'Image': c.get('image_number', '-') or '-',
+                                    'Type': c.get('content_type', 'text')
+                                })
+                            
+                            citation_df = pd.DataFrame(citation_rows)
+                            st.dataframe(citation_df, use_container_width=True, hide_index=True)
+                            
+                            # Visual similarity distribution
+                            st.markdown("**Similarity Score Distribution:**")
+                            for i, sim in enumerate(similarities):
+                                source = citations[i].get('source', 'Unknown')[:25]
+                                bar_width = int(sim / 2)  # Scale to 50 chars max
+                                bar = '█' * bar_width + '░' * (50 - bar_width)
+                                color = "🟢" if sim >= 80 else ("🟡" if sim >= 50 else "🔴")
+                                st.code(f"{color} #{i+1} [{sim:5.1f}%] {bar} {source}")
+                        else:
+                            st.info("Similarity scores not available for detailed analysis")
+                        
+                        st.divider()
+                        
+                        # Token usage
+                        st.subheader("🔢 Token Usage")
+                        token_cols = st.columns(4)
+                        context_tokens = result.get("context_tokens", 0)
+                        response_tokens = result.get("response_tokens", 0)
+                        total_tokens = result.get("total_tokens", context_tokens + response_tokens)
+                        
+                        token_cols[0].metric("Context Tokens", f"{context_tokens:,}")
+                        token_cols[1].metric("Response Tokens", f"{response_tokens:,}")
+                        token_cols[2].metric("Total Tokens", f"{total_tokens:,}")
+                        token_cols[3].metric("Answer Length", f"{len(answer):,} chars")
+                        
+                        st.divider()
+                        
+                        # Export button for this query
+                        st.subheader("📥 Export Query Results")
+                        import json
+                        export_data = {
+                            'query': question,
+                            'parameters': {
+                                'search_mode': search_mode_param,
+                                'semantic_weight': semantic_weight,
+                                'temperature': temperature,
+                                'max_tokens': max_tokens,
+                                'auto_translate': auto_translate
+                            },
+                            'results': {
+                                'num_citations': len(citations),
+                                'similarities': similarities,
+                                'max_similarity': max(similarities) if similarities else 0,
+                                'min_similarity': min(similarities) if similarities else 0,
+                                'avg_similarity': sum(similarities)/len(similarities) if similarities else 0,
+                                'context_tokens': context_tokens,
+                                'response_tokens': response_tokens,
+                                'answer_length': len(answer)
+                            },
+                            'citations': [
+                                {
+                                    'source': c.get('source'),
+                                    'page': c.get('page'),
+                                    'similarity': c.get('similarity_percentage', 0)
+                                }
+                                for c in citations
+                            ]
+                        }
+                        
+                        export_json = json.dumps(export_data, indent=2)
+                        st.download_button(
+                            label="📥 Download Query Metrics (JSON)",
+                            data=export_json,
+                            file_name=f"query_metrics_{len(st.session_state.chat_history)}.json",
+                            mime="application/json",
+                            key=f"export_btn_{len(st.session_state.chat_history)}"
+                        )
+                    else:
+                        st.info("No citation data available for detailed metrics")
         
         # Store citations in session state for persistent display
         if citations and len(citations) > 0:
@@ -2774,13 +2905,16 @@ if st.session_state.documents_processed and container:
     # CROSS-LANGUAGE QUERY COMPARISON (QA Testing)
     # ============================================
     st.divider()
-    st.header("🔬 R&D Parameter Testing Lab")
-    st.caption("Detailed comparison for finding optimal default parameters")
+    st.header("🔬 R&D Multi-Variant Comparison")
+    st.caption("Compare multiple query variants side-by-side (English vs Translated vs Native)")
     
-    with st.expander("🧪 Advanced Parameter Comparison", expanded=False):
+    st.info("💡 **Tip:** Detailed R&D metrics are now shown with **every query** above! Click '📊 R&D Detailed Metrics' after any query.")
+    
+    with st.expander("🧪 Cross-Language Variant Comparison", expanded=False):
         st.markdown("""
-        ### R&D Testing Mode
-        Run the same query with different parameters and compare detailed results to find optimal defaults.
+        ### Multi-Variant Testing
+        Run the **same query** in multiple languages/modes and compare results side-by-side.
+        Use this to find the best approach for cross-language queries.
         """)
         
         # Test configuration - More detailed
