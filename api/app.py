@@ -2774,35 +2774,56 @@ if st.session_state.documents_processed and container:
     # CROSS-LANGUAGE QUERY COMPARISON (QA Testing)
     # ============================================
     st.divider()
-    st.header("🌐 Cross-Language Query Comparison (QA Testing)")
-    st.caption("Compare accuracy between auto-translated queries and native language queries")
+    st.header("🔬 R&D Parameter Testing Lab")
+    st.caption("Detailed comparison for finding optimal default parameters")
     
-    with st.expander("🧪 Cross-Language Accuracy Test", expanded=False):
+    with st.expander("🧪 Advanced Parameter Comparison", expanded=False):
         st.markdown("""
-        **How it works:**
-        1. Enter the same question in both languages
-        2. The system will run both queries and compare results
-        3. See which approach retrieves better context and produces more accurate answers
+        ### R&D Testing Mode
+        Run the same query with different parameters and compare detailed results to find optimal defaults.
         """)
         
-        # Test configuration
-        col_config1, col_config2 = st.columns(2)
+        # Test configuration - More detailed
+        st.subheader("⚙️ Test Configuration")
         
-        with col_config1:
+        col_cfg1, col_cfg2, col_cfg3, col_cfg4 = st.columns(4)
+        
+        with col_cfg1:
             test_search_mode = st.selectbox(
-                "Search Mode for Test:",
+                "Search Mode:",
                 ["hybrid", "semantic", "keyword"],
                 index=0,
                 key="cross_lang_search_mode"
             )
         
-        with col_config2:
+        with col_cfg2:
             test_k = st.slider(
-                "Number of chunks to retrieve:",
+                "Chunks (k):",
                 min_value=3,
                 max_value=20,
                 value=10,
                 key="cross_lang_k"
+            )
+        
+        with col_cfg3:
+            test_semantic_weight = st.slider(
+                "Semantic Weight:",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.7,
+                step=0.05,
+                key="test_semantic_weight",
+                help="0.0 = pure keyword, 1.0 = pure semantic"
+            )
+        
+        with col_cfg4:
+            test_temperature = st.slider(
+                "Temperature:",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.2,
+                step=0.1,
+                key="test_temperature"
             )
         
         # Source language input
@@ -2833,7 +2854,7 @@ if st.session_state.documents_processed and container:
             )
         
         # Options for comparison
-        st.subheader("🔧 Comparison Options")
+        st.subheader("🔧 Test Variants")
         col_opt1, col_opt2, col_opt3 = st.columns(3)
         
         with col_opt1:
@@ -2849,7 +2870,7 @@ if st.session_state.documents_processed and container:
                                            help="Run native query without translation (pure native search)")
         
         # Run comparison button
-        if st.button("🔬 Run Cross-Language Comparison", key="run_cross_lang_test", type="primary"):
+        if st.button("🔬 Run Detailed Parameter Test", key="run_cross_lang_test", type="primary"):
             if not native_query.strip() and not english_query.strip():
                 st.error("Please enter at least one query to test.")
             else:
@@ -2858,26 +2879,42 @@ if st.session_state.documents_processed and container:
                     st.error("Service container not initialized. Please upload a document first.")
                 else:
                     results = {}
+                    import time as time_module
                     
-                    with st.spinner("Running cross-language comparison tests..."):
+                    # Store test parameters for display
+                    test_params = {
+                        'search_mode': test_search_mode,
+                        'k': test_k,
+                        'semantic_weight': test_semantic_weight,
+                        'temperature': test_temperature
+                    }
+                    
+                    with st.spinner("Running detailed parameter tests..."):
                         # Test 1: English query (baseline)
                         if english_query.strip():
                             st.info("🔵 Running English query (baseline)...")
                             try:
+                                start_time = time_module.time()
                                 result_english = container.query_with_rag(
                                     english_query.strip(),
+                                    k=test_k,
                                     use_hybrid_search=(test_search_mode == "hybrid" or test_search_mode == "keyword"),
-                                    semantic_weight=0.7 if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
+                                    semantic_weight=test_semantic_weight if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
                                     search_mode=test_search_mode,
                                     use_agentic_rag=False,
-                                    temperature=0.2,
+                                    temperature=test_temperature,
                                     auto_translate=False
                                 )
+                                elapsed = time_module.time() - start_time
                                 results['english'] = {
                                     'answer': result_english.get('answer', ''),
                                     'citations': result_english.get('citations', []),
                                     'sources': result_english.get('sources', []),
-                                    'num_chunks': result_english.get('num_chunks_used', 0)
+                                    'num_chunks': result_english.get('num_chunks_used', 0),
+                                    'context_tokens': result_english.get('context_tokens', 0),
+                                    'response_tokens': result_english.get('response_tokens', 0),
+                                    'response_time': elapsed,
+                                    'query': english_query.strip()
                                 }
                             except Exception as e:
                                 results['english'] = {'error': str(e)}
@@ -2888,32 +2925,42 @@ if st.session_state.documents_processed and container:
                             try:
                                 # First detect and translate to show user the translated query
                                 translated_query_display = native_query.strip()
+                                translation_time = 0
                                 try:
                                     from services.language.detector import get_detector
                                     from services.language.translator import get_translator
+                                    trans_start = time_module.time()
                                     detector = get_detector()
                                     detected_lang = detector.detect(native_query.strip())
                                     if detected_lang and detected_lang != "en":
                                         translator = get_translator()
                                         translated_query_display = translator.translate(native_query.strip(), target_lang="en", source_lang=detected_lang)
-                                        st.caption(f"🔄 Detected language: **{detected_lang}** → Translated to: **\"{translated_query_display}\"**")
+                                        translation_time = time_module.time() - trans_start
+                                        st.caption(f"🔄 Detected: **{detected_lang}** → Translated ({translation_time:.2f}s): **\"{translated_query_display}\"**")
                                 except Exception as trans_e:
                                     st.caption(f"⚠️ Translation preview error: {trans_e}")
                                 
+                                start_time = time_module.time()
                                 result_native_translated = container.query_with_rag(
                                     native_query.strip(),
+                                    k=test_k,
                                     use_hybrid_search=(test_search_mode == "hybrid" or test_search_mode == "keyword"),
-                                    semantic_weight=0.7 if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
+                                    semantic_weight=test_semantic_weight if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
                                     search_mode=test_search_mode,
                                     use_agentic_rag=False,
-                                    temperature=0.2,
+                                    temperature=test_temperature,
                                     auto_translate=True
                                 )
+                                elapsed = time_module.time() - start_time
                                 results['native_translated'] = {
                                     'answer': result_native_translated.get('answer', ''),
                                     'citations': result_native_translated.get('citations', []),
                                     'sources': result_native_translated.get('sources', []),
                                     'num_chunks': result_native_translated.get('num_chunks_used', 0),
+                                    'context_tokens': result_native_translated.get('context_tokens', 0),
+                                    'response_tokens': result_native_translated.get('response_tokens', 0),
+                                    'response_time': elapsed,
+                                    'translation_time': translation_time,
                                     'translated_query': translated_query_display,
                                     'original_query': native_query.strip()
                                 }
@@ -2924,135 +2971,233 @@ if st.session_state.documents_processed and container:
                         if native_query.strip() and test_native_only:
                             st.info(f"🟠 Running {native_language} query WITHOUT auto-translate (native only)...")
                             try:
+                                start_time = time_module.time()
                                 result_native_only = container.query_with_rag(
                                     native_query.strip(),
+                                    k=test_k,
                                     use_hybrid_search=(test_search_mode == "hybrid" or test_search_mode == "keyword"),
-                                    semantic_weight=0.7 if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
+                                    semantic_weight=test_semantic_weight if test_search_mode == "hybrid" else (0.0 if test_search_mode == "keyword" else 1.0),
                                     search_mode=test_search_mode,
                                     use_agentic_rag=False,
-                                    temperature=0.2,
+                                    temperature=test_temperature,
                                     auto_translate=False
                                 )
+                                elapsed = time_module.time() - start_time
                                 results['native_only'] = {
                                     'answer': result_native_only.get('answer', ''),
                                     'citations': result_native_only.get('citations', []),
                                     'sources': result_native_only.get('sources', []),
-                                    'num_chunks': result_native_only.get('num_chunks_used', 0)
+                                    'num_chunks': result_native_only.get('num_chunks_used', 0),
+                                    'context_tokens': result_native_only.get('context_tokens', 0),
+                                    'response_tokens': result_native_only.get('response_tokens', 0),
+                                    'response_time': elapsed,
+                                    'query': native_query.strip()
                                 }
                             except Exception as e:
                                 results['native_only'] = {'error': str(e)}
                     
                     # Display comparison results
-                    st.success("✅ Comparison complete!")
+                    st.success("✅ Test complete!")
                     
-                    # Check if English and translated queries are very similar
-                    english_data = results.get('english', {})
-                    translated_data = results.get('native_translated', {})
+                    # Show test parameters used
+                    st.subheader("⚙️ Test Parameters Used")
+                    param_cols = st.columns(4)
+                    param_cols[0].metric("Search Mode", test_params['search_mode'].upper())
+                    param_cols[1].metric("Chunks (k)", test_params['k'])
+                    param_cols[2].metric("Semantic Weight", f"{test_params['semantic_weight']:.2f}")
+                    param_cols[3].metric("Temperature", f"{test_params['temperature']:.1f}")
                     
-                    if english_data and translated_data and 'translated_query' in translated_data:
-                        # Compare queries
-                        translated_q = translated_data.get('translated_query', '').lower().strip()
-                        english_q = english_query.strip().lower()
-                        
-                        if translated_q and english_q:
-                            # Simple similarity check
-                            from difflib import SequenceMatcher
-                            similarity = SequenceMatcher(None, english_q, translated_q).ratio()
-                            
-                            if similarity > 0.85:
-                                st.info(f"""
-                                ℹ️ **Note**: The translated query ("{translated_data.get('translated_query', '')}") is very similar 
-                                to the English query ({similarity*100:.0f}% match). This explains why results are similar.
-                                
-                                **This is expected behavior** - a good translation produces a query semantically equivalent to the original English.
-                                
-                                To see differences, try:
-                                - Use different phrasing in English vs native language
-                                - Compare "Native Only" (without translation) to see how untranslated queries perform
-                                """)
+                    st.divider()
                     
-                    # Summary metrics
-                    st.subheader("📊 Comparison Summary")
+                    # Detailed metrics summary
+                    st.subheader("📊 Detailed Metrics Comparison")
                     
-                    summary_cols = st.columns(len(results))
                     result_names = {
-                        'english': '🔵 English Query',
-                        'native_translated': f'🟢 {native_language} + Auto-Translate',
-                        'native_only': f'🟠 {native_language} Native Only'
+                        'english': '🔵 English',
+                        'native_translated': f'🟢 {native_language}+Translate',
+                        'native_only': f'🟠 {native_language} Only'
                     }
                     
+                    # Create metrics table
+                    metrics_data = []
+                    for key, data in results.items():
+                        if 'error' not in data:
+                            citations = data.get('citations', [])
+                            similarities = [c.get('similarity_percentage', 0) for c in citations]
+                            
+                            row = {
+                                'Variant': result_names.get(key, key),
+                                'Citations': len(citations),
+                                'Response Time': f"{data.get('response_time', 0):.2f}s",
+                                'Context Tokens': data.get('context_tokens', 0),
+                                'Response Tokens': data.get('response_tokens', 0),
+                            }
+                            
+                            if similarities:
+                                row['Max Sim%'] = f"{max(similarities):.1f}%"
+                                row['Min Sim%'] = f"{min(similarities):.1f}%"
+                                row['Avg Sim%'] = f"{sum(similarities)/len(similarities):.1f}%"
+                                # Calculate standard deviation
+                                avg = sum(similarities)/len(similarities)
+                                variance = sum((x - avg) ** 2 for x in similarities) / len(similarities)
+                                row['Std Dev'] = f"{variance**0.5:.1f}"
+                            else:
+                                row['Max Sim%'] = 'N/A'
+                                row['Min Sim%'] = 'N/A'
+                                row['Avg Sim%'] = 'N/A'
+                                row['Std Dev'] = 'N/A'
+                            
+                            # Add translation time if applicable
+                            if key == 'native_translated':
+                                row['Trans. Time'] = f"{data.get('translation_time', 0):.2f}s"
+                            else:
+                                row['Trans. Time'] = '-'
+                            
+                            metrics_data.append(row)
+                    
+                    if metrics_data:
+                        import pandas as pd
+                        df = pd.DataFrame(metrics_data)
+                        st.dataframe(df, use_container_width=True, hide_index=True)
+                    
+                    st.divider()
+                    
+                    # Individual citation scores - DETAILED VIEW
+                    st.subheader("📈 Individual Citation Scores")
+                    
+                    for key, data in results.items():
+                        if 'error' not in data:
+                            with st.expander(f"**{result_names.get(key, key)}** - Citation Details", expanded=True):
+                                citations = data.get('citations', [])
+                                
+                                # Show query used
+                                if key == 'native_translated' and 'translated_query' in data:
+                                    st.info(f"**Original Query:** {data.get('original_query', '')}")
+                                    st.success(f"**Translated Query:** {data.get('translated_query', '')}")
+                                elif 'query' in data:
+                                    st.info(f"**Query:** {data.get('query', '')}")
+                                
+                                if citations:
+                                    # Create detailed citation table
+                                    citation_rows = []
+                                    for i, c in enumerate(citations):
+                                        citation_rows.append({
+                                            'Rank': i + 1,
+                                            'Similarity %': f"{c.get('similarity_percentage', 0):.1f}%",
+                                            'Source': c.get('source', 'Unknown'),
+                                            'Page': c.get('page', 1),
+                                            'Image': c.get('image_number', '-') or '-',
+                                            'Content Type': c.get('content_type', 'text'),
+                                            'Snippet (first 100 chars)': (c.get('snippet', '') or c.get('full_text', ''))[:100] + '...'
+                                        })
+                                    
+                                    citation_df = pd.DataFrame(citation_rows)
+                                    st.dataframe(citation_df, use_container_width=True, hide_index=True)
+                                    
+                                    # Similarity distribution visualization
+                                    st.markdown("**Similarity Score Distribution:**")
+                                    similarities = [c.get('similarity_percentage', 0) for c in citations]
+                                    
+                                    # Create a simple bar representation
+                                    for i, sim in enumerate(similarities):
+                                        source = citations[i].get('source', 'Unknown')[:20]
+                                        bar_width = int(sim / 2)  # Scale to 50 chars max
+                                        bar = '█' * bar_width + '░' * (50 - bar_width)
+                                        st.code(f"#{i+1} [{sim:5.1f}%] {bar} {source}")
+                                else:
+                                    st.warning("No citations found")
+                    
+                    st.divider()
+                    
+                    # Answer comparison
+                    st.subheader("📝 Answer Comparison")
+                    
+                    answer_cols = st.columns(len(results))
                     for idx, (key, data) in enumerate(results.items()):
-                        with summary_cols[idx]:
+                        with answer_cols[idx]:
                             st.markdown(f"**{result_names.get(key, key)}**")
                             if 'error' in data:
                                 st.error(f"Error: {data['error']}")
                             else:
-                                # Show translated query if available
-                                if key == 'native_translated' and 'translated_query' in data:
-                                    st.caption(f"Translated: \"{data['translated_query']}\"")
-                                
-                                num_citations = len(data.get('citations', []))
-                                st.metric("Citations Found", num_citations)
-                                
-                                # Calculate average similarity
-                                citations = data.get('citations', [])
-                                if citations:
-                                    avg_similarity = sum(c.get('similarity_percentage', 0) for c in citations) / len(citations)
-                                    st.metric("Avg Similarity %", f"{avg_similarity:.1f}%")
-                                else:
-                                    st.metric("Avg Similarity %", "N/A")
+                                answer = data.get('answer', 'No answer')
+                                st.text_area(
+                                    f"Answer ({len(answer)} chars)",
+                                    value=answer,
+                                    height=200,
+                                    key=f"answer_{key}",
+                                    disabled=True
+                                )
                     
-                    # Detailed results
-                    st.subheader("📝 Detailed Results")
+                    # Recommendations based on results
+                    st.divider()
+                    st.subheader("💡 Recommendations")
+                    
+                    best_variant = None
+                    best_avg_sim = 0
                     
                     for key, data in results.items():
-                        with st.expander(f"**{result_names.get(key, key)}**", expanded=True):
-                            if 'error' in data:
-                                st.error(f"Error: {data['error']}")
-                            else:
-                                st.markdown("**Answer:**")
-                                st.write(data.get('answer', 'No answer'))
-                                
-                                st.markdown("**Citations:**")
-                                citations = data.get('citations', [])
-                                if citations:
-                                    for c in citations[:5]:  # Show top 5
-                                        sim = c.get('similarity_percentage', 0)
-                                        source = c.get('source', 'Unknown')
-                                        page = c.get('page', 1)
-                                        if sim >= 80:
-                                            st.success(f"⭐ {source} - Page {page} ({sim:.1f}%)")
-                                        elif sim >= 50:
-                                            st.info(f"📊 {source} - Page {page} ({sim:.1f}%)")
-                                        else:
-                                            st.caption(f"📋 {source} - Page {page} ({sim:.1f}%)")
-                                else:
-                                    st.caption("No citations found")
+                        if 'error' not in data:
+                            citations = data.get('citations', [])
+                            if citations:
+                                avg_sim = sum(c.get('similarity_percentage', 0) for c in citations) / len(citations)
+                                if avg_sim > best_avg_sim:
+                                    best_avg_sim = avg_sim
+                                    best_variant = key
                     
-                    # Accuracy comparison insights
-                    st.subheader("💡 Accuracy Insights")
-                    
-                    if 'english' in results and 'native_translated' in results:
-                        if 'error' not in results['english'] and 'error' not in results['native_translated']:
-                            eng_citations = len(results['english'].get('citations', []))
-                            trans_citations = len(results['native_translated'].get('citations', []))
-                            
-                            if trans_citations >= eng_citations:
-                                st.success(f"✅ Auto-translated {native_language} query retrieved **same or more** results as English ({trans_citations} vs {eng_citations} citations)")
+                    if best_variant:
+                        st.success(f"**Best performing variant:** {result_names.get(best_variant, best_variant)} with {best_avg_sim:.1f}% average similarity")
+                        
+                        # Parameter recommendations
+                        recommendations = []
+                        
+                        if best_variant == 'native_translated':
+                            recommendations.append("✅ **Auto-translate** improves results for non-English queries")
+                        elif best_variant == 'native_only' and 'native_translated' in results:
+                            recommendations.append("⚠️ Native language without translation performed better - consider language-specific embeddings")
+                        
+                        if test_params['search_mode'] == 'hybrid':
+                            if test_params['semantic_weight'] >= 0.7:
+                                recommendations.append(f"📊 Current semantic weight ({test_params['semantic_weight']:.2f}) favors semantic search")
                             else:
-                                st.warning(f"⚠️ Auto-translated {native_language} query retrieved **fewer** results than English ({trans_citations} vs {eng_citations} citations)")
+                                recommendations.append(f"📊 Current semantic weight ({test_params['semantic_weight']:.2f}) favors keyword matching")
+                        
+                        for rec in recommendations:
+                            st.markdown(rec)
                     
-                    if 'native_translated' in results and 'native_only' in results:
-                        if 'error' not in results['native_translated'] and 'error' not in results['native_only']:
-                            trans_citations = len(results['native_translated'].get('citations', []))
-                            native_citations = len(results['native_only'].get('citations', []))
-                            
-                            if trans_citations > native_citations:
-                                st.success(f"✅ Auto-translate improved retrieval ({trans_citations} vs {native_citations} citations)")
-                            elif trans_citations < native_citations:
-                                st.info(f"📊 Native-only search found more matches ({native_citations} vs {trans_citations} citations)")
-                            else:
-                                st.info(f"📊 Both approaches found same number of citations ({trans_citations})")
+                    # Export results for further analysis
+                    st.divider()
+                    st.subheader("📥 Export Results")
+                    
+                    # Create exportable summary
+                    export_data = {
+                        'test_params': test_params,
+                        'results': {}
+                    }
+                    
+                    for key, data in results.items():
+                        if 'error' not in data:
+                            citations = data.get('citations', [])
+                            similarities = [c.get('similarity_percentage', 0) for c in citations]
+                            export_data['results'][key] = {
+                                'num_citations': len(citations),
+                                'response_time': data.get('response_time', 0),
+                                'context_tokens': data.get('context_tokens', 0),
+                                'response_tokens': data.get('response_tokens', 0),
+                                'similarities': similarities,
+                                'avg_similarity': sum(similarities)/len(similarities) if similarities else 0,
+                                'max_similarity': max(similarities) if similarities else 0,
+                                'min_similarity': min(similarities) if similarities else 0,
+                                'answer_length': len(data.get('answer', ''))
+                            }
+                    
+                    import json
+                    export_json = json.dumps(export_data, indent=2)
+                    st.download_button(
+                        label="📥 Download Test Results (JSON)",
+                        data=export_json,
+                        file_name="rnd_test_results.json",
+                        mime="application/json"
+                    )
     
 else:
     # If documents are stored but not loaded, guide user to load selected docs
