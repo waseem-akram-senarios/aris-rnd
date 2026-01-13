@@ -144,13 +144,21 @@ async def ingest_document(
     parser_preference: Optional[str] = Form(default=None),
     index_name: Optional[str] = Form(default=None),
     language: Optional[str] = Form(default="eng"),
+    is_update: Optional[str] = Form(default=None),  # String "true" from form data
+    old_index_name: Optional[str] = Form(default=None),
     background_tasks: BackgroundTasks = None,
     processor: DocumentProcessor = Depends(get_processor)
 ):
     """
     Ingest a document (asynchronous).
     Detects duplicates and updates existing documents instead of creating new ones.
+    
+    Args:
+        is_update: If "true", force update even for identical content
+        old_index_name: Old index name to clean up when updating
     """
+    # Convert string "true" to boolean
+    force_update_from_request = is_update and is_update.lower() == "true"
     request_id = request.headers.get("X-Request-ID", "unknown")
     logger.info(f"POST /ingest - [ReqID: {request_id}] File: {file.filename}")
     
@@ -181,14 +189,14 @@ async def ingest_document(
         
         # Check if document with same name and parser already exists
         existing_doc = registry.find_document_by_name_and_parser(file.filename, effective_parser)
-        is_update = False
+        is_update_flag = False
         old_document_id = None
-        old_index_name = None
+        effective_old_index_name = old_index_name  # Use the one from request if provided
         
         if existing_doc:
             # Check if content is actually different (by hash)
-            if existing_doc.get('file_hash') == file_hash:
-                # Same exact file - no need to re-process
+            if existing_doc.get('file_hash') == file_hash and not force_update_from_request:
+                # Same exact file and not force update - no need to re-process
                 logger.info(f"POST /ingest - [ReqID: {request_id}] Document '{file.filename}' with parser '{effective_parser}' already exists with identical content. Skipping.")
                 return DocumentMetadata(
                     document_id=existing_doc['document_id'],
@@ -196,11 +204,18 @@ async def ingest_document(
                     status="already_exists",
                     message=f"Document already exists with ID {existing_doc['document_id']}. Content is identical."
                 )
+            elif existing_doc.get('file_hash') == file_hash and force_update_from_request:
+                # Same exact file but force update requested - update anyway
+                is_update_flag = True
+                old_document_id = existing_doc['document_id']
+                effective_old_index_name = existing_doc.get('index_name') or effective_old_index_name
+                logger.info(f"POST /ingest - [ReqID: {request_id}] Force updating document '{file.filename}' (ID: {old_document_id}) - identical content but force update requested")
+                document_id = old_document_id
             else:
                 # Same name/parser but different content - UPDATE existing
-                is_update = True
+                is_update_flag = True
                 old_document_id = existing_doc['document_id']
-                old_index_name = existing_doc.get('index_name')
+                effective_old_index_name = existing_doc.get('index_name') or effective_old_index_name
                 logger.info(f"POST /ingest - [ReqID: {request_id}] Updating existing document '{file.filename}' (ID: {old_document_id}) with new content")
                 
                 # Use the existing document ID for the update
@@ -231,22 +246,22 @@ async def ingest_document(
                 'status': 'processing',
                 'progress': 0.0,
                 'file_hash': file_hash,
-                'is_update': is_update,
-                'created_at': time_module.time() if not is_update else existing_doc.get('created_at', time_module.time())
+                'is_update': is_update_flag,
+                'created_at': time_module.time() if not is_update_flag else existing_doc.get('created_at', time_module.time())
             }
             
-            if is_update:
+            if is_update_flag:
                 registration_data['previous_version'] = {
                     'chunks_created': existing_doc.get('chunks_created'),
                     'parser_used': existing_doc.get('parser_used'),
                     'updated_at': existing_doc.get('updated_at')
                 }
-                registration_data['update_reason'] = 'content_changed'
+                registration_data['update_reason'] = 'content_changed' if not force_update_from_request else 'force_update'
             
             registry.add_document(document_id, registration_data)
             
-            if is_update:
-                logger.info(f"Ingestion: Updating document {document_id} ({file.filename}) - new content detected")
+            if is_update_flag:
+                logger.info(f"Ingestion: Updating document {document_id} ({file.filename}) - {'force update' if force_update_from_request else 'new content detected'}")
             else:
                 logger.info(f"Ingestion: Registered new document {document_id} in registry before background processing")
         except Exception as e:
@@ -263,8 +278,8 @@ async def ingest_document(
                 document_id=document_id,
                 index_name=index_name,
                 language=language or "eng",
-                is_update=is_update,
-                old_index_name=old_index_name
+                is_update=is_update_flag,
+                old_index_name=effective_old_index_name
             )
         else:
             # Synchronous processing if background_tasks is not available (unlikely in FastAPI)
@@ -276,16 +291,16 @@ async def ingest_document(
                 document_id=document_id,
                 index_name=index_name,
                 language=language or "eng",
-                is_update=is_update,
-                old_index_name=old_index_name
+                is_update=is_update_flag,
+                old_index_name=effective_old_index_name
             )
         
-        status_msg = "updating" if is_update else "processing"
+        status_msg = "updating" if is_update_flag else "processing"
         return DocumentMetadata(
             document_id=document_id,
             document_name=file.filename,
             status=status_msg,
-            message=f"{'Updating existing' if is_update else 'Processing new'} document"
+            message=f"{'Updating existing' if is_update_flag else 'Processing new'} document"
         )
         
     except Exception as e:

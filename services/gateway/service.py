@@ -486,9 +486,14 @@ class GatewayService:
                 logger.error(f"Error calling retrieval service (delete): {e}")
                 return False
 
-    async def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng") -> "ProcessingResult":
-        """Proxies process_document for compatibility with UI - falls back to direct processing if microservice unavailable"""
-        logger.info(f"Gateway: Processing document {file_name}")
+    async def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng", is_update=False, old_index_name=None) -> "ProcessingResult":
+        """Proxies process_document for compatibility with UI - falls back to direct processing if microservice unavailable
+        
+        Args:
+            is_update: Whether this is an update to an existing document
+            old_index_name: Old index name to clean up if updating
+        """
+        logger.info(f"Gateway: Processing document {file_name} (is_update={is_update})")
         try:
             # Try microservice first
             from shared.schemas import ProcessingResult as SchemaResult
@@ -506,8 +511,13 @@ class GatewayService:
                     data["index_name"] = index_name
                 if language:
                     data["language"] = language
+                # Pass update flags to ingestion service
+                if is_update:
+                    data["is_update"] = "true"
+                if old_index_name:
+                    data["old_index_name"] = old_index_name
                 
-                logger.info(f"Gateway: [ReqID: {request_id}] Starting async ingestion for {file_name} with index {index_name} (lang={language})")
+                logger.info(f"Gateway: [ReqID: {request_id}] Starting async ingestion for {file_name} with index {index_name} (lang={language}, is_update={is_update})")
                 response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data, headers=headers)
                 response.raise_for_status()
                 

@@ -210,12 +210,17 @@ class ServiceContainer:
         except Exception:
             return f"{base_name}-1"
 
-    def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng"):
-        """Process document (proxies to Gateway)"""
+    def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng", is_update=False, old_index_name=None):
+        """Process document (proxies to Gateway)
+        
+        Args:
+            is_update: Whether this is an update to an existing document
+            old_index_name: Old index name to clean up if updating
+        """
         try:
             async def _process():
                 return await self.gateway_service.process_document(
-                    file_path, file_content, file_name, parser_preference, progress_callback, index_name, language
+                    file_path, file_content, file_name, parser_preference, progress_callback, index_name, language, is_update, old_index_name
                 )
             
             try:
