@@ -1531,6 +1531,15 @@ class RetrievalEngine:
                         keyword_weight = 0.6
                         logger.info(f"🌐 [CROSS-LANGUAGE] Using optimized weights: semantic=0.40, keyword=0.60")
                     
+                    # FIX 3: Increase k for cross-language queries
+                    # Cross-language retrieval needs more chunks because similarity scores are less accurate
+                    if k is None:
+                        k = ARISConfig.DEFAULT_K
+                    if k < 15:
+                        original_k = k
+                        k = max(20, k * 2)  # At least 20 chunks, or double the original k
+                        logger.info(f"🌐 [CROSS-LANGUAGE] Increased k: {original_k} → {k} for better coverage")
+                    
                     # FIX 2: Expand query with original language terms for better keyword matching
                     # This helps keyword search find matches in the original document language
                     # Store as instance variable for use in retrieval
