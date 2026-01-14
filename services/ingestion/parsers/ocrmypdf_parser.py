@@ -45,6 +45,9 @@ class OCRmyPDFParser(BaseParser):
         # Get optimized OCR parameters based on language
         self._optimize_for_language(languages, dpi)
         self._check_dependencies()
+        
+        # Log the final language configuration
+        logger.info(f"[OCRmyPDF] Initialized with languages={self.languages}, dpi={self.dpi}")
     
     def _optimize_for_language(self, languages: str, dpi: Optional[int] = None):
         """
@@ -118,6 +121,9 @@ class OCRmyPDFParser(BaseParser):
             logger.warning(
                 "Tesseract OCR not found. Install with: sudo apt-get install tesseract-ocr tesseract-ocr-eng"
             )
+        else:
+            # Check if required language packs are installed
+            self._check_tesseract_languages()
         
         # Check OCRmyPDF
         try:
@@ -128,6 +134,51 @@ class OCRmyPDFParser(BaseParser):
                 "OCRmyPDF not found. Install with: pip install ocrmypdf"
             )
             self.ocrmypdf_available = False
+    
+    def _check_tesseract_languages(self):
+        """Check if required Tesseract language packs are installed."""
+        try:
+            import subprocess
+            # Get list of installed Tesseract languages
+            result = subprocess.run(
+                ['tesseract', '--list-langs'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                installed_langs = set(result.stdout.strip().split('\n')[1:])  # Skip first line "List of available languages"
+                logger.info(f"Tesseract installed languages: {sorted(installed_langs)}")
+                
+                # Check if required languages are installed
+                required_langs = set()
+                if hasattr(self, 'languages'):
+                    # Parse language string (e.g., "spa+eng" -> ["spa", "eng"])
+                    for lang in self.languages.split('+'):
+                        required_langs.add(lang.strip())
+                
+                missing_langs = required_langs - installed_langs
+                if missing_langs:
+                    logger.warning(
+                        f"⚠️ Tesseract language packs missing: {missing_langs}. "
+                        f"Install with: sudo apt-get install {' '.join([f'tesseract-ocr-{lang}' for lang in missing_langs])}"
+                    )
+                    # For Spanish, provide specific installation command
+                    if 'spa' in missing_langs:
+                        logger.warning(
+                            "⚠️ Spanish language pack not installed. "
+                            "Install with: sudo apt-get install tesseract-ocr-spa"
+                        )
+                else:
+                    logger.info(f"✅ All required Tesseract language packs installed: {required_langs}")
+            else:
+                logger.warning("Could not check Tesseract language packs (tesseract --list-langs failed)")
+        except FileNotFoundError:
+            logger.warning("Tesseract not found in PATH, cannot check language packs")
+        except subprocess.TimeoutExpired:
+            logger.warning("Tesseract language check timed out")
+        except Exception as e:
+            logger.warning(f"Could not check Tesseract language packs: {e}")
 
     @staticmethod
     def _has_tesseract() -> bool:
@@ -195,6 +246,16 @@ class OCRmyPDFParser(BaseParser):
                     f"dpi={self.dpi}, script={getattr(self, 'script_type', 'unknown')}"
                 )
                 
+                # Validate language string format for Tesseract
+                # Tesseract expects format like "eng", "spa", "eng+spa", etc.
+                validated_languages = self.languages
+                if not validated_languages or validated_languages.strip() == "":
+                    logger.warning("[OCRmyPDF] Empty language string, defaulting to 'eng'")
+                    validated_languages = "eng"
+                
+                # Log language configuration for debugging
+                logger.info(f"[OCRmyPDF] Using Tesseract languages: {validated_languages}")
+                
                 # Build OCR options based on script type
                 ocr_kwargs = {
                     "input_file": input_path,
@@ -203,7 +264,7 @@ class OCRmyPDFParser(BaseParser):
                     "clean": True,               # Remove noise
                     "rotate_pages": True,        # Fix rotated pages
                     "skip_text": True,           # Skip pages with existing text (faster)
-                    "language": self.languages,  # Language support
+                    "language": validated_languages,  # Language support (validated)
                     "output_type": "pdf",        # Output as searchable PDF
                     "optimize": 1,               # Light optimization
                     "force_ocr": False,          # Only OCR pages without text
@@ -228,7 +289,21 @@ class OCRmyPDFParser(BaseParser):
                     # RTL languages don't need special OCRmyPDF flags, but we log it
                 
                 # Run OCRmyPDF with optimized settings
-                ocrmypdf.ocr(**ocr_kwargs)
+                try:
+                    ocrmypdf.ocr(**ocr_kwargs)
+                except ocrmypdf.exceptions.TesseractConfigError as e:
+                    # Handle missing language pack error
+                    error_msg = str(e)
+                    if "language" in error_msg.lower() or "spa" in error_msg.lower() or "eng" in error_msg.lower():
+                        logger.error(f"[OCRmyPDF] Tesseract language pack error: {error_msg}")
+                        logger.error(f"[OCRmyPDF] Attempted to use languages: {validated_languages}")
+                        logger.error(f"[OCRmyPDF] Install missing language packs with: sudo apt-get install tesseract-ocr-{validated_languages.split('+')[0]}")
+                        raise ValueError(
+                            f"Tesseract language pack not installed for '{validated_languages}'. "
+                            f"Install with: sudo apt-get install {' '.join([f'tesseract-ocr-{lang}' for lang in validated_languages.split('+')])}"
+                        )
+                    else:
+                        raise
                 
                 if progress_callback:
                     progress_callback("parsing", 0.6, detailed_message="OCR complete, extracting text...")

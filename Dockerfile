@@ -29,6 +29,7 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install runtime system dependencies for PDF/OCR
+# Install Tesseract with multilingual language packs for OCR support
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libgl1 \
@@ -39,6 +40,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgthread-2.0-0 \
     tesseract-ocr \
     tesseract-ocr-eng \
+    tesseract-ocr-spa \
+    tesseract-ocr-fra \
+    tesseract-ocr-deu \
+    tesseract-ocr-ita \
+    tesseract-ocr-por \
+    tesseract-ocr-rus \
+    tesseract-ocr-jpn \
+    tesseract-ocr-kor \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-ara \
     ghostscript \
     qpdf \
     unpaper \

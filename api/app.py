@@ -810,12 +810,56 @@ with st.sidebar:
         parser_preference = parser_choice.lower()
     
     # OCR settings for OCRmyPDF
+    # Initialize session state for document language if not set
+    if 'last_document_language' not in st.session_state:
+        st.session_state.last_document_language = 'eng'
+    
+    ocr_languages_default = "eng"  # Default, will be updated based on document language
+    ocr_dpi = 300
+    
     if parser_choice == "OCRmyPDF":
         with st.expander("🔍 OCR Settings", expanded=True):
+            # Get document language from session state (set in upload section below)
+            current_doc_lang = st.session_state.get('last_document_language', 'eng')
+            
+            # Convert document language to Tesseract format
+            try:
+                from services.language.detector import get_detector
+                detector = get_detector()
+                tesseract_lang = detector.get_ocr_language(current_doc_lang)
+                # For non-English, add English as fallback for better accuracy
+                if tesseract_lang != "eng":
+                    ocr_languages_default = f"{tesseract_lang}+eng"
+                else:
+                    ocr_languages_default = "eng"
+            except Exception as e:
+                # Fallback if detector not available
+                logger.warning(f"Could not get OCR language from detector: {e}")
+                # Direct mapping for common languages
+                lang_map = {
+                    'eng': 'eng', 'spa': 'spa+eng', 'fra': 'fra+eng', 'deu': 'deu+eng',
+                    'ita': 'ita+eng', 'por': 'por+eng', 'rus': 'rus+eng', 'jpn': 'jpn+eng',
+                    'kor': 'kor+eng', 'zho': 'chi_sim+eng', 'ara': 'ara+eng'
+                }
+                ocr_languages_default = lang_map.get(current_doc_lang, 'eng')
+            
+            # Check if OCR languages key exists in session state, if not use default
+            ocr_lang_key = "ocr_languages_value"
+            if ocr_lang_key not in st.session_state:
+                st.session_state[ocr_lang_key] = ocr_languages_default
+            
+            # Update OCR languages if document language changed
+            if current_doc_lang != st.session_state.get('previous_doc_lang', ''):
+                st.session_state[ocr_lang_key] = ocr_languages_default
+                st.session_state.previous_doc_lang = current_doc_lang
+            
             ocr_languages = st.text_input(
                 "Tesseract Languages:",
-                value="eng",
-                help="Language codes for Tesseract OCR. Examples: 'eng' (English), 'eng+spa' (English+Spanish), 'eng+fra' (English+French)"
+                value=st.session_state.get(ocr_lang_key, ocr_languages_default),
+                key="ocr_languages_input",
+                help="Language codes for Tesseract OCR. Auto-synced with Document Language (see Upload section below). "
+                     "Examples: 'eng' (English), 'spa+eng' (Spanish+English), 'fra+eng' (French+English). "
+                     "💡 **Tip:** Change Document Language in the Upload section to auto-update this field."
             )
             ocr_dpi = st.slider(
                 "OCR DPI:",
@@ -825,11 +869,25 @@ with st.sidebar:
                 step=50,
                 help="DPI for OCR processing. Higher DPI = better accuracy but slower. 300 DPI is recommended."
             )
-            st.info("💡 **OCRmyPDF Features:**\n"
+            
+            # Show current language info
+            lang_display = {
+                'eng': 'English', 'spa': 'Spanish', 'fra': 'French', 'deu': 'German',
+                'ita': 'Italian', 'por': 'Portuguese', 'rus': 'Russian', 'jpn': 'Japanese',
+                'kor': 'Korean', 'zho': 'Chinese', 'ara': 'Arabic'
+            }
+            current_lang_name = lang_display.get(current_doc_lang, current_doc_lang)
+            
+            st.info(f"💡 **OCRmyPDF Features:**\n"
                    "- Automatic deskew and rotation correction\n"
                    "- Noise removal for better accuracy\n"
                    "- Text layer embedding in PDFs\n"
-                   "- Optimized for scanned documents")
+                   "- Optimized for scanned documents\n"
+                   f"- **Document Language:** {current_lang_name} ({current_doc_lang})\n"
+                   f"- **OCR Languages:** {ocr_languages} (auto-synced, change Document Language below to update)")
+            
+            # Store current OCR languages in session state
+            st.session_state[ocr_lang_key] = ocr_languages
     else:
         ocr_languages = "eng"
         ocr_dpi = 300
@@ -1375,9 +1433,22 @@ with st.sidebar:
         options=list(language_options.keys()),
         format_func=lambda x: language_options.get(x, x),
         index=0,
+        key="document_language_selectbox",
         help="Language of the documents being uploaded. Used for language-aware OCR, chunking, and indexing. "
-             "Select 'Auto-detect' to let the system detect the language automatically."
+             "Select 'Auto-detect' to let the system detect the language automatically. "
+             "⚠️ **For OCRmyPDF:** This automatically sets the OCR language. Change this to update OCR settings above."
     )
+    
+    # Store in session state for OCR language sync (used by OCR settings above)
+    previous_lang = st.session_state.get('last_document_language', 'eng')
+    st.session_state['last_document_language'] = ingestion_language
+    
+    # If language changed and OCRmyPDF is selected, trigger rerun to update OCR languages
+    if previous_lang != ingestion_language and parser_choice == "OCRmyPDF":
+        # Clear OCR languages to force update
+        if 'ocr_languages_value' in st.session_state:
+            del st.session_state['ocr_languages_value']
+        # Note: We don't rerun here to avoid infinite loops, but the OCR settings will update on next render
     
     # Convert 'auto' to 'eng' for backend processing (auto-detection happens in processor)
     if ingestion_language == "auto":
