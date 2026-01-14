@@ -28,9 +28,10 @@
 ### 3. **Root Causes**
 
 #### A. Embedding Language Mismatch
-- **Current**: Using English embeddings (OpenAI text-embedding-ada-002 or similar)
+- **Current**: Using English embeddings (OpenAI **text-embedding-3-large** - 3072 dimensions)
 - **Problem**: English embeddings have low similarity with Spanish text
 - **Impact**: Cross-language semantic search fails
+- **Note**: Already upgraded from ada-002, but still English-focused
 
 #### B. Translation Quality
 - **Current**: Translating queries from Spanish → English for search
@@ -53,11 +54,12 @@
 
 ## Recommended Solutions
 
-### Solution 1: Multilingual Embeddings (Best)
-- **Use**: `multilingual-e5-large` or `paraphrase-multilingual-MiniLM-L12-v2`
-- **Benefit**: Embeddings work across languages
+### Solution 1: Multilingual Embeddings (Future Enhancement)
+- **Current**: Using `text-embedding-3-large` (best English embeddings)
+- **Alternative**: `multilingual-e5-large` or `paraphrase-multilingual-MiniLM-L12-v2`
+- **Benefit**: Embeddings work natively across languages
 - **Implementation**: Change embedding model in `ARISConfig`
-- **Impact**: High - solves root cause
+- **Impact**: High - +20-30% more improvement possible
 
 ### Solution 2: Improve Translation Strategy
 - **Current**: Translate query → English → search

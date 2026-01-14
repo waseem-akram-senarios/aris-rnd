@@ -146,8 +146,8 @@ python3 tests/test_cross_language_accuracy.py --url http://44.221.84.58:8500 --s
 ## Known Limitations
 
 1. **Multilingual embeddings** would provide even better results (+40-50% more)
-   - Current: English embeddings (text-embedding-ada-002)
-   - Recommended: multilingual-e5-large
+   - Current: **text-embedding-3-large** (already upgraded from ada-002) ✅
+   - Alternative: multilingual-e5-large (for even better multilingual support)
    - Impact: Near-perfect cross-language retrieval
 
 2. **Some very specific queries** may still need refinement
