@@ -749,9 +749,10 @@ with st.sidebar:
     with col1:
         auto_translate = st.toggle(
             "Auto-Translate Queries",
-            value=True,
+            value=True,  # Enabled by default based on R&D testing (70%+ accuracy for cross-language)
             help="If enabled, non-English queries are translated to English for better semantic search retrieval. "
-                 "The original query is preserved for keyword matching (dual-search)."
+                 "The original query is preserved for keyword matching (dual-search). "
+                 "Recommended: Keep enabled for cross-language queries."
         )
     
     with col2:
