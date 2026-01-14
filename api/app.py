@@ -2088,80 +2088,106 @@ if st.session_state.documents_processed and container:
                     for source in sources:
                         st.write(f"- {source}")
     
-    # Agentic RAG toggle
-    st.subheader("🤖 Agentic RAG")
-    use_agentic_rag = st.checkbox(
-        "Enable Agentic RAG",
-        value=st.session_state.get('use_agentic_rag', True),
-        help="Decompose complex queries into sub-queries for better retrieval accuracy. May increase response time."
-    )
-    st.session_state['use_agentic_rag'] = use_agentic_rag
+    # Single Query Input (at the top)
+    st.subheader("💬 Ask Questions")
+    question = st.chat_input("Ask a question about your documents...")
     
-    if use_agentic_rag:
-        st.info("💡 Agentic RAG will break down your question into multiple sub-queries for comprehensive retrieval.")
+    # Feature Toggles (Compact)
+    st.markdown("**⚙️ Features:**")
+    feature_cols = st.columns(4)
     
-    # Generation Configuration - UI Controls
-    st.divider()
-    st.subheader("⚙️ Generation Settings")
-    
-    # Temperature control
-    temperature = st.slider(
-        "Temperature",
-        min_value=0.0,
-        max_value=2.0,
-        value=ARISConfig.DEFAULT_TEMPERATURE,
-        step=0.1,
-        help="Controls randomness in responses. Lower = more deterministic (0.0 = most accurate, 2.0 = more creative)"
-    )
-    st.session_state['temperature'] = temperature
-    
-    # Max Tokens control
-    max_tokens = st.slider(
-        "Max Tokens",
-        min_value=100,
-        max_value=4000,
-        value=ARISConfig.DEFAULT_MAX_TOKENS,
-        step=100,
-        help="Maximum number of tokens in the response. Higher = longer, more detailed answers"
-    )
-    st.session_state['max_tokens'] = max_tokens
-    
-    # Search mode selection (for hybrid search) - only show for OpenSearch
-    container = st.session_state.get('service_container')
-    if container and hasattr(container.gateway_service, 'vector_store_type') and \
-       container.gateway_service.vector_store_type.lower() == 'opensearch':
-        st.subheader("🔍 Search Mode")
-        search_mode = st.radio(
-            "Select search mode:",
-            ["Semantic Only", "Keyword Only", "Hybrid"],
-            index=0,
-            help="Semantic: Vector similarity search (default)\nKeyword: Text/keyword matching\nHybrid: Combines both semantic and keyword search"
+    with feature_cols[0]:
+        use_agentic_rag = st.checkbox(
+            "🤖 Agentic RAG",
+            value=st.session_state.get('use_agentic_rag', True),
+            help="Break down complex queries into sub-queries"
         )
-        
-        # Weight controls for hybrid mode
-        semantic_weight = 0.7
-        if search_mode == "Hybrid":
-            semantic_weight = st.slider(
-                "Semantic Weight",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.7,
-                step=0.1,
-                help="Weight for semantic search (0.0 = keyword only, 1.0 = semantic only)"
-            )
-            keyword_weight = 1.0 - semantic_weight
-            st.caption(f"Keyword Weight: {keyword_weight:.1f}")
-        elif search_mode == "Keyword Only":
-            semantic_weight = 0.0
-        else:  # Semantic Only
-            semantic_weight = 1.0
+        st.session_state['use_agentic_rag'] = use_agentic_rag
+    
+    with feature_cols[1]:
+        show_gen_settings = st.checkbox(
+            "⚙️ Generation Settings",
+            value=st.session_state.get('show_gen_settings', False),
+            help="Temperature and Max Tokens"
+        )
+        st.session_state['show_gen_settings'] = show_gen_settings
+    
+    with feature_cols[2]:
+        show_search_mode = st.checkbox(
+            "🔍 Search Mode",
+            value=st.session_state.get('show_search_mode', False),
+            help="Semantic/Keyword/Hybrid search"
+        )
+        st.session_state['show_search_mode'] = show_search_mode
+    
+    with feature_cols[3]:
+        enable_multi_mode = st.checkbox(
+            "🔬 Multi-Mode Test",
+            value=st.session_state.get('enable_multi_mode', False),
+            help="Compare different search modes"
+        )
+        st.session_state['enable_multi_mode'] = enable_multi_mode
+    
+    # Generation Settings (Collapsible)
+    if show_gen_settings:
+        with st.expander("⚙️ Generation Settings", expanded=True):
+            gen_cols = st.columns(2)
+            with gen_cols[0]:
+                temperature = st.slider(
+                    "Temperature",
+                    min_value=0.0,
+                    max_value=2.0,
+                    value=ARISConfig.DEFAULT_TEMPERATURE,
+                    step=0.1,
+                    help="Controls randomness (0.0 = deterministic, 2.0 = creative)"
+                )
+                st.session_state['temperature'] = temperature
+            with gen_cols[1]:
+                max_tokens = st.slider(
+                    "Max Tokens",
+                    min_value=100,
+                    max_value=4000,
+                    value=ARISConfig.DEFAULT_MAX_TOKENS,
+                    step=100,
+                    help="Maximum response length"
+                )
+                st.session_state['max_tokens'] = max_tokens
     else:
-        # For FAISS, only semantic search is available
+        temperature = st.session_state.get('temperature', ARISConfig.DEFAULT_TEMPERATURE)
+        max_tokens = st.session_state.get('max_tokens', ARISConfig.DEFAULT_MAX_TOKENS)
+    
+    # Search Mode (Collapsible)
+    container = st.session_state.get('service_container')
+    if show_search_mode and container and hasattr(container.gateway_service, 'vector_store_type') and \
+       container.gateway_service.vector_store_type.lower() == 'opensearch':
+        with st.expander("🔍 Search Mode", expanded=True):
+            search_mode = st.radio(
+                "Select search mode:",
+                ["Semantic Only", "Keyword Only", "Hybrid"],
+                index=0,
+                help="Semantic: Vector similarity | Keyword: Text matching | Hybrid: Both"
+            )
+            
+            semantic_weight = 0.7
+            if search_mode == "Hybrid":
+                semantic_weight = st.slider(
+                    "Semantic Weight",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.7,
+                    step=0.1,
+                    help="Weight for semantic search (0.0 = keyword only, 1.0 = semantic only)"
+                )
+                keyword_weight = 1.0 - semantic_weight
+                st.caption(f"Keyword Weight: {keyword_weight:.1f}")
+            elif search_mode == "Keyword Only":
+                semantic_weight = 0.0
+            else:  # Semantic Only
+                semantic_weight = 1.0
+    else:
+        # Default: Semantic Only
         search_mode = "Semantic Only"
         semantic_weight = 1.0
-    
-    # Query input
-    question = st.chat_input("Ask a question about your documents...")
     
     # Info message if no document is selected for summary queries (less intrusive)
     if question and question.lower().strip():
@@ -2902,18 +2928,13 @@ if st.session_state.documents_processed and container:
         st.rerun()
     
     # ============================================
-    # MULTI-MODE COMPARISON (Synced with Main Query)
+    # MULTI-MODE COMPARISON (Only if enabled)
     # ============================================
-    st.divider()
-    st.header("🔬 Multi-Mode Comparison")
-    
-    with st.expander("🧪 Run Same Query in Multiple Modes", expanded=False):
-        st.markdown("""
-        **Test how different search modes affect results for your query.**
-        Uses the same query input from above - enter your question in the main chat, then click below to compare modes.
-        """)
+    if enable_multi_mode:
+        st.divider()
+        st.header("🔬 Multi-Mode Comparison")
         
-        # Get last query from chat history
+        # Get last query from chat history (uses main query)
         last_query = None
         if st.session_state.chat_history:
             last_entry = st.session_state.chat_history[-1]
@@ -2922,120 +2943,112 @@ if st.session_state.documents_processed and container:
             elif isinstance(last_entry, tuple) and len(last_entry) >= 1:
                 last_query = last_entry[0]
         
-        # Single query input - synced
-        test_query = st.text_input(
-            "🔍 Query to Test:",
-            value=last_query or "",
-            placeholder="Enter a query or use your last question from chat above...",
-            key="multi_mode_query"
-        )
-        
-        if last_query:
-            st.caption(f"💡 Pre-filled with your last query. Modify or use as-is.")
-        
-        st.divider()
-        
-        # Compact configuration
-        st.markdown("**⚙️ Test Parameters:**")
-        cfg_cols = st.columns(4)
-        
-        with cfg_cols[0]:
-            test_k = st.slider("Chunks (k):", 3, 20, 10, key="mm_k")
-        with cfg_cols[1]:
-            test_semantic_weight = st.slider("Semantic Wt:", 0.0, 1.0, 0.7, 0.05, key="mm_sem_wt")
-        with cfg_cols[2]:
-            test_temperature = st.slider("Temp:", 0.0, 1.0, 0.2, 0.1, key="mm_temp")
-        with cfg_cols[3]:
-            native_language = st.selectbox("Native Lang:", ["Spanish", "French", "German", "Italian", "Portuguese"], key="mm_lang")
-        
-        # Test modes to run
-        st.markdown("**🔧 Modes to Compare:**")
-        mode_cols = st.columns(4)
-        with mode_cols[0]:
-            test_hybrid = st.checkbox("Hybrid", value=True, key="mm_hybrid")
-        with mode_cols[1]:
-            test_semantic = st.checkbox("Semantic", value=True, key="mm_semantic")
-        with mode_cols[2]:
-            test_keyword = st.checkbox("Keyword", value=True, key="mm_keyword")
-        with mode_cols[3]:
-            test_with_translate = st.checkbox("+ Auto-Translate", value=True, key="mm_translate")
-        
-        # Run comparison button
-        if st.button("🔬 Run Multi-Mode Comparison", key="run_multi_mode_test", type="primary"):
-            if not test_query.strip():
-                st.error("Please enter a query to test.")
-            else:
-                container = st.session_state.get('service_container')
-                if not container:
-                    st.error("Service container not initialized. Please upload a document first.")
+        if not last_query:
+            st.info("💡 Ask a question in the main chat above, then come back here to compare modes.")
+        else:
+            st.info(f"📝 **Using your last query:** \"{last_query[:80]}{'...' if len(last_query) > 80 else ''}\"")
+            
+            # Compact configuration
+            st.markdown("**⚙️ Test Parameters:**")
+            cfg_cols = st.columns(4)
+            
+            with cfg_cols[0]:
+                test_k = st.slider("Chunks (k):", 3, 20, 10, key="mm_k")
+            with cfg_cols[1]:
+                test_semantic_weight = st.slider("Semantic Wt:", 0.0, 1.0, 0.7, 0.05, key="mm_sem_wt")
+            with cfg_cols[2]:
+                test_temperature = st.slider("Temp:", 0.0, 1.0, 0.2, 0.1, key="mm_temp")
+            with cfg_cols[3]:
+                native_language = st.selectbox("Native Lang:", ["Spanish", "French", "German", "Italian", "Portuguese"], key="mm_lang")
+            
+            # Test modes to run
+            st.markdown("**🔧 Modes to Compare:**")
+            mode_cols = st.columns(4)
+            with mode_cols[0]:
+                test_hybrid = st.checkbox("Hybrid", value=True, key="mm_hybrid")
+            with mode_cols[1]:
+                test_semantic = st.checkbox("Semantic", value=True, key="mm_semantic")
+            with mode_cols[2]:
+                test_keyword = st.checkbox("Keyword", value=True, key="mm_keyword")
+            with mode_cols[3]:
+                test_with_translate = st.checkbox("+ Auto-Translate", value=True, key="mm_translate")
+            
+            # Run comparison button
+            if st.button("🔬 Run Multi-Mode Comparison", key="run_multi_mode_test", type="primary"):
+                if not last_query or not last_query.strip():
+                    st.error("Please ask a question in the main chat first.")
                 else:
-                    results = {}
-                    import time as time_module
-                    import pandas as pd
-                    
-                    # Store test parameters for display
-                    test_params = {
-                        'k': test_k,
-                        'semantic_weight': test_semantic_weight,
-                        'temperature': test_temperature
-                    }
-                    
-                    query = test_query.strip()
-                    
-                    with st.spinner("Running multi-mode comparison..."):
-                        # Define modes to test
-                        modes_to_test = []
-                        if test_hybrid:
-                            modes_to_test.append(('hybrid', 'Hybrid', test_semantic_weight, False))
-                        if test_semantic:
-                            modes_to_test.append(('semantic', 'Semantic', 1.0, False))
-                        if test_keyword:
-                            modes_to_test.append(('keyword', 'Keyword', 0.0, False))
-                        if test_with_translate and test_hybrid:
-                            modes_to_test.append(('hybrid', 'Hybrid + Translate', test_semantic_weight, True))
+                    container = st.session_state.get('service_container')
+                    if not container:
+                        st.error("Service container not initialized. Please upload a document first.")
+                    else:
+                        results = {}
+                        import time as time_module
+                        import pandas as pd
                         
-                        for mode, mode_name, sem_wt, auto_trans in modes_to_test:
-                            st.info(f"🔄 Running: **{mode_name}**...")
-                            try:
-                                start_time = time_module.time()
-                                result = container.query_with_rag(
-                                    query,
-                                    k=test_k,
-                                    use_hybrid_search=(mode == "hybrid" or mode == "keyword"),
-                                    semantic_weight=sem_wt,
-                                    search_mode=mode,
-                                    use_agentic_rag=False,
-                                    temperature=test_temperature,
-                                    auto_translate=auto_trans
-                                )
-                                elapsed = time_module.time() - start_time
-                                
-                                results[mode_name] = {
-                                    'answer': result.get('answer', ''),
-                                    'citations': result.get('citations', []),
-                                    'sources': result.get('sources', []),
-                                    'num_chunks': result.get('num_chunks_used', 0),
-                                    'context_tokens': result.get('context_tokens', 0),
-                                    'response_tokens': result.get('response_tokens', 0),
-                                    'response_time': elapsed,
-                                    'query': query,
-                                    'mode': mode,
-                                    'semantic_weight': sem_wt,
-                                    'auto_translate': auto_trans
-                                }
-                            except Exception as e:
-                                results[mode_name] = {'error': str(e)}
-                    
-                    # Display comparison results
-                    st.success(f"✅ Compared {len(results)} modes for query: \"{query[:50]}...\"")
-                    
-                    # Show test parameters
-                    st.caption(f"Parameters: k={test_k}, semantic_weight={test_semantic_weight}, temp={test_temperature}")
-                    
-                    st.divider()
-                    
-                    # Metrics comparison table
-                    st.subheader("📊 Mode Comparison")
+                        # Store test parameters for display
+                        test_params = {
+                            'k': test_k,
+                            'semantic_weight': test_semantic_weight,
+                            'temperature': test_temperature
+                        }
+                        
+                        query = last_query.strip()
+                        
+                        with st.spinner("Running multi-mode comparison..."):
+                            # Define modes to test
+                            modes_to_test = []
+                            if test_hybrid:
+                                modes_to_test.append(('hybrid', 'Hybrid', test_semantic_weight, False))
+                            if test_semantic:
+                                modes_to_test.append(('semantic', 'Semantic', 1.0, False))
+                            if test_keyword:
+                                modes_to_test.append(('keyword', 'Keyword', 0.0, False))
+                            if test_with_translate and test_hybrid:
+                                modes_to_test.append(('hybrid', 'Hybrid + Translate', test_semantic_weight, True))
+                            
+                            for mode, mode_name, sem_wt, auto_trans in modes_to_test:
+                                st.info(f"🔄 Running: **{mode_name}**...")
+                                try:
+                                    start_time = time_module.time()
+                                    result = container.query_with_rag(
+                                        query,
+                                        k=test_k,
+                                        use_hybrid_search=(mode == "hybrid" or mode == "keyword"),
+                                        semantic_weight=sem_wt,
+                                        search_mode=mode,
+                                        use_agentic_rag=False,
+                                        temperature=test_temperature,
+                                        auto_translate=auto_trans
+                                    )
+                                    elapsed = time_module.time() - start_time
+                                    
+                                    results[mode_name] = {
+                                        'answer': result.get('answer', ''),
+                                        'citations': result.get('citations', []),
+                                        'sources': result.get('sources', []),
+                                        'num_chunks': result.get('num_chunks_used', 0),
+                                        'context_tokens': result.get('context_tokens', 0),
+                                        'response_tokens': result.get('response_tokens', 0),
+                                        'response_time': elapsed,
+                                        'query': query,
+                                        'mode': mode,
+                                        'semantic_weight': sem_wt,
+                                        'auto_translate': auto_trans
+                                    }
+                                except Exception as e:
+                                    results[mode_name] = {'error': str(e)}
+                        
+                        # Display comparison results
+                        st.success(f"✅ Compared {len(results)} modes for query: \"{query[:50]}...\"")
+                        
+                        # Show test parameters
+                        st.caption(f"Parameters: k={test_k}, semantic_weight={test_semantic_weight}, temp={test_temperature}")
+                        
+                        st.divider()
+                        
+                        # Metrics comparison table
+                        st.subheader("📊 Mode Comparison")
                     
                     metrics_data = []
                     for mode_name, data in results.items():
@@ -3124,57 +3137,57 @@ if st.session_state.documents_processed and container:
                         
                         for point in analysis_points:
                             st.markdown(point)
-                    
-                    st.divider()
-                    
-                    # Detailed view per mode
-                    st.subheader("📈 Detailed Results by Mode")
-                    
-                    for mode_name, data in results.items():
-                        if 'error' not in data:
-                            with st.expander(f"**{mode_name}** - Details", expanded=False):
-                                citations = data.get('citations', [])
-                                
-                                if citations:
-                                    # Visual similarity bars
-                                    st.markdown("**Similarity Scores:**")
-                                    for i, c in enumerate(citations[:5]):  # Top 5
-                                        sim = c.get('similarity_percentage', 0)
-                                        source = c.get('source', 'Unknown')[:25]
-                                        bar_width = int(sim / 2)
-                                        bar = '█' * bar_width + '░' * (50 - bar_width)
-                                        color = "🟢" if sim >= 80 else ("🟡" if sim >= 50 else "🔴")
-                                        st.code(f"{color} #{i+1} [{sim:5.1f}%] {bar} {source}")
+                        
+                        st.divider()
+                        
+                        # Detailed view per mode
+                        st.subheader("📈 Detailed Results by Mode")
+                        
+                        for mode_name, data in results.items():
+                            if 'error' not in data:
+                                with st.expander(f"**{mode_name}** - Details", expanded=False):
+                                    citations = data.get('citations', [])
                                     
-                                    if len(citations) > 5:
-                                        st.caption(f"... and {len(citations) - 5} more citations")
-                                
-                                # Answer preview
-                                answer = data.get('answer', '')
-                                st.markdown("**Answer Preview:**")
-                                st.text_area("", value=answer[:500] + "..." if len(answer) > 500 else answer, 
-                                           height=100, key=f"ans_{mode_name}", disabled=True)
-                    
-                    # Export
-                    st.divider()
-                    import json
-                    export_data = {
-                        'query': query,
-                        'test_params': test_params,
-                        'results': {
-                            k: {
-                                'citations': len(v.get('citations', [])),
-                                'response_time': v.get('response_time', 0),
-                                'avg_similarity': sum(c.get('similarity_percentage', 0) for c in v.get('citations', [])) / len(v.get('citations', [])) if v.get('citations') else 0
-                            } for k, v in results.items() if 'error' not in v
+                                    if citations:
+                                        # Visual similarity bars
+                                        st.markdown("**Similarity Scores:**")
+                                        for i, c in enumerate(citations[:5]):  # Top 5
+                                            sim = c.get('similarity_percentage', 0)
+                                            source = c.get('source', 'Unknown')[:25]
+                                            bar_width = int(sim / 2)
+                                            bar = '█' * bar_width + '░' * (50 - bar_width)
+                                            color = "🟢" if sim >= 80 else ("🟡" if sim >= 50 else "🔴")
+                                            st.code(f"{color} #{i+1} [{sim:5.1f}%] {bar} {source}")
+                                        
+                                        if len(citations) > 5:
+                                            st.caption(f"... and {len(citations) - 5} more citations")
+                                    
+                                    # Answer preview
+                                    answer = data.get('answer', '')
+                                    st.markdown("**Answer Preview:**")
+                                    st.text_area("", value=answer[:500] + "..." if len(answer) > 500 else answer, 
+                                               height=100, key=f"ans_{mode_name}", disabled=True)
+                        
+                        # Export
+                        st.divider()
+                        import json
+                        export_data = {
+                            'query': query,
+                            'test_params': test_params,
+                            'results': {
+                                k: {
+                                    'citations': len(v.get('citations', [])),
+                                    'response_time': v.get('response_time', 0),
+                                    'avg_similarity': sum(c.get('similarity_percentage', 0) for c in v.get('citations', [])) / len(v.get('citations', [])) if v.get('citations') else 0
+                                } for k, v in results.items() if 'error' not in v
+                            }
                         }
-                    }
-                    st.download_button(
-                        "📥 Export Results (JSON)",
-                        data=json.dumps(export_data, indent=2),
-                        file_name="mode_comparison.json",
-                        mime="application/json"
-                    )
+                        st.download_button(
+                            "📥 Export Results (JSON)",
+                            data=json.dumps(export_data, indent=2),
+                            file_name="mode_comparison.json",
+                            mime="application/json"
+                        )
     
 else:
     # If documents are stored but not loaded, guide user to load selected docs
