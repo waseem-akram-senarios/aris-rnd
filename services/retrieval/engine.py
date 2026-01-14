@@ -1580,11 +1580,37 @@ class RetrievalEngine:
                         logger.info(f"Retrieval: Will translate response back to {response_language}")
                 else:
                     logger.info(f"🌐 [AUTO-TRANSLATE] Query already in English (detected: {detected_language}), no translation needed")
+                    # Even for English queries, set response_language if Auto was selected
+                    if not response_language:
+                        response_language = "English"
+                        self.ui_config['response_language'] = response_language
+                        logger.info(f"Retrieval: Auto response language set to English (detected: {detected_language})")
             except Exception as e:
                 logger.warning(f"Retrieval: Auto-translation failed, using original query: {e}")
                 question = original_question
         else:
             logger.info(f"🌐 [AUTO-TRANSLATE] Disabled - searching with original query as-is")
+        
+        # FIX: Always detect query language for Auto response language, even when auto_translate is disabled
+        # This ensures the LLM gets a specific language instruction instead of generic multilingual instructions
+        if not response_language:
+            try:
+                from services.language.detector import get_detector
+                detector = get_detector()
+                detected_language = detector.detect(question)
+                if detected_language:
+                    response_language = detector.get_language_name(detected_language)
+                    self.ui_config['response_language'] = response_language
+                    logger.info(f"🌐 [AUTO-RESPONSE-LANG] Detected query language: {detected_language} → {response_language}")
+                else:
+                    # Fallback to English if detection fails
+                    response_language = "English"
+                    self.ui_config['response_language'] = response_language
+                    logger.warning(f"🌐 [AUTO-RESPONSE-LANG] Language detection failed, defaulting to English")
+            except Exception as e:
+                logger.warning(f"🌐 [AUTO-RESPONSE-LANG] Failed to detect language for Auto response: {e}, defaulting to English")
+                response_language = "English"
+                self.ui_config['response_language'] = response_language
         
         if self.vectorstore is None:
             # For OpenSearch, the authoritative storage is in the cloud; initialize on demand.
