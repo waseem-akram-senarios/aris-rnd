@@ -1,6 +1,7 @@
 services:
   # Ingestion Service - Handles document processing and indexing
   ingestion:
+    build: .
     image: aris-microservice:latest
     container_name: aris-ingestion
     env_file:
