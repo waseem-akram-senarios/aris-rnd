@@ -1448,18 +1448,28 @@ class RetrievalEngine:
         # Contact info queries often have specific words (email, phone) that need keyword matching
         question_lower = question.lower()
         specific_info_keywords = ['email', 'phone', 'contact', 'address', 'fax', 'website', 'url', 
-                                  'correo', 'teléfono', 'contacto', 'dirección']  # Include Spanish
+                                  'correo', 'teléfono', 'contacto', 'dirección',  # Spanish
+                                  'número', 'numero']  # Additional Spanish variants
         found_keywords = [kw for kw in specific_info_keywords if kw in question_lower]
         
         # Log for debugging
         logger.info(f"🔍 Contact keyword check: search_mode={search_mode}, found_keywords={found_keywords}")
         
         # Auto-adjust semantic weight for contact-related queries (always adjust if keywords found)
+        # QA DATA: Contact queries often fail → need VERY aggressive keyword matching
         if found_keywords and search_mode == 'hybrid':
-            # For contact-related queries, reduce semantic weight to prioritize keyword matches
+            # For contact-related queries, use VERY LOW semantic weight (QA-driven)
             original_semantic_weight = semantic_weight if semantic_weight is not None else 0.7
-            semantic_weight = 0.35  # Higher keyword weight (0.65) for specific info lookups
-            logger.info(f"🔧 AUTO-ADJUSTED semantic_weight {original_semantic_weight:.2f} -> {semantic_weight:.2f} for keywords: {found_keywords}")
+            semantic_weight = 0.1  # Increased from 0.35 to 0.1 (90% keyword!) for contact queries
+            logger.info(f"🔧 AUTO-ADJUSTED semantic_weight {original_semantic_weight:.2f} -> {semantic_weight:.2f} for contact keywords: {found_keywords} [QA-driven]")
+            
+            # Also increase k for contact queries to ensure we find scattered contact info
+            if k is None:
+                k = ARISConfig.DEFAULT_RETRIEVAL_K
+            if k < 30:
+                original_k = k
+                k = max(40, k * 1.5)  # At least 40 chunks for contact queries
+                logger.info(f"🔧 AUTO-INCREASED k: {original_k} → {int(k)} for contact query [QA-driven]")
         
         keyword_weight = 1.0 - semantic_weight
         
@@ -1519,26 +1529,28 @@ class RetrievalEngine:
                     
                     # FIX 1: For cross-language queries, adjust semantic/keyword weights
                     # Cross-language semantic search is less reliable, so prioritize keyword matching
+                    # QA DATA: English queries on Spanish docs score only 1.71/10 → need more aggressive keyword focus
                     if search_mode == 'hybrid' and semantic_weight is not None:
                         original_semantic_weight = semantic_weight
-                        # Lower semantic weight (0.4) for cross-language, higher keyword (0.6)
-                        semantic_weight = min(0.4, semantic_weight)
+                        # VERY LOW semantic weight (0.2) for cross-language based on QA findings
+                        semantic_weight = min(0.2, semantic_weight)  # Reduced from 0.4 to 0.2 (80% keyword!)
                         keyword_weight = 1.0 - semantic_weight
-                        logger.info(f"🌐 [CROSS-LANGUAGE] Adjusted weights: semantic={semantic_weight:.2f} (was {original_semantic_weight:.2f}), keyword={keyword_weight:.2f}")
+                        logger.info(f"🌐 [CROSS-LANGUAGE] Adjusted weights: semantic={semantic_weight:.2f} (was {original_semantic_weight:.2f}), keyword={keyword_weight:.2f} [QA-driven]")
                     elif search_mode == 'hybrid':
                         # If semantic_weight not set, use cross-language optimized default
-                        semantic_weight = 0.4
-                        keyword_weight = 0.6
-                        logger.info(f"🌐 [CROSS-LANGUAGE] Using optimized weights: semantic=0.40, keyword=0.60")
+                        semantic_weight = 0.2  # Reduced from 0.4 to 0.2 based on QA findings
+                        keyword_weight = 0.8  # Increased from 0.6 to 0.8
+                        logger.info(f"🌐 [CROSS-LANGUAGE] Using QA-optimized weights: semantic=0.20, keyword=0.80 (English 1.71/10 → target 4.0+/10)")
                     
                     # FIX 3: Increase k for cross-language queries
                     # Cross-language retrieval needs more chunks because similarity scores are less accurate
+                    # QA DATA: Low scores indicate insufficient context retrieval
                     if k is None:
                         k = ARISConfig.DEFAULT_RETRIEVAL_K
-                    if k < 15:
+                    if k < 25:  # Increased threshold from 15 to 25
                         original_k = k
-                        k = max(20, k * 2)  # At least 20 chunks, or double the original k
-                        logger.info(f"🌐 [CROSS-LANGUAGE] Increased k: {original_k} → {k} for better coverage")
+                        k = max(30, k * 2)  # At least 30 chunks (increased from 20), or double the original k
+                        logger.info(f"🌐 [CROSS-LANGUAGE] Increased k: {original_k} → {k} for better coverage [QA-driven]")
                     
                     # FIX 2: Expand query with original language terms for better keyword matching
                     # This helps keyword search find matches in the original document language

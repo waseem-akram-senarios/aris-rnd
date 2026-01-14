@@ -43,21 +43,21 @@ class ARISConfig:
     DEFAULT_CHUNK_SIZE: int = int(os.getenv('DEFAULT_CHUNK_SIZE', '512'))  # Increased for Reranking context
     DEFAULT_CHUNK_OVERLAP: int = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '128'))  # Keep significant overlap
     
-    # Retrieval Configuration - Optimized for cross-language accuracy (R&D tested)
-    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '20'))  # Increased from 15 for cross-language
+    # Retrieval Configuration - Optimized for cross-language accuracy (QA-driven: k=30)
+    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '30'))  # Increased to 30 based on QA findings (English 1.71/10 → target 4.0+/10)
     DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '60'))
     DEFAULT_MMR_LAMBDA: float = float(os.getenv('DEFAULT_MMR_LAMBDA', '0.35'))
     DEFAULT_USE_MMR: bool = os.getenv('DEFAULT_USE_MMR', 'false').lower() == 'true'  # Disable MMR for Reranking
     ENABLE_RERANKING: bool = os.getenv('ENABLE_RERANKING', 'true').lower() == 'true'
     
-    # Generation Configuration - Optimized for comprehensive answers
-    DEFAULT_TEMPERATURE: float = float(os.getenv('DEFAULT_TEMPERATURE', '0.0'))  # Maximum determinism
+    # Generation Configuration - Optimized for comprehensive answers (QA-driven: temp=0.1)
+    DEFAULT_TEMPERATURE: float = float(os.getenv('DEFAULT_TEMPERATURE', '0.1'))  # Slightly increased for better answer synthesis
     DEFAULT_MAX_TOKENS: int = int(os.getenv('DEFAULT_MAX_TOKENS', '2000'))  # Increased for detailed answers
     
-    # Hybrid Search Configuration - Optimized for cross-language queries (R&D tested)
+    # Hybrid Search Configuration - Optimized for cross-language queries (QA-driven: sw=0.3)
     DEFAULT_USE_HYBRID_SEARCH: bool = os.getenv('DEFAULT_USE_HYBRID_SEARCH', 'true').lower() == 'true'
-    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.4'))  # Reduced from 0.75 for cross-language
-    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.6'))  # Increased from 0.25 for cross-language
+    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.3'))  # Reduced to 0.3 for better cross-language (QA: English 1.71/10)
+    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.7'))  # Increased to 0.7 for better keyword matching
     DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'hybrid')  # 'semantic', 'keyword', 'hybrid'
     
     # Agentic RAG Configuration - Optimized for comprehensive synthesis
