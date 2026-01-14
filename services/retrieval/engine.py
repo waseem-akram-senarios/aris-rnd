@@ -1485,6 +1485,7 @@ class RetrievalEngine:
         original_question = question
         detected_language = None
         needs_response_translation = False
+        self.expanded_query_for_keywords = None  # Initialize for cross-language query expansion
         
         # Log the auto_translate setting for debugging
         logger.info(f"🌐 [AUTO-TRANSLATE] auto_translate={auto_translate}, question='{question[:50]}...'")
@@ -1515,6 +1516,30 @@ class RetrievalEngine:
                     # Use English for retrieval but keep context
                     original_question = question
                     question = translated_question
+                    
+                    # FIX 1: For cross-language queries, adjust semantic/keyword weights
+                    # Cross-language semantic search is less reliable, so prioritize keyword matching
+                    if search_mode == 'hybrid' and semantic_weight is not None:
+                        original_semantic_weight = semantic_weight
+                        # Lower semantic weight (0.4) for cross-language, higher keyword (0.6)
+                        semantic_weight = min(0.4, semantic_weight)
+                        keyword_weight = 1.0 - semantic_weight
+                        logger.info(f"🌐 [CROSS-LANGUAGE] Adjusted weights: semantic={semantic_weight:.2f} (was {original_semantic_weight:.2f}), keyword={keyword_weight:.2f}")
+                    elif search_mode == 'hybrid':
+                        # If semantic_weight not set, use cross-language optimized default
+                        semantic_weight = 0.4
+                        keyword_weight = 0.6
+                        logger.info(f"🌐 [CROSS-LANGUAGE] Using optimized weights: semantic=0.40, keyword=0.60")
+                    
+                    # FIX 2: Expand query with original language terms for better keyword matching
+                    # This helps keyword search find matches in the original document language
+                    # Store as instance variable for use in retrieval
+                    if use_hybrid_search is None or use_hybrid_search:
+                        # Store expanded query for keyword matching
+                        self.expanded_query_for_keywords = f"{translated_question} {original_question}"
+                        logger.info(f"🌐 [CROSS-LANGUAGE] Expanded query for keyword matching: '{self.expanded_query_for_keywords[:100]}...'")
+                    else:
+                        self.expanded_query_for_keywords = None
                     
                     # Set response language to original if not explicitly specified
                     if not response_language:
@@ -1953,6 +1978,15 @@ class RetrievalEngine:
                         from vectorstores.opensearch_store import OpenSearchVectorStore
                         query_vector = self.embeddings.embed_query(retrieval_question)
                         search_timer = time_module.time()
+                        # For cross-language: use expanded query (translated + original) for better keyword matching
+                        alternate_for_keywords = None
+                        if original_question != retrieval_question:
+                            # Cross-language query: use expanded query with both languages
+                            alternate_for_keywords = f"{retrieval_question} {original_question}"
+                            logger.debug(f"🌐 Using expanded alternate query for keyword matching: '{alternate_for_keywords[:100]}...'")
+                        elif hasattr(self, 'expanded_query_for_keywords') and self.expanded_query_for_keywords:
+                            alternate_for_keywords = self.expanded_query_for_keywords
+                        
                         relevant_docs = store.hybrid_search(
                             query=retrieval_question,
                             query_vector=query_vector,
@@ -1960,7 +1994,7 @@ class RetrievalEngine:
                             semantic_weight=semantic_weight,
                             keyword_weight=keyword_weight,
                             filter=opensearch_filter, # Apply global filters
-                            alternate_query=original_question if original_question != retrieval_question else None
+                            alternate_query=alternate_for_keywords or (original_question if original_question != retrieval_question else None)
                         )
                         search_duration = time_module.time() - search_timer
                         logger.info(f"Retrieval: [ReqID: {req_id}] Hybrid search completed in {search_duration:.2f}s: {len(relevant_docs)} results from index '{index_name}'")
@@ -2021,6 +2055,15 @@ class RetrievalEngine:
                     relevant_docs = retriever.invoke(retrieval_question)
             else:
                 # Multiple indexes - search across all
+                # For cross-language: use expanded query (translated + original) for better keyword matching
+                alternate_for_keywords = None
+                if original_question != retrieval_question:
+                    # Cross-language query: use expanded query with both languages
+                    alternate_for_keywords = f"{retrieval_question} {original_question}"
+                    logger.debug(f"🌐 Using expanded alternate query for multi-index search: '{alternate_for_keywords[:100]}...'")
+                elif hasattr(self, 'expanded_query_for_keywords') and self.expanded_query_for_keywords:
+                    alternate_for_keywords = self.expanded_query_for_keywords
+                
                 relevant_docs = self.multi_index_manager.search_across_indexes(
                     query=retrieval_question,
                     index_names=indexes_to_search,
@@ -2030,7 +2073,7 @@ class RetrievalEngine:
                     use_hybrid_search=use_hybrid_search,
                     semantic_weight=semantic_weight,
                     keyword_weight=keyword_weight,
-                    alternate_query=original_question if original_question != retrieval_question else None,
+                    alternate_query=alternate_for_keywords or (original_question if original_question != retrieval_question else None),
                     fetch_k=ARISConfig.DEFAULT_MMR_FETCH_K if use_mmr else 50,
                     lambda_mult=ARISConfig.DEFAULT_MMR_LAMBDA if use_mmr else 0.3,
                     filter=opensearch_filter # Apply global filters (e.g. language)
