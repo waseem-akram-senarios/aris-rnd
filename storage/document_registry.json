@@ -5,7 +5,8 @@
     "chunks_created": 10,
     "vector_store_type": "faiss",
     "created_at": "2025-12-10T13:31:05.105885",
-    "updated_at": "2025-12-10T13:31:05.105919"
+    "updated_at": "2025-12-10T13:31:05.105919",
+    "text_index": "faiss-shared"
   },
   "b2613e85-e646-4207-aace-9491253592bf": {
     "document_id": "b2613e85-e646-4207-aace-9491253592bf",
@@ -243,7 +244,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-01T14:24:38.744252",
-    "updated_at": "2026-01-01T14:24:38.744257"
+    "updated_at": "2026-01-01T14:24:38.744257",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "55189c24-b8b0-4d8a-a66e-729bcc30ab06": {
     "document_id": "55189c24-b8b0-4d8a-a66e-729bcc30ab06",
@@ -324,7 +327,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-01T15:55:36.368488",
-    "updated_at": "2026-01-01T15:55:36.368493"
+    "updated_at": "2026-01-01T15:55:36.368493",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "9d83850e-cc5f-4f50-bf53-03c808300e61": {
     "document_id": "9d83850e-cc5f-4f50-bf53-03c808300e61",
@@ -339,7 +344,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-01T16:13:56.090917",
-    "updated_at": "2026-01-01T16:13:56.090923"
+    "updated_at": "2026-01-01T16:13:56.090923",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "3a4a29ad-fee1-425e-82a2-11994cf2421a": {
     "document_id": "3a4a29ad-fee1-425e-82a2-11994cf2421a",
@@ -464,7 +471,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-01T16:23:57.926885",
-    "updated_at": "2026-01-01T16:23:57.926890"
+    "updated_at": "2026-01-01T16:23:57.926890",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "51e79b71-0fe2-4b17-acf4-f67e629ec60f": {
     "document_id": "51e79b71-0fe2-4b17-acf4-f67e629ec60f",
@@ -523,7 +532,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-01T16:28:59.229243",
-    "updated_at": "2026-01-01T16:28:59.229249"
+    "updated_at": "2026-01-01T16:28:59.229249",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "66201a64-228d-4b80-a4b8-f3397256f5a3": {
     "document_id": "66201a64-228d-4b80-a4b8-f3397256f5a3",
@@ -538,7 +549,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-01T16:45:15.595002",
-    "updated_at": "2026-01-01T16:45:15.595006"
+    "updated_at": "2026-01-01T16:45:15.595006",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "f9fd0247-aaa7-40ba-aedf-91c61e6259f2": {
     "document_id": "f9fd0247-aaa7-40ba-aedf-91c61e6259f2",
@@ -553,7 +566,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-01T17:26:28.816182",
-    "updated_at": "2026-01-01T17:26:28.816187"
+    "updated_at": "2026-01-01T17:26:28.816187",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "260dc3c0-acfc-4f3d-95fa-abe3039ca305": {
     "document_id": "260dc3c0-acfc-4f3d-95fa-abe3039ca305",
@@ -568,11 +583,13 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-01T17:50:59.114361",
-    "updated_at": "2026-01-01T17:50:59.114367"
+    "updated_at": "2026-01-01T17:50:59.114367",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "d0207b71-e86f-4bbe-b00b-caecea68e844": {
     "document_id": "d0207b71-e86f-4bbe-b00b-caecea68e844",
-    "document_name": "_Intelligent Compute Advisor — FAQ.pdf",
+    "document_name": "_Intelligent Compute Advisor \u2014 FAQ.pdf",
     "status": "success",
     "chunks_created": 25,
     "tokens_extracted": 3610,
@@ -583,7 +600,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-02T11:07:18.794954",
-    "updated_at": "2026-01-02T11:07:18.794959"
+    "updated_at": "2026-01-02T11:07:18.794959",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "cb91ba68-5d67-459b-9d8b-9f4ab26a36e6": {
     "document_id": "cb91ba68-5d67-459b-9d8b-9f4ab26a36e6",
@@ -708,11 +727,13 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-02T15:22:29.955443",
-    "updated_at": "2026-01-02T15:22:29.955448"
+    "updated_at": "2026-01-02T15:22:29.955448",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "9aee3379-2800-4ce6-a31d-8e5aca6b46f0": {
     "document_id": "9aee3379-2800-4ce6-a31d-8e5aca6b46f0",
-    "document_name": "_Intelligent Compute Advisor — FAQ.pdf",
+    "document_name": "_Intelligent Compute Advisor \u2014 FAQ.pdf",
     "status": "success",
     "chunks_created": 25,
     "tokens_extracted": 3090,
@@ -723,7 +744,7 @@
     "pages": 5,
     "file_size": 442401,
     "file_type": "pdf",
-    "s3_url": "s3://intelycx-waseem-s3-bucket/documents/9aee3379-2800-4ce6-a31d-8e5aca6b46f0/_Intelligent Compute Advisor — FAQ.pdf",
+    "s3_url": "s3://intelycx-waseem-s3-bucket/documents/9aee3379-2800-4ce6-a31d-8e5aca6b46f0/_Intelligent Compute Advisor \u2014 FAQ.pdf",
     "created_at": "2026-01-02T15:25:50.621046",
     "vector_store_type": "opensearch",
     "opensearch_domain": "intelycx-waseem-os",
@@ -734,7 +755,7 @@
   },
   "3a46d076-fe81-4c00-ad58-3713272c0662": {
     "document_id": "3a46d076-fe81-4c00-ad58-3713272c0662",
-    "document_name": "_Intelligent Compute Advisor — FAQ.pdf",
+    "document_name": "_Intelligent Compute Advisor \u2014 FAQ.pdf",
     "status": "success",
     "chunks_created": 25,
     "tokens_extracted": 3090,
@@ -745,7 +766,7 @@
     "pages": 5,
     "file_size": 442401,
     "file_type": "pdf",
-    "s3_url": "s3://intelycx-waseem-s3-bucket/documents/3a46d076-fe81-4c00-ad58-3713272c0662/_Intelligent Compute Advisor — FAQ.pdf",
+    "s3_url": "s3://intelycx-waseem-s3-bucket/documents/3a46d076-fe81-4c00-ad58-3713272c0662/_Intelligent Compute Advisor \u2014 FAQ.pdf",
     "created_at": "2026-01-02T15:26:00.154173",
     "vector_store_type": "opensearch",
     "opensearch_domain": "intelycx-waseem-os",
@@ -756,7 +777,7 @@
   },
   "17c53718-681e-4ad4-833e-fbb0997c79d6": {
     "document_id": "17c53718-681e-4ad4-833e-fbb0997c79d6",
-    "document_name": "_Intelligent Compute Advisor — FAQ.pdf",
+    "document_name": "_Intelligent Compute Advisor \u2014 FAQ.pdf",
     "status": "success",
     "chunks_created": 25,
     "tokens_extracted": 3090,
@@ -767,7 +788,7 @@
     "pages": 5,
     "file_size": 442401,
     "file_type": "pdf",
-    "s3_url": "s3://intelycx-waseem-s3-bucket/documents/17c53718-681e-4ad4-833e-fbb0997c79d6/_Intelligent Compute Advisor — FAQ.pdf",
+    "s3_url": "s3://intelycx-waseem-s3-bucket/documents/17c53718-681e-4ad4-833e-fbb0997c79d6/_Intelligent Compute Advisor \u2014 FAQ.pdf",
     "created_at": "2026-01-02T15:26:10.192195",
     "vector_store_type": "opensearch",
     "opensearch_domain": "intelycx-waseem-os",
@@ -789,7 +810,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-02T15:28:13.370406",
-    "updated_at": "2026-01-02T15:28:13.370413"
+    "updated_at": "2026-01-02T15:28:13.370413",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "ae50206c-3305-4eea-8ffe-6d86271caf81": {
     "document_id": "ae50206c-3305-4eea-8ffe-6d86271caf81",
@@ -804,7 +827,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-02T15:32:55.274268",
-    "updated_at": "2026-01-02T15:32:55.274274"
+    "updated_at": "2026-01-02T15:32:55.274274",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "1770692d-a2d4-4298-be06-264536d44221": {
     "document_id": "1770692d-a2d4-4298-be06-264536d44221",
@@ -929,7 +954,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-02T16:59:15.641671",
-    "updated_at": "2026-01-02T16:59:15.641676"
+    "updated_at": "2026-01-02T16:59:15.641676",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "2cac42b9-f9e1-4958-a62c-58564c0b634b": {
     "document_id": "2cac42b9-f9e1-4958-a62c-58564c0b634b",
@@ -966,7 +993,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-05T11:31:07.652237",
-    "updated_at": "2026-01-05T11:31:07.652243"
+    "updated_at": "2026-01-05T11:31:07.652243",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "39dfdffe-ab23-45a9-9110-763a7fb7dc88": {
     "document_id": "39dfdffe-ab23-45a9-9110-763a7fb7dc88",
@@ -1003,7 +1032,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-05T13:53:26.951946",
-    "updated_at": "2026-01-05T13:53:26.951951"
+    "updated_at": "2026-01-05T13:53:26.951951",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "eed7291c-5d55-437d-b5f5-02349b6094a3": {
     "document_id": "eed7291c-5d55-437d-b5f5-02349b6094a3",
@@ -1106,7 +1137,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-05T16:14:55.282333",
-    "updated_at": "2026-01-05T16:14:55.282338"
+    "updated_at": "2026-01-05T16:14:55.282338",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "e4dc4478-5674-4059-b166-d7c0594f3128": {
     "document_id": "e4dc4478-5674-4059-b166-d7c0594f3128",
@@ -1143,7 +1176,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-05T16:58:09.349893",
-    "updated_at": "2026-01-05T16:58:09.349899"
+    "updated_at": "2026-01-05T16:58:09.349899",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "fb4a3c9f-0b7a-4294-beaa-fd95c7de7224": {
     "document_id": "fb4a3c9f-0b7a-4294-beaa-fd95c7de7224",
@@ -1202,7 +1237,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T06:12:50.375570",
-    "updated_at": "2026-01-06T06:12:50.375576"
+    "updated_at": "2026-01-06T06:12:50.375576",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "e58c0db1-cf71-4f0b-bd89-17f298c708ea": {
     "document_id": "e58c0db1-cf71-4f0b-bd89-17f298c708ea",
@@ -1217,7 +1254,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T11:23:23.073943",
-    "updated_at": "2026-01-06T11:23:23.073949"
+    "updated_at": "2026-01-06T11:23:23.073949",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "ef2c8bb6-95a3-4605-85e9-d4d7e975812d": {
     "document_id": "ef2c8bb6-95a3-4605-85e9-d4d7e975812d",
@@ -1254,7 +1293,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T15:03:28.329518",
-    "updated_at": "2026-01-06T15:03:28.329523"
+    "updated_at": "2026-01-06T15:03:28.329523",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "f1f75a20-3fdb-4fdd-a62d-994c3addb2d9": {
     "document_id": "f1f75a20-3fdb-4fdd-a62d-994c3addb2d9",
@@ -1291,7 +1332,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T16:38:26.513755",
-    "updated_at": "2026-01-06T16:38:26.513760"
+    "updated_at": "2026-01-06T16:38:26.513760",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "5eda7ed1-71a7-4947-8f20-1ec88f011c2d": {
     "document_id": "5eda7ed1-71a7-4947-8f20-1ec88f011c2d",
@@ -1306,7 +1349,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T17:04:20.970723",
-    "updated_at": "2026-01-06T17:04:20.970729"
+    "updated_at": "2026-01-06T17:04:20.970729",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "a986bf9b-c7d9-46de-b15b-29bac303c1d9": {
     "document_id": "a986bf9b-c7d9-46de-b15b-29bac303c1d9",
@@ -1321,7 +1366,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T17:46:20.926358",
-    "updated_at": "2026-01-06T17:46:20.926364"
+    "updated_at": "2026-01-06T17:46:20.926364",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "14b8f561-8b68-40f4-b630-2f3e513d62b8": {
     "document_id": "14b8f561-8b68-40f4-b630-2f3e513d62b8",
@@ -1336,7 +1383,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T17:59:22.611478",
-    "updated_at": "2026-01-06T17:59:22.611484"
+    "updated_at": "2026-01-06T17:59:22.611484",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "39b8e68c-5c73-4b3d-b735-bd43da5d0475": {
     "document_id": "39b8e68c-5c73-4b3d-b735-bd43da5d0475",
@@ -1373,7 +1422,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T18:18:24.063900",
-    "updated_at": "2026-01-06T18:18:24.063906"
+    "updated_at": "2026-01-06T18:18:24.063906",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "c1336e56-42b6-4871-a50b-0fd2aef5f580": {
     "document_id": "c1336e56-42b6-4871-a50b-0fd2aef5f580",
@@ -1388,7 +1439,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T18:25:52.495767",
-    "updated_at": "2026-01-06T18:25:52.495772"
+    "updated_at": "2026-01-06T18:25:52.495772",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "5167c06e-9215-4853-8f18-37114df7a53e": {
     "document_id": "5167c06e-9215-4853-8f18-37114df7a53e",
@@ -1425,7 +1478,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T18:28:02.388465",
-    "updated_at": "2026-01-06T18:28:02.388471"
+    "updated_at": "2026-01-06T18:28:02.388471",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "fcf98e70-3e6a-47c4-ab4f-d7c1f6bf8ad8": {
     "document_id": "fcf98e70-3e6a-47c4-ab4f-d7c1f6bf8ad8",
@@ -1440,7 +1495,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T18:37:39.619799",
-    "updated_at": "2026-01-06T18:37:39.619804"
+    "updated_at": "2026-01-06T18:37:39.619804",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "9b43a434-c0f0-4e8d-a36b-5f747a0e18f8": {
     "document_id": "9b43a434-c0f0-4e8d-a36b-5f747a0e18f8",
@@ -1455,7 +1512,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-06T18:41:13.964833",
-    "updated_at": "2026-01-06T18:41:13.964838"
+    "updated_at": "2026-01-06T18:41:13.964838",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "2b6feb62-aae9-4c66-b884-6ded6621c944": {
     "document_id": "2b6feb62-aae9-4c66-b884-6ded6621c944",
@@ -1470,7 +1529,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T10:31:25.463339",
-    "updated_at": "2026-01-07T10:31:25.463344"
+    "updated_at": "2026-01-07T10:31:25.463344",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "19eabb7a-d865-4cea-b84c-0d90c622d123": {
     "document_id": "19eabb7a-d865-4cea-b84c-0d90c622d123",
@@ -1485,7 +1546,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T10:39:54.733757",
-    "updated_at": "2026-01-07T10:39:54.733763"
+    "updated_at": "2026-01-07T10:39:54.733763",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "0b134c1d-88c9-4647-8df4-2373b1a5dc53": {
     "document_id": "0b134c1d-88c9-4647-8df4-2373b1a5dc53",
@@ -1500,7 +1563,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T10:51:35.318721",
-    "updated_at": "2026-01-07T10:51:35.318726"
+    "updated_at": "2026-01-07T10:51:35.318726",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "efb7e627-489a-4887-8719-d98e69baba47": {
     "document_id": "efb7e627-489a-4887-8719-d98e69baba47",
@@ -1537,7 +1602,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T11:07:16.897111",
-    "updated_at": "2026-01-07T11:07:16.897116"
+    "updated_at": "2026-01-07T11:07:16.897116",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "ba794d45-9533-4402-b324-ba7802763063": {
     "document_id": "ba794d45-9533-4402-b324-ba7802763063",
@@ -1552,7 +1619,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T11:15:01.534516",
-    "updated_at": "2026-01-07T11:15:01.534521"
+    "updated_at": "2026-01-07T11:15:01.534521",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "8ec591ce-0421-4944-aba1-ee9ffbb79795": {
     "document_id": "8ec591ce-0421-4944-aba1-ee9ffbb79795",
@@ -1567,7 +1636,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T14:36:31.472365",
-    "updated_at": "2026-01-07T14:36:31.472370"
+    "updated_at": "2026-01-07T14:36:31.472370",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "bc88310d-051e-4096-9b2e-4562907f2ea5": {
     "document_id": "bc88310d-051e-4096-9b2e-4562907f2ea5",
@@ -1582,7 +1653,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T14:39:01.504254",
-    "updated_at": "2026-01-07T14:39:01.504259"
+    "updated_at": "2026-01-07T14:39:01.504259",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "664f79dd-205d-4303-8546-d535ddacdc04": {
     "document_id": "664f79dd-205d-4303-8546-d535ddacdc04",
@@ -1597,7 +1670,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T15:11:34.370452",
-    "updated_at": "2026-01-07T15:11:34.370458"
+    "updated_at": "2026-01-07T15:11:34.370458",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "f6a31fa3-3fe2-44ce-8b60-dc6aef31730a": {
     "document_id": "f6a31fa3-3fe2-44ce-8b60-dc6aef31730a",
@@ -1612,7 +1687,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T15:30:26.251215",
-    "updated_at": "2026-01-07T15:30:26.251220"
+    "updated_at": "2026-01-07T15:30:26.251220",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "438fe81c-86ac-4cf1-bd9c-4db1ec3866fb": {
     "document_id": "438fe81c-86ac-4cf1-bd9c-4db1ec3866fb",
@@ -1627,7 +1704,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T15:50:26.176891",
-    "updated_at": "2026-01-07T15:50:26.176897"
+    "updated_at": "2026-01-07T15:50:26.176897",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "9ec4c6f7-778a-4b43-b96b-448fc525813b": {
     "document_id": "9ec4c6f7-778a-4b43-b96b-448fc525813b",
@@ -1664,7 +1743,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T16:24:58.810390",
-    "updated_at": "2026-01-07T16:24:58.810395"
+    "updated_at": "2026-01-07T16:24:58.810395",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "d36a21f3-fa8b-422d-8dbf-76000a85de6b": {
     "document_id": "d36a21f3-fa8b-422d-8dbf-76000a85de6b",
@@ -1679,7 +1760,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T17:03:41.763452",
-    "updated_at": "2026-01-07T17:03:41.763457"
+    "updated_at": "2026-01-07T17:03:41.763457",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "83812d8b-2e4e-4c0f-8037-593f16183ff9": {
     "document_id": "83812d8b-2e4e-4c0f-8037-593f16183ff9",
@@ -1694,7 +1777,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T18:21:18.420182",
-    "updated_at": "2026-01-07T18:21:18.420187"
+    "updated_at": "2026-01-07T18:21:18.420187",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "a1f00504-0cb4-434a-8f48-5b94215f4846": {
     "document_id": "a1f00504-0cb4-434a-8f48-5b94215f4846",
@@ -1709,7 +1794,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T18:22:30.404872",
-    "updated_at": "2026-01-07T18:22:30.404877"
+    "updated_at": "2026-01-07T18:22:30.404877",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "cfd92ba9-6ebe-44a8-b968-7a287f1f27c7": {
     "document_id": "cfd92ba9-6ebe-44a8-b968-7a287f1f27c7",
@@ -1724,7 +1811,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-07T18:25:59.271461",
-    "updated_at": "2026-01-07T18:25:59.271466"
+    "updated_at": "2026-01-07T18:25:59.271466",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "686ecf90-3a66-43f9-91f7-ed9cd3fbbabc": {
     "document_id": "686ecf90-3a66-43f9-91f7-ed9cd3fbbabc",
@@ -1739,7 +1828,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-08T13:35:41.970153",
-    "updated_at": "2026-01-08T13:35:41.970158"
+    "updated_at": "2026-01-08T13:35:41.970158",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "d5968db7-d41b-4eba-8890-a2b396f609c4": {
     "document_id": "d5968db7-d41b-4eba-8890-a2b396f609c4",
@@ -1754,7 +1845,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-08T15:34:15.338549",
-    "updated_at": "2026-01-08T15:34:15.338555"
+    "updated_at": "2026-01-08T15:34:15.338555",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "a487df43-bbdb-44ca-8c65-cd409980f1b7": {
     "document_id": "a487df43-bbdb-44ca-8c65-cd409980f1b7",
@@ -1813,7 +1906,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-08T15:59:50.631508",
-    "updated_at": "2026-01-08T15:59:50.631514"
+    "updated_at": "2026-01-08T15:59:50.631514",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "fbbc34e9-da82-454e-9061-a74e88f8b695": {
     "document_id": "fbbc34e9-da82-454e-9061-a74e88f8b695",
@@ -1828,7 +1923,9 @@
     "pages": null,
     "error": null,
     "created_at": "2026-01-08T16:10:23.249753",
-    "updated_at": "2026-01-08T16:10:23.249759"
+    "updated_at": "2026-01-08T16:10:23.249759",
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "a97f06ae-319e-4cfd-8025-aea5a21908cf": {
     "document_id": "a97f06ae-319e-4cfd-8025-aea5a21908cf",
@@ -1848,7 +1945,9 @@
         }
       ],
       "version": 2
-    }
+    },
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   },
   "787570f1-5dd6-4483-8ddc-4ab210d614f1": {
     "document_id": "787570f1-5dd6-4483-8ddc-4ab210d614f1",
@@ -1868,6 +1967,8 @@
         }
       ],
       "version": 2
-    }
+    },
+    "vector_store_type": "faiss",
+    "text_index": "faiss-shared"
   }
 }

@@ -1457,21 +1457,31 @@ class RetrievalEngine:
         
         # Auto-adjust semantic weight for contact-related queries (always adjust if keywords found)
         # QA DATA: Contact queries often fail → need VERY aggressive keyword matching
+        # QA FINDING: 70-90% information retrieved → need higher k and disable reranking
+        is_contact_query = False
         if found_keywords and search_mode == 'hybrid':
+            is_contact_query = True
             # For contact-related queries, use VERY LOW semantic weight (QA-driven)
             original_semantic_weight = semantic_weight if semantic_weight is not None else 0.7
             semantic_weight = 0.1  # Increased from 0.35 to 0.1 (90% keyword!) for contact queries
             logger.info(f"🔧 AUTO-ADJUSTED semantic_weight {original_semantic_weight:.2f} -> {semantic_weight:.2f} for contact keywords: {found_keywords} [QA-driven]")
             
             # Also increase k for contact queries to ensure we find scattered contact info
+            # QA DATA: 70-90% info retrieved with k=40 → increase to k=50 minimum
             if k is None:
                 k = ARISConfig.DEFAULT_RETRIEVAL_K
-            if k < 30:
+            if k < 40:  # Increased threshold from 30 to 40
                 original_k = k
-                k = max(40, k * 1.5)  # At least 40 chunks for contact queries
-                logger.info(f"🔧 AUTO-INCREASED k: {original_k} → {int(k)} for contact query [QA-driven]")
+                k = max(50, k * 1.5)  # At least 50 chunks (increased from 40) for contact queries
+                logger.info(f"🔧 AUTO-INCREASED k: {original_k} → {int(k)} for contact query [QA-driven: 70-90% issue]")
         
         keyword_weight = 1.0 - semantic_weight
+        
+        # QA FIX: Increase temperature for contact queries to improve synthesis of scattered information
+        if is_contact_query:
+            original_temperature = temperature if temperature is not None else ARISConfig.DEFAULT_TEMPERATURE
+            temperature = max(0.3, original_temperature)  # At least 0.3 for contact queries
+            logger.info(f"🌡️ AUTO-INCREASED temperature: {original_temperature:.1f} → {temperature:.1f} for contact query (better synthesis) [QA-driven: 70-90% issue]")
         
         query_start_time = time_module.time()
         # [NEW] Track request ID on instance for sub-methods to use
@@ -1813,7 +1823,8 @@ class RetrievalEngine:
                                 use_hybrid_search=use_hybrid_search,
                                 semantic_weight=semantic_weight,
                                 keyword_weight=keyword_weight,
-                                search_mode=search_mode
+                                search_mode=search_mode,
+                                disable_reranking=is_contact_query  # Disable for contact queries (QA fix)
                             )
                             all_chunks.extend(sub_chunks)
                             logger.info(f"Retrieved {len(sub_chunks)} chunks for sub-query: {sub_query[:50]}...")
@@ -4210,7 +4221,8 @@ Answer:"""
         search_mode: str,
         active_sources: List[str] = None,
         alternate_query: Optional[str] = None,  # For dual-language search (original language query)
-        filter_language: Optional[str] = None   # Filter results by language
+        filter_language: Optional[str] = None,   # Filter results by language
+        disable_reranking: bool = False  # Disable reranking (e.g., for contact queries)
     ) -> List:
         """
         Retrieves chunks with optional Reranking (FlashRank) for higher accuracy.
@@ -4233,9 +4245,13 @@ Answer:"""
         """
         # 1. Expand retrieval window for Reranking
         # Retrieve 4x chunks to give Reranker candidates to choose from
+        # QA FIX: Disable reranking for contact queries (may drop relevant chunks)
         initial_k = k
-        if self.ranker:
+        if self.ranker and not disable_reranking:
             initial_k = k * 4
+            logger.debug(f"Reranking enabled: expanding k from {k} to {initial_k}")
+        elif disable_reranking:
+            logger.info(f"🚫 Reranking DISABLED for this query (e.g., contact query to preserve all relevant chunks)")
         
         # 2. Get Raw Candidates (with dual-language support)
         relevant_docs = self._retrieve_chunks_raw(
@@ -4251,8 +4267,8 @@ Answer:"""
             filter_language=filter_language    # Pass language filter
         )
         
-        # 3. Rerank Results
-        if self.ranker and relevant_docs:
+        # 3. Rerank Results (only if not disabled)
+        if self.ranker and relevant_docs and not disable_reranking:
             try:
                 # Prepare Rerank Request
                 passages = [
@@ -5767,9 +5783,17 @@ Answer:"""
                         sim_pct = citation.get('similarity_percentage')
                         sim_pct_str = f"{sim_pct:.2f}%" if sim_pct is not None else "N/A"
                         logger.info(f"Citation {idx+1}: score={sim_score:.4f}, calculated_percentage={sim_pct_str}, source={citation.get('source', 'Unknown')[:40]}")
+                    
+                    # VALIDATION: First citation should never be 0% unless there's an error
+                    if idx == 0 and citation.get('similarity_percentage', 0) == 0.0 and sim_score is not None:
+                        logger.error(f"⚠️ BUG DETECTED: First citation has 0% similarity despite having score={sim_score:.4f}. "
+                                   f"best={best_score:.4f}, worst={worst_score:.4f}, range={score_range:.4f}. "
+                                   f"Forcing to 100% to prevent misleading display.")
+                        citation['similarity_percentage'] = 100.0
                 else:
                     citation['similarity_percentage'] = 0.0  # No score = 0%
-                    logger.warning(f"Citation {citation.get('id')} has no similarity_score, setting percentage to 0%")
+                    logger.warning(f"⚠️ Citation {citation.get('id')} has no similarity_score (None), setting percentage to 0%. "
+                                 f"This may indicate a problem with retrieval or reranking. Citation source: {citation.get('source', 'Unknown')[:50]}")
         else:
             # No scores available - set all to 0%
             logger.warning("No similarity scores available for percentage calculation")

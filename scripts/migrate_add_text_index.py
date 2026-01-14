@@ -87,6 +87,12 @@ def migrate_text_index(dry_run=False):
         doc_name = doc_meta.get('document_name', 'Unknown')
         vector_store_type = doc_meta.get('vector_store_type', 'unknown')
         
+        # Fix unknown vector_store_type (assume FAISS for old documents)
+        if vector_store_type == 'unknown' or not vector_store_type:
+            vector_store_type = 'faiss'  # System is using FAISS
+            if not dry_run:
+                doc_meta['vector_store_type'] = 'faiss'
+        
         # Determine text_index based on vector store type
         if vector_store_type.lower() == 'opensearch':
             # For OpenSearch, use per-document index
