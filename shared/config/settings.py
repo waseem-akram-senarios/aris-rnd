@@ -43,8 +43,8 @@ class ARISConfig:
     DEFAULT_CHUNK_SIZE: int = int(os.getenv('DEFAULT_CHUNK_SIZE', '512'))  # Increased for Reranking context
     DEFAULT_CHUNK_OVERLAP: int = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '128'))  # Keep significant overlap
     
-    # Retrieval Configuration - Optimized for best results and UX
-    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '15'))  # Increased for Reranking
+    # Retrieval Configuration - Optimized for cross-language accuracy (R&D tested)
+    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '20'))  # Increased from 15 for cross-language
     DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '60'))
     DEFAULT_MMR_LAMBDA: float = float(os.getenv('DEFAULT_MMR_LAMBDA', '0.35'))
     DEFAULT_USE_MMR: bool = os.getenv('DEFAULT_USE_MMR', 'false').lower() == 'true'  # Disable MMR for Reranking
@@ -54,10 +54,10 @@ class ARISConfig:
     DEFAULT_TEMPERATURE: float = float(os.getenv('DEFAULT_TEMPERATURE', '0.0'))  # Maximum determinism
     DEFAULT_MAX_TOKENS: int = int(os.getenv('DEFAULT_MAX_TOKENS', '2000'))  # Increased for detailed answers
     
-    # Hybrid Search Configuration - Enabled by default for better accuracy
+    # Hybrid Search Configuration - Optimized for cross-language queries (R&D tested)
     DEFAULT_USE_HYBRID_SEARCH: bool = os.getenv('DEFAULT_USE_HYBRID_SEARCH', 'true').lower() == 'true'
-    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.75'))
-    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.25'))
+    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.4'))  # Reduced from 0.75 for cross-language
+    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.6'))  # Increased from 0.25 for cross-language
     DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'hybrid')  # 'semantic', 'keyword', 'hybrid'
     
     # Agentic RAG Configuration - Optimized for comprehensive synthesis
