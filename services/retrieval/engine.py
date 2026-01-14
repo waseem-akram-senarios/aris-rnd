@@ -1534,7 +1534,7 @@ class RetrievalEngine:
                     # FIX 3: Increase k for cross-language queries
                     # Cross-language retrieval needs more chunks because similarity scores are less accurate
                     if k is None:
-                        k = ARISConfig.DEFAULT_K
+                        k = ARISConfig.DEFAULT_RETRIEVAL_K
                     if k < 15:
                         original_k = k
                         k = max(20, k * 2)  # At least 20 chunks, or double the original k
