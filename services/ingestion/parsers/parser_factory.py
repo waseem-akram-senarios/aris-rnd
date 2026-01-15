@@ -225,9 +225,61 @@ class ParserFactory:
                         result = parser.parse(file_path, file_content, progress_callback=progress_callback)
                     else:
                         result = parser.parse(file_path, file_content)
+                    
                     # Verify the result actually used the requested parser
                     if hasattr(result, 'parser_used') and result.parser_used.lower() != preferred_parser.lower():
                         logger.warning(f"⚠️ [STEP 2.2] ParserFactory: Requested {preferred_parser} but got {result.parser_used}")
+                    
+                    # AUTO-FALLBACK TO OCR: If non-OCR parser extracted 0 text from a PDF with pages,
+                    # automatically try an OCR-capable parser (this handles scanned PDFs)
+                    text_length = len(result.text) if result.text else 0
+                    page_count = getattr(result, 'pages', 0) or 0
+                    is_non_ocr_parser = preferred_parser.lower() in ('pymupdf', 'pdfplumber')
+                    
+                    if is_non_ocr_parser and text_length < 100 and page_count > 0:
+                        logger.warning(f"⚠️ [STEP 2.2] ParserFactory: {preferred_parser} extracted only {text_length} chars from {page_count} pages - likely a scanned PDF")
+                        logger.info(f"[STEP 2.2] ParserFactory: Auto-falling back to OCR parser (Docling) for scanned PDF...")
+                        
+                        # Try Docling first (has built-in OCR)
+                        try:
+                            from .docling_parser import DoclingParser
+                            ocr_parser = DoclingParser()
+                            if ocr_parser.is_available():
+                                logger.info(f"[STEP 2.2] ParserFactory: Attempting Docling OCR for scanned PDF...")
+                                if 'progress_callback' in inspect.signature(ocr_parser.parse).parameters:
+                                    ocr_result = ocr_parser.parse(file_path, file_content, progress_callback=progress_callback)
+                                else:
+                                    ocr_result = ocr_parser.parse(file_path, file_content)
+                                
+                                ocr_text_length = len(ocr_result.text) if ocr_result.text else 0
+                                if ocr_text_length > text_length:
+                                    logger.info(f"✅ [STEP 2.2] ParserFactory: Docling OCR extracted {ocr_text_length:,} chars (vs {text_length} from {preferred_parser})")
+                                    ocr_result.parser_used = 'docling'  # Mark as Docling
+                                    return ocr_result
+                        except Exception as docling_err:
+                            logger.warning(f"⚠️ [STEP 2.2] ParserFactory: Docling OCR failed: {docling_err}")
+                        
+                        # Try OCRmyPDF as fallback
+                        try:
+                            from .ocrmypdf_parser import OCRmyPDFParser
+                            ocr_parser = OCRmyPDFParser(languages=language)
+                            if ocr_parser.is_available():
+                                logger.info(f"[STEP 2.2] ParserFactory: Attempting OCRmyPDF for scanned PDF...")
+                                if 'progress_callback' in inspect.signature(ocr_parser.parse).parameters:
+                                    ocr_result = ocr_parser.parse(file_path, file_content, progress_callback=progress_callback)
+                                else:
+                                    ocr_result = ocr_parser.parse(file_path, file_content)
+                                
+                                ocr_text_length = len(ocr_result.text) if ocr_result.text else 0
+                                if ocr_text_length > text_length:
+                                    logger.info(f"✅ [STEP 2.2] ParserFactory: OCRmyPDF extracted {ocr_text_length:,} chars (vs {text_length} from {preferred_parser})")
+                                    return ocr_result
+                        except Exception as ocr_err:
+                            logger.warning(f"⚠️ [STEP 2.2] ParserFactory: OCRmyPDF failed: {ocr_err}")
+                        
+                        # If all OCR attempts failed, return original result with warning
+                        logger.warning(f"⚠️ [STEP 2.2] ParserFactory: OCR fallback failed, returning original {preferred_parser} result")
+                    
                     logger.info(f"✅ [STEP 2.2] ParserFactory: {preferred_parser} parser completed successfully")
                     return result
                 except Exception as e:
