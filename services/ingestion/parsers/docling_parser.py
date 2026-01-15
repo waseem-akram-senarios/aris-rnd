@@ -770,9 +770,11 @@ class DoclingParser(BaseParser):
                         from docling.document_converter import PdfFormatOption
                         
                         # Configure OCR for maximum accuracy
+                        # Note: lang field is required - use "auto" for automatic detection
                         ocr_options = OcrOptions(
                             do_ocr=True,  # Always do OCR
                             force_full_page_ocr=True,  # OCR entire page for better accuracy
+                            lang="auto",  # Auto-detect language for best results
                         )
                         
                         # Configure PDF pipeline for maximum accuracy
@@ -794,9 +796,9 @@ class DoclingParser(BaseParser):
                         logger.info("Docling: ✅ Using OPTIMIZED DocumentConverter for maximum accuracy")
                         logger.info("Docling: OCR=force_full_page, TableStructure=ACCURATE, ImageGeneration=ON")
                         
-                    except ImportError as import_err:
-                        # Fallback to default if advanced options not available
-                        logger.warning(f"Docling: Advanced options not available ({import_err}), using defaults")
+                    except (ImportError, TypeError, Exception) as config_err:
+                        # Fallback to default if advanced options not available or config fails
+                        logger.warning(f"Docling: Advanced options failed ({config_err}), using defaults")
                         converter = self.DocumentConverter()
                         logger.info("Docling: ✅ Using default DocumentConverter (OCR enabled by default)")
                     
