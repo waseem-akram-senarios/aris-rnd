@@ -102,24 +102,37 @@ class LlamaScanParser(BaseParser):
         return file_path.lower().endswith(".pdf") and self.is_available()
 
     def _build_prompt(self) -> str:
+        # OPTIMIZED FOR MAXIMUM ACCURACY
         prompt = (
-            "Task: Transcribe the page from the provided PDF page image.\n\n"
-            "- Reproduce the text exactly as it appears, without adding or omitting anything.\n"
-            "- Use Markdown to preserve formatting (headings, bold, italics, lists, tables).\n"
-            "- Do not include page numbers.\n"
+            "Task: Perform highly accurate text extraction from this PDF page image.\n\n"
+            "CRITICAL ACCURACY REQUIREMENTS:\n"
+            "1. Transcribe ALL text exactly as it appears - every word, number, and symbol.\n"
+            "2. Preserve the EXACT formatting: headings, bold, italics, lists, tables, columns.\n"
+            "3. Maintain reading order: left-to-right, top-to-bottom for each column/section.\n"
+            "4. Include ALL text from headers, footers, sidebars, and captions.\n"
+            "5. For tables: preserve structure using Markdown table syntax.\n"
+            "6. For multi-column layouts: transcribe each column separately.\n"
+            "7. Include special characters, symbols, and mathematical notation.\n"
+            "8. Do NOT summarize, paraphrase, or skip any content.\n"
+            "9. Do NOT include page numbers.\n\n"
         )
 
         if self.include_diagrams:
             prompt += (
-                "- If the page contains an image or diagram, describe it in detail. "
-                "Enclose the description in an <image> tag.\n"
+                "IMAGE/DIAGRAM HANDLING:\n"
+                "- For EACH image or diagram, provide a DETAILED description.\n"
+                "- Describe: what it shows, any text/labels, relationships, and meaning.\n"
+                "- Include any data values, measurements, or annotations visible.\n"
+                "- Enclose the description in an <image> tag.\n"
+                "- Example: <image>Flow chart showing 4 steps: Input → Process → Validation → Output</image>\n\n"
             )
         else:
-            prompt += "- Ignore images/diagrams and focus only on textual content.\n"
+            prompt += "- Focus only on textual content, ignore images/diagrams.\n\n"
 
         if self.custom_instructions:
-            prompt += f"\nAdditional instructions:\n{self.custom_instructions}\n"
+            prompt += f"ADDITIONAL REQUIREMENTS:\n{self.custom_instructions}\n\n"
 
+        prompt += "Begin transcription now:"
         return prompt
 
     def _ollama_generate(self, image_png_bytes: bytes, prompt: str) -> str:
@@ -218,12 +231,17 @@ class LlamaScanParser(BaseParser):
                         detailed_message=f"Llama-Scan: Transcribing page {page_num}/{total_pages}...",
                     )
 
-                matrix = fitz.Matrix(1, 1)
-                pix = page.get_pixmap(matrix=matrix)
+                # OPTIMIZED FOR MAXIMUM ACCURACY - Higher resolution for better OCR
+                # Default to 2x zoom for better text recognition (if width not specified)
+                default_zoom = 2.0  # 2x resolution for better accuracy
+                matrix = fitz.Matrix(default_zoom, default_zoom)
+                pix = page.get_pixmap(matrix=matrix, alpha=False)  # No alpha channel for cleaner image
+                
+                # If specific width requested, recalculate zoom
                 if self.width and pix.width and self.width > 0 and pix.width != self.width:
-                    zoom = self.width / float(pix.width)
+                    zoom = self.width / float(pix.width) * default_zoom
                     matrix = fitz.Matrix(zoom, zoom)
-                    pix = page.get_pixmap(matrix=matrix)
+                    pix = page.get_pixmap(matrix=matrix, alpha=False)
 
                 page_text = self._ollama_generate(pix.tobytes("png"), prompt).strip()
                 if page_text:

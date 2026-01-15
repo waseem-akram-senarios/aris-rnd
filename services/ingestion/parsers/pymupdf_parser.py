@@ -163,10 +163,34 @@ class PyMuPDFParser(BaseParser):
                         page = doc[page_num]
                         
                         # Extract text blocks with bounding boxes for citation support
+                        # OPTIMIZED FOR MAXIMUM ACCURACY
                         try:
-                            # Get text blocks with positions
-                            text_dict = page.get_text("dict")
-                            page_text = page.get_text()
+                            # Get text blocks with positions (using "dict" for structure)
+                            text_dict = page.get_text("dict", flags=self.fitz.TEXT_PRESERVE_WHITESPACE | self.fitz.TEXT_PRESERVE_LIGATURES | self.fitz.TEXT_PRESERVE_IMAGES)
+                            # Get plain text with all options for maximum extraction
+                            # Use "text" mode with sort=True for better reading order
+                            page_text = page.get_text("text", sort=True)
+                            
+                            # If page_text is empty, try alternative extraction methods
+                            if not page_text.strip():
+                                # Try "blocks" mode which can sometimes get more text
+                                blocks_text = page.get_text("blocks")
+                                if blocks_text:
+                                    page_text = "\n".join([b[4] for b in blocks_text if len(b) > 4 and isinstance(b[4], str)])
+                            
+                            # Still empty? Try rawdict for hidden text layers
+                            if not page_text.strip():
+                                raw_dict = page.get_text("rawdict")
+                                if raw_dict and "blocks" in raw_dict:
+                                    text_parts_raw = []
+                                    for block in raw_dict["blocks"]:
+                                        if "lines" in block:
+                                            for line in block["lines"]:
+                                                if "spans" in line:
+                                                    for span in line["spans"]:
+                                                        if "text" in span:
+                                                            text_parts_raw.append(span["text"])
+                                    page_text = " ".join(text_parts_raw)
                             
                             # Check if this page took too long
                             page_elapsed = time.time() - page_start_time

@@ -754,16 +754,52 @@ class DoclingParser(BaseParser):
                     
                     # Enable OCR for image-based PDFs
                     # Verify OCR models are available first
-                        ocr_models_available = self._verify_ocr_models()
-                        if not ocr_models_available:
-                            logger.warning("Docling: OCR models may not be available - OCR may fail")
-                            logger.warning("Docling: Run 'docling download-models' to install OCR models")
+                    ocr_models_available = self._verify_ocr_models()
+                    if not ocr_models_available:
+                        logger.warning("Docling: OCR models may not be available - OCR may fail")
+                        logger.warning("Docling: Run 'docling download-models' to install OCR models")
+                    
+                    # OPTIMIZED FOR MAXIMUM ACCURACY
+                    # Configure Docling with explicit OCR settings for best results
+                    try:
+                        from docling.datamodel.pipeline_options import (
+                            PdfPipelineOptions,
+                            OcrOptions,
+                            TableFormerMode,
+                        )
+                        from docling.document_converter import PdfFormatOption
                         
-                    # IMPORTANT: The default DocumentConverter in Docling has OCR enabled by default
-                    # We don't need to configure it - just use the default converter
-                    # Docling automatically uses OCR when processing documents with images
-                    converter = self.DocumentConverter()
-                    logger.info("Docling: ✅ Using default DocumentConverter (OCR enabled by default)")
+                        # Configure OCR for maximum accuracy
+                        ocr_options = OcrOptions(
+                            do_ocr=True,  # Always do OCR
+                            force_full_page_ocr=True,  # OCR entire page for better accuracy
+                        )
+                        
+                        # Configure PDF pipeline for maximum accuracy
+                        pipeline_options = PdfPipelineOptions(
+                            do_ocr=True,  # Enable OCR
+                            ocr_options=ocr_options,
+                            do_table_structure=True,  # Extract table structure
+                            table_structure_options={"mode": TableFormerMode.ACCURATE},  # Accurate table mode
+                            generate_page_images=True,  # Generate page images for better extraction
+                            generate_picture_images=True,  # Extract images
+                        )
+                        
+                        # Create converter with optimized options
+                        converter = self.DocumentConverter(
+                            format_options={
+                                "pdf": PdfFormatOption(pipeline_options=pipeline_options)
+                            }
+                        )
+                        logger.info("Docling: ✅ Using OPTIMIZED DocumentConverter for maximum accuracy")
+                        logger.info("Docling: OCR=force_full_page, TableStructure=ACCURATE, ImageGeneration=ON")
+                        
+                    except ImportError as import_err:
+                        # Fallback to default if advanced options not available
+                        logger.warning(f"Docling: Advanced options not available ({import_err}), using defaults")
+                        converter = self.DocumentConverter()
+                        logger.info("Docling: ✅ Using default DocumentConverter (OCR enabled by default)")
+                    
                     logger.info("Docling: OCR will automatically process images in the document")
                     
                     logger.info("Docling: [Phase 2/4] DocumentConverter initialized with OCR, starting conversion...")

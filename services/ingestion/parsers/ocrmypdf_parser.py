@@ -257,19 +257,24 @@ class OCRmyPDFParser(BaseParser):
                 logger.info(f"[OCRmyPDF] Using Tesseract languages: {validated_languages}")
                 
                 # Build OCR options based on script type
+                # OPTIMIZED FOR MAXIMUM ACCURACY
                 ocr_kwargs = {
                     "input_file": input_path,
                     "output_file": output_path,
-                    "deskew": True,              # Correct skewed pages
-                    "clean": True,               # Remove noise
-                    "rotate_pages": True,        # Fix rotated pages
-                    "skip_text": True,           # Skip pages with existing text (faster)
+                    "deskew": True,              # Correct skewed pages for better OCR
+                    "clean": True,               # Remove noise/artifacts
+                    "rotate_pages": True,        # Auto-correct page rotation
+                    "rotate_pages_threshold": 2.0,  # Lower threshold = more sensitive rotation detection
+                    "skip_text": False,          # DON'T skip - process ALL pages for max accuracy
                     "language": validated_languages,  # Language support (validated)
                     "output_type": "pdf",        # Output as searchable PDF
-                    "optimize": 1,               # Light optimization
-                    "force_ocr": False,          # Only OCR pages without text
+                    "optimize": 0,               # No optimization - preserve quality
+                    "force_ocr": True,           # Force OCR on ALL pages for maximum accuracy
+                    "redo_ocr": True,            # Redo even existing OCR text for better results
                     "progress_bar": False,       # Disable progress bar (we have our own)
-                    "tesseract_timeout": 180.0,  # 3 minute timeout per page
+                    "tesseract_timeout": 300.0,  # 5 minute timeout per page (increased for accuracy)
+                    "tesseract_non_ocr_timeout": 300.0,  # Timeout for non-OCR operations
+                    "unpaper_args": ["--deskew-scan-direction", "left,right"],  # Better deskew
                 }
                 
                 # Add image-dpi for better quality with CJK/complex scripts
