@@ -770,11 +770,11 @@ class DoclingParser(BaseParser):
                         from docling.document_converter import PdfFormatOption
                         
                         # Configure OCR for maximum accuracy
-                        # Note: lang field is required - use "auto" for automatic detection
+                        # Note: lang field is required and must be a list of language codes
                         ocr_options = OcrOptions(
                             do_ocr=True,  # Always do OCR
                             force_full_page_ocr=True,  # OCR entire page for better accuracy
-                            lang="auto",  # Auto-detect language for best results
+                            lang=["en", "es", "de", "fr", "it", "pt"],  # Common languages for multilingual OCR
                         )
                         
                         # Configure PDF pipeline for maximum accuracy
