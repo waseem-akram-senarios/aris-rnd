@@ -1452,13 +1452,24 @@ class RetrievalEngine:
                                   'número', 'numero']  # Additional Spanish variants
         found_keywords = [kw for kw in specific_info_keywords if kw in question_lower]
         
+        # QA FIX: Also detect safety/cleaning/maintenance queries that need comprehensive retrieval
+        # These queries often have critical information scattered across multiple sections (e.g., solvents, procedures)
+        safety_keywords = ['clean', 'cleaning', 'solvent', 'alcohol', 'acetone', 'isopropanol', 'ethanol',
+                          'maintenance', 'procedure', 'safety', 'warning', 'caution', 'damage', 'prevent',
+                          'limpieza', 'solvente', 'mantenimiento', 'procedimiento', 'seguridad',  # Spanish
+                          'advertencia', 'precaución', 'daño', 'prevenir', 'surface', 'heating', 'layer']
+        found_safety_keywords = [kw for kw in safety_keywords if kw in question_lower]
+        
         # Log for debugging
         logger.info(f"🔍 Contact keyword check: search_mode={search_mode}, found_keywords={found_keywords}")
+        logger.info(f"🔍 Safety keyword check: found_safety_keywords={found_safety_keywords}")
         
         # Auto-adjust semantic weight for contact-related queries (always adjust if keywords found)
         # QA DATA: Contact queries often fail → need VERY aggressive keyword matching
         # QA FINDING: 70-90% information retrieved → need higher k and disable reranking
         is_contact_query = False
+        is_safety_query = len(found_safety_keywords) > 0
+        
         if found_keywords and search_mode == 'hybrid':
             is_contact_query = True
             # For contact-related queries, use VERY LOW semantic weight (QA-driven)
@@ -1474,6 +1485,24 @@ class RetrievalEngine:
                 original_k = k
                 k = max(50, k * 1.5)  # At least 50 chunks (increased from 40) for contact queries
                 logger.info(f"🔧 AUTO-INCREASED k: {original_k} → {int(k)} for contact query [QA-driven: 70-90% issue]")
+        
+        # QA FIX: Increase k for safety/cleaning queries to ensure comprehensive coverage
+        # QA FINDING: Missing solvent information (alcohol, acetone, isopropanol) in answers
+        if is_safety_query and search_mode == 'hybrid':
+            if k is None:
+                k = ARISConfig.DEFAULT_RETRIEVAL_K
+            if k < 30:
+                original_k = k
+                k = max(40, k * 1.5)  # At least 40 chunks for safety queries
+                logger.info(f"🔧 AUTO-INCREASED k: {original_k} → {int(k)} for safety/cleaning query [QA-driven: missing solvent info]")
+            
+            # Slightly reduce semantic weight for safety queries (more keyword matching)
+            if semantic_weight is None:
+                semantic_weight = 0.7
+            if semantic_weight > 0.3:
+                original_semantic_weight = semantic_weight
+                semantic_weight = 0.25  # 75% keyword for safety queries
+                logger.info(f"🔧 AUTO-ADJUSTED semantic_weight {original_semantic_weight:.2f} -> {semantic_weight:.2f} for safety keywords: {found_safety_keywords} [QA-driven]")
         
         keyword_weight = 1.0 - semantic_weight
         
@@ -1576,6 +1605,7 @@ class RetrievalEngine:
                     if not response_language:
                         response_language = detector.get_language_name(detected_language)
                         self.ui_config['response_language'] = response_language
+                        self.ui_config['query_language'] = detected_language  # Store for citation language matching
                         needs_response_translation = True
                         logger.info(f"Retrieval: Will translate response back to {response_language}")
                 else:
@@ -1584,6 +1614,7 @@ class RetrievalEngine:
                     if not response_language:
                         response_language = "English"
                         self.ui_config['response_language'] = response_language
+                        self.ui_config['query_language'] = "en"  # Store for citation language matching
                         logger.info(f"Retrieval: Auto response language set to English (detected: {detected_language})")
             except Exception as e:
                 logger.warning(f"Retrieval: Auto-translation failed, using original query: {e}")
@@ -1601,6 +1632,7 @@ class RetrievalEngine:
                 if detected_language:
                     response_language = detector.get_language_name(detected_language)
                     self.ui_config['response_language'] = response_language
+                    self.ui_config['query_language'] = detected_language  # Store for citation language matching
                     logger.info(f"🌐 [AUTO-RESPONSE-LANG] Detected query language: {detected_language} → {response_language}")
                 else:
                     # Fallback to English if detection fails
@@ -2548,7 +2580,12 @@ class RetrievalEngine:
                     image_info = f"Image {image_num} on Page {page}"  # page is always set
             
             # Generate context-aware snippet using query
-            snippet_clean = self._generate_context_snippet(chunk_text, question, max_length=500)
+            # ENHANCEMENT: Pass query language to prefer English text for English queries (fixes QA citation language mismatch)
+            query_language = self.ui_config.get('query_language', None)
+            snippet_clean = self._generate_context_snippet(
+                chunk_text, question, max_length=500,
+                query_language=query_language, doc_metadata=doc.metadata
+            )
             
             # Build source location description (certification field)
             # Page is always guaranteed to be set (>= 1) at this point
@@ -4893,7 +4930,10 @@ Answer:"""
     def _extract_page_number(self, doc, chunk_text: str) -> tuple:
         """
         Extract and validate page number from multiple sources with enhanced accuracy.
-        PRIORITY: Character position matching > source_page > page_blocks > page > text markers
+        PRIORITY: Image metadata > Character position matching > source_page > page_blocks > page > text markers
+        
+        ENHANCED: Now prioritizes image metadata (page from image_ref or image_page) for OCR content.
+        This fixes QA issue where page numbers were incorrect for image-transcribed content.
         
         Args:
             doc: Document object with metadata
@@ -4901,7 +4941,7 @@ Answer:"""
         
         Returns:
             Tuple of (page_number, confidence_score)
-            confidence: 1.0 (char position) > 1.0 (source_page) > 0.9 (page_blocks) > 0.8 (page) > 0.6 (text marker) > 0.4 (fallback)
+            confidence: 1.0 (image metadata) > 1.0 (char position) > 1.0 (source_page) > 0.9 (page_blocks) > 0.8 (page) > 0.6 (text marker) > 0.4 (fallback)
         """
         import re
         from typing import Optional
@@ -4936,7 +4976,45 @@ Answer:"""
                 return False
             return True
         
-        # PRIORITY 1: Character position-based matching (HIGHEST ACCURACY)
+        # PRIORITY 0: Image metadata page (HIGHEST PRIORITY for OCR content)
+        # QA FIX: Content from transcribed images should use the image's page number
+        # Check if this chunk is from an image (OCR content)
+        image_ref = doc.metadata.get('image_ref', None)
+        image_page = doc.metadata.get('image_page', None)
+        has_image = doc.metadata.get('has_image', False)
+        image_index = doc.metadata.get('image_index', None)
+        
+        # If chunk has image metadata, prioritize the image's page number
+        if image_ref and isinstance(image_ref, dict):
+            img_page = image_ref.get('page')
+            if img_page and validate_against_doc(img_page):
+                logger.info(f"📸 [IMAGE PAGE] Page {img_page} from image_ref metadata (image {image_ref.get('image_index', '?')})")
+                return int(img_page), 1.0
+        
+        if image_page and validate_against_doc(image_page):
+            logger.info(f"📸 [IMAGE PAGE] Page {image_page} from image_page metadata")
+            return int(image_page), 1.0
+        
+        # Check for OCR content markers in text that might indicate image source
+        # Pattern: "Image X on Page Y" or "Image X on page Y"
+        image_page_match = re.search(r'Image\s+\d+\s+on\s+[Pp]age\s+(\d+)', chunk_text)
+        if image_page_match:
+            img_page_num = int(image_page_match.group(1))
+            if validate_against_doc(img_page_num):
+                logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} extracted from image marker text")
+                return img_page_num, 0.95
+        
+        # Pattern: "page X" at the start of OCR content (common in transcribed images)
+        if has_image or image_index is not None or '<!-- image -->' in chunk_text:
+            # This is likely image content - look for page references
+            page_ref_match = re.search(r'[Pp]age\s+(\d+)', chunk_text[:100])  # Check first 100 chars
+            if page_ref_match:
+                img_page_num = int(page_ref_match.group(1))
+                if validate_against_doc(img_page_num):
+                    logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} from early page reference in image content")
+                    return img_page_num, 0.9
+        
+        # PRIORITY 1: Character position-based matching (HIGHEST ACCURACY for text content)
         start_char = doc.metadata.get('start_char', None)
         end_char = doc.metadata.get('end_char', None)
         page_blocks = doc.metadata.get('page_blocks', [])
@@ -5178,22 +5256,39 @@ Answer:"""
         union = words1.union(words2)
         return len(intersection) / len(union) if union else 0.0
     
-    def _generate_context_snippet(self, chunk_text: str, query: str, max_length: int = 500) -> str:
+    def _generate_context_snippet(self, chunk_text: str, query: str, max_length: int = 500, 
+                                    query_language: str = None, doc_metadata: dict = None) -> str:
         """
         Generate snippet centered around query-relevant content using dynamic semantic matching.
         Generic solution that works for all document types without hardcoded mappings.
+        
+        ENHANCED: Now supports language-aware snippet selection to prefer English text
+        when the query is in English (fixes cross-language citation mismatch issue).
         
         Args:
             chunk_text: Full chunk text content
             query: User query to find relevant portions
             max_length: Maximum snippet length in characters
+            query_language: Language of the query ('en', 'es', etc.) for language-aware snippets
+            doc_metadata: Document metadata containing 'text_english' for translated content
         
         Returns:
-            Cleaned snippet with query-relevant content
+            Cleaned snippet with query-relevant content in the appropriate language
         """
         import re
         from scripts.setup_logging import get_logger
         logger = get_logger("aris_rag.rag_system")
+        
+        # ENHANCEMENT: For English queries on non-English documents, prefer English text if available
+        # This fixes the QA issue where Spanish source text was shown for English queries
+        if query_language and query_language.lower() in ('en', 'english'):
+            # Try to get English translation from metadata
+            if doc_metadata and doc_metadata.get('text_english'):
+                english_text = doc_metadata.get('text_english', '')
+                if english_text and len(english_text) > 50:
+                    # Use English translation for the snippet if query is in English
+                    logger.debug(f"Using English translation for snippet (query_language={query_language})")
+                    chunk_text = english_text
         
         # Clean chunk text - remove page markers
         cleaned_text = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
@@ -6022,7 +6117,12 @@ Answer:"""
                     image_info = f"Image {doc.metadata.get('image_index', '?')} on Page {page}"  # page is always set (>= 1)
             
             # Generate context-aware snippet using original question
-            snippet_clean = self._generate_context_snippet(chunk_text, question, max_length=500)
+            # ENHANCEMENT: Pass query language to prefer English text for English queries (fixes QA citation language mismatch)
+            query_language = self.ui_config.get('query_language', None)
+            snippet_clean = self._generate_context_snippet(
+                chunk_text, question, max_length=500,
+                query_language=query_language, doc_metadata=doc.metadata
+            )
             
             # Build source location - page is always guaranteed to be set (>= 1) at this point
             source_location_parts = [f"Page {page}"]  # Always include page
