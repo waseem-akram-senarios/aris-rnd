@@ -128,6 +128,48 @@ class S3Service:
         except ClientError as e:
             logger.error(f"❌ S3 delete failed: {str(e)}")
             return False
+    
+    def delete_prefix(self, prefix: str) -> int:
+        """
+        Delete all objects with the given prefix from S3.
+        Useful for deleting all files in a document folder.
+        
+        Args:
+            prefix: S3 key prefix (e.g., 'documents/doc-123/')
+            
+        Returns:
+            Number of objects deleted
+        """
+        if not self.enabled or not self.client:
+            return 0
+            
+        try:
+            # List all objects with the prefix
+            paginator = self.client.get_paginator('list_objects_v2')
+            deleted_count = 0
+            
+            for page in paginator.paginate(Bucket=self.bucket_name, Prefix=prefix):
+                objects = page.get('Contents', [])
+                if not objects:
+                    continue
+                
+                # Delete objects in batches of 1000 (S3 limit)
+                delete_keys = [{'Key': obj['Key']} for obj in objects]
+                
+                if delete_keys:
+                    self.client.delete_objects(
+                        Bucket=self.bucket_name,
+                        Delete={'Objects': delete_keys}
+                    )
+                    deleted_count += len(delete_keys)
+                    logger.info(f"🗑️ Deleted {len(delete_keys)} objects with prefix: {prefix}")
+            
+            logger.info(f"✅ Total deleted: {deleted_count} objects with prefix s3://{self.bucket_name}/{prefix}")
+            return deleted_count
+            
+        except ClientError as e:
+            logger.error(f"❌ S3 delete_prefix failed for {prefix}: {str(e)}")
+            return 0
 
     def get_public_url(self, s3_key: str) -> str:
         """Get the public URL for an S3 object (if bucket is public)."""

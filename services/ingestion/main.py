@@ -187,47 +187,64 @@ async def ingest_document(
         # Determine parser preference for duplicate check
         effective_parser = parser_preference.lower() if parser_preference else 'pymupdf'
         
-        # Check if document with same name and parser already exists
-        existing_doc = registry.find_document_by_name_and_parser(file.filename, effective_parser)
+        # ENHANCED DUPLICATE DETECTION: Check for ALL documents with the same filename
+        # This ensures only ONE copy of a document exists (regardless of parser)
+        all_existing_docs = registry.find_documents_by_name(file.filename)
         is_update_flag = False
         old_document_id = None
         effective_old_index_name = old_index_name  # Use the one from request if provided
+        documents_to_delete = []  # Track documents to clean up
         
-        if existing_doc:
-            # Check if content is actually different (by hash)
-            if existing_doc.get('file_hash') == file_hash and not force_update_from_request:
-                # Same exact file and not force update - no need to re-process
-                logger.info(f"POST /ingest - [ReqID: {request_id}] Document '{file.filename}' with parser '{effective_parser}' already exists with identical content. Skipping.")
+        if all_existing_docs:
+            logger.info(f"POST /ingest - [ReqID: {request_id}] Found {len(all_existing_docs)} existing version(s) of '{file.filename}'")
+            
+            # Check for exact match (same content)
+            exact_match = None
+            for existing_doc in all_existing_docs:
+                if existing_doc.get('file_hash') == file_hash:
+                    exact_match = existing_doc
+                    break
+            
+            if exact_match and not force_update_from_request:
+                # Same exact file and not force update - return existing
+                logger.info(f"POST /ingest - [ReqID: {request_id}] Document '{file.filename}' already exists with identical content. Skipping.")
                 return DocumentMetadata(
-                    document_id=existing_doc['document_id'],
+                    document_id=exact_match['document_id'],
                     document_name=file.filename,
                     status="already_exists",
-                    message=f"Document already exists with ID {existing_doc['document_id']}. Content is identical."
+                    message=f"Document already exists with ID {exact_match['document_id']}. Content is identical."
                 )
-            elif existing_doc.get('file_hash') == file_hash and force_update_from_request:
-                # Same exact file but force update requested - update anyway
-                is_update_flag = True
-                old_document_id = existing_doc['document_id']
-                effective_old_index_name = existing_doc.get('index_name') or effective_old_index_name
-                logger.info(f"POST /ingest - [ReqID: {request_id}] Force updating document '{file.filename}' (ID: {old_document_id}) - identical content but force update requested")
-                document_id = old_document_id
-            else:
-                # Same name/parser but different content - UPDATE existing
-                is_update_flag = True
-                old_document_id = existing_doc['document_id']
-                effective_old_index_name = existing_doc.get('index_name') or effective_old_index_name
-                logger.info(f"POST /ingest - [ReqID: {request_id}] Updating existing document '{file.filename}' (ID: {old_document_id}) with new content")
-                
-                # Use the existing document ID for the update
-                document_id = old_document_id
-        else:
-            # Check if same filename exists with any parser
-            all_versions = registry.find_documents_by_name(file.filename)
-            if all_versions:
-                logger.info(f"POST /ingest - [ReqID: {request_id}] Document '{file.filename}' exists with other parsers: {[d.get('parser_used') for d in all_versions]}. Creating new version with parser '{effective_parser}'")
             
-            # Generate new document ID for new document
+            # DELETE ALL EXISTING VERSIONS before uploading new one
+            # This ensures only ONE copy exists in S3 and RAG
+            logger.info(f"POST /ingest - [ReqID: {request_id}] 🗑️ Deleting {len(all_existing_docs)} existing version(s) of '{file.filename}' before re-upload")
+            
+            for existing_doc in all_existing_docs:
+                old_doc_id = existing_doc.get('document_id')
+                old_index = existing_doc.get('text_index') or existing_doc.get('index_name')
+                old_parser = existing_doc.get('parser_used', 'unknown')
+                
+                logger.info(f"POST /ingest - [ReqID: {request_id}] 🗑️ Scheduling deletion of: {old_doc_id} (parser: {old_parser}, index: {old_index})")
+                documents_to_delete.append({
+                    'document_id': old_doc_id,
+                    'index_name': old_index,
+                    'parser_used': old_parser,
+                    'document_name': file.filename
+                })
+                
+                # Track for cleanup during processing
+                if old_index:
+                    effective_old_index_name = old_index  # Use the last one for cleanup reference
+            
+            is_update_flag = True  # Mark as update since we're replacing existing
+            
+            # Generate new document ID for the replacement
             document_id = str(uuid.uuid4())
+            logger.info(f"POST /ingest - [ReqID: {request_id}] New document ID: {document_id} (replacing {len(all_existing_docs)} old version(s))")
+        else:
+            # No existing document - create new
+            document_id = str(uuid.uuid4())
+            logger.info(f"POST /ingest - [ReqID: {request_id}] Creating new document: {document_id}")
         
         # Save locally for reference/fallback
         upload_dir = "data/uploads"
@@ -237,9 +254,49 @@ async def ingest_document(
         with open(file_path, "wb") as f:
             f.write(content)
         
+        # DELETE OLD DOCUMENTS before processing new one (ensures single copy)
+        if documents_to_delete:
+            logger.info(f"POST /ingest - [ReqID: {request_id}] 🗑️ Starting cleanup of {len(documents_to_delete)} old version(s)...")
+            
+            for old_doc in documents_to_delete:
+                old_doc_id = old_doc['document_id']
+                old_index_name = old_doc.get('index_name')
+                old_doc_name = old_doc.get('document_name')
+                
+                try:
+                    # 1. Delete from vector store (OpenSearch or FAISS)
+                    if old_index_name and processor and hasattr(processor, '_cleanup_old_index_data'):
+                        logger.info(f"POST /ingest - [ReqID: {request_id}] 🗑️ Cleaning vector store for {old_doc_id} (index: {old_index_name})")
+                        processor._cleanup_old_index_data(old_doc_id, old_index_name, old_doc_name)
+                    
+                    # 2. Delete from S3 if enabled
+                    if hasattr(processor, 'rag_system') and hasattr(processor.rag_system, 's3_service'):
+                        s3_service = processor.rag_system.s3_service
+                        if s3_service and s3_service.enabled:
+                            try:
+                                # Delete document folder from S3
+                                s3_prefix = f"documents/{old_doc_id}/"
+                                logger.info(f"POST /ingest - [ReqID: {request_id}] 🗑️ Deleting S3 objects with prefix: {s3_prefix}")
+                                s3_service.delete_prefix(s3_prefix)
+                            except Exception as s3_err:
+                                logger.warning(f"POST /ingest - [ReqID: {request_id}] ⚠️ S3 cleanup failed for {old_doc_id}: {s3_err}")
+                    
+                    # 3. Remove from registry
+                    logger.info(f"POST /ingest - [ReqID: {request_id}] 🗑️ Removing {old_doc_id} from registry")
+                    registry.remove_document(old_doc_id)
+                    
+                    logger.info(f"POST /ingest - [ReqID: {request_id}] ✅ Successfully deleted old document: {old_doc_id}")
+                    
+                except Exception as cleanup_err:
+                    logger.error(f"POST /ingest - [ReqID: {request_id}] ❌ Error cleaning up {old_doc_id}: {cleanup_err}")
+                    # Continue with upload even if cleanup fails
+        
         # Immediate registry registration for status tracking
         try:
             # Registry already initialized above for duplicate check
+            # Get first old doc for metadata reference (if any)
+            first_old_doc = all_existing_docs[0] if all_existing_docs else {}
+            
             registration_data = {
                 'document_id': document_id,
                 'document_name': file.filename,
@@ -247,16 +304,17 @@ async def ingest_document(
                 'progress': 0.0,
                 'file_hash': file_hash,
                 'is_update': is_update_flag,
-                'created_at': time_module.time() if not is_update_flag else existing_doc.get('created_at', time_module.time())
+                'created_at': time_module.time() if not is_update_flag else first_old_doc.get('created_at', time_module.time())
             }
             
-            if is_update_flag:
+            if is_update_flag and first_old_doc:
                 registration_data['previous_version'] = {
-                    'chunks_created': existing_doc.get('chunks_created'),
-                    'parser_used': existing_doc.get('parser_used'),
-                    'updated_at': existing_doc.get('updated_at')
+                    'chunks_created': first_old_doc.get('chunks_created'),
+                    'parser_used': first_old_doc.get('parser_used'),
+                    'updated_at': first_old_doc.get('updated_at')
                 }
-                registration_data['update_reason'] = 'content_changed' if not force_update_from_request else 'force_update'
+                registration_data['update_reason'] = 'replacing_all_versions' if len(documents_to_delete) > 1 else ('content_changed' if not force_update_from_request else 'force_update')
+                registration_data['replaced_versions'] = len(documents_to_delete)
             
             registry.add_document(document_id, registration_data)
             
@@ -335,48 +393,85 @@ async def process_document_sync(
         import hashlib
         file_hash = hashlib.md5(content).hexdigest()
         
-        # Check for existing document with same name and parser
+        # ENHANCED DUPLICATE DETECTION: Check for ALL documents with the same filename
         from storage.document_registry import DocumentRegistry
         registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
         
-        # Determine parser preference for duplicate check
+        # Determine parser preference
         effective_parser = parser_preference.lower() if parser_preference else 'pymupdf'
         
-        # Check if document with same name and parser already exists
-        existing_doc = registry.find_document_by_name_and_parser(file.filename, effective_parser)
+        # Check for ALL documents with the same filename (ensures single copy)
+        all_existing_docs = registry.find_documents_by_name(file.filename)
         is_update = False
         old_index_name = None
+        documents_to_delete = []
         
-        if existing_doc and not force_update:
-            # Check if content is actually different (by hash)
-            if existing_doc.get('file_hash') == file_hash:
+        if all_existing_docs:
+            logger.info(f"POST /process - [ReqID: {request_id}] Found {len(all_existing_docs)} existing version(s) of '{file.filename}'")
+            
+            # Check for exact match (same content)
+            exact_match = None
+            for existing_doc in all_existing_docs:
+                if existing_doc.get('file_hash') == file_hash:
+                    exact_match = existing_doc
+                    break
+            
+            if exact_match and not force_update:
                 # Same exact file - return existing without re-processing
                 logger.info(f"POST /process - [ReqID: {request_id}] Document '{file.filename}' already exists with identical content. Returning existing.")
                 return ProcessingResult(
-                    document_id=existing_doc['document_id'],
+                    document_id=exact_match['document_id'],
                     document_name=file.filename,
                     file_size=len(content),
                     file_type=os.path.splitext(file.filename)[1].lower(),
-                    parser_used=existing_doc.get('parser_used', effective_parser),
-                    pages=existing_doc.get('pages', 0),
-                    chunks_created=existing_doc.get('chunks_created', 0),
-                    tokens_extracted=existing_doc.get('tokens_extracted', 0),
-                    extraction_percentage=existing_doc.get('extraction_percentage', 0.0),
-                    confidence=existing_doc.get('confidence', 0.0),
+                    parser_used=exact_match.get('parser_used', effective_parser),
+                    pages=exact_match.get('pages', 0),
+                    chunks_created=exact_match.get('chunks_created', 0),
+                    tokens_extracted=exact_match.get('tokens_extracted', 0),
+                    extraction_percentage=exact_match.get('extraction_percentage', 0.0),
+                    confidence=exact_match.get('confidence', 0.0),
                     processing_time=0.0,
                     success=True,
                     error=None,
                     message="Document already exists with identical content. No re-processing needed."
                 )
-            else:
-                # Different content - update existing
-                is_update = True
-                document_id = existing_doc['document_id']
-                old_index_name = existing_doc.get('index_name')
-                logger.info(f"POST /process - [ReqID: {request_id}] Updating existing document '{file.filename}' (ID: {document_id})")
-        else:
-            # New document
-            document_id = str(uuid.uuid4())
+            
+            # DELETE ALL EXISTING VERSIONS before processing new one
+            logger.info(f"POST /process - [ReqID: {request_id}] 🗑️ Deleting {len(all_existing_docs)} existing version(s) before re-upload")
+            
+            for existing_doc in all_existing_docs:
+                old_doc_id = existing_doc.get('document_id')
+                old_idx = existing_doc.get('text_index') or existing_doc.get('index_name')
+                
+                documents_to_delete.append({
+                    'document_id': old_doc_id,
+                    'index_name': old_idx,
+                    'document_name': file.filename
+                })
+                
+                # Cleanup each old document
+                try:
+                    if old_idx and processor and hasattr(processor, '_cleanup_old_index_data'):
+                        processor._cleanup_old_index_data(old_doc_id, old_idx, file.filename)
+                    
+                    # Delete from S3
+                    if hasattr(processor, 'rag_system') and hasattr(processor.rag_system, 's3_service'):
+                        s3_service = processor.rag_system.s3_service
+                        if s3_service and s3_service.enabled:
+                            s3_service.delete_prefix(f"documents/{old_doc_id}/")
+                    
+                    # Remove from registry
+                    registry.remove_document(old_doc_id)
+                    logger.info(f"POST /process - [ReqID: {request_id}] ✅ Deleted old version: {old_doc_id}")
+                except Exception as cleanup_err:
+                    logger.warning(f"POST /process - [ReqID: {request_id}] ⚠️ Cleanup error for {old_doc_id}: {cleanup_err}")
+            
+            is_update = True
+            old_index_name = documents_to_delete[-1].get('index_name') if documents_to_delete else None
+        
+        # Generate new document ID
+        document_id = str(uuid.uuid4())
+        logger.info(f"POST /process - [ReqID: {request_id}] {'Replacing' if is_update else 'Creating new'} document: {document_id}")
         
         # Save temp
         upload_dir = "data/uploads"
