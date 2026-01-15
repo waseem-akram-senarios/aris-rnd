@@ -270,11 +270,9 @@ class OCRmyPDFParser(BaseParser):
                     "output_type": "pdf",        # Output as searchable PDF
                     "optimize": 0,               # No optimization - preserve quality
                     "force_ocr": True,           # Force OCR on ALL pages for maximum accuracy
-                    "redo_ocr": True,            # Redo even existing OCR text for better results
+                    # Note: redo_ocr is incompatible with deskew, so we use force_ocr instead
                     "progress_bar": False,       # Disable progress bar (we have our own)
                     "tesseract_timeout": 300.0,  # 5 minute timeout per page (increased for accuracy)
-                    "tesseract_non_ocr_timeout": 300.0,  # Timeout for non-OCR operations
-                    "unpaper_args": ["--deskew-scan-direction", "left,right"],  # Better deskew
                 }
                 
                 # Add image-dpi for better quality with CJK/complex scripts
