@@ -603,6 +603,40 @@ async def get_next_available_index(
     return {"index_name": next_name}
 
 
+# --- Admin Endpoints ---
+
+@app.get("/admin/documents/registry-stats")
+async def get_registry_stats(processor: DocumentProcessor = Depends(get_processor)):
+    """Get document registry statistics."""
+    from storage.document_registry import DocumentRegistry
+    registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+    docs = registry.list_documents()
+    
+    stats = {
+        'total_documents': len(docs),
+        'by_status': {},
+        'by_language': {},
+        'by_parser': {},
+        'total_chunks': 0,
+        'total_images': 0
+    }
+    
+    for doc in docs:
+        status = doc.get('status', 'unknown')
+        stats['by_status'][status] = stats['by_status'].get(status, 0) + 1
+        
+        lang = doc.get('language', 'unknown')
+        stats['by_language'][lang] = stats['by_language'].get(lang, 0) + 1
+        
+        parser = doc.get('parser_used', 'unknown')
+        stats['by_parser'][parser] = stats['by_parser'].get(parser, 0) + 1
+        
+        stats['total_chunks'] += doc.get('chunks_created', 0)
+        stats['total_images'] += doc.get('images_stored', 0) or doc.get('image_count', 0)
+    
+    return stats
+
+
 # --- Synchronization Endpoints ---
 
 @app.post("/sync/force")
