@@ -33,7 +33,26 @@ class GatewayService:
         # Compatibility attributes for UI
         self.use_cerebras = ARISConfig.USE_CEREBRAS
         
+        # Registry modification tracking
+        self._registry_mtime = 0
+        
         logger.info(f"Gateway initialized. Ingestion: {self.ingestion_url}, Retrieval: {self.retrieval_url}")
+    
+    def _reload_registry(self):
+        """Reload document registry from disk if modified."""
+        try:
+            registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
+            if os.path.exists(registry_path):
+                current_mtime = os.path.getmtime(registry_path)
+                if current_mtime > self._registry_mtime:
+                    self.document_registry = DocumentRegistry(registry_path)
+                    self._registry_mtime = current_mtime
+                    logger.debug(f"Gateway: Registry reloaded ({len(self.document_registry.list_documents())} docs)")
+                    return True
+            return False
+        except Exception as e:
+            logger.warning(f"Gateway: Could not reload registry: {e}")
+            return False
 
     @property
     def embedding_model(self):

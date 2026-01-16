@@ -3,6 +3,7 @@ Gateway Entrypoint - Orchestrates Ingestion and Retrieval services.
 """
 import os
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
@@ -21,6 +22,7 @@ from shared.schemas import (
     VectorSearchRequest, VectorSearchResponse, IndexMapResponse, IndexMapUpdateRequest
 )
 from .service import GatewayService, create_gateway_service
+from shared.utils.sync_manager import SyncManager, get_sync_manager
 
 logger = setup_logging(
     name="aris_rag.gateway",
@@ -31,21 +33,51 @@ logger = setup_logging(
 load_dotenv()
 
 gateway_service: Optional[GatewayService] = None
+sync_manager: Optional[SyncManager] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown"""
-    global gateway_service
+    global gateway_service, sync_manager
     
     logger.info("=" * 60)
     logger.info("[STARTUP] Initializing ARIS Gateway Service")
     logger.info("=" * 60)
     
+    # Initialize sync manager with service name for tracking
+    sync_manager = get_sync_manager("gateway")
+    logger.info("✅ [STARTUP] Sync Manager initialized")
+    
     gateway_service = create_gateway_service()
+    
+    # Force initial sync on startup
+    sync_manager.force_full_sync()
+    
+    # Register callback to reload gateway's registry on sync
+    def on_sync(result):
+        if gateway_service and (result.get("registry") or result.get("index_map")):
+            try:
+                gateway_service._reload_registry()
+                logger.debug("[gateway] Registry reloaded via sync callback")
+            except Exception as e:
+                logger.warning(f"[gateway] Failed to reload registry in callback: {e}")
+    
+    sync_manager.register_sync_callback(on_sync)
+    
+    # Start background sync task for automatic synchronization
+    try:
+        loop = asyncio.get_event_loop()
+        sync_manager.start_background_sync(loop)
+        logger.info("✅ [STARTUP] Background sync task started")
+    except Exception as e:
+        logger.warning(f"[STARTUP] Could not start async background sync: {e}")
+        sync_manager._start_threaded_sync()
     
     logger.info("✅ [STARTUP] Gateway Service Ready")
     yield
     
+    # Cleanup
+    sync_manager.stop_background_sync()
     logger.info("[SHUTDOWN] Gateway Service Shutting Down")
 
 app = FastAPI(
@@ -62,6 +94,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from fastapi import Request
+
+@app.middleware("http")
+async def auto_sync_middleware(request: Request, call_next):
+    """Middleware to automatically sync state before operations."""
+    request_id = request.headers.get("X-Request-ID", "internal")
+    
+    # Auto-sync before critical operations (queries, document listing)
+    if sync_manager and request.url.path in ["/query", "/documents", "/health", "/sync/status"]:
+        try:
+            sync_manager.check_and_sync()
+        except Exception as e:
+            logger.debug(f"Auto-sync check failed in middleware: {e}")
+    
+    logger.info(f"Gateway: [ReqID: {request_id}] {request.method} {request.url.path}")
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
 
 def get_service() -> GatewayService:
     if gateway_service is None:
@@ -794,6 +846,131 @@ async def delete_index_map_entry_proxy(
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Retrieval service error: {str(e)}")
+
+
+# --- Synchronization Endpoints ---
+
+@app.post("/sync/force")
+async def force_sync(service: GatewayService = Depends(get_service)):
+    """Force full synchronization of all shared state across all services."""
+    global sync_manager
+    if sync_manager is None:
+        raise HTTPException(status_code=500, detail="Sync manager not initialized")
+    
+    try:
+        # Sync gateway service
+        result = sync_manager.force_full_sync()
+        
+        # Also sync downstream services
+        ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://127.0.0.1:8501")
+        retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://127.0.0.1:8502")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Sync ingestion service
+            try:
+                ingestion_result = await client.post(f"{ingestion_url}/sync/force")
+                result["ingestion"] = ingestion_result.json() if ingestion_result.status_code == 200 else {"error": "Failed"}
+            except Exception as e:
+                result["ingestion"] = {"error": str(e)}
+            
+            # Sync retrieval service
+            try:
+                retrieval_result = await client.post(f"{retrieval_url}/sync/force")
+                result["retrieval"] = retrieval_result.json() if retrieval_result.status_code == 200 else {"error": "Failed"}
+            except Exception as e:
+                result["retrieval"] = {"error": str(e)}
+        
+        return {
+            "success": True,
+            "message": "Full synchronization completed across all services",
+            "sync_result": result
+        }
+    except Exception as e:
+        logger.error(f"Error forcing sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sync/status")
+async def get_sync_status(service: GatewayService = Depends(get_service)):
+    """Get current synchronization status across all services."""
+    global sync_manager
+    if sync_manager is None:
+        raise HTTPException(status_code=500, detail="Sync manager not initialized")
+    
+    try:
+        status = sync_manager.get_sync_status()
+        
+        # Add gateway-specific status
+        status["gateway"] = {
+            "document_count": len(service.list_documents()),
+            "registry_accessible": True
+        }
+        
+        # Get status from downstream services
+        ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://127.0.0.1:8501")
+        retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://127.0.0.1:8502")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Get ingestion status
+            try:
+                ingestion_status = await client.get(f"{ingestion_url}/sync/status")
+                status["ingestion"] = ingestion_status.json() if ingestion_status.status_code == 200 else {"error": "Failed"}
+            except Exception as e:
+                status["ingestion"] = {"error": str(e)}
+            
+            # Get retrieval status
+            try:
+                retrieval_status = await client.get(f"{retrieval_url}/sync/status")
+                status["retrieval"] = retrieval_status.json() if retrieval_status.status_code == 200 else {"error": "Failed"}
+            except Exception as e:
+                status["retrieval"] = {"error": str(e)}
+        
+        return {
+            "success": True,
+            "status": status
+        }
+    except Exception as e:
+        logger.error(f"Error getting sync status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sync/check")
+async def check_and_sync(service: GatewayService = Depends(get_service)):
+    """Check for changes and sync if needed across all services."""
+    global sync_manager
+    if sync_manager is None:
+        raise HTTPException(status_code=500, detail="Sync manager not initialized")
+    
+    try:
+        result = sync_manager.check_and_sync()
+        
+        # Also check downstream services
+        ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://127.0.0.1:8501")
+        retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://127.0.0.1:8502")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Check ingestion service
+            try:
+                ingestion_result = await client.post(f"{ingestion_url}/sync/check")
+                result["ingestion"] = ingestion_result.json() if ingestion_result.status_code == 200 else {"error": "Failed"}
+            except Exception as e:
+                result["ingestion"] = {"error": str(e)}
+            
+            # Check retrieval service
+            try:
+                retrieval_result = await client.post(f"{retrieval_url}/sync/check")
+                result["retrieval"] = retrieval_result.json() if retrieval_result.status_code == 200 else {"error": "Failed"}
+            except Exception as e:
+                result["retrieval"] = {"error": str(e)}
+        
+        return {
+            "success": True,
+            "synced": result,
+            "message": "Sync check completed across all services"
+        }
+    except Exception as e:
+        logger.error(f"Error checking sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

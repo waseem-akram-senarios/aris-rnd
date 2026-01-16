@@ -7,6 +7,7 @@ import uuid
 import logging
 import hashlib
 import time as time_module
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional, Dict, Any, List
 from fastapi import BackgroundTasks, FastAPI, UploadFile, File, HTTPException, Form, Depends, Request
@@ -18,6 +19,7 @@ from shared.config.settings import ARISConfig
 from shared.schemas import DocumentMetadata, ProcessingResult
 from .engine import IngestionEngine
 from .processor import DocumentProcessor
+from shared.utils.sync_manager import SyncManager, get_sync_manager
 
 logger = setup_logging(
     name="aris_rag.ingestion",
@@ -30,15 +32,20 @@ load_dotenv()
 # Global instances
 engine: Optional[IngestionEngine] = None
 processor: Optional[DocumentProcessor] = None
+sync_manager: Optional[SyncManager] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup/shutdown"""
-    global engine, processor
+    global engine, processor, sync_manager
     
     logger.info("=" * 60)
     logger.info("[STARTUP] Initializing ARIS Ingestion Service")
     logger.info("=" * 60)
+    
+    # Initialize sync manager with service name for tracking
+    sync_manager = get_sync_manager("ingestion")
+    logger.info("✅ [STARTUP] Sync Manager initialized")
     
     # Initialize engine with ingestion-relevant settings
     engine = IngestionEngine(
@@ -52,9 +59,34 @@ async def lifespan(app: FastAPI):
     # Initialize processor
     processor = DocumentProcessor(engine)
     
+    # Force initial sync on startup
+    sync_manager.force_full_sync()
+    
+    # Register callback to reload engine's index map on sync
+    def on_sync(result):
+        if engine and (result.get("index_map") or result.get("registry")):
+            try:
+                engine._load_document_index_map()
+                logger.debug("[ingestion] Engine index map reloaded via sync callback")
+            except Exception as e:
+                logger.warning(f"[ingestion] Failed to reload index map in callback: {e}")
+    
+    sync_manager.register_sync_callback(on_sync)
+    
+    # Start background sync task for automatic synchronization
+    try:
+        loop = asyncio.get_event_loop()
+        sync_manager.start_background_sync(loop)
+        logger.info("✅ [STARTUP] Background sync task started")
+    except Exception as e:
+        logger.warning(f"[STARTUP] Could not start async background sync: {e}")
+        sync_manager._start_threaded_sync()
+    
     logger.info("✅ [STARTUP] Ingestion Service Ready")
     yield
     
+    # Cleanup
+    sync_manager.stop_background_sync()
     logger.info("[SHUTDOWN] Ingestion Service Shutting Down")
 
 app = FastAPI(
@@ -73,11 +105,28 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def add_request_id(request: Request, call_next):
+async def auto_sync_middleware(request: Request, call_next):
+    """Middleware to automatically sync state before operations."""
     request_id = request.headers.get("X-Request-ID", "internal")
-    logger.info(f"Ingestion: [ReqID: {request_id}] Incoming {request.method} {request.url.path}")
+    
+    # Auto-sync before critical operations
+    if sync_manager and request.url.path in ["/ingest", "/process", "/health", "/status"]:
+        try:
+            sync_manager.check_and_sync()
+        except Exception as e:
+            logger.debug(f"Auto-sync check failed in middleware: {e}")
+    
+    logger.info(f"Ingestion: [ReqID: {request_id}] {request.method} {request.url.path}")
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
+    
+    # Auto-sync after document ingestion operations to propagate changes
+    if sync_manager and request.url.path in ["/ingest", "/process"]:
+        try:
+            sync_manager.force_full_sync()
+        except Exception as e:
+            logger.debug(f"Post-operation sync failed: {e}")
+    
     return response
 
 def get_processor() -> DocumentProcessor:
@@ -552,6 +601,83 @@ async def get_next_available_index(
     """
     next_name = engine.get_next_index_name(base_name)
     return {"index_name": next_name}
+
+
+# --- Synchronization Endpoints ---
+
+@app.post("/sync/force")
+async def force_sync():
+    """Force full synchronization of all shared state."""
+    global sync_manager
+    if sync_manager is None:
+        raise HTTPException(status_code=500, detail="Sync manager not initialized")
+    
+    try:
+        result = sync_manager.force_full_sync()
+        
+        # Also reload engine's index map
+        if engine:
+            engine._load_document_index_map()
+        
+        return {
+            "success": True,
+            "message": "Full synchronization completed",
+            "sync_result": result
+        }
+    except Exception as e:
+        logger.error(f"Error forcing sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/sync/status")
+async def get_sync_status():
+    """Get current synchronization status."""
+    global sync_manager
+    if sync_manager is None:
+        raise HTTPException(status_code=500, detail="Sync manager not initialized")
+    
+    try:
+        status = sync_manager.get_sync_status()
+        
+        # Add engine-specific status
+        if engine:
+            status["engine"] = {
+                "index_map_loaded": hasattr(engine, 'document_index_map'),
+                "index_map_count": len(engine.document_index_map) if hasattr(engine, 'document_index_map') else 0
+            }
+        
+        return {
+            "success": True,
+            "status": status
+        }
+    except Exception as e:
+        logger.error(f"Error getting sync status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sync/check")
+async def check_and_sync():
+    """Check for changes and sync if needed."""
+    global sync_manager
+    if sync_manager is None:
+        raise HTTPException(status_code=500, detail="Sync manager not initialized")
+    
+    try:
+        result = sync_manager.check_and_sync()
+        
+        # If index map was synced, reload in engine
+        if result.get("index_map") and engine:
+            engine._load_document_index_map()
+        
+        return {
+            "success": True,
+            "synced": result,
+            "message": "Sync check completed"
+        }
+    except Exception as e:
+        logger.error(f"Error checking sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
