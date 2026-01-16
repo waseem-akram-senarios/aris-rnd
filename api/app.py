@@ -1598,12 +1598,15 @@ with st.sidebar:
             logger.warning(f"Could not re-initialize container: {e}")
     
     if st.session_state.documents_processed and container:
-        # Get all metrics
-        # Fetch metrics from Gateway Service if available, otherwise use local collector
+        # Get all metrics (sync version for Streamlit UI)
         if hasattr(container.gateway_service, 'get_all_metrics'):
-            all_metrics = container.gateway_service.get_all_metrics()
+            try:
+                all_metrics = container.gateway_service.get_all_metrics()
+            except Exception as e:
+                logger.warning(f"Could not fetch metrics from gateway: {e}")
+                all_metrics = st.session_state.metrics_collector.get_all_metrics() if hasattr(st.session_state, 'metrics_collector') else {}
         else:
-            all_metrics = st.session_state.metrics_collector.get_all_metrics()
+            all_metrics = st.session_state.metrics_collector.get_all_metrics() if hasattr(st.session_state, 'metrics_collector') else {}
             
         processing_stats = all_metrics.get('processing', {})
         query_stats = all_metrics.get('queries', {})

@@ -305,7 +305,7 @@ async def query_images(request: Dict[str, Any], service: GatewayService = Depend
 async def get_system_stats(service: GatewayService = Depends(get_service)):
     """Get overall system statistics"""
     try:
-        return await service.get_all_metrics()
+        return await service.get_all_metrics_async()
     except Exception as e:
         logger.error(f"Error getting system stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error fetching metrics: {str(e)}")
@@ -315,7 +315,7 @@ async def get_system_stats(service: GatewayService = Depends(get_service)):
 async def get_chunk_stats(service: GatewayService = Depends(get_service)):
     """Get chunk-level statistics"""
     try:
-        metrics = await service.get_all_metrics()
+        metrics = await service.get_all_metrics_async()
         return metrics.get("processing", {})
     except Exception as e:
         logger.error(f"Error getting chunk stats: {e}", exc_info=True)

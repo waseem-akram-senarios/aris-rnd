@@ -730,8 +730,8 @@ class GatewayService:
         # This is a no-op for compatibility, but we return True to indicate "success"
         return True
 
-    async def get_all_metrics(self) -> Dict:
-        """Fetch and merge metrics from all services"""
+    async def get_all_metrics_async(self) -> Dict:
+        """Fetch and merge metrics from all services (async version)"""
         # Fetch from Ingestion (processing metrics)
         ingestion_metrics = {}
         try:
@@ -752,7 +752,34 @@ class GatewayService:
         except Exception as e:
             logger.warning(f"Could not fetch retrieval metrics: {e}")
         
-        # Merge metrics
+        return self._merge_metrics(ingestion_metrics, retrieval_metrics)
+    
+    def get_all_metrics(self) -> Dict:
+        """Fetch and merge metrics from all services (sync version for UI)"""
+        # Fetch from Ingestion (processing metrics)
+        ingestion_metrics = {}
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(f"{self.ingestion_url}/metrics")
+                if resp.status_code == 200:
+                    ingestion_metrics = resp.json()
+        except Exception as e:
+            logger.warning(f"Could not fetch ingestion metrics: {e}")
+        
+        # Fetch from Retrieval (query metrics)
+        retrieval_metrics = {}
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(f"{self.retrieval_url}/metrics")
+                if resp.status_code == 200:
+                    retrieval_metrics = resp.json()
+        except Exception as e:
+            logger.warning(f"Could not fetch retrieval metrics: {e}")
+        
+        return self._merge_metrics(ingestion_metrics, retrieval_metrics)
+    
+    def _merge_metrics(self, ingestion_metrics: Dict, retrieval_metrics: Dict) -> Dict:
+        """Merge metrics from ingestion and retrieval services"""
         merged = {
             'processing': ingestion_metrics.get('processing', {}),
             'queries': retrieval_metrics.get('queries', {}),
