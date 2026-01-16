@@ -318,15 +318,21 @@ async def query_images(
 @app.get("/stats")
 async def get_system_stats(service: GatewayService = Depends(get_service)):
     """Get overall system statistics"""
-    # get_all_metrics is synchronous, don't await it
-    return service.get_all_metrics()
+    try:
+        return await service.get_all_metrics()
+    except Exception as e:
+        logger.error(f"Error getting system stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error fetching metrics: {str(e)}")
 
 @app.get("/stats/chunks")
 async def get_chunk_stats(service: GatewayService = Depends(get_service)):
     """Get chunk-level statistics"""
-    # get_all_metrics is synchronous, don't await it
-    metrics = service.get_all_metrics()
-    return metrics.get("processing", {})
+    try:
+        metrics = await service.get_all_metrics()
+        return metrics.get("processing", {})
+    except Exception as e:
+        logger.error(f"Error getting chunk stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error fetching chunk stats: {str(e)}")
 
 @app.get("/sync/status")
 async def sync_status(service: GatewayService = Depends(get_service)):

@@ -730,13 +730,13 @@ class GatewayService:
         # This is a no-op for compatibility, but we return True to indicate "success"
         return True
 
-    def get_all_metrics(self) -> Dict:
-        """Fetch and merge metrics from all services (synchronous for Streamlit compatibility)"""
+    async def get_all_metrics(self) -> Dict:
+        """Fetch and merge metrics from all services"""
         # Fetch from Ingestion (processing metrics)
         ingestion_metrics = {}
         try:
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.get(f"{self.ingestion_url}/metrics")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{self.ingestion_url}/metrics")
                 if resp.status_code == 200:
                     ingestion_metrics = resp.json()
         except Exception as e:
@@ -745,8 +745,8 @@ class GatewayService:
         # Fetch from Retrieval (query metrics)
         retrieval_metrics = {}
         try:
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.get(f"{self.retrieval_url}/metrics")
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{self.retrieval_url}/metrics")
                 if resp.status_code == 200:
                     retrieval_metrics = resp.json()
         except Exception as e:
