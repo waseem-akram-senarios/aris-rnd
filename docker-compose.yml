@@ -20,6 +20,11 @@ services:
       - AWS_OPENSEARCH_ACCESS_KEY_ID=${AWS_OPENSEARCH_ACCESS_KEY_ID:-}
       - AWS_OPENSEARCH_SECRET_ACCESS_KEY=${AWS_OPENSEARCH_SECRET_ACCESS_KEY:-}
       - AWS_OPENSEARCH_REGION=${AWS_OPENSEARCH_REGION:-us-east-2}
+      # Ollama/LlamaScan configuration - connects to host machine's Ollama server
+      - OLLAMA_SERVER_URL=http://host.docker.internal:11434
+      - LLAMA_SCAN_MODEL=${LLAMA_SCAN_MODEL:-llava:latest}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8501:8501"
     volumes:

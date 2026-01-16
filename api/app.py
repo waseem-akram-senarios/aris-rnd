@@ -465,6 +465,13 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
                 
                 # Process document with error handling
                 try:
+                    # Ensure document_processor is initialized
+                    if st.session_state.document_processor is None:
+                        # Initialize ServiceContainer if not already done
+                        if 'service_container' not in st.session_state or st.session_state.service_container is None:
+                            st.session_state.service_container = ServiceContainer()
+                        st.session_state.document_processor = st.session_state.service_container.document_processor
+                    
                     # Show processing status immediately
                     is_update = file_info.get('is_update', False)
                     old_index_name = file_info.get('old_index_name')
@@ -1380,36 +1387,18 @@ with st.sidebar:
     # Store in session state for use in Document Library section
     st.session_state.vector_store_choice = vector_store_choice
     
-    opensearch_domain = None
-    opensearch_index = None
+    # OpenSearch configuration is handled automatically - no user input needed
+    # Domain and index names are auto-configured from environment/settings
+    # Per-document indexes are created automatically (aris-doc-{document_id})
+    opensearch_config = ARISConfig.get_opensearch_config()
+    opensearch_domain = opensearch_config.get('domain') or 'intelycx-waseem-os'
+    opensearch_index = opensearch_config.get('index') or 'aris-rag-index'
     
     if vector_store_choice == "OpenSearch":
-        # Get default domain from shared config
-        opensearch_config = ARISConfig.get_opensearch_config()
-        default_domain = opensearch_config['domain'] or 'intelycx-waseem-os'
-        opensearch_domains = [
-            "intelycx-waseem-os",  # Default working domain
-            "intelycx-os-dev",
-            "intelycx",
-            "intelycx-os-demo",
-            "intelycx-os-qa",
-            "intelycx-os-common"
-        ]
-        # Find index of default domain, or use 0 if not found
-        default_index = 0
-        if default_domain in opensearch_domains:
-            default_index = opensearch_domains.index(default_domain)
-        opensearch_domain = st.selectbox(
-            "OpenSearch Domain:",
-            opensearch_domains,
-            index=default_index,
-            help="Select the OpenSearch domain to use for storing embeddings"
-        )
-        opensearch_index = st.text_input(
-            "OpenSearch Index Name:",
-            value=opensearch_config['index'] or "aris-rag-index",
-            help="Name of the OpenSearch index (will be created if it doesn't exist)"
-        )
+        # Show auto-configured settings (read-only info)
+        st.success(f"☁️ **OpenSearch Auto-Configured**")
+        st.caption(f"Domain: `{opensearch_domain}` | Default Index: `{opensearch_index}`")
+        st.caption("📇 Each document gets its own index automatically (e.g., `aris-doc-policy-manual`)")
         
         # Check if credentials are available
         from dotenv import load_dotenv
