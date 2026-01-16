@@ -206,7 +206,8 @@ class GatewayService:
         document_id: Optional[str] = None,
         response_language: Optional[str] = None,
         filter_language: Optional[str] = None,
-        auto_translate: bool = False
+        auto_translate: bool = False,
+        active_sources: Optional[List[str]] = None  # NEW: Explicit active_sources parameter
     ) -> Dict:
         """
         Compatibility method for UI - proxies query_with_rag to Retrieval Service.
@@ -214,8 +215,14 @@ class GatewayService:
         """
         import uuid
         
+        # If active_sources explicitly passed, use it; otherwise use instance-level setting
+        if active_sources is not None:
+            self._active_sources = active_sources
+            logger.info(f"Gateway: active_sources explicitly set to: {active_sources}")
+        
         request_id = str(uuid.uuid4())
         logger.info(f"Gateway: [ReqID: {request_id}] Starting query_with_rag for question: '{question[:50]}...'")
+        logger.info(f"Gateway: [ReqID: {request_id}] Document filter (active_sources): {self._active_sources}")
         
         # Build payload with all parameters
         payload = {
@@ -248,13 +255,20 @@ class GatewayService:
         payload["auto_translate"] = auto_translate
             
         # Add active_sources to ensure strict filtering in Retrieval Service
+        # CRITICAL: Always send active_sources to properly clear filters on "All Documents"
         if self._active_sources:
             payload["active_sources"] = self._active_sources
+            logger.info(f"Gateway: [ReqID: {request_id}] Filtering to specific documents: {self._active_sources}")
             # If only one source, also set document_id for backward compatibility
             if not document_id and len(self._active_sources) == 1:
                 payload["document_id"] = self._active_sources[0]
         elif document_id:
             payload["active_sources"] = [document_id]
+            logger.info(f"Gateway: [ReqID: {request_id}] Filtering to document_id: {document_id}")
+        else:
+            # IMPORTANT: Explicitly send empty list to clear any previous filter in Retrieval Service
+            payload["active_sources"] = []
+            logger.info(f"Gateway: [ReqID: {request_id}] 📚 ALL DOCUMENTS mode - no filter applied")
         
         async with httpx.AsyncClient(timeout=120.0) as client:
             try:

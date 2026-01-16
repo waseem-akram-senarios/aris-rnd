@@ -62,6 +62,24 @@ if 'active_sources' not in st.session_state:
 if 'active_loaded_docs' not in st.session_state:
     st.session_state.active_loaded_docs = []
 
+# AUTO-INITIALIZE: For OpenSearch, enable queries immediately if documents exist in registry
+# This allows querying the independent retrieval service without having to "load" documents first
+if not st.session_state.documents_processed:
+    try:
+        existing_docs = st.session_state.document_registry.list_documents()
+        if existing_docs and len(existing_docs) > 0:
+            # Check if using OpenSearch (independent retrieval)
+            vector_store_type = ARISConfig.VECTOR_STORE_TYPE.lower()
+            if vector_store_type == 'opensearch':
+                # Auto-initialize ServiceContainer for OpenSearch
+                if 'service_container' not in st.session_state:
+                    st.session_state.service_container = ServiceContainer()
+                st.session_state.documents_processed = True
+                st.session_state.vectorstore_loaded = True
+                logger.info(f"Auto-initialized for OpenSearch: {len(existing_docs)} documents available for querying")
+    except Exception as e:
+        logger.warning(f"Could not auto-initialize: {e}")
+
 def process_uploaded_files(uploaded_files, use_cerebras, parser_preference, 
                           embedding_model, openai_model, cerebras_model,
                           vector_store_type, opensearch_domain, opensearch_index,
@@ -971,18 +989,23 @@ with st.sidebar:
             st.divider()
             available_sources = sorted({doc.get('document_name', 'Unknown') for doc in existing_docs})
             selected_single = st.selectbox(
-                "Select one document for Q&A",
-                options=["(None)"] + available_sources,
+                "Select Document for Q&A",
+                options=["📚 All Documents"] + available_sources,
                 index=0,
-                help="Pick one document to load for Q&A."
+                help="Select a specific document to query, or 'All Documents' to search across all uploaded documents."
             )
-            selected_sources = [] if selected_single == "(None)" else [selected_single]
+            selected_sources = [] if selected_single == "📚 All Documents" else [selected_single]
             
-            # Auto-clear active_sources when "(None)" is selected
-            if selected_single == "(None)":
+            # Auto-clear active_sources when "All Documents" is selected
+            if selected_single == "📚 All Documents":
                 if container:
-                    container.gateway_service.active_sources = None  # Clear filter
+                    container.gateway_service.active_sources = None  # Clear filter for all documents
                 st.session_state.active_sources = []
+            else:
+                # Set active source when a specific document is selected
+                if container:
+                    container.gateway_service.active_sources = selected_sources
+                st.session_state.active_sources = selected_sources
 
             # Buttons for per-document actions
             col_load, col_clear = st.columns(2)
@@ -1125,7 +1148,7 @@ with st.sidebar:
                 active_docs = container.gateway_service.active_sources
                 if active_docs:
                     st.info(f"📄 **Active Document:** {', '.join(active_docs)}\n\n"
-                            f"Queries will only search within this document. Select '(None)' to search all documents.")
+                            f"Queries will only search within this document. Select '📚 All Documents' to search all documents.")
             elif st.session_state.active_loaded_docs:
                 st.success(f"✅ Loaded for Q&A: {', '.join(st.session_state.active_loaded_docs)}")
                 try:
@@ -3262,14 +3285,27 @@ if st.session_state.documents_processed and container:
                         )
     
 else:
-    # If documents are stored but not loaded, guide user to load selected docs
+    # If documents are stored but not loaded, guide user
     if 'document_registry' in st.session_state:
         existing_docs = st.session_state.document_registry.list_documents()
         if existing_docs and not st.session_state.documents_processed:
-            st.warning(
-                f"📚 You have {len(existing_docs)} stored document(s). "
-                f"Go to the sidebar → Document Library → pick documents → click **Load Selected Documents** to start Q&A."
-            )
+            # Try to auto-enable for OpenSearch
+            vector_store_type = ARISConfig.VECTOR_STORE_TYPE.lower()
+            if vector_store_type == 'opensearch':
+                # Auto-initialize for OpenSearch
+                try:
+                    if 'service_container' not in st.session_state:
+                        st.session_state.service_container = ServiceContainer()
+                    st.session_state.documents_processed = True
+                    st.session_state.vectorstore_loaded = True
+                    st.rerun()  # Refresh to show query interface
+                except Exception as e:
+                    st.warning(f"Could not connect to retrieval service: {e}")
+            else:
+                st.warning(
+                    f"📚 You have {len(existing_docs)} stored document(s). "
+                    f"Go to the sidebar → Document Library → pick documents → click **Load Selected Documents** to start Q&A."
+                )
         else:
             st.info("👆 Please upload and process documents using the sidebar to start asking questions.")
     else:

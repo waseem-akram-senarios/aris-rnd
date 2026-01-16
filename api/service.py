@@ -122,12 +122,23 @@ class ServiceContainer:
         document_id: Optional[str] = None,
         response_language: Optional[str] = None,
         filter_language: Optional[str] = None,
-        auto_translate: bool = False
+        auto_translate: bool = False,
+        active_sources: Optional[List[str]] = None  # NEW: Document filtering
     ) -> Dict:
         """Query Gateway with full RAG parameters"""
+        # Get active_sources from parameter or gateway_service
+        effective_sources = active_sources or self.gateway_service.active_sources
+        if effective_sources:
+            logger.info(f"[UI] ServiceContainer: Query filtered to documents: {effective_sources}")
+        else:
+            logger.info(f"[UI] ServiceContainer: Query across ALL documents")
+        
         logger.info(f"[UI] ServiceContainer: Proxying full RAG query to Gateway: {question[:50]}...")
         try:
             async def _query():
+                # Pass active_sources explicitly to gateway service
+                logger.info(f"[UI] ServiceContainer: Calling gateway with active_sources={effective_sources}")
+                
                 return await self.gateway_service.query_with_rag(
                     question=question,
                     k=k,
@@ -141,7 +152,8 @@ class ServiceContainer:
                     document_id=document_id,
                     response_language=response_language,
                     filter_language=filter_language,
-                    auto_translate=auto_translate
+                    auto_translate=auto_translate,
+                    active_sources=effective_sources  # CRITICAL: Pass explicitly
                 )
             
             try:

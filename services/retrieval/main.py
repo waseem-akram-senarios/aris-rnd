@@ -138,6 +138,8 @@ async def query_rag(
     try:
         # Determine active sources for filtering
         active_sources = query_request.active_sources
+        logger.info(f"POST /query - [ReqID: {request_id}] active_sources from request: {active_sources}")
+        logger.info(f"POST /query - [ReqID: {request_id}] document_id from request: {query_request.document_id}")
         
         # If document_id is provided but no active_sources, use document_id as the filter
         if not active_sources and query_request.document_id:

@@ -208,8 +208,23 @@ class IngestionEngine:
         Assigns accurate page numbers and other metadata to chunks.
         Uses page_blocks from original_metadata to find the correct page for each chunk offset.
         Optimized for large documents with 100,000+ blocks.
+        
+        ENHANCED: Prioritizes image metadata for image-transcribed content to ensure correct page citations.
         """
         page_blocks = original_metadata.get('page_blocks', [])
+        
+        # Build image page mapping from image references if available
+        image_page_map = {}  # Map image_index -> page
+        image_refs = original_metadata.get('image_refs', [])
+        if not image_refs:
+            # Try to extract from page_blocks that have image metadata
+            for block in page_blocks:
+                if isinstance(block, dict) and block.get('type') == 'image':
+                    img_idx = block.get('image_index')
+                    img_page = block.get('page') or block.get('image_page')
+                    if img_idx is not None and img_page is not None:
+                        image_page_map[img_idx] = img_page
+        
         if not page_blocks:
             # If no blocks, but page is in metadata, use it as fallback for all chunks
             fallback_page = original_metadata.get('page') or original_metadata.get('source_page')
@@ -228,7 +243,31 @@ class IngestionEngine:
         num_blocks = len(page_blocks)
         
         for chunk in chunks:
-            # If chunk already has a valid page number (from DocumentProcessor's page-level processing), use it
+            # PRIORITY 1: Check if chunk has image metadata - use image's page number
+            chunk_image_idx = chunk.metadata.get('image_index')
+            if chunk_image_idx is not None and chunk_image_idx in image_page_map:
+                # This chunk is from an image - use image's page number
+                img_page = image_page_map[chunk_image_idx]
+                chunk.metadata['page'] = img_page
+                chunk.metadata['source_page'] = img_page
+                chunk.metadata['image_page'] = img_page
+                chunk.metadata['has_image'] = True
+                chunk.metadata['page_extraction_method'] = 'image_metadata'
+                continue
+            
+            # PRIORITY 2: Check for image_ref in chunk metadata
+            image_ref = chunk.metadata.get('image_ref')
+            if image_ref and isinstance(image_ref, dict):
+                img_page = image_ref.get('page') or image_ref.get('image_page')
+                if img_page:
+                    chunk.metadata['page'] = img_page
+                    chunk.metadata['source_page'] = img_page
+                    chunk.metadata['image_page'] = img_page
+                    chunk.metadata['has_image'] = True
+                    chunk.metadata['page_extraction_method'] = 'image_ref'
+                    continue
+            
+            # PRIORITY 3: If chunk already has a valid page number (from DocumentProcessor's page-level processing), use it
             if 'page' in chunk.metadata and chunk.metadata['page']:
                 # Ensure source_page is also set
                 if 'source_page' not in chunk.metadata:

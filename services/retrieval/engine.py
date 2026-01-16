@@ -1519,8 +1519,21 @@ class RetrievalEngine:
         req_id = self.current_request_id
         
         # Determine active sources for this request
+        # CRITICAL: Handle empty list explicitly to support "All Documents" mode
         if active_sources is None:
+            # No parameter passed - use instance-level setting
             active_sources = self.active_sources
+            logger.info(f"📄 [ACTIVE_SOURCES] Using instance filter: {active_sources}")
+        elif active_sources == []:
+            # Empty list explicitly passed - this means "ALL DOCUMENTS" mode
+            # MUST clear instance-level filter to prevent stale values
+            self.active_sources = None
+            active_sources = None
+            logger.info(f"📚 [ACTIVE_SOURCES] ALL DOCUMENTS mode - filter cleared")
+        else:
+            # Specific documents passed - sync instance-level setting
+            self.active_sources = active_sources
+            logger.info(f"📄 [ACTIVE_SOURCES] Set document filter: {active_sources}")
             
         # Store UI configuration for citation extraction and LLM calls
         self.ui_config = {
@@ -2334,8 +2347,13 @@ class RetrievalEngine:
                 raise
 
         # If UI selected specific documents, filter results to those sources (strict filtering with robust matching)
-        # Skip this for OpenSearch with per-document indexes (already isolated by index)
-        if active_sources and not (self.vector_store_type == "opensearch" and self.document_index_map):
+        # CRITICAL: Always apply post-retrieval filter to prevent document mixing (OpenSearch index isolation is not guaranteed)
+        if active_sources:
+            logger.info(f"🔒 [DOC_FILTER] Applying strict document filter: {active_sources}")
+            # Log sources BEFORE filtering
+            pre_filter_sources = set(doc.metadata.get('source', 'Unknown') for doc in relevant_docs)
+            logger.info(f"🔒 [DOC_FILTER] PRE-FILTER sources ({len(relevant_docs)} docs): {pre_filter_sources}")
+            
             allowed_sources = set(active_sources)
             # Also create normalized versions for case-insensitive matching
             allowed_sources_normalized = {s.lower().strip() if s else "" for s in allowed_sources if s}
@@ -2384,6 +2402,11 @@ class RetrievalEngine:
                 doc for doc in relevant_docs 
                 if matches_source(doc.metadata.get('source', ''), doc.page_content[:200] if hasattr(doc, 'page_content') else '')
             ]
+            
+            # Log filtering results
+            post_filter_sources = set(doc.metadata.get('source', 'Unknown') for doc in filtered_docs)
+            logger.info(f"🔒 [DOC_FILTER] POST-FILTER sources ({len(filtered_docs)} docs): {post_filter_sources}")
+            logger.info(f"🔒 [DOC_FILTER] Removed {len(relevant_docs) - len(filtered_docs)} docs from other documents")
             
             # Validate: Ensure NO documents from other sources slipped through
             invalid_sources = set()
@@ -3644,27 +3667,47 @@ class RetrievalEngine:
                 for content_info in contents:
                     # Only add citation if it's from the OpenSearch images index
                     if content_info.get('source') == 'opensearch_images':
-                        page = content_info.get('page', 1)
+                        stored_page = content_info.get('page', 0)  # Don't default to 1
                         # Get image_number from content_info (explicit) or fallback
                         img_idx = content_info.get('image_number', 1)
                         ocr_text = content_info.get('ocr_text', '') or content_info.get('full_chunk', '')
                         
-                        # CRITICAL: Try to extract correct page from OCR text
-                        # Many documents have "DOCNAME Page X" at the end of OCR
-                        if (page is None or page == 0) and ocr_text:
-                            import re
-                            # Pattern: "DOCNAME Page X" at end (most reliable - actual page marker)
-                            page_match = re.search(r'Page\s+(\d+)\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
-                            if page_match:
-                                extracted_page = int(page_match.group(1))
-                                if extracted_page > 0:
-                                    page = extracted_page
-                                    logger.info(f"📄 Extracted page {page} from OCR text (end pattern)")
-                            # NOTE: Do NOT use "Figure X" as page - Figure numbers are NOT page numbers!
+                        # CRITICAL: Always try to extract correct page from OCR text
+                        # Page markers in text are MORE RELIABLE than stored metadata
+                        # (stored metadata often has wrong default value of 1)
+                        import re
+                        page = None
                         
-                        # Ensure valid values
+                        if ocr_text:
+                            # PRIORITY 1: "--- Page X ---" markers (most reliable)
+                            page_markers = re.findall(r'---\s*Page\s+(\d+)\s*---', ocr_text)
+                            if page_markers:
+                                page = int(page_markers[0])
+                                logger.info(f"📄 [IMAGE CITATION] Page {page} from '--- Page X ---' marker (found {len(page_markers)} markers)")
+                            
+                            # PRIORITY 2: "Page X" at line end
+                            if page is None:
+                                page_match = re.search(r'Page\s+(\d+)\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
+                                if page_match:
+                                    page = int(page_match.group(1))
+                                    logger.info(f"📄 [IMAGE CITATION] Page {page} from 'Page X' at line end")
+                            
+                            # PRIORITY 3: "Page X" anywhere (but not Figure X)
+                            if page is None:
+                                page_match = re.search(r'\bPage\s+(\d+)\b', ocr_text, re.IGNORECASE)
+                                if page_match:
+                                    page = int(page_match.group(1))
+                                    logger.info(f"📄 [IMAGE CITATION] Page {page} from 'Page X' in text")
+                        
+                        # PRIORITY 4: Use stored page only if > 1 (page 1 is often wrong default)
+                        if page is None and stored_page and stored_page > 1:
+                            page = stored_page
+                            logger.info(f"📄 [IMAGE CITATION] Page {page} from stored metadata")
+                        
+                        # Fallback to 1 only as last resort
                         if page is None or page == 0:
-                            page = 1
+                            page = stored_page if stored_page else 1
+                            logger.warning(f"📄 [IMAGE CITATION] Using fallback page {page} (no markers found)")
                         if img_idx is None or img_idx == 0:
                             img_idx = 1
                         
@@ -4027,12 +4070,12 @@ IMPORTANT: If the context includes a "Document Metadata" section, use it to answ
 CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content.
 
 CITATION RULES:
-1. For EVERY technical claim, fact, or specification you provide, you MUST include a citation.
-2. Citations MUST follow this exact format: [Source X: filename (Page Y)].
-3. Source numbers (X), filenames, and page numbers (Y) are provided in the context headers: [Source X: filename (Page Y)].
-4. If information spans multiple sources, cite all of them: [Source 1: docA.pdf (Page 5), Source 2: docB.pdf (Page 12)].
-5. ALWAYS use the page number provided in the context header. This is the authoritative page number.
-6. Citations must be placed at the end of the sentence or paragraph they support.
+1. For EVERY claim or fact, include a citation using ONLY the source number: [Source 1], [Source 2], etc.
+2. DO NOT include page numbers or filenames in the answer text - these appear in the References section.
+3. If information spans multiple sources, cite all: [Source 1, Source 2].
+4. Place citations at the end of the sentence or paragraph they support.
+5. WRONG: "[Source: Policy Manual (Page 6)]" - CORRECT: "[Source 1]"
+6. The user will see page numbers in the References section below your answer.
 
 When asked:
 - "what is in image X" or "what information is in image X"
@@ -4197,12 +4240,11 @@ MULTILINGUAL INSTRUCTIONS:
         prompt = f"""You are a precise technical assistant. Synthesize information from the provided context to answer the question. Be specific and accurate.{language_instruction}
 
 CITATION RULES:
-1. For EVERY technical claim, fact, or specification you provide, you MUST include a citation.
-2. Citations MUST follow this exact format: [Source X: filename (Page Y)].
-3. Source numbers (X), filenames, and page numbers (Y) are provided in the context headers: [Source X: filename (Page Y)].
-4. If information spans multiple sources, cite all of them: [Source 1: docA.pdf (Page 5), Source 2: docB.pdf (Page 12)].
-5. ALWAYS use the page number provided in the context header.
-6. Citations must be placed at the end of the sentence or paragraph they support.
+1. For EVERY claim or fact, include a citation using ONLY the source number: [Source 1], [Source 2], etc.
+2. DO NOT include page numbers or filenames in the answer - these appear in the References section.
+3. If information spans multiple sources, cite all: [Source 1, Source 2].
+4. Place citations at the end of the sentence or paragraph they support.
+5. WRONG: "[Source: filename (Page X)]" - CORRECT: "[Source 1]"
 
 CRITICAL: DO NOT add greetings, signatures, or closing statements. DO NOT repeat phrases. End your answer when you have provided the information.
 
@@ -4592,8 +4634,9 @@ Answer:"""
             relevant_docs = retriever.get_relevant_documents(query)
         
         # Filter by active sources if set (strict filtering with robust matching)
-        # Skip this for OpenSearch with per-document indexes (already isolated by index)
-        if self.active_sources and not (self.vector_store_type == "opensearch" and self.document_index_map):
+        # CRITICAL: Always apply post-retrieval filter even for OpenSearch to prevent document mixing
+        # The per-document index approach is a performance optimization but NOT a guarantee
+        if self.active_sources:
             allowed_sources = set(self.active_sources)
             # Also create normalized versions for case-insensitive matching
             allowed_sources_normalized = {s.lower().strip() if s else "" for s in allowed_sources if s}
@@ -4976,43 +5019,67 @@ Answer:"""
                 return False
             return True
         
-        # PRIORITY 0: Image metadata page (HIGHEST PRIORITY for OCR content)
-        # QA FIX: Content from transcribed images should use the image's page number
+        # PRIORITY 0: TEXT MARKERS (HIGHEST PRIORITY - these are authoritative)
+        # FIX: Text markers like "--- Page X ---" are more reliable than metadata
+        # because metadata might be set incorrectly during ingestion
+        
+        # Check for "--- Page X ---" markers ANYWHERE in the text (most reliable)
+        # Find ALL page markers and use the FIRST one (indicates starting page of content)
+        page_markers = re.findall(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+        if page_markers:
+            first_page = int(page_markers[0])
+            if validate_against_doc(first_page):
+                logger.info(f"📄 [TEXT MARKER] Page {first_page} from '--- Page X ---' marker (found {len(page_markers)} markers: {page_markers[:5]})")
+                return first_page, 1.0  # Highest confidence - text markers are authoritative
+        
+        # Check for HTML-style page markers (e.g., "<!-- page=4 -->")
+        html_page_match = re.search(r'<!--\s*page\s*=\s*(\d+)\s*-->', chunk_text, re.IGNORECASE)
+        if html_page_match:
+            html_page_num = int(html_page_match.group(1))
+            if validate_against_doc(html_page_num):
+                logger.info(f"📄 [TEXT MARKER] Page {html_page_num} from HTML marker (<!-- page=X -->)")
+                return html_page_num, 1.0
+        
+        # PRIORITY 1: Image metadata (only if no text markers found)
         # Check if this chunk is from an image (OCR content)
         image_ref = doc.metadata.get('image_ref', None)
         image_page = doc.metadata.get('image_page', None)
         has_image = doc.metadata.get('has_image', False)
         image_index = doc.metadata.get('image_index', None)
         
-        # If chunk has image metadata, prioritize the image's page number
-        if image_ref and isinstance(image_ref, dict):
-            img_page = image_ref.get('page')
-            if img_page and validate_against_doc(img_page):
-                logger.info(f"📸 [IMAGE PAGE] Page {img_page} from image_ref metadata (image {image_ref.get('image_index', '?')})")
-                return int(img_page), 1.0
-        
-        if image_page and validate_against_doc(image_page):
-            logger.info(f"📸 [IMAGE PAGE] Page {image_page} from image_page metadata")
-            return int(image_page), 1.0
-        
-        # Check for OCR content markers in text that might indicate image source
-        # Pattern: "Image X on Page Y" or "Image X on page Y"
-        image_page_match = re.search(r'Image\s+\d+\s+on\s+[Pp]age\s+(\d+)', chunk_text)
-        if image_page_match:
-            img_page_num = int(image_page_match.group(1))
-            if validate_against_doc(img_page_num):
-                logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} extracted from image marker text")
-                return img_page_num, 0.95
-        
-        # Pattern: "page X" at the start of OCR content (common in transcribed images)
-        if has_image or image_index is not None or '<!-- image -->' in chunk_text:
-            # This is likely image content - look for page references
-            page_ref_match = re.search(r'[Pp]age\s+(\d+)', chunk_text[:100])  # Check first 100 chars
+        # For image content, also check for page patterns in the text
+        if has_image or image_index is not None or image_ref or '<!-- image -->' in chunk_text:
+            # Check for "Image X on Page Y" pattern
+            image_page_match = re.search(r'Image\s+\d+\s+on\s+[Pp]age\s+(\d+)', chunk_text)
+            if image_page_match:
+                img_page_num = int(image_page_match.group(1))
+                if validate_against_doc(img_page_num):
+                    logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} extracted from 'Image X on Page Y' text")
+                    return img_page_num, 0.95
+            
+            # Check for "Page X" pattern at start of text
+            page_ref_match = re.search(r'^[Pp]age\s+(\d+)', chunk_text[:100])
             if page_ref_match:
                 img_page_num = int(page_ref_match.group(1))
                 if validate_against_doc(img_page_num):
-                    logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} from early page reference in image content")
+                    logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} from page reference at start of image content")
                     return img_page_num, 0.9
+        
+        # If no text markers, use image metadata (lower confidence since it might be wrong)
+        if image_ref and isinstance(image_ref, dict):
+            img_page = image_ref.get('page') or image_ref.get('image_page') or image_ref.get('source_page')
+            if img_page and validate_against_doc(img_page):
+                # Only use metadata if page > 1 (page 1 is often a wrong default)
+                if int(img_page) > 1:
+                    logger.info(f"📸 [IMAGE METADATA] Page {img_page} from image_ref (confidence reduced)")
+                    return int(img_page), 0.7  # Lower confidence - metadata might be wrong
+                else:
+                    logger.warning(f"📸 [IMAGE METADATA] Ignoring page {img_page} from image_ref (likely default value)")
+        
+        if image_page and validate_against_doc(image_page):
+            if int(image_page) > 1:
+                logger.info(f"📸 [IMAGE METADATA] Page {image_page} from image_page metadata")
+                return int(image_page), 0.7
         
         # PRIORITY 1: Character position-based matching (HIGHEST ACCURACY for text content)
         start_char = doc.metadata.get('start_char', None)
@@ -6384,12 +6451,12 @@ Summary:"""
 IMPORTANT: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images.
 
 CITATION RULES:
-1. For EVERY technical claim, fact, or specification you provide, you MUST include a citation.
-2. Citations MUST follow this exact format: [Source X: filename (Page Y)].
-3. Source numbers (X), filenames, and page numbers (Y) are provided in the context headers: [Source X: filename (Page Y)].
-4. If information spans multiple sources, cite all of them: [Source 1: docA.pdf (Page 5), Source 2: docB.pdf (Page 12)].
-5. ALWAYS use the page number provided in the context header. This is the authoritative page number.
-6. Citations must be placed at the end of the sentence or paragraph they support.
+1. For EVERY claim or fact, include a citation using ONLY the source number: [Source 1], [Source 2], etc.
+2. DO NOT include page numbers or filenames in the answer - these appear in the References section.
+3. If information spans multiple sources, cite all: [Source 1, Source 2].
+4. Place citations at the end of the sentence or paragraph they support.
+5. WRONG: "[Source: filename (Page X)]" - CORRECT: "[Source 1]"
+6. The user will see page numbers in the References section below your answer.
 
 When asked:
 - "what is in image X" or "what information is in image X"

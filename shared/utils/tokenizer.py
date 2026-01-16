@@ -875,6 +875,17 @@ class TokenTextSplitter:
                     chunk_metadata_copy['has_image'] = True
                     chunk_metadata_copy['image_index'] = chunk_image_ref.get('image_index')
                     chunk_metadata_copy['image_bbox'] = chunk_image_ref.get('bbox')
+                    
+                    # CRITICAL: Ensure image page metadata is preserved
+                    # Extract page from image_ref if available
+                    img_page = chunk_image_ref.get('page') or chunk_image_ref.get('image_page')
+                    if img_page:
+                        # Override page metadata with image's page number
+                        chunk_metadata_copy['page'] = img_page
+                        chunk_metadata_copy['source_page'] = img_page
+                        chunk_metadata_copy['image_page'] = img_page
+                        chunk_metadata_copy['page_extraction_method'] = 'image_ref_tokenizer'
+                        logger.debug(f"Tokenizer: Set page {img_page} from image_ref for chunk {chunk_idx}")
                 
                 # Preserve page_blocks metadata if available (for citation support)
                 if 'page_blocks' in chunk_metadata_copy:

@@ -759,48 +759,55 @@ class DoclingParser(BaseParser):
                         logger.warning("Docling: OCR models may not be available - OCR may fail")
                         logger.warning("Docling: Run 'docling download-models' to install OCR models")
                     
-                    # OPTIMIZED FOR MAXIMUM ACCURACY
-                    # Configure Docling with explicit OCR settings for best results
+                    # Configure DocumentConverter with OCR enabled
+                    # FIX for v2.68.0: Use explicit TesseractCliOcrOptions instead of default OcrAutoOptions
+                    # to avoid 'OcrOptions' attribute error when using VlmPipelineOptions
                     try:
-                        from docling.datamodel.pipeline_options import (
-                            PdfPipelineOptions,
-                            OcrOptions,
-                            TableFormerMode,
-                        )
+                        from docling.datamodel.pipeline_options import PdfPipelineOptions
                         from docling.document_converter import PdfFormatOption
                         
-                        # Configure OCR for maximum accuracy
-                        # Note: lang field is required and must be a list of language codes
-                        ocr_options = OcrOptions(
-                            do_ocr=True,  # Always do OCR
-                            force_full_page_ocr=True,  # OCR entire page for better accuracy
-                            lang=["en", "es", "de", "fr", "it", "pt"],  # Common languages for multilingual OCR
-                        )
+                        # Try TesseractCliOcrOptions first (most compatible)
+                        try:
+                            from docling.datamodel.pipeline_options import TesseractCliOcrOptions
+                            ocr_options = TesseractCliOcrOptions()
+                            ocr_backend = "TesseractCli"
+                        except ImportError:
+                            # Fallback to EasyOcrOptions
+                            try:
+                                from docling.datamodel.pipeline_options import EasyOcrOptions
+                                ocr_options = EasyOcrOptions()
+                                ocr_backend = "EasyOCR"
+                            except ImportError:
+                                ocr_options = None
+                                ocr_backend = None
                         
-                        # Configure PDF pipeline for maximum accuracy
-                        pipeline_options = PdfPipelineOptions(
-                            do_ocr=True,  # Enable OCR
-                            ocr_options=ocr_options,
-                            do_table_structure=True,  # Extract table structure
-                            table_structure_options={"mode": TableFormerMode.ACCURATE},  # Accurate table mode
-                            generate_page_images=True,  # Generate page images for better extraction
-                            generate_picture_images=True,  # Extract images
-                        )
-                        
-                        # Create converter with optimized options
-                        converter = self.DocumentConverter(
-                            format_options={
-                                "pdf": PdfFormatOption(pipeline_options=pipeline_options)
-                            }
-                        )
-                        logger.info("Docling: ✅ Using OPTIMIZED DocumentConverter for maximum accuracy")
-                        logger.info("Docling: OCR=force_full_page, TableStructure=ACCURATE, ImageGeneration=ON")
-                        
-                    except (ImportError, TypeError, Exception) as config_err:
-                        # Fallback to default if advanced options not available or config fails
-                        logger.warning(f"Docling: Advanced options failed ({config_err}), using defaults")
+                        if ocr_options:
+                            # Configure pipeline with OCR enabled using explicit OCR options
+                            pipeline_options = PdfPipelineOptions(
+                                do_ocr=True,
+                                ocr_options=ocr_options
+                            )
+                            
+                            converter = self.DocumentConverter(
+                                format_options={
+                                    "pdf": PdfFormatOption(pipeline_options=pipeline_options)
+                                }
+                            )
+                            logger.info(f"Docling: ✅ Using DocumentConverter with OCR ENABLED ({ocr_backend})")
+                        else:
+                            # No OCR backend available - use default (may have issues)
+                            pipeline_options = PdfPipelineOptions(do_ocr=False)
+                            converter = self.DocumentConverter(
+                                format_options={
+                                    "pdf": PdfFormatOption(pipeline_options=pipeline_options)
+                                }
+                            )
+                            logger.warning("Docling: ⚠️ No OCR backend available, OCR disabled")
+                    except Exception as config_err:
+                        logger.warning(f"Docling: Pipeline config failed ({config_err}), trying basic converter...")
+                        # Last resort - try the most basic initialization
                         converter = self.DocumentConverter()
-                        logger.info("Docling: ✅ Using default DocumentConverter (OCR enabled by default)")
+                        logger.info("Docling: ✅ Using default DocumentConverter (OCR may be auto-enabled)")
                     
                     logger.info("Docling: OCR will automatically process images in the document")
                     
