@@ -1,0 +1,328 @@
+{
+  "timestamp": "2026-01-16T17:50:39.242355",
+  "parser_results": [
+    {
+      "parser": "pymupdf",
+      "document": "EM10, degasing.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 6.09,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "docling",
+      "document": "EM10, degasing.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 12.3,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "ocrmypdf",
+      "document": "EM10, degasing.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 17.84,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "textract",
+      "document": "EM10, degasing.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 7.92,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "llamascan",
+      "document": "EM10, degasing.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 24.04,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "pymupdf",
+      "document": "EM11, top seal.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 8.48,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "docling",
+      "document": "EM11, top seal.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 37.02,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "ocrmypdf",
+      "document": "EM11, top seal.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 31.97,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "textract",
+      "document": "EM11, top seal.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 38.22,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "llamascan",
+      "document": "EM11, top seal.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 138.73,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "pymupdf",
+      "document": "VUORMAR.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 6.97,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "docling",
+      "document": "VUORMAR.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 21.71,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "ocrmypdf",
+      "document": "VUORMAR.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 28.83,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "textract",
+      "document": "VUORMAR.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 20.9,
+      "confidence": 0,
+      "error": null
+    },
+    {
+      "parser": "llamascan",
+      "document": "VUORMAR.pdf",
+      "success": true,
+      "text_length": 0,
+      "pages_extracted": 0,
+      "images_found": 0,
+      "chunks_created": 0,
+      "page_markers_found": 0,
+      "processing_time": 100.36,
+      "confidence": 0,
+      "error": null
+    }
+  ],
+  "parser_summary": {
+    "pymupdf": {
+      "total_docs": 3,
+      "successful": 3,
+      "failed": 0,
+      "total_text": 0,
+      "total_pages": 0,
+      "total_images": 0,
+      "total_chunks": 0,
+      "total_page_markers": 0,
+      "avg_processing_time": 7.18,
+      "avg_confidence": 0.0,
+      "errors": []
+    },
+    "docling": {
+      "total_docs": 3,
+      "successful": 3,
+      "failed": 0,
+      "total_text": 0,
+      "total_pages": 0,
+      "total_images": 0,
+      "total_chunks": 0,
+      "total_page_markers": 0,
+      "avg_processing_time": 23.68,
+      "avg_confidence": 0.0,
+      "errors": []
+    },
+    "ocrmypdf": {
+      "total_docs": 3,
+      "successful": 3,
+      "failed": 0,
+      "total_text": 0,
+      "total_pages": 0,
+      "total_images": 0,
+      "total_chunks": 0,
+      "total_page_markers": 0,
+      "avg_processing_time": 26.21,
+      "avg_confidence": 0.0,
+      "errors": []
+    },
+    "textract": {
+      "total_docs": 3,
+      "successful": 3,
+      "failed": 0,
+      "total_text": 0,
+      "total_pages": 0,
+      "total_images": 0,
+      "total_chunks": 0,
+      "total_page_markers": 0,
+      "avg_processing_time": 22.35,
+      "avg_confidence": 0.0,
+      "errors": []
+    },
+    "llamascan": {
+      "total_docs": 3,
+      "successful": 3,
+      "failed": 0,
+      "total_text": 0,
+      "total_pages": 0,
+      "total_images": 0,
+      "total_chunks": 0,
+      "total_page_markers": 0,
+      "avg_processing_time": 87.71,
+      "avg_confidence": 0.0,
+      "errors": []
+    }
+  },
+  "parser_scores": {
+    "pymupdf": {
+      "total": 49.76,
+      "success": 40.0,
+      "text": 0.0,
+      "citations": 0.0,
+      "images": 0.0,
+      "speed": 9.76
+    },
+    "docling": {
+      "total": 49.21,
+      "success": 40.0,
+      "text": 0.0,
+      "citations": 0.0,
+      "images": 0.0,
+      "speed": 9.21
+    },
+    "ocrmypdf": {
+      "total": 49.13,
+      "success": 40.0,
+      "text": 0.0,
+      "citations": 0.0,
+      "images": 0.0,
+      "speed": 9.13
+    },
+    "textract": {
+      "total": 49.25,
+      "success": 40.0,
+      "text": 0.0,
+      "citations": 0.0,
+      "images": 0.0,
+      "speed": 9.25
+    },
+    "llamascan": {
+      "total": 47.08,
+      "success": 40.0,
+      "text": 0.0,
+      "citations": 0.0,
+      "images": 0.0,
+      "speed": 7.08
+    }
+  },
+  "query_results": {
+    "\u00bfCu\u00e1l es el proceso de desgasificaci\u00f3n?": {
+      "accuracy": 66.66666666666666,
+      "sources_count": 12,
+      "answer_length": 1285
+    },
+    "\u00bfC\u00f3mo se sella la parte superior?": {
+      "accuracy": 66.66666666666666,
+      "sources_count": 12,
+      "answer_length": 800
+    },
+    "\u00bfCu\u00e1les son los pasos de mantenimiento?": {
+      "accuracy": 100.0,
+      "sources_count": 11,
+      "answer_length": 1092
+    }
+  },
+  "best_parser": "pymupdf",
+  "best_score": 49.76
+}

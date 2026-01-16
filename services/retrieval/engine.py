@@ -1512,6 +1512,9 @@ class RetrievalEngine:
             temperature = max(0.3, original_temperature)  # At least 0.3 for contact queries
             logger.info(f"🌡️ AUTO-INCREASED temperature: {original_temperature:.1f} → {temperature:.1f} for contact query (better synthesis) [QA-driven: 70-90% issue]")
         
+        # SYNC: Check and reload document index map before querying
+        self._check_and_reload_document_index_map()
+        
         query_start_time = time_module.time()
         # [NEW] Track request ID on instance for sub-methods to use
         import uuid
