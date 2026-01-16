@@ -328,7 +328,7 @@ async def get_chunk_stats(service: GatewayService = Depends(get_service)):
 
 @app.get("/sync/status")
 async def sync_status(service: GatewayService = Depends(get_service)):
-    """Check synchronization status of shared resources"""
+    """Check synchronization status of shared resources (legacy endpoint - use /sync/status from sync manager)"""
     from shared.config.settings import ARISConfig
     import os
     import json
@@ -365,8 +365,14 @@ async def sync_status(service: GatewayService = Depends(get_service)):
             with open(index_map_path, 'r') as f:
                 index_map = json.load(f)
                 status["index_map"]["entry_count"] = len(index_map)
+                status["index_map"]["mapping_count"] = len(index_map)  # Alias for consistency
+        else:
+            status["index_map"]["entry_count"] = 0
+            status["index_map"]["mapping_count"] = 0
     except Exception as e:
         status["index_map"]["error"] = str(e)
+        status["index_map"]["entry_count"] = 0
+        status["index_map"]["mapping_count"] = 0
     
     return status
 
