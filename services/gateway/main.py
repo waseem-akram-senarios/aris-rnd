@@ -318,12 +318,14 @@ async def query_images(
 @app.get("/stats")
 async def get_system_stats(service: GatewayService = Depends(get_service)):
     """Get overall system statistics"""
-    return await service.get_all_metrics()
+    # get_all_metrics is synchronous, don't await it
+    return service.get_all_metrics()
 
 @app.get("/stats/chunks")
 async def get_chunk_stats(service: GatewayService = Depends(get_service)):
     """Get chunk-level statistics"""
-    metrics = await service.get_all_metrics()
+    # get_all_metrics is synchronous, don't await it
+    metrics = service.get_all_metrics()
     return metrics.get("processing", {})
 
 @app.get("/sync/status")
