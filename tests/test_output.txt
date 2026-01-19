@@ -1,0 +1,21 @@
+🧪 End-to-End Core RAG Feature Testing (API)
+
+🚀 Testing API Feature: Single Document Retrieval (active_sources)
+✅ Success (8.65s)
+   Answer: The contact email is mattia_stellini@vuormar.it [Source 11]....
+   Citations: 2
+   Sample Source: VUORMAR(spa).pdf (Page 6)
+
+🚀 Testing API Feature: Global Retrieval (All Documents)
+✅ Success (21.84s)
+   Answer: The contact email of Vuormar is mattia_stellini@vuormar.it [Source 11]....
+   Citations: 5
+   Sample Source: VUORMAR(spa).pdf (Page 6)
+
+🚀 Testing API Feature: Cross-Language Accuracy (English query on Spanish doc)
+✅ Success (29.29s)
+   Answer: The document "VUORMAR(spa).pdf" contains detailed information about the motor power and contact deta...
+   Citations: 7
+   Sample Source: VUORMAR(spa).pdf (Page 6)
+
+✨ ALL CORE API FEATURES PASSED ✨

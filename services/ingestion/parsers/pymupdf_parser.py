@@ -100,10 +100,12 @@ class PyMuPDFParser(BaseParser):
                 
                 # Extract text from all pages with page-level metadata
                 text_parts = []
+                cumulative_pos = 0  # Track cumulative character position
                 pages_with_text = 0
                 total_images = 0
                 images_detected = False
                 page_blocks = []  # Store page-level text blocks with metadata
+                cumulative_pos = 0  # Track running character count for offsets
                 
                 # Get total pages before processing
                 total_pages = len(doc)
@@ -208,12 +210,26 @@ class PyMuPDFParser(BaseParser):
                                 continue  # Skip this page and continue with next
                             
                             if page_text.strip():
+                                # Add page marker for consistency
+                                page_marker = f"--- Page {page_num + 1} ---\n"
+                                page_text_with_marker = page_marker + page_text
+                                
+                                # Calculate offsets
+                                page_start = cumulative_pos
+                                page_end = cumulative_pos + len(page_text_with_marker)
+                                
                                 # Store page-level blocks with metadata
                                 page_blocks_data = {
+                                    'type': 'page',
                                     'page': page_num + 1,
                                     'text': page_text,
+                                    'start_char': page_start,
+                                    'end_char': page_end,
                                     'blocks': []
                                 }
+                                
+                                # Update cumulative position (add 2 for \n\n separator used in join)
+                                cumulative_pos = page_end + 2
                                 
                                 # Extract text blocks with bounding boxes
                                 if 'blocks' in text_dict:
@@ -298,7 +314,34 @@ class PyMuPDFParser(BaseParser):
                                     # Insert marker before page text to indicate images are present
                                     page_text = "<!-- image -->\n" + page_text
                                 
-                                text_parts.append(f"--- Page {page_num + 1} ---\n{page_text}")
+                                # Construct the full page text with marker
+                                # Format: "--- Page X ---\n{page_text}"
+                                page_content = f"--- Page {page_num + 1} ---\n{page_text}"
+                                
+                                # Calculate character offsets relative to full text
+                                # We assume text_parts will be joined by "\n\n" later
+                                # Current position is sum of previous lengths + separators
+                                
+                                # Determine start char for this page block
+                                # If this is the first page (pages_with_text == 0), start is 0
+                                # Otherwise, it's cumulative_pos + 2 (for the "\n\n" separator)
+                                separator_len = 2 if pages_with_text > 0 else 0
+                                start_char = cumulative_pos + separator_len
+                                end_char = start_char + len(page_content)
+                                
+                                # Update cumulative position (including this page content)
+                                cumulative_pos = end_char
+                                
+                                # Add page block metadata for character-based lookup
+                                page_blocks.append({
+                                    'type': 'page',
+                                    'page': page_num + 1,
+                                    'text': page_text,
+                                    'start_char': start_char,
+                                    'end_char': end_char
+                                })
+                                
+                                text_parts.append(page_content)
                                 pages_with_text += 1
                         except Exception as e:
                             page_elapsed = time.time() - page_start_time

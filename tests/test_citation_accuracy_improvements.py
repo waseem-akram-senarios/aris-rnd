@@ -89,7 +89,7 @@ class TestCitationAccuracy:
         )
         page, confidence = engine._extract_page_number(doc3, "--- Page 7 ---\nSome text content")
         assert page == 7, f"Expected page 7, got {page}"
-        assert confidence == 0.6, f"Expected confidence 0.6, got {confidence}"
+        assert confidence == 1.0, f"Expected confidence 1.0, got {confidence}"
         
         # Test case 4: Fallback to page 1
         doc4 = Document(

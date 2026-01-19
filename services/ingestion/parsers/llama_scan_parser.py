@@ -58,7 +58,7 @@ class LlamaScanParser(BaseParser):
         try:
             import llama_scan  # noqa: F401
         except Exception:
-            logger.warning("llama-scan is not installed. Install with: pip install llama-scan")
+            logger.warning("llama-scan is not installed or dependencies missing. Install with: pip install llama-scan")
 
     def _check_ollama_server(self) -> bool:
         """Checks if Ollama server is reachable and model is available."""

@@ -2028,29 +2028,23 @@ class RetrievalEngine:
                         else:
                             logger.warning(f"Document '{doc_name}' not found in index map. Available: {list(self.document_index_map.keys())[:10]}")
                 
+                
                 if not indexes_to_search:
                     # Simple fallback: use default index or all indexes
                     if self.opensearch_index:
                         indexes_to_search = [self.opensearch_index]
                     else:
-                        # Clear filter and search all
-                        self.active_sources = None
-                        active_sources = None
                         indexes_to_search = list(self.document_index_map.values()) if self.document_index_map else []
-                    logger.info(f"Document filter not available, using fallback: {len(indexes_to_search)} index(es)")
+                    logger.info(f"Document filter not available (or fallback), using {len(indexes_to_search)} index(es)")
             else:
-                # No active_sources set - use recent documents for better isolation
-                recent_docs = self._get_recent_documents(max_age_hours=24)
-                if recent_docs:
-                    indexes_to_search = [self.document_index_map[doc] for doc in recent_docs if doc in self.document_index_map]
-                    logger.info(f"No active_sources set, using {len(indexes_to_search)} recent document indexes: {recent_docs}")
-                else:
-                    # Fallback: search all document indexes (but log warning)
-                    indexes_to_search = list(self.document_index_map.values()) if hasattr(self, 'document_index_map') and self.document_index_map else []
-                    if indexes_to_search:
-                        logger.info(f"Searching all {len(indexes_to_search)} document indexes")
-                    else:
-                        logger.warning("No recent documents found, no document indexes available")
+                # No active_sources set - SEARCH ALL DOCUMENTS
+                # Previously restricted to recent documents, which caused issues finding older files
+                indexes_to_search = list(self.document_index_map.values()) if hasattr(self, 'document_index_map') and self.document_index_map else []
+                
+                if not indexes_to_search and self.opensearch_index:
+                     indexes_to_search = [self.opensearch_index]
+                     
+                logger.info(f"No active_sources set - searching ALL {len(indexes_to_search)} available indexes")
                 
                 if not indexes_to_search:
                     # Fallback to default index if no mappings exist (backward compatibility)
@@ -5042,6 +5036,14 @@ Answer:"""
             if validate_against_doc(html_page_num):
                 logger.info(f"📄 [TEXT MARKER] Page {html_page_num} from HTML marker (<!-- page=X -->)")
                 return html_page_num, 1.0
+
+        # Check for "Source: Page X" patterns (common in some document formats)
+        source_page_match = re.search(r'Source:.*?Page\s+(\d+)', chunk_text, re.IGNORECASE)
+        if source_page_match:
+            source_page_num = int(source_page_match.group(1))
+            if validate_against_doc(source_page_num):
+                logger.info(f"📄 [TEXT MARKER] Page {source_page_num} from 'Source: ... Page X' pattern")
+                return source_page_num, 0.95
         
         # PRIORITY 1: Image metadata (only if no text markers found)
         # Check if this chunk is from an image (OCR content)
@@ -5281,9 +5283,22 @@ Answer:"""
                 pass
         
         # No valid page found - use fallback: page 1 with low confidence
-        # This ensures every citation has a page number, even if we can't determine it
+        # ENHANCED: Try to look for any page number in metadata as absolute last resort
+        page_fallback = doc.metadata.get('page') or doc.metadata.get('source_page') or doc.metadata.get('image_page')
+        if page_fallback and validate_against_doc(page_fallback):
+            logger.info(f"📄 [FALLBACK METADATA] Using page {page_fallback} from ANY metadata field")
+            return int(page_fallback), 0.2
+            
         source = doc.metadata.get('source', 'Unknown')
-        logger.warning(f"No page number found in chunk, using fallback page 1. Source: {source}")
+        
+        # MONITORING: Alert if we're falling back to page 1 on a multi-page document
+        # This often indicates character offset drift or parser misalignment
+        if doc_pages and doc_pages > 1:
+            logger.warning(f"⚠️ [OFFSET MONITOR] No page number found in chunk, using fallback page 1 for multi-page doc. "
+                           f"Source: {source} ({doc_pages} pages). This may indicate character offset drift.")
+        else:
+            logger.warning(f"No page number found in chunk, using fallback page 1. Source: {source}")
+            
         return 1, 0.1  # Fallback to page 1 with very low confidence
     
     def _calculate_semantic_similarity(self, text1: str, text2: str) -> float:
@@ -5696,15 +5711,23 @@ Answer:"""
                 merged_citations.append(citation)
             else:
                 # Merge duplicates - keep citation with highest confidence
+                # PRIORITY: Citations with image_ref (visual proof) > High confidence scores
                 best_citation = max(group_citations, key=lambda c: (
+                    1.0 if c.get('image_ref') else 0.0,  # Prefer citations with visual references
                     c.get('source_confidence', 0) + c.get('page_confidence', 0)
                 ))
                 
                 # Merge snippets - combine unique portions
                 all_snippets = [c.get('snippet', '') for c in group_citations if c.get('snippet')]
                 if all_snippets:
-                    # Use longest snippet (most context) or combine intelligently
-                    best_snippet = max(all_snippets, key=len)
+                    # Use longest snippet (most context) OR snippet with page markers
+                    def snippet_score(s):
+                        score = len(s)
+                        if '--- Page' in s: score += 2000  # Strong preference for page markers
+                        if 'Image' in s and 'Page' in s: score += 1000  # Preference for image+page context
+                        return score
+                    
+                    best_snippet = max(all_snippets, key=snippet_score)
                     # If snippets are very different, combine them
                     if len(set(all_snippets)) > 1:
                         # Try to merge non-overlapping snippets

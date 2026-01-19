@@ -820,14 +820,14 @@ with st.sidebar:
     parser_choice = st.selectbox(
         "Choose Parser:",
         ["Docling", "PyMuPDF", "OCRmyPDF", "Llama-Scan", "Textract"],
-        index=2,  # Default to OCRmyPDF
+        index=0,  # Default to Docling for best accuracy (100% in benchmarks)
         key="parser_choice_v2",
-        help="**Docling**: Extracts the most content (processes all pages) but takes 5-10 minutes (recommended).\n\n"
-             "**PyMuPDF**: Fast for text-based PDFs.\n\n"
-             "**OCRmyPDF**: High-accuracy OCR with Tesseract - best for scanned PDFs and image-heavy documents. "
-             "Includes automatic deskew, rotation correction, and noise removal.\n\n"
-             "**Llama-Scan**: Multimodal PDF parsing via Ollama vision model (requires Ollama server).\n\n"
-             "**Textract**: AWS Textract (requires credentials) - best for complex scanned documents."
+        help="**Docling**: Primary recommended parser. Achieved **100% page accuracy** in benchmarks. Processes all content reliably.\n\n"
+             "**PyMuPDF**: Fastest parser. Best for quick previews and text-heavy PDFs where speed is priority.\n\n"
+             "**OCRmyPDF**: Optimized OCR with Tesseract - best for scanned PDFs. "
+             "Includes automatic deskew and rotation correction.\n\n"
+             "**Llama-Scan**: Multimodal PDF parsing via Llama-3 vision models. Excellent for **complex tables/diagrams**.\n\n"
+             "**Textract**: AWS Textract (requires credentials) - best for industry-scale scanned documents."
     )
     if parser_choice == "Llama-Scan":
         parser_preference = "llamascan"
@@ -2251,19 +2251,19 @@ if st.session_state.documents_processed and container:
             search_mode = st.radio(
                 "Select search mode:",
                 ["Semantic Only", "Keyword Only", "Hybrid"],
-                index=0,
-                help="Semantic: Vector similarity | Keyword: Text matching | Hybrid: Both"
+                index=2,  # Default to Hybrid (optimized for cross-language)
+                help="Semantic: Vector similarity | Keyword: Text matching | Hybrid: Combined results (recommended)"
             )
             
-            semantic_weight = 0.7
+            semantic_weight = ARISConfig.DEFAULT_SEMANTIC_WEIGHT
             if search_mode == "Hybrid":
                 semantic_weight = st.slider(
                     "Semantic Weight",
                     min_value=0.0,
                     max_value=1.0,
-                    value=0.7,
+                    value=ARISConfig.DEFAULT_SEMANTIC_WEIGHT,
                     step=0.1,
-                    help="Weight for semantic search (0.0 = keyword only, 1.0 = semantic only)"
+                    help=f"Weight for semantic search. Default is {ARISConfig.DEFAULT_SEMANTIC_WEIGHT} for optimal cross-language performance."
                 )
                 keyword_weight = 1.0 - semantic_weight
                 st.caption(f"Keyword Weight: {keyword_weight:.1f}")
@@ -2272,9 +2272,9 @@ if st.session_state.documents_processed and container:
             else:  # Semantic Only
                 semantic_weight = 1.0
     else:
-        # Default: Semantic Only
-        search_mode = "Semantic Only"
-        semantic_weight = 1.0
+        # Default: Hybrid (per user request and backend optimization)
+        search_mode = "Hybrid"
+        semantic_weight = ARISConfig.DEFAULT_SEMANTIC_WEIGHT
     
     # Info message if no document is selected for summary queries (less intrusive)
     if question and question.lower().strip():

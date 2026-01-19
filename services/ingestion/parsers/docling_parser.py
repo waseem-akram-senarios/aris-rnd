@@ -639,6 +639,7 @@ class DoclingParser(BaseParser):
                     page_text_with_marker = page_marker + page_text
                     
                     # Track character positions for accurate page boundaries
+                    # cumulative_pos includes previous pages + separators
                     page_start = cumulative_pos
                     page_end = cumulative_pos + len(page_text_with_marker)
                     
@@ -653,7 +654,10 @@ class DoclingParser(BaseParser):
                     
                     # Add to full text with marker
                     text_parts.append(page_text_with_marker)
-                    cumulative_pos = page_end
+                    
+                    # Update cumulative position including the separator (\n\n) that will be added
+                    # This ensures offsets remain accurate when joined
+                    cumulative_pos = page_end + 2
                     
                     # Update progress
                     if progress_callback and total_pages > 0:
@@ -760,56 +764,66 @@ class DoclingParser(BaseParser):
                         logger.warning("Docling: Run 'docling download-models' to install OCR models")
                     
                     # Configure DocumentConverter with OCR enabled
-                    # FIX for v2.68.0: Use explicit TesseractCliOcrOptions instead of default OcrAutoOptions
-                    # to avoid 'OcrOptions' attribute error when using VlmPipelineOptions
                     try:
-                        from docling.datamodel.pipeline_options import PdfPipelineOptions
-                        from docling.document_converter import PdfFormatOption
-                        
-                        # Try TesseractCliOcrOptions first (most compatible)
+                        # FIX for v2.68.0: Use explicit TesseractCliOcrOptions instead of default OcrAutoOptions
                         try:
-                            from docling.datamodel.pipeline_options import TesseractCliOcrOptions
-                            ocr_options = TesseractCliOcrOptions()
-                            ocr_backend = "TesseractCli"
-                        except ImportError:
-                            # Fallback to EasyOcrOptions
-                            try:
-                                from docling.datamodel.pipeline_options import EasyOcrOptions
-                                ocr_options = EasyOcrOptions()
-                                ocr_backend = "EasyOCR"
-                            except ImportError:
-                                ocr_options = None
-                                ocr_backend = None
-                        
-                        if ocr_options:
-                            # Configure pipeline with OCR enabled using explicit OCR options
-                            pipeline_options = PdfPipelineOptions(
-                                do_ocr=True,
-                                ocr_options=ocr_options
-                            )
+                            from docling.datamodel.pipeline_options import PdfPipelineOptions
+                            from docling.document_converter import PdfFormatOption
                             
-                            converter = self.DocumentConverter(
-                                format_options={
-                                    "pdf": PdfFormatOption(pipeline_options=pipeline_options)
-                                }
-                            )
-                            logger.info(f"Docling: ✅ Using DocumentConverter with OCR ENABLED ({ocr_backend})")
-                        else:
-                            # No OCR backend available - use default (may have issues)
+                            # Try TesseractCliOcrOptions first (most compatible)
+                            try:
+                                from docling.datamodel.pipeline_options import TesseractCliOcrOptions
+                                ocr_options = TesseractCliOcrOptions()
+                                ocr_backend = "TesseractCli"
+                            except ImportError:
+                                # Fallback to EasyOcrOptions
+                                try:
+                                    from docling.datamodel.pipeline_options import EasyOcrOptions
+                                    ocr_options = EasyOcrOptions()
+                                    ocr_backend = "EasyOCR"
+                                except ImportError:
+                                    ocr_options = None
+                                    ocr_backend = None
+                            
+                            if ocr_options:
+                                # Configure pipeline with OCR enabled using explicit OCR options
+                                pipeline_options = PdfPipelineOptions(
+                                    do_ocr=True,
+                                    ocr_options=ocr_options
+                                )
+                                
+                                try:
+                                    converter = self.DocumentConverter(
+                                        format_options={
+                                            "pdf": PdfFormatOption(pipeline_options=pipeline_options)
+                                        }
+                                    )
+                                except Exception as conv_init_err:
+                                    logger.warning(f"Docling: Converter init failed with OCR ({conv_init_err}). Falling back to no-OCR.")
+                                    # This will trigger the outer exception handler to fallback
+                                    raise ImportError(f"OCR init failed: {conv_init_err}")
+                                    
+                                logger.info(f"Docling: ✅ Using DocumentConverter with OCR ENABLED ({ocr_backend})")
+                            else:
+                                raise ImportError("No OCR options available")
+                                
+                        except Exception as ocr_init_err:
+                            logger.warning(f"Docling: Failed to initialize OCR pipeline ({ocr_init_err}). Disabling OCR.")
+                            
+                            # Fallback to NO OCR
+                            from docling.datamodel.pipeline_options import PdfPipelineOptions
+                            from docling.document_converter import PdfFormatOption
                             pipeline_options = PdfPipelineOptions(do_ocr=False)
                             converter = self.DocumentConverter(
                                 format_options={
                                     "pdf": PdfFormatOption(pipeline_options=pipeline_options)
                                 }
                             )
-                            logger.warning("Docling: ⚠️ No OCR backend available, OCR disabled")
-                    except Exception as config_err:
-                        logger.warning(f"Docling: Pipeline config failed ({config_err}), trying basic converter...")
-                        # Last resort - try the most basic initialization
+                            logger.info("Docling: ✅ Using DocumentConverter with OCR DISABLED (Text-only mode)")
+                    except Exception as fatal_config_err:
+                        # This catches errors even during fallback
+                        logger.warning(f"Docling: Pipeline config failed completely ({fatal_config_err}). Trying defaults.")
                         converter = self.DocumentConverter()
-                        logger.info("Docling: ✅ Using default DocumentConverter (OCR may be auto-enabled)")
-                    
-                    logger.info("Docling: OCR will automatically process images in the document")
                     
                     logger.info("Docling: [Phase 2/4] DocumentConverter initialized with OCR, starting conversion...")
                     logger.info("Docling: OCR will process images in the document (this may take time)...")
@@ -820,7 +834,26 @@ class DoclingParser(BaseParser):
                             if "NoSessionContext" not in str(e):
                                 logger.warning(f"Docling: Progress callback error: {str(e)}")
                     logger.info(f"Docling: [Phase 2/4] Converting file: {os.path.basename(actual_path)}")
-                    result = converter.convert(actual_path, raises_on_error=False)
+                    
+                    try:
+                        result = converter.convert(actual_path, raises_on_error=False)
+                    except RuntimeError as runtime_err:
+                        if "Tesseract" in str(runtime_err):
+                            logger.error(f"Docling: Tesseract runtime error during conversion: {runtime_err}")
+                            logger.info("Docling: Attempting fallback to text-only mode...")
+                            # Recreate converter without OCR
+                            from docling.datamodel.pipeline_options import PdfPipelineOptions
+                            from docling.document_converter import PdfFormatOption
+                            pipeline_options = PdfPipelineOptions(do_ocr=False)
+                            converter = self.DocumentConverter(
+                                format_options={
+                                    "pdf": PdfFormatOption(pipeline_options=pipeline_options)
+                                }
+                            )
+                            result = converter.convert(actual_path, raises_on_error=False)
+                            logger.info("Docling: ✅ Fallback to text-only mode succeeded")
+                        else:
+                            raise
                     logger.info("Docling: [Phase 3/4] Conversion completed, accessing document...")
                     logger.info("Docling: OCR processing complete - extracting text from converted document...")
                     if progress_callback:
@@ -1210,7 +1243,7 @@ class DoclingParser(BaseParser):
                                     })
                                     
                                     text_parts.append(page_text_with_marker)
-                                    cumulative_pos = page_end
+                                    cumulative_pos = page_end + 2
                             
                             # Rebuild text with page markers
                             text = "\n\n".join(text_parts)
@@ -1256,7 +1289,7 @@ class DoclingParser(BaseParser):
                                         })
                                         
                                         text_parts.append(page_text_with_marker)
-                                        cumulative_pos = page_end
+                                        cumulative_pos = page_end + 2
                                 
                                 # Rebuild text with page markers
                                 text = "\n\n".join(text_parts)

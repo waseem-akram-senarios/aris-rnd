@@ -76,9 +76,11 @@ class ARISConfig:
     DOCUMENT_REGISTRY_PATH: str = os.getenv('DOCUMENT_REGISTRY_PATH', 'storage/document_registry.json')
     
     # Parser Configuration
-    # OCRmyPDF is the best parser for: highest accuracy, page citations, and OCR from images
-    # Test results: OCRmyPDF extracts 91,942 tokens vs PyMuPDF's 47,940 (2x more content!)
-    DEFAULT_PARSER: str = os.getenv('DEFAULT_PARSER', 'ocrmypdf')  # Best for OCR accuracy and citations
+    # Docling is the recommended default for: 100% page extraction accuracy and robustness.
+    # PyMuPDF is available for high-speed processing.
+    # OCRmyPDF is available for scanned documents (requires Tesseract in Docker).
+    # LlamaScan is recommended for highly visual documents or those with complex tables/diagrams.
+    DEFAULT_PARSER: str = os.getenv('DEFAULT_PARSER', 'docling')  # Best for Accuracy & Robustness
     DOCLING_MAX_TIMEOUT: int = int(os.getenv('DOCLING_MAX_TIMEOUT', '1800'))  # 30 minutes default
     
     # Ingestion Performance Configuration

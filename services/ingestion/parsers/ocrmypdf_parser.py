@@ -130,9 +130,10 @@ class OCRmyPDFParser(BaseParser):
             import ocrmypdf
             self.ocrmypdf_available = True
         except ImportError:
-            logger.warning(
-                "OCRmyPDF not found. Install with: pip install ocrmypdf"
-            )
+            logger.warning("OCRmyPDF not found. Install with: pip install ocrmypdf")
+            self.ocrmypdf_available = False
+        except Exception as e:
+            logger.warning(f"OCRmyPDF import failed (missing system dependencies?): {e}")
             self.ocrmypdf_available = False
     
     def _check_tesseract_languages(self):
@@ -348,7 +349,7 @@ class OCRmyPDFParser(BaseParser):
                         })
                         
                         text_parts.append(page_text_with_marker)
-                        cumulative_pos = page_end + 2  # +2 for \n\n separator
+                        cumulative_pos = page_end + 1  # +1 for \n separator (consistent with PyMuPDF)
                         
                         # Check for images
                         image_list = page.get_images()
@@ -421,7 +422,7 @@ class OCRmyPDFParser(BaseParser):
                                             detailed_message=f"Extracting text from page {page_num + 1}/{pages}...")
                     
                     doc.close()
-                    extracted_text = "\n\n".join(text_parts)
+                    extracted_text = "\n".join(text_parts)
                     
                 except ImportError:
                     # Fallback to PyPDF2 if PyMuPDF not available
@@ -455,14 +456,14 @@ class OCRmyPDFParser(BaseParser):
                         })
                         
                         text_parts.append(page_text_with_marker)
-                        cumulative_pos = page_end + 2  # +2 for \n\n separator
+                        cumulative_pos = page_end + 1  # +1 for \n separator
                         
                         if progress_callback and pages > 0:
                             progress = 0.6 + (0.3 * (page_num + 1) / pages)
                             progress_callback("parsing", progress,
                                             detailed_message=f"Extracting text from page {page_num + 1}/{pages}...")
                     
-                    extracted_text = "\n\n".join(text_parts)
+                    extracted_text = "\n".join(text_parts)
                 
                 if progress_callback:
                     progress_callback("parsing", 0.95, detailed_message="Finalizing OCR results...")

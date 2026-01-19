@@ -102,6 +102,39 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
 EOF
 
 echo ""
+echo -e "${BLUE}🦙 Step 3.5: Installing Host AI Dependencies (Ollama)...${NC}"
+ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
+    # Install Tesseract OCR if not present
+    if ! command -v tesseract &> /dev/null; then
+        echo "   Installing Tesseract OCR..."
+        sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa
+    else
+        echo "   Tesseract OCR already installed"
+    fi
+
+    # Install Ollama if not present
+    if ! command -v ollama &> /dev/null; then
+        echo "   Installing Ollama..."
+        curl -fsSL https://ollama.com/install.sh | sh
+    else
+        echo "   Ollama already installed"
+    fi
+
+    # Start Ollama in background if not running
+    if ! pgrep -x "ollama" > /dev/null; then
+        echo "   Starting Ollama service..."
+        ollama serve > /dev/null 2>&1 &
+        sleep 5  # Give it a moment to start
+    fi
+
+    # Pull the required Vision Model
+    echo "   Pulling LlamaScan vision model (llava:latest)..."
+    ollama pull llava:latest
+    
+    echo "   ✅ Host dependencies ready"
+EOF
+
+echo ""
 echo -e "${BLUE}🐳 Step 4: Building and Deploying with Docker Compose...${NC}"
 ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
     set -e
@@ -131,6 +164,13 @@ ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
     curl -s http://localhost:8502/health || echo "❌ Retrieval health check failed"
 EOF
 
+echo ""
+echo -e "${BLUE}🔍 Step 6: Parser Health Check...${NC}"
+ssh -i "$PEM_FILE" -o StrictHostKeyChecking=no "$SERVER_USER@$SERVER_IP" <<EOF
+    cd $SERVER_DIR
+    python3 scripts/parser_health_check.py
+EOF
+
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
@@ -145,3 +185,4 @@ echo "   Retrieval URL: http://$SERVER_IP:8502"
 echo ""
 echo "Manage services on the server with:"
 echo "   ssh -i $PEM_FILE $SERVER_USER@$SERVER_IP 'cd $SERVER_DIR && sudo docker-compose logs -f'"
+echo ""
