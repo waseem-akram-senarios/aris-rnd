@@ -521,7 +521,7 @@ def render_vector_search():
         semantic_weight = st.slider("Semantic Weight", 0.0, 1.0, 0.7, disabled=not use_hybrid)
     
     # Index selection
-    indexes_response = api_get("/admin/vectors/indexes", params={"prefix": "aris-"})
+    indexes_response = api_get("/admin/indexes", params={"prefix": "aris-"})
     indexes = indexes_response.get("indexes", [])
     index_names = [idx.get("index_name") for idx in indexes]
     
