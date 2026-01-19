@@ -751,7 +751,7 @@ class OpenSearchVectorStore:
                     knn_query = {
                         "size": int(k * (1 + semantic_weight)),
                         "knn": {
-                            "field": "vector",
+                            "field": "vector_field",
                             "vector": query_vector,
                             "k": int(k * (1 + semantic_weight))
                         }
@@ -1561,7 +1561,7 @@ class OpenSearchCRUDManager:
             # Prepare document
             doc = {
                 'text': text,
-                'vector': embedding,
+                'vector_field': embedding,
                 'page': page,
                 'source': source,
                 'language': language,
@@ -1620,7 +1620,7 @@ class OpenSearchCRUDManager:
                 update_doc['text'] = text
                 # Regenerate embedding
                 embedding = self.embeddings.embed_query(text)
-                update_doc['vector'] = embedding
+                update_doc['vector_field'] = embedding
             
             if page is not None:
                 update_doc['page'] = page
@@ -1794,14 +1794,18 @@ class OpenSearchCRUDManager:
                 try:
                     if use_hybrid:
                         # Hybrid search with semantic and keyword
+                        # OpenSearch KNN query format - vector_field is the field name, not "field" parameter
                         knn_results = self._client.search(
                             index=index_name,
                             body={
                                 "size": k,
-                                "knn": {
-                                    "field": "vector",
-                                    "vector": query_vector,
-                                    "k": k
+                                "query": {
+                                    "knn": {
+                                        "vector_field": {
+                                            "vector": query_vector,
+                                            "k": k
+                                        }
+                                    }
                                 }
                             }
                         )
@@ -1855,14 +1859,18 @@ class OpenSearchCRUDManager:
                             })
                     else:
                         # Semantic-only search
+                        # OpenSearch KNN query format - vector_field is the field name
                         response = self._client.search(
                             index=index_name,
                             body={
                                 "size": k,
-                                "knn": {
-                                    "field": "vector",
-                                    "vector": query_vector,
-                                    "k": k
+                                "query": {
+                                    "knn": {
+                                        "vector_field": {
+                                            "vector": query_vector,
+                                            "k": k
+                                        }
+                                    }
                                 }
                             }
                         )
