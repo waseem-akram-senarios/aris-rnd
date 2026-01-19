@@ -26,20 +26,43 @@ st.set_page_config(
 # In Docker, use service name; locally use localhost
 import os
 DEFAULT_GATEWAY_URL = os.getenv("GATEWAY_URL", "http://gateway:8500" if os.path.exists("/.dockerenv") else "http://localhost:8500")
+DEFAULT_INGESTION_URL = os.getenv("INGESTION_URL", "http://ingestion:8501" if os.path.exists("/.dockerenv") else "http://localhost:8501")
+DEFAULT_RETRIEVAL_URL = os.getenv("RETRIEVAL_URL", "http://retrieval:8502" if os.path.exists("/.dockerenv") else "http://localhost:8502")
 
 def get_gateway_url():
     """Get gateway URL from session state or environment."""
     return os.getenv("GATEWAY_URL", DEFAULT_GATEWAY_URL)
+
+def get_ingestion_url():
+    """Get ingestion service URL from environment."""
+    return os.getenv("INGESTION_URL", DEFAULT_INGESTION_URL)
+
+def get_retrieval_url():
+    """Get retrieval service URL from environment."""
+    return os.getenv("RETRIEVAL_URL", DEFAULT_RETRIEVAL_URL)
 
 
 # ============================================================================
 # API Helper Functions
 # ============================================================================
 
+def _get_service_url(endpoint: str) -> str:
+    """Determine which service URL to use based on endpoint path."""
+    # Admin document registry stats goes to Ingestion service
+    if endpoint == "/admin/documents/registry-stats":
+        return get_ingestion_url()
+    # Admin vector/index endpoints go to Retrieval service
+    elif endpoint.startswith("/admin/index") or endpoint.startswith("/admin/search"):
+        return get_retrieval_url()
+    # All other endpoints (including /documents/*) go through Gateway
+    else:
+        return get_gateway_url()
+
 def api_get(endpoint: str, params: dict = None) -> dict:
-    """Make GET request to Gateway API."""
+    """Make GET request to appropriate service (Gateway, Ingestion, or Retrieval)."""
     try:
-        url = f"{get_gateway_url()}{endpoint}"
+        base_url = _get_service_url(endpoint)
+        url = f"{base_url}{endpoint}"
         response = requests.get(url, params=params, timeout=30)
         response.raise_for_status()
         return response.json()
@@ -49,9 +72,10 @@ def api_get(endpoint: str, params: dict = None) -> dict:
 
 
 def api_post(endpoint: str, data: dict = None, json_data: dict = None) -> dict:
-    """Make POST request to Gateway API."""
+    """Make POST request to appropriate service (Gateway, Ingestion, or Retrieval)."""
     try:
-        url = f"{get_gateway_url()}{endpoint}"
+        base_url = _get_service_url(endpoint)
+        url = f"{base_url}{endpoint}"
         response = requests.post(url, data=data, json=json_data, timeout=60)
         response.raise_for_status()
         return response.json()
@@ -61,9 +85,10 @@ def api_post(endpoint: str, data: dict = None, json_data: dict = None) -> dict:
 
 
 def api_put(endpoint: str, json_data: dict) -> dict:
-    """Make PUT request to Gateway API."""
+    """Make PUT request to appropriate service (Gateway, Ingestion, or Retrieval)."""
     try:
-        url = f"{get_gateway_url()}{endpoint}"
+        base_url = _get_service_url(endpoint)
+        url = f"{base_url}{endpoint}"
         response = requests.put(url, json=json_data, timeout=30)
         response.raise_for_status()
         return response.json()
@@ -73,9 +98,10 @@ def api_put(endpoint: str, json_data: dict) -> dict:
 
 
 def api_delete(endpoint: str, params: dict = None) -> dict:
-    """Make DELETE request to Gateway API."""
+    """Make DELETE request to appropriate service (Gateway, Ingestion, or Retrieval)."""
     try:
-        url = f"{get_gateway_url()}{endpoint}"
+        base_url = _get_service_url(endpoint)
+        url = f"{base_url}{endpoint}"
         response = requests.delete(url, params=params, timeout=60)
         response.raise_for_status()
         return response.json()
@@ -241,7 +267,7 @@ def render_document_management():
                                 update_data["language"] = new_language
                             
                             if update_data:
-                                result = api_put(f"/admin/documents/{doc_id}", update_data)
+                                result = api_put(f"/documents/{doc_id}", update_data)
                                 if result:
                                     st.success("Document updated successfully!")
                                     del st.session_state["edit_doc_id"]
@@ -270,8 +296,8 @@ def render_document_management():
                     with col1:
                         if st.button("🗑️ Confirm Delete", type="primary"):
                             result = api_delete(
-                                f"/admin/documents/{doc_id}",
-                                params={"delete_vectors": delete_vectors, "delete_s3": delete_s3}
+                                f"/documents/{doc_id}",
+                                params={"delete_vectors": delete_vectors, "delete_s3": delete_s3} if delete_vectors or delete_s3 else None
                             )
                             if result:
                                 st.success(f"Document deleted: {result.get('message', 'Success')}")
@@ -299,17 +325,27 @@ def render_document_management():
             
             if st.button("🗑️ Delete Selected Documents", type="primary", disabled=len(bulk_select) == 0):
                 if bulk_select:
-                    result = api_post(
-                        "/admin/documents/bulk-delete",
-                        json_data={
-                            "document_ids": bulk_select,
-                            "delete_vectors": bulk_delete_vectors,
-                            "delete_s3": bulk_delete_s3
-                        }
-                    )
-                    if result:
-                        st.success(f"Bulk delete result: {result.get('message', 'Complete')}")
+                    # Bulk delete by deleting each document individually
+                    deleted = 0
+                    failed = 0
+                    for doc_id in bulk_select:
+                        try:
+                            result = api_delete(
+                                f"/documents/{doc_id}",
+                                params={"delete_vectors": bulk_delete_vectors, "delete_s3": bulk_delete_s3} if bulk_delete_vectors or bulk_delete_s3 else None
+                            )
+                            if result:
+                                deleted += 1
+                            else:
+                                failed += 1
+                        except:
+                            failed += 1
+                    
+                    if deleted > 0:
+                        st.success(f"Deleted {deleted} document(s)" + (f", {failed} failed" if failed > 0 else ""))
                         st.rerun()
+                    else:
+                        st.error(f"Failed to delete {failed} document(s)")
     else:
         st.info("No documents in registry. Upload documents using the main app.")
 
@@ -319,7 +355,7 @@ def render_vector_management():
     st.subheader("🗄️ Vector Database Management")
     
     # Get vector indexes
-    indexes_response = api_get("/admin/vectors/indexes", params={"prefix": "aris-"})
+    indexes_response = api_get("/admin/indexes", params={"prefix": "aris-"})
     indexes = indexes_response.get("indexes", [])
     
     # Statistics row
@@ -384,7 +420,7 @@ def render_vector_management():
                 limit = st.number_input("Limit", min_value=1, max_value=100, value=20, key="chunks_limit")
                 
                 chunks_response = api_get(
-                    f"/admin/vectors/indexes/{index_name}/chunks",
+                    f"/admin/indexes/{index_name}/chunks",
                     params={"offset": offset, "limit": limit}
                 )
                 
@@ -409,7 +445,7 @@ def render_vector_management():
                             )
                             
                             if st.button(f"🗑️ Delete Chunk", key=f"delete_chunk_{i}"):
-                                result = api_delete(f"/admin/vectors/indexes/{index_name}/chunks/{chunk.get('chunk_id')}")
+                                result = api_delete(f"/admin/indexes/{index_name}/chunks/{chunk.get('chunk_id')}")
                                 if result:
                                     st.success("Chunk deleted")
                                     st.rerun()
@@ -433,7 +469,7 @@ def render_vector_management():
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("🗑️ Confirm Delete Index", type="primary"):
-                        result = api_delete(f"/admin/vectors/indexes/{index_name}", params={"confirm": True})
+                        result = api_delete(f"/admin/indexes/{index_name}", params={"confirm": True})
                         if result:
                             st.success(f"Index deleted: {result.get('message', 'Success')}")
                             del st.session_state["delete_index_name"]
@@ -458,7 +494,7 @@ def render_vector_management():
             if st.button("🗑️ Delete Selected Indexes", type="primary", disabled=len(bulk_indexes) == 0):
                 if bulk_indexes:
                     result = api_post(
-                        "/admin/vectors/indexes/bulk-delete",
+                        "/admin/indexes/bulk-delete",
                         json_data={"index_names": bulk_indexes, "confirm": True}
                     )
                     if result:
@@ -498,7 +534,7 @@ def render_vector_search():
     if st.button("🔍 Search", type="primary", disabled=not query):
         with st.spinner("Searching..."):
             result = api_post(
-                "/admin/vectors/search",
+                "/admin/search",
                 json_data={
                     "query": query,
                     "index_names": selected_indexes if selected_indexes else None,
@@ -527,7 +563,7 @@ def render_index_map():
     st.write("Manage the mapping between document names and OpenSearch indexes.")
     
     # Get index map
-    map_response = api_get("/admin/vectors/index-map")
+    map_response = api_get("/admin/index-map")
     entries = map_response.get("entries", [])
     
     if entries:
@@ -554,7 +590,7 @@ def render_index_map():
         with col2:
             if st.button("🗑️ Remove Mapping", disabled=not doc_to_remove):
                 if doc_to_remove:
-                    result = api_delete(f"/admin/vectors/index-map/{doc_to_remove}")
+                    result = api_delete(f"/admin/index-map/{doc_to_remove}")
                     if result:
                         st.success("Mapping removed")
                         st.rerun()
@@ -573,7 +609,7 @@ def render_index_map():
     
     if st.button("➕ Add/Update Mapping", disabled=not new_doc_name or not new_index_name):
         result = api_post(
-            "/admin/vectors/index-map",
+            "/admin/index-map",
             json_data={"document_name": new_doc_name, "index_name": new_index_name}
         )
         if result:
