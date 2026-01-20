@@ -1,0 +1,640 @@
+{
+	"info": {
+		"_postman_id": "7d9e4a3b-2f3a-4e8b-b6a1-3d4e5f6g7h8i",
+		"name": "ARIS RAG System API",
+		"description": "Complete Postman collection for testing ARIS RAG Microservices with all parameters and features. Includes advanced RAG queries, multi-language support, document management, image queries with document filtering, and admin operations.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Gateway Service (:8500)",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{gateway_url}}/health",
+							"host": ["{{gateway_url}}"],
+							"path": ["health"]
+						}
+					}
+				},
+				{
+					"name": "List Documents",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{gateway_url}}/documents",
+							"host": ["{{gateway_url}}"],
+							"path": ["documents"]
+						}
+					}
+				},
+				{
+					"name": "Upload Document",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "parser_preference",
+									"value": "pymupdf",
+									"type": "text"
+								},
+								{
+									"key": "language",
+									"value": "eng",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{gateway_url}}/documents",
+							"host": ["{{gateway_url}}"],
+							"path": ["documents"]
+						}
+					}
+				},
+				{
+					"name": "Query RAG (Full Parameters)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"What is the main topic of the document?\",\n    \"k\": 6,\n    \"use_mmr\": true,\n    \"use_hybrid_search\": true,\n    \"semantic_weight\": 0.7,\n    \"search_mode\": \"hybrid\",\n    \"use_agentic_rag\": false,\n    \"temperature\": 0.0,\n    \"max_tokens\": 1200,\n    \"document_id\": null,\n    \"active_sources\": [],\n    \"response_language\": \"English\",\n    \"filter_language\": null,\n    \"auto_translate\": true\n}"
+						},
+						"url": {
+							"raw": "{{gateway_url}}/query",
+							"host": ["{{gateway_url}}"],
+							"path": ["query"]
+						}
+					}
+				},
+				{
+					"name": "Query RAG (Specific Document)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"What are the specifications?\",\n    \"k\": 5,\n    \"active_sources\": [\"your-document.pdf\"]\n}"
+						},
+						"url": {
+							"raw": "{{gateway_url}}/query",
+							"host": ["{{gateway_url}}"],
+							"path": ["query"]
+						}
+					}
+				},
+				{
+					"name": "Query RAG (Spanish Question)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"¿Cuál es el procedimiento de seguridad?\",\n    \"k\": 5,\n    \"auto_translate\": true,\n    \"response_language\": \"Spanish\",\n    \"active_sources\": [\"EM10, degasing(spa).pdf\"]\n}"
+						},
+						"url": {
+							"raw": "{{gateway_url}}/query",
+							"host": ["{{gateway_url}}"],
+							"path": ["query"]
+						}
+					}
+				},
+				{
+					"name": "Query Images (ALL Documents)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"technical diagrams\",\n    \"k\": 10,\n    \"active_sources\": []\n}"
+						},
+						"url": {
+							"raw": "{{gateway_url}}/query/images",
+							"host": ["{{gateway_url}}"],
+							"path": ["query", "images"]
+						}
+					}
+				},
+				{
+					"name": "Query Images (Specific Document)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"diagrams\",\n    \"k\": 5,\n    \"active_sources\": [\"VUORMAR(spa).pdf\"]\n}"
+						},
+						"url": {
+							"raw": "{{gateway_url}}/query/images",
+							"host": ["{{gateway_url}}"],
+							"path": ["query", "images"]
+						}
+					}
+				},
+				{
+					"name": "Query Images (Multiple Documents)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"question\": \"diagrams specifications\",\n    \"k\": 10,\n    \"active_sources\": [\"VUORMAR(spa).pdf\", \"EM10, degasing(spa).pdf\"]\n}"
+						},
+						"url": {
+							"raw": "{{gateway_url}}/query/images",
+							"host": ["{{gateway_url}}"],
+							"path": ["query", "images"]
+						}
+					}
+				},
+				{
+					"name": "Get Document Images",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{gateway_url}}/documents/:document_id/images",
+							"host": ["{{gateway_url}}"],
+							"path": ["documents", ":document_id", "images"],
+							"variable": [
+								{
+									"key": "document_id",
+									"value": "your-uuid-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{gateway_url}}/stats",
+							"host": ["{{gateway_url}}"],
+							"path": ["stats"]
+						}
+					}
+				},
+				{
+					"name": "Get Document by ID",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{gateway_url}}/documents/:document_id",
+							"host": ["{{gateway_url}}"],
+							"path": ["documents", ":document_id"],
+							"variable": [
+								{
+									"key": "document_id",
+									"value": "your-uuid-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Document Metadata",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"document_name\": \"Updated Document Name.pdf\",\n    \"status\": \"success\",\n    \"language\": \"eng\"\n}"
+						},
+						"url": {
+							"raw": "{{gateway_url}}/documents/:document_id",
+							"host": ["{{gateway_url}}"],
+							"path": ["documents", ":document_id"],
+							"variable": [
+								{
+									"key": "document_id",
+									"value": "your-uuid-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Document",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{gateway_url}}/documents/:document_id",
+							"host": ["{{gateway_url}}"],
+							"path": ["documents", ":document_id"],
+							"variable": [
+								{
+									"key": "document_id",
+									"value": "your-uuid-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Force Global Sync",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{gateway_url}}/sync/force",
+							"host": ["{{gateway_url}}"],
+							"path": ["sync", "force"]
+						}
+					}
+				},
+				{
+					"name": "Get Sync Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{gateway_url}}/sync/status",
+							"host": ["{{gateway_url}}"],
+							"path": ["sync", "status"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Ingestion Service (:8501)",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{ingestion_url}}/health",
+							"host": ["{{ingestion_url}}"],
+							"path": ["health"]
+						}
+					}
+				},
+				{
+					"name": "Registry Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{ingestion_url}}/admin/documents/registry-stats",
+							"host": ["{{ingestion_url}}"],
+							"path": ["admin", "documents", "registry-stats"]
+						}
+					}
+				},
+				{
+					"name": "Direct Ingest (Async)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "parser_preference",
+									"value": "pymupdf",
+									"type": "text"
+								},
+								{
+									"key": "language",
+									"value": "eng",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{ingestion_url}}/ingest",
+							"host": ["{{ingestion_url}}"],
+							"path": ["ingest"]
+						}
+					}
+				},
+				{
+					"name": "Direct Process (Sync)",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "formdata",
+							"formdata": [
+								{
+									"key": "file",
+									"type": "file",
+									"src": []
+								},
+								{
+									"key": "parser_preference",
+									"value": "docling",
+									"type": "text"
+								}
+							]
+						},
+						"url": {
+							"raw": "{{ingestion_url}}/process",
+							"host": ["{{ingestion_url}}"],
+							"path": ["process"]
+						}
+					}
+				},
+				{
+					"name": "Check Processing Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{ingestion_url}}/status/:document_id",
+							"host": ["{{ingestion_url}}"],
+							"path": ["status", ":document_id"],
+							"variable": [
+								{
+									"key": "document_id",
+									"value": "your-uuid-here"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Ingestion Sync Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{ingestion_url}}/sync/status",
+							"host": ["{{ingestion_url}}"],
+							"path": ["sync", "status"]
+						}
+					}
+				},
+				{
+					"name": "Ingestion Force Sync",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{ingestion_url}}/sync/force",
+							"host": ["{{ingestion_url}}"],
+							"path": ["sync", "force"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Retrieval Service (:8502)",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{retrieval_url}}/health",
+							"host": ["{{retrieval_url}}"],
+							"path": ["health"]
+						}
+					}
+				},
+				{
+					"name": "List Vector Indexes",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{retrieval_url}}/admin/indexes?prefix=aris-",
+							"host": ["{{retrieval_url}}"],
+							"path": ["admin", "indexes"],
+							"query": [
+								{
+									"key": "prefix",
+									"value": "aris-"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Index Map",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{retrieval_url}}/admin/index-map",
+							"host": ["{{retrieval_url}}"],
+							"path": ["admin", "index-map"]
+						}
+					}
+				},
+				{
+					"name": "Direct Vector Search",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"query\": \"technical specifications\",\n    \"k\": 10,\n    \"use_hybrid\": true,\n    \"semantic_weight\": 0.7\n}"
+						},
+						"url": {
+							"raw": "{{retrieval_url}}/admin/search",
+							"host": ["{{retrieval_url}}"],
+							"path": ["admin", "search"]
+						}
+					}
+				},
+				{
+					"name": "List Chunks in Index",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{retrieval_url}}/admin/indexes/:index_name/chunks?limit=10",
+							"host": ["{{retrieval_url}}"],
+							"path": ["admin", "indexes", ":index_name", "chunks"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "10"
+								}
+							],
+							"variable": [
+								{
+									"key": "index_name",
+									"value": "aris-doc-your-id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Vector Index",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{retrieval_url}}/admin/indexes/:index_name?confirm=true",
+							"host": ["{{retrieval_url}}"],
+							"path": ["admin", "indexes", ":index_name"],
+							"query": [
+								{
+									"key": "confirm",
+									"value": "true"
+								}
+							],
+							"variable": [
+								{
+									"key": "index_name",
+									"value": "aris-doc-your-id"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Index Map",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"document_name\": \"your-document.pdf\",\n    \"index_name\": \"aris-doc-uuid-here\"\n}"
+						},
+						"url": {
+							"raw": "{{retrieval_url}}/admin/index-map",
+							"host": ["{{retrieval_url}}"],
+							"path": ["admin", "index-map"]
+						}
+					}
+				},
+				{
+					"name": "Delete Index Map Entry",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{retrieval_url}}/admin/index-map/:document_name",
+							"host": ["{{retrieval_url}}"],
+							"path": ["admin", "index-map", ":document_name"],
+							"variable": [
+								{
+									"key": "document_name",
+									"value": "your-document.pdf"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Retrieval Sync Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{retrieval_url}}/sync/status",
+							"host": ["{{retrieval_url}}"],
+							"path": ["sync", "status"]
+						}
+					}
+				},
+				{
+					"name": "Retrieval Force Sync",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{retrieval_url}}/sync/force",
+							"host": ["{{retrieval_url}}"],
+							"path": ["sync", "force"]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "gateway_url",
+			"value": "http://44.221.84.58:8500",
+			"type": "string"
+		},
+		{
+			"key": "ingestion_url",
+			"value": "http://44.221.84.58:8501",
+			"type": "string"
+		},
+		{
+			"key": "retrieval_url",
+			"value": "http://44.221.84.58:8502",
+			"type": "string"
+		}
+	]
+}

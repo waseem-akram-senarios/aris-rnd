@@ -2147,11 +2147,86 @@ if st.session_state.documents_processed and container:
                     for source in sources:
                         st.write(f"- {source}")
     
-    # Single Query Input (at the top)
-    st.subheader("💬 Ask Questions")
-    question = st.chat_input("Ask a question about your documents...")
-    
-    # Feature Toggles (Compact)
+    # Query Mode Selection
+    query_mode = st.radio(
+        "Query Mode:",
+        ["💬 Text Questions", "🖼️ Image Search"],
+        index=0,
+        horizontal=True,
+        help="Choose to ask questions about text content or search for images/diagrams"
+    )
+
+    if query_mode == "💬 Text Questions":
+        # Single Query Input (at the top)
+        st.subheader("💬 Ask Questions")
+        question = st.chat_input("Ask a question about your documents...")
+    else:
+        # Image Query Interface
+        st.subheader("🖼️ Search Images & Diagrams")
+        question = st.text_input(
+            "Search for images:",
+            placeholder="e.g., technical diagrams, charts, tables...",
+            help="Search for images, diagrams, and visual content in your documents"
+        )
+        search_images = st.button("🔍 Search Images", type="primary", disabled=not question)
+
+        # Image Query Processing
+        if question and search_images:
+            with st.chat_message("user"):
+                st.write(f"🖼️ Searching for: **{question}**")
+
+            with st.chat_message("assistant"):
+                with st.spinner("Searching images..."):
+                    container = st.session_state.get('service_container')
+                    if not container:
+                        st.error("Service container not initialized. Please upload a document first.")
+                        st.stop()
+
+                    try:
+                        # Use same document filtering as text queries
+                        images = container.query_images_only(
+                            question,
+                            k=20  # More images for visual search
+                        )
+
+                        if images:
+                            st.success(f"Found {len(images)} images matching '{question}'")
+
+                            # Display images in a grid
+                            cols = st.columns(3)
+                            for i, img in enumerate(images):
+                                with cols[i % 3]:
+                                    with st.expander(f"Image {img.get('image_number', i+1)}", expanded=False):
+                                        st.write(f"**Source:** {img.get('source', 'N/A')}")
+                                        st.write(f"**Page:** {img.get('page', 'N/A')}")
+                                        if img.get('ocr_text'):
+                                            st.text_area(
+                                                "OCR Text:",
+                                                value=img['ocr_text'][:500] + "..." if len(img['ocr_text']) > 500 else img['ocr_text'],
+                                                height=100,
+                                                disabled=True,
+                                                key=f"ocr_{i}"
+                                            )
+                                        if img.get('score'):
+                                            st.caption(f"Relevance: {img['score']:.3f}")
+                        else:
+                            st.info("No images found matching your search. Try different keywords or check if your documents contain images.")
+
+                        # Store in citations history for consistency
+                        st.session_state.citations_history.append({
+                            "question": question,
+                            "images": images,
+                            "timestamp": time.time(),
+                            "mode": "images"
+                        })
+
+                    except Exception as e:
+                        st.error(f"Image search failed: {str(e)}")
+            return  # Exit after processing image query
+
+    # Only show text query features for text mode
+    if query_mode == "💬 Text Questions":
+        # Feature Toggles (Compact) - Only show for text queries
     st.markdown("**⚙️ Features:**")
     feature_cols = st.columns(4)
     
@@ -2248,15 +2323,17 @@ if st.session_state.documents_processed and container:
         search_mode = "Hybrid"
         semantic_weight = ARISConfig.DEFAULT_SEMANTIC_WEIGHT
     
-    # Info message if no document is selected for summary queries (less intrusive)
-    if question and question.lower().strip():
-        is_summary_like = any(kw in question.lower() for kw in ['summary', 'summarize', 'overview', 'what is this document about', 'what does this document contain'])
-        if is_summary_like:
-            container = st.session_state.get('service_container')
-            if not container or not container.gateway_service.active_sources:
-                st.info("💡 **Tip:** Select a document from the sidebar to get a summary of that specific document. Currently searching all documents.")
-    
-    if question:
+    # Only process text queries in text mode
+    if query_mode == "💬 Text Questions":
+        # Info message if no document is selected for summary queries (less intrusive)
+        if question and question.lower().strip():
+            is_summary_like = any(kw in question.lower() for kw in ['summary', 'summarize', 'overview', 'what is this document about', 'what does this document contain'])
+            if is_summary_like:
+                container = st.session_state.get('service_container')
+                if not container or not container.gateway_service.active_sources:
+                    st.info("💡 **Tip:** Select a document from the sidebar to get a summary of that specific document. Currently searching all documents.")
+
+        if question:
         # Add user question to chat
         st.chat_message("user").write(question)
         
@@ -3247,8 +3324,9 @@ if st.session_state.documents_processed and container:
                             file_name="mode_comparison.json",
                             mime="application/json"
                         )
-    
-else:
+
+    # End of text query mode condition
+    else:
     # If documents are stored but not loaded, guide user
     if 'document_registry' in st.session_state:
         existing_docs = st.session_state.document_registry.list_documents()
