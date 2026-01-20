@@ -605,12 +605,16 @@ class OpenSearchImagesStore:
             
             # Try k-NN search first, fall back to text search if it fails
             try:
+                # Correct OpenSearch k-NN query format
                 knn_query = {
                     "size": k,
-                    "knn": {
-                        "field": "vector_field",
-                        "vector": query_vector,
-                        "k": k
+                    "query": {
+                        "knn": {
+                            "vector_field": {
+                                "vector": query_vector,
+                                "k": k
+                            }
+                        }
                     }
                 }
                 
@@ -632,15 +636,30 @@ class OpenSearchImagesStore:
                             {"match_phrase": {"metadata.source": variant}}
                         ])
                     if should_clauses:
-                        knn_query["knn"]["filter"] = {
+                        # Add filter to the bool query
+                        knn_query["query"] = {
                             "bool": {
-                                "should": should_clauses,
-                                "minimum_should_match": 1
+                                "must": [
+                                    {
+                                        "knn": {
+                                            "vector_field": {
+                                                "vector": query_vector,
+                                                "k": k
+                                            }
+                                        }
+                                    }
+                                ],
+                                "filter": {
+                                    "bool": {
+                                        "should": should_clauses,
+                                        "minimum_should_match": 1
+                                    }
+                                }
                             }
                         }
                 
                 response = client.search(index=self.index_name, body=knn_query)
-                logger.info(f"k-NN search succeeded on images index")
+                logger.info(f"k-NN search succeeded on images index with {len(response.get('hits', {}).get('hits', []))} results")
             except Exception as knn_error:
                 # k-NN not supported or failed - fallback to text search
                 logger.warning(f"k-NN search failed, using text search fallback: {knn_error}")
