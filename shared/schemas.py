@@ -218,10 +218,10 @@ class MetricsInfo(BaseModel):
 
 class ImageQueryRequest(BaseModel):
     """Request model for querying images"""
-    question: str = Field(..., description="The search query for images")
-    source: Optional[str] = Field(default=None, description="Optional single document source to filter by (deprecated, use active_sources)")
-    active_sources: Optional[List[str]] = Field(default=None, description="Optional list of document names to filter images. Empty list = all documents.")
-    k: int = Field(default=5, ge=1, le=50, description="Number of images to retrieve")
+    question: str = Field(..., description="The search query for images", examples=["technical diagrams"])
+    source: Optional[str] = Field(default=None, description="Optional single document source to filter by (deprecated, use active_sources)", examples=["document.pdf"])
+    active_sources: Optional[List[str]] = Field(default=None, description="Optional list of document names to filter images. Empty list = all documents.", examples=[["document1.pdf", "document2.pdf"]])
+    k: int = Field(default=5, ge=1, le=50, description="Number of images to retrieve", examples=[5])
 
 
 class ImageResult(BaseModel):
@@ -651,63 +651,74 @@ class FullIngestionRequest(BaseModel):
     # Parser Settings
     parser: Literal['pymupdf', 'docling', 'llamascan', 'ocrmypdf', 'textract'] = Field(
         default='pymupdf',
-        description="Document parser to use. pymupdf=fast, docling=advanced tables/complex layouts, llamascan=vision AI, ocrmypdf=scanned PDFs, textract=AWS OCR"
+        description="Document parser to use. pymupdf=fast, docling=advanced tables/complex layouts, llamascan=vision AI, ocrmypdf=scanned PDFs, textract=AWS OCR",
+        examples=["pymupdf"]
     )
-    
+
     # Language Settings
     language: str = Field(
         default="eng",
-        description="Document language code (e.g., 'eng', 'spa', 'fra', 'deu')"
+        description="Document language code (e.g., 'eng', 'spa', 'fra', 'deu')",
+        examples=["eng"]
     )
-    
+
     # Chunking Settings
     chunk_size: int = Field(
         default=384,
         ge=100,
         le=2000,
-        description="Size of text chunks in tokens"
+        description="Size of text chunks in tokens",
+        examples=[384]
     )
     chunk_overlap: int = Field(
         default=120,
         ge=0,
         le=500,
-        description="Overlap between chunks in tokens"
+        description="Overlap between chunks in tokens",
+        examples=[120]
     )
     chunking_strategy: Literal['comprehensive', 'balanced', 'fast'] = Field(
         default='comprehensive',
-        description="Chunking strategy: comprehensive=more chunks/better recall, balanced=default, fast=fewer chunks"
+        description="Chunking strategy: comprehensive=more chunks/better recall, balanced=default, fast=fewer chunks",
+        examples=["comprehensive"]
     )
-    
+
     # Index Settings
     index_name: Optional[str] = Field(
         default=None,
-        description="Custom OpenSearch index name (auto-generated if not provided)"
+        description="Custom OpenSearch index name (auto-generated if not provided)",
+        examples=["custom-index-name"]
     )
-    
+
     # Update Settings
     force_update: bool = Field(
         default=False,
-        description="Force re-processing even if identical content exists"
+        description="Force re-processing even if identical content exists",
+        examples=[False]
     )
-    
+
     # OCR Settings (for image-heavy documents)
     enable_ocr: bool = Field(
         default=True,
-        description="Enable OCR for images in the document"
+        description="Enable OCR for images in the document",
+        examples=[True]
     )
     ocr_language: str = Field(
         default="eng",
-        description="Language hint for OCR processing"
+        description="Language hint for OCR processing",
+        examples=["eng"]
     )
-    
+
     # Advanced Settings
     extract_images: bool = Field(
         default=True,
-        description="Extract and store images separately for image search"
+        description="Extract and store images separately for image search",
+        examples=[True]
     )
     preserve_formatting: bool = Field(
         default=False,
-        description="Preserve document formatting in text extraction"
+        description="Preserve document formatting in text extraction",
+        examples=[False]
     )
 
 
@@ -746,90 +757,109 @@ class FullQueryRequest(BaseModel):
     Use this endpoint for full control over document querying.
     """
     # Required
-    question: str = Field(..., description="The question to answer")
-    
+    question: str = Field(
+        ...,
+        description="The question to answer",
+        examples=["What are the key features of the system?"]
+    )
+
     # Document Filtering
     active_sources: Optional[List[str]] = Field(
         default=None,
-        description="List of document names to search (None or empty = all documents)"
+        description="List of document names to search (None or empty = all documents)",
+        examples=[["document1.pdf", "document2.pdf"]]
     )
     document_id: Optional[str] = Field(
         default=None,
-        description="Specific document ID to query (overridden by active_sources if provided)"
+        description="Specific document ID to query (overridden by active_sources if provided)",
+        examples=["doc-12345-abcde"]
     )
-    
+
     # Search Settings
     search_mode: Literal['semantic', 'keyword', 'hybrid'] = Field(
         default='hybrid',
-        description="Search mode: semantic=vector similarity, keyword=text matching, hybrid=combined"
+        description="Search mode: semantic=vector similarity, keyword=text matching, hybrid=combined",
+        examples=["hybrid"]
     )
     semantic_weight: float = Field(
         default=0.75,
         ge=0.0,
         le=1.0,
-        description="Weight for semantic search in hybrid mode (1.0 = pure semantic, 0.0 = pure keyword)"
+        description="Weight for semantic search in hybrid mode (1.0 = pure semantic, 0.0 = pure keyword)",
+        examples=[0.75]
     )
     k: int = Field(
         default=6,
         ge=1,
         le=50,
-        description="Number of chunks to retrieve"
+        description="Number of chunks to retrieve",
+        examples=[6]
     )
     use_mmr: bool = Field(
         default=True,
-        description="Use Maximum Marginal Relevance for diverse results"
+        description="Use Maximum Marginal Relevance for diverse results",
+        examples=[True]
     )
-    
+
     # Agentic RAG Settings
     use_agentic_rag: bool = Field(
         default=True,
-        description="Enable Agentic RAG with query decomposition and synthesis"
+        description="Enable Agentic RAG with query decomposition and synthesis",
+        examples=[True]
     )
     max_sub_queries: int = Field(
         default=4,
         ge=1,
         le=10,
-        description="Maximum number of sub-queries for Agentic RAG"
+        description="Maximum number of sub-queries for Agentic RAG",
+        examples=[4]
     )
-    
+
     # Generation Settings
     temperature: float = Field(
         default=0.0,
         ge=0.0,
         le=2.0,
-        description="LLM temperature (0.0 = deterministic, higher = more creative)"
+        description="LLM temperature (0.0 = deterministic, higher = more creative)",
+        examples=[0.0]
     )
     max_tokens: int = Field(
         default=1200,
         ge=100,
         le=4000,
-        description="Maximum tokens for LLM response"
+        description="Maximum tokens for LLM response",
+        examples=[1200]
     )
-    
+
     # Multi-Language Support
     response_language: Optional[str] = Field(
         default=None,
-        description="Language for the response (e.g., 'English', 'Spanish', 'French'). None = auto-detect from query."
+        description="Language for the response (e.g., 'English', 'Spanish', 'French'). None = auto-detect from query.",
+        examples=["Spanish"]
     )
     filter_language: Optional[str] = Field(
         default=None,
-        description="Filter documents by language code (e.g., 'eng', 'spa'). None = all languages."
+        description="Filter documents by language code (e.g., 'eng', 'spa'). None = all languages.",
+        examples=["eng"]
     )
     auto_translate: bool = Field(
         default=True,
-        description="Automatically translate non-English queries for better semantic search"
+        description="Automatically translate non-English queries for better semantic search",
+        examples=[True]
     )
-    
+
     # Image Search (Combined Query)
     include_images: bool = Field(
         default=False,
-        description="Include image search results alongside text results"
+        description="Include image search results alongside text results",
+        examples=[False]
     )
     image_k: int = Field(
         default=5,
         ge=1,
         le=20,
-        description="Number of images to retrieve if include_images is True"
+        description="Number of images to retrieve if include_images is True",
+        examples=[5]
     )
 
 
