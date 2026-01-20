@@ -510,14 +510,28 @@ class GatewayService:
                 return []
 
     async def delete_document_from_stores(self, document_id: str) -> bool:
-        """Proxies DELETE to Retrieval Service"""
+        """Proxies DELETE to both Ingestion and Retrieval Services"""
+        results = []
         async with httpx.AsyncClient(timeout=30.0) as client:
+            # 1. Delete from Ingestion (handles S3 and Ingestion-local Registry)
             try:
-                response = await client.delete(f"{self.retrieval_url}/documents/{document_id}")
-                return response.status_code == 200
+                ing_resp = await client.delete(f"{self.ingestion_url}/documents/{document_id}")
+                results.append(ing_resp.status_code == 200)
+                logger.info(f"Gateway: Deleted document {document_id} from Ingestion")
             except Exception as e:
-                logger.error(f"Error calling retrieval service (delete): {e}")
-                return False
+                logger.warning(f"Gateway: Failed to delete {document_id} from Ingestion: {e}")
+                results.append(False)
+
+            # 2. Delete from Retrieval (handles Vectors)
+            try:
+                ret_resp = await client.delete(f"{self.retrieval_url}/documents/{document_id}")
+                results.append(ret_resp.status_code == 200)
+                logger.info(f"Gateway: Deleted document {document_id} from Retrieval")
+            except Exception as e:
+                logger.warning(f"Gateway: Failed to delete {document_id} from Retrieval: {e}")
+                results.append(False)
+        
+        return any(results)
 
     async def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng", is_update=False, old_index_name=None) -> "ProcessingResult":
         """Proxies process_document for compatibility with UI - falls back to direct processing if microservice unavailable
@@ -837,7 +851,7 @@ class GatewayService:
             logger.error(f"Gateway: [ReqID: {request_id}] Error checking index existence: {e}")
             return False
 
-    async def find_next_available_index_name(self, base_name: str) -> str:
+    async     def find_next_available_index_name(self, base_name: str) -> str:
         """
         Find the next available index name (proxies to Ingestion Service).
         Compatibility method for UI.
@@ -856,6 +870,61 @@ class GatewayService:
         except Exception as e:
             logger.error(f"Gateway: [ReqID: {request_id}] Error finding next index name: {e}")
             return f"{base_name}-1"
+
+    def get_sync_status_sync(self) -> Dict:
+        """Fetch synchronization status across all services (sync version for UI)"""
+        try:
+            from shared.utils.sync_manager import get_sync_manager
+            sync_manager = get_sync_manager("gateway")
+            status = sync_manager.get_sync_status()
+            
+            # Basic info from gateway
+            status["gateway"] = {
+                "document_count": len(self.list_documents()),
+                "registry_accessible": True,
+                "service": "gateway"
+            }
+            
+            # Check other services
+            with httpx.Client(timeout=5.0) as client:
+                try:
+                    ing_resp = client.get(f"{self.ingestion_url}/sync/status")
+                    status["ingestion"] = ing_resp.json() if ing_resp.status_code == 200 else {"error": "Service unavailable"}
+                except Exception as e:
+                    status["ingestion"] = {"error": str(e)}
+                
+                try:
+                    ret_resp = client.get(f"{self.retrieval_url}/sync/status")
+                    status["retrieval"] = ret_resp.json() if ret_resp.status_code == 200 else {"error": "Service unavailable"}
+                except Exception as e:
+                    status["retrieval"] = {"error": str(e)}
+            
+            return status
+        except Exception as e:
+            logger.error(f"Error getting sync status: {e}")
+            return {"error": str(e)}
+
+    def force_sync_sync(self) -> Dict:
+        """Force synchronization across all services (sync version for UI)"""
+        try:
+            from shared.utils.sync_manager import get_sync_manager
+            sync_manager = get_sync_manager("gateway")
+            result = sync_manager.force_full_sync()
+            
+            # Force others
+            with httpx.Client(timeout=30.0) as client:
+                try:
+                    client.post(f"{self.ingestion_url}/sync/force")
+                except: pass
+                
+                try:
+                    client.post(f"{self.retrieval_url}/sync/force")
+                except: pass
+            
+            return {"success": True, "message": "Manual sync triggered across all services"}
+        except Exception as e:
+            logger.error(f"Error forcing sync: {e}")
+            return {"success": False, "error": str(e)}
 
 def create_gateway_service() -> GatewayService:
     return GatewayService()

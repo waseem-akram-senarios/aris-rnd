@@ -591,6 +591,52 @@ async def get_processing_status(
         raise HTTPException(status_code=404, detail="Document processing state not found")
     return state
 
+@app.delete("/documents/{document_id}")
+async def delete_document(
+    document_id: str,
+    processor: DocumentProcessor = Depends(get_processor)
+):
+    """
+    Delete a document's ingestion-related data (S3 backup and registry entry).
+    """
+    try:
+        from storage.document_registry import DocumentRegistry
+        registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+        doc = registry.get_document(document_id)
+        
+        if not doc:
+            raise HTTPException(status_code=404, detail=f"Document {document_id} not found in registry")
+        
+        doc_name = doc.get('document_name', 'unknown')
+        index_name = doc.get('text_index') or doc.get('index_name')
+        
+        # 1. Clean up vector data if we have an index name
+        if index_name:
+            processor._cleanup_old_index_data(document_id, index_name, doc_name)
+            
+        # 2. Delete from S3 if enabled
+        if hasattr(processor.rag_system, 's3_service') and processor.rag_system.s3_service.enabled:
+            try:
+                s3_prefix = f"documents/{document_id}/"
+                processor.rag_system.s3_service.delete_prefix(s3_prefix)
+                logger.info(f"Deleted S3 data for document {document_id}")
+            except Exception as e:
+                logger.warning(f"S3 deletion failed for {document_id}: {e}")
+        
+        # 3. Remove from registry
+        success = registry.remove_document(document_id)
+        
+        if success:
+            return {"status": "success", "message": f"Document {document_id} ingestion data deleted"}
+        else:
+            return {"status": "partial_success", "message": f"Cleaned stores but registry entry for {document_id} not found"}
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in Ingestion delete_document: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/indexes/{base_name}/next-available")
 async def get_next_available_index(
     base_name: str,

@@ -251,18 +251,10 @@ class ServiceContainer:
     def get_all_metrics(self) -> Dict:
         """Fetch all metrics (proxies to Gateway)"""
         try:
-            async def _metrics():
-                return await self.gateway_service.get_all_metrics()
-            
-            try:
-                loop = asyncio.get_running_loop()
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(asyncio.run, _metrics())
-                    return future.result(timeout=15)
-            except RuntimeError:
-                return asyncio.run(_metrics())
-        except Exception:
+            # UI always uses sync version
+            return self.gateway_service.get_all_metrics()
+        except Exception as e:
+            logger.error(f"Error fetching metrics from UI service: {e}")
             return {}
 
     def get_storage_status(self, document_id: str) -> Dict:

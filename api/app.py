@@ -1898,84 +1898,56 @@ with st.sidebar:
         st.divider()
         st.subheader("🔄 Synchronization Status")
         
-        # Get sync status
-        registry_status = st.session_state.document_registry.get_sync_status()
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Shared Documents", registry_status['total_documents'])
-        with col2:
-            last_update = registry_status.get('last_update', 'Never')
-            if last_update:
-                st.caption(f"Last Update: {last_update[:19]}")
-            else:
-                st.caption("Last Update: Never")
-        with col3:
-            vectorstore_path = ARISConfig.get_vectorstore_path()
-            container = st.session_state.get('service_container')
-            vectorstore_exists = os.path.exists(vectorstore_path) if container and container.gateway_service.vector_store_type.lower() == 'faiss' else False
-            if vectorstore_exists:
-                st.success("✅ Vectorstore synced")
-            else:
-                st.info("ℹ️ No shared vectorstore")
-        
-        # Manual sync buttons
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("💾 Save Vectorstore", help="Save current vectorstore to shared storage"):
-                container = st.session_state.get('service_container')
-                if container and hasattr(container.gateway_service, 'vectorstore') and container.gateway_service.vectorstore:
-                    if container.gateway_service.vector_store_type.lower() == 'faiss':
-                        try:
-                            container.gateway_service.save_vectorstore(vectorstore_path)
-                            st.success("✅ Vectorstore saved to shared storage")
-                            st.session_state.vectorstore_loaded = True
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Failed to save: {e}")
-                    else:
-                        st.info("ℹ️ OpenSearch stores data in cloud automatically")
+        container = st.session_state.get('service_container')
+        if container and hasattr(container.gateway_service, 'get_sync_status_sync'):
+            try:
+                sync_status = container.gateway_service.get_sync_status_sync()
+                
+                # Check consistency
+                gw_docs = sync_status.get('gateway', {}).get('document_count', 0)
+                ing_docs = sync_status.get('ingestion', {}).get('status', {}).get('total_documents', gw_docs)
+                ret_docs = sync_status.get('retrieval', {}).get('status', {}).get('total_documents', gw_docs)
+                
+                is_synced = (gw_docs == ing_docs == ret_docs)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Gateway Docs", gw_docs)
+                with col2:
+                    st.metric("Ingestion Docs", ing_docs)
+                    if ing_docs != gw_docs:
+                        st.warning("⚠️ Ingestion registry out of sync")
+                with col3:
+                    st.metric("Retrieval Docs", ret_docs)
+                    if ret_docs != gw_docs:
+                        st.warning("⚠️ Retrieval registry out of sync")
+                
+                if is_synced:
+                    st.success("✅ All services fully synchronized")
                 else:
-                    st.warning("⚠️ No vectorstore to save")
-        
-        with col2:
-            if st.button("🔄 Reload Vectorstore", help="Reload vectorstore from shared storage"):
-                container = st.session_state.get('service_container')
-                if container and container.gateway_service.vector_store_type.lower() == 'faiss':
-                    try:
-                        # Check for conflicts before reloading
-                        conflict = st.session_state.document_registry.check_for_conflicts()
-                        if conflict:
-                            st.warning(f"⚠️ {conflict['message']}. Reloading anyway...")
-                            st.session_state.document_registry.reload_from_disk()
-                        
-                        loaded = container.gateway_service.load_vectorstore(vectorstore_path)
-                        if loaded:
-                            st.success("✅ Vectorstore reloaded from shared storage")
-                            st.session_state.vectorstore_loaded = True
-                            st.session_state.documents_processed = True
-                            # Reload documents from registry
-                            existing_docs = st.session_state.document_registry.list_documents()
-                            if existing_docs:
-                                st.info(f"📚 Loaded {len(existing_docs)} document(s) from shared registry")
+                    st.warning("⚠️ Synchronization issues detected between services")
+                
+                # Manual sync button
+                if st.button("🔄 Force Global Sync", help="Trigger a manual synchronization across all microservices"):
+                    with st.spinner("Syncing services..."):
+                        result = container.gateway_service.force_sync_sync()
+                        if result.get("success"):
+                            # Also reload local registry in UI
+                            if hasattr(st.session_state.document_registry, 'reload_from_disk'):
+                                st.session_state.document_registry.reload_from_disk()
+                            st.success("✅ Global synchronization triggered successfully")
                             st.rerun()
                         else:
-                            st.warning("⚠️ No vectorstore found to reload")
-                    except Exception as e:
-                        st.error(f"❌ Failed to reload: {e}")
-                else:
-                    st.info("ℹ️ OpenSearch loads from cloud automatically")
-        
-        # Check for conflicts and show warning
-        conflict = st.session_state.document_registry.check_for_conflicts()
-        if conflict:
-            st.warning(
-                f"⚠️ **Conflict Detected**: {conflict['message']}. "
-                f"The registry was modified externally. Consider reloading."
-            )
-            if st.button("🔄 Reload Registry", help="Reload document registry from disk"):
-                if st.session_state.document_registry.reload_from_disk():
-                    st.success("✅ Registry reloaded")
-                    st.rerun()
+                            st.error(f"❌ Sync failed: {result.get('error')}")
+                
+                # Detailed status in expander
+                with st.expander("Detailed Service Status"):
+                    st.json(sync_status)
+            except Exception as e:
+                st.error(f"Error fetching sync status: {e}")
+        else:
+            # Fallback for old/uninitialized container
+            st.info("ℹ️ Sync status only available in microservices mode")
     else:
         st.info("⏳ No documents processed yet. Upload and process documents to see metrics.")
     
