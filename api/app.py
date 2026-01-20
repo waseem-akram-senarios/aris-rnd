@@ -2222,12 +2222,12 @@ if st.session_state.documents_processed and container:
 
                     except Exception as e:
                         st.error(f"Image search failed: {str(e)}")
-            return  # Exit after processing image query
+            st.stop()  # Exit after processing image query
 
     # Only show text query features for text mode
     if query_mode == "💬 Text Questions":
         # Feature Toggles (Compact) - Only show for text queries
-    st.markdown("**⚙️ Features:**")
+        st.markdown("**⚙️ Features:**")
     feature_cols = st.columns(4)
     
     with feature_cols[0]:
@@ -2334,8 +2334,8 @@ if st.session_state.documents_processed and container:
                     st.info("💡 **Tip:** Select a document from the sidebar to get a summary of that specific document. Currently searching all documents.")
 
         if question:
-        # Add user question to chat
-        st.chat_message("user").write(question)
+            # Add user question to chat
+            st.chat_message("user").write(question)
         
         # Get answer with improved accuracy settings
         with st.chat_message("assistant"):
@@ -3327,31 +3327,31 @@ if st.session_state.documents_processed and container:
 
     # End of text query mode condition
     else:
-    # If documents are stored but not loaded, guide user
-    if 'document_registry' in st.session_state:
-        existing_docs = st.session_state.document_registry.list_documents()
-        if existing_docs and not st.session_state.documents_processed:
-            # Try to auto-enable for OpenSearch
-            vector_store_type = ARISConfig.VECTOR_STORE_TYPE.lower()
-            if vector_store_type == 'opensearch':
-                # Auto-initialize for OpenSearch
-                try:
-                    if 'service_container' not in st.session_state:
-                        st.session_state.service_container = ServiceContainer()
-                    st.session_state.documents_processed = True
-                    st.session_state.vectorstore_loaded = True
-                    st.rerun()  # Refresh to show query interface
-                except Exception as e:
-                    st.warning(f"Could not connect to retrieval service: {e}")
+        # If documents are stored but not loaded, guide user
+        if 'document_registry' in st.session_state:
+            existing_docs = st.session_state.document_registry.list_documents()
+            if existing_docs and not st.session_state.documents_processed:
+                # Try to auto-enable for OpenSearch
+                vector_store_type = ARISConfig.VECTOR_STORE_TYPE.lower()
+                if vector_store_type == 'opensearch':
+                    # Auto-initialize for OpenSearch
+                    try:
+                        if 'service_container' not in st.session_state:
+                            st.session_state.service_container = ServiceContainer()
+                        st.session_state.documents_processed = True
+                        st.session_state.vectorstore_loaded = True
+                        st.rerun()  # Refresh to show query interface
+                    except Exception as e:
+                        st.warning(f"Could not connect to retrieval service: {e}")
+                else:
+                    st.warning(
+                        f"📚 You have {len(existing_docs)} stored document(s). "
+                        f"Go to the sidebar → Document Library → pick documents → click **Load Selected Documents** to start Q&A."
+                    )
             else:
-                st.warning(
-                    f"📚 You have {len(existing_docs)} stored document(s). "
-                    f"Go to the sidebar → Document Library → pick documents → click **Load Selected Documents** to start Q&A."
-                )
+                st.info("👆 Please upload and process documents using the sidebar to start asking questions.")
         else:
             st.info("👆 Please upload and process documents using the sidebar to start asking questions.")
-    else:
-        st.info("👆 Please upload and process documents using the sidebar to start asking questions.")
     
     # Instructions
     with st.expander("📖 How to use"):
