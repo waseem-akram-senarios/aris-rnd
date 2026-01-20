@@ -2342,58 +2342,58 @@ if st.session_state.documents_processed and container:
         if question:
             # Add user question to chat
             st.chat_message("user").write(question)
-        
-        # Get answer with improved accuracy settings
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                # Map UI search mode to API parameter
-                search_mode_param = search_mode.lower().replace(" only", "").replace(" ", "_")
-                if search_mode_param == "semantic":
-                    search_mode_param = "semantic"
-                elif search_mode_param == "keyword":
-                    search_mode_param = "keyword"
-                else:
-                    search_mode_param = "hybrid"
-                
-                # Check if hybrid search is available and provide feedback
-                container = st.session_state.get('service_container')
-                if search_mode_param in ["hybrid", "keyword"] and \
-                   container and hasattr(container.gateway_service, 'vector_store_type') and \
-                   container.gateway_service.vector_store_type.lower() != 'opensearch':
-                    st.info("ℹ️ Hybrid search is only available for OpenSearch. Using semantic search instead.")
-                    search_mode_param = "semantic"
-                    semantic_weight = 1.0
-                
-                # Use maximum accuracy settings: more chunks, optimized MMR
-                # k and use_mmr will use config defaults optimized for accuracy
-                container = st.session_state.get('service_container')
-                if not container:
-                    # Initialize service container if it doesn't exist
-                    try:
-                        st.session_state.service_container = ServiceContainer()
-                        container = st.session_state.service_container
-                        logger.info("Service container initialized for text query")
-                    except Exception as e:
-                        st.error(f"Failed to initialize service container: {e}")
-                        st.stop()
-                result = container.query_with_rag(
-                    question,
-                    use_hybrid_search=(search_mode_param == "hybrid" or search_mode_param == "keyword"),
-                    semantic_weight=semantic_weight,
-                    search_mode=search_mode_param,
-                    use_agentic_rag=use_agentic_rag,
-                    temperature=temperature,  # NEW: Pass UI temperature
-                    max_tokens=max_tokens,  # NEW: Pass UI max_tokens
-                    response_language=response_language,
-                    filter_language=filter_language,
-                    auto_translate=auto_translate
-                )
-                answer = result["answer"]
-                sources = result.get("sources", [])
-                citations = result.get("citations", [])
-                num_chunks = result.get("num_chunks_used", 0)
-                context_chunks = result.get("context_chunks", [])
-                sub_queries = result.get("sub_queries", [])
+            
+            # Get answer with improved accuracy settings
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    # Map UI search mode to API parameter
+                    search_mode_param = search_mode.lower().replace(" only", "").replace(" ", "_")
+                    if search_mode_param == "semantic":
+                        search_mode_param = "semantic"
+                    elif search_mode_param == "keyword":
+                        search_mode_param = "keyword"
+                    else:
+                        search_mode_param = "hybrid"
+                    
+                    # Check if hybrid search is available and provide feedback
+                    container = st.session_state.get('service_container')
+                    if search_mode_param in ["hybrid", "keyword"] and \
+                       container and hasattr(container.gateway_service, 'vector_store_type') and \
+                       container.gateway_service.vector_store_type.lower() != 'opensearch':
+                        st.info("ℹ️ Hybrid search is only available for OpenSearch. Using semantic search instead.")
+                        search_mode_param = "semantic"
+                        semantic_weight = 1.0
+                    
+                    # Use maximum accuracy settings: more chunks, optimized MMR
+                    # k and use_mmr will use config defaults optimized for accuracy
+                    container = st.session_state.get('service_container')
+                    if not container:
+                        # Initialize service container if it doesn't exist
+                        try:
+                            st.session_state.service_container = ServiceContainer()
+                            container = st.session_state.service_container
+                            logger.info("Service container initialized for text query")
+                        except Exception as e:
+                            st.error(f"Failed to initialize service container: {e}")
+                            st.stop()
+                    result = container.query_with_rag(
+                        question,
+                        use_hybrid_search=(search_mode_param == "hybrid" or search_mode_param == "keyword"),
+                        semantic_weight=semantic_weight,
+                        search_mode=search_mode_param,
+                        use_agentic_rag=use_agentic_rag,
+                        temperature=temperature,  # NEW: Pass UI temperature
+                        max_tokens=max_tokens,  # NEW: Pass UI max_tokens
+                        response_language=response_language,
+                        filter_language=filter_language,
+                        auto_translate=auto_translate
+                    )
+                    answer = result["answer"]
+                    sources = result.get("sources", [])
+                    citations = result.get("citations", [])
+                    num_chunks = result.get("num_chunks_used", 0)
+                    context_chunks = result.get("context_chunks", [])
+                    sub_queries = result.get("sub_queries", [])
                 
                 # Display sub-queries if Agentic RAG was used
                 if use_agentic_rag and sub_queries and len(sub_queries) > 1:
