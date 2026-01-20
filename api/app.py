@@ -2972,109 +2972,109 @@ if st.session_state.documents_processed and container:
                         )
                     else:
                         st.info("No citation data available for detailed metrics")
-        
-        # Store citations in session state for persistent display
-        if citations and len(citations) > 0:
-            st.session_state.citations_history.append({
-                'question': question,
-                'answer': answer,
-                'citations': citations,
-                'sources': sources,
-                'num_chunks': num_chunks,
-                'context_chunks': context_chunks
-            })
-        elif context_chunks and len(context_chunks) > 0:
-            # Create citations from context_chunks if not available
-            import re
-            created_citations = []
-            for idx, chunk_item in enumerate(context_chunks, 1):
-                # Handle both string chunks and Document objects with metadata
-                if isinstance(chunk_item, dict) and 'page_content' in chunk_item:
-                    # Document-like object with metadata
-                    chunk_text = chunk_item.get('page_content', '')
-                    chunk_metadata = chunk_item.get('metadata', {})
-                    # Prioritize metadata over text markers
-                    page = chunk_metadata.get('source_page') or chunk_metadata.get('page') or None
-                elif isinstance(chunk_item, str):
-                    # Plain string chunk (most common case)
-                    chunk_text = chunk_item
-                    chunk_metadata = {}
-                    page = None
-                else:
-                    # Fallback: treat as string
-                    chunk_text = str(chunk_item)
-                    chunk_metadata = {}
-                    page = None
-                
-                # If no page from metadata, try to extract from text markers
-                if not page:
-                    page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
-                    if page_match:
-                        page = int(page_match.group(1))
-                
-                # Validate page number - page should be positive
-                if page and page < 1:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Invalid page number {page} extracted from chunk")
-                    page = None
-                
-                # Ensure page is always set (fallback to 1)
-                page = page or 1
-                
-                # Extract source from chunk text metadata markers if available
-                # Look for [Source X: filename] pattern in chunk
-                source_match = re.search(r'\[Source\s+\d+:\s*([^\]]+?)(?:\s*\(Page\s+\d+\))?\]', chunk_text)
-                if source_match:
-                    source = source_match.group(1).strip()
-                    # Remove any trailing page info if captured
-                    source = re.sub(r'\s*\(Page\s+\d+\)', '', source)
-                else:
-                    # Fallback: try to extract from sources list, but prefer first source
-                    # since we can't reliably match by index
-                    source = sources[0] if sources else 'Unknown'
-                
-                # Clean snippet
-                snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
-                if not snippet_clean:
-                    snippet_clean = chunk_text
-                
-                # Determine content type
-                content_type = 'text'
-                if 'image' in chunk_text.lower() or 'ocr' in chunk_text.lower():
-                    content_type = 'image'
-                
-                # Build source location
-                source_location = f"Page {page or 1}"
-                
-                created_citations.append({
-                    'id': idx,
-                    'source': source,
-                    'page': page or 1,
-                    'snippet': snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
-                    'full_text': chunk_text,
-                    'source_location': source_location,
-                    'content_type': content_type
+            
+            # Store citations in session state for persistent display
+            if citations and len(citations) > 0:
+                st.session_state.citations_history.append({
+                    'question': question,
+                    'answer': answer,
+                    'citations': citations,
+                    'sources': sources,
+                    'num_chunks': num_chunks,
+                    'context_chunks': context_chunks
                 })
-            st.session_state.citations_history.append({
+            elif context_chunks and len(context_chunks) > 0:
+                # Create citations from context_chunks if not available
+                import re
+                created_citations = []
+                for idx, chunk_item in enumerate(context_chunks, 1):
+                    # Handle both string chunks and Document objects with metadata
+                    if isinstance(chunk_item, dict) and 'page_content' in chunk_item:
+                        # Document-like object with metadata
+                        chunk_text = chunk_item.get('page_content', '')
+                        chunk_metadata = chunk_item.get('metadata', {})
+                        # Prioritize metadata over text markers
+                        page = chunk_metadata.get('source_page') or chunk_metadata.get('page') or None
+                    elif isinstance(chunk_item, str):
+                        # Plain string chunk (most common case)
+                        chunk_text = chunk_item
+                        chunk_metadata = {}
+                        page = None
+                    else:
+                        # Fallback: treat as string
+                        chunk_text = str(chunk_item)
+                        chunk_metadata = {}
+                        page = None
+                    
+                    # If no page from metadata, try to extract from text markers
+                    if not page:
+                        page_match = re.search(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+                        if page_match:
+                            page = int(page_match.group(1))
+                    
+                    # Validate page number - page should be positive
+                    if page and page < 1:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Invalid page number {page} extracted from chunk")
+                        page = None
+                    
+                    # Ensure page is always set (fallback to 1)
+                    page = page or 1
+                    
+                    # Extract source from chunk text metadata markers if available
+                    # Look for [Source X: filename] pattern in chunk
+                    source_match = re.search(r'\[Source\s+\d+:\s*([^\]]+?)(?:\s*\(Page\s+\d+\))?\]', chunk_text)
+                    if source_match:
+                        source = source_match.group(1).strip()
+                        # Remove any trailing page info if captured
+                        source = re.sub(r'\s*\(Page\s+\d+\)', '', source)
+                    else:
+                        # Fallback: try to extract from sources list, but prefer first source
+                        # since we can't reliably match by index
+                        source = sources[0] if sources else 'Unknown'
+                    
+                    # Clean snippet
+                    snippet_clean = re.sub(r'---\s*Page\s+\d+\s*---\s*\n?', '', chunk_text).strip()
+                    if not snippet_clean:
+                        snippet_clean = chunk_text
+                    
+                    # Determine content type
+                    content_type = 'text'
+                    if 'image' in chunk_text.lower() or 'ocr' in chunk_text.lower():
+                        content_type = 'image'
+                    
+                    # Build source location
+                    source_location = f"Page {page or 1}"
+                    
+                    created_citations.append({
+                        'id': idx,
+                        'source': source,
+                        'page': page or 1,
+                        'snippet': snippet_clean[:500] + "..." if len(snippet_clean) > 500 else snippet_clean,
+                        'full_text': chunk_text,
+                        'source_location': source_location,
+                        'content_type': content_type
+                    })
+                st.session_state.citations_history.append({
+                    'question': question,
+                    'answer': answer,
+                    'citations': created_citations,
+                    'sources': sources,
+                    'num_chunks': num_chunks,
+                    'context_chunks': context_chunks
+                })
+            
+            # Add to chat history with citations
+            # Store as dict to preserve citations
+            history_entry = {
                 'question': question,
                 'answer': answer,
-                'citations': created_citations,
                 'sources': sources,
-                'num_chunks': num_chunks,
-                'context_chunks': context_chunks
-            })
-        
-        # Add to chat history with citations
-        # Store as dict to preserve citations
-        history_entry = {
-            'question': question,
-            'answer': answer,
-            'sources': sources,
-            'citations': citations if citations and len(citations) > 0 else None
-        }
-        st.session_state.chat_history.append(history_entry)
-        st.rerun()
+                'citations': citations if citations and len(citations) > 0 else None
+            }
+            st.session_state.chat_history.append(history_entry)
+            st.rerun()
     
     # ============================================
     # MULTI-MODE COMPARISON (Only if enabled)
