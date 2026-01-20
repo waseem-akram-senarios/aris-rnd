@@ -1,0 +1,1 @@
+This is a test document for ARIS RAG system. It contains technical specifications and information about the system architecture. The system supports multiple parsers including PyMuPDF, Docling, and LlamaScan. It uses OpenSearch for vector storage and supports hybrid search with semantic and keyword matching.

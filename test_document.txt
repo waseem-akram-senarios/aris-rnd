@@ -1,0 +1,33 @@
+ARIS RAG System Technical Documentation
+
+1. System Overview
+The ARIS RAG (Retrieval-Augmented Generation) system is a powerful document analysis platform that uses advanced AI to answer questions about technical documents. It supports multiple document types including PDF, DOCX, and TXT files.
+
+2. Key Features
+- Multi-parser support: PyMuPDF, Docling, LlamaScan, OCRmyPDF, Textract
+- Vector storage: OpenSearch with hybrid search capabilities
+- Agentic RAG: Query decomposition for complex questions
+- Multi-language support: Automatic translation and language filtering
+- Image extraction: OCR and visual content analysis
+
+3. Technical Architecture
+- Ingestion Service: Handles document parsing and indexing
+- Retrieval Service: Performs semantic search and RAG queries
+- Gateway Service: Orchestrates requests between services
+- UI: Streamlit-based web interface
+
+4. Search Modes
+- Semantic: Vector similarity search
+- Keyword: Text matching search  
+- Hybrid: Combined semantic + keyword search (recommended)
+
+5. Performance Specifications
+- Chunk size: 384 tokens (configurable)
+- Chunk overlap: 120 tokens (configurable)
+- Default k: 6 chunks per query
+- Maximum tokens: 1200 per response
+
+6. Supported Languages
+English (eng), Spanish (spa), French (fra), German (deu), and many more with automatic translation support.
+
+This document contains comprehensive information about the ARIS RAG system architecture and capabilities.
