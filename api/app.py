@@ -18,6 +18,7 @@ import io
 import json
 import pandas as pd
 import numpy as np
+import time
 from dotenv import load_dotenv
 from services.ingestion.processor import DocumentProcessor
 from services.ingestion.parsers.parser_factory import ParserFactory
