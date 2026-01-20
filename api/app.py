@@ -2179,8 +2179,14 @@ if st.session_state.documents_processed and container:
                 with st.spinner("Searching images..."):
                     container = st.session_state.get('service_container')
                     if not container:
-                        st.error("Service container not initialized. Please upload a document first.")
-                        st.stop()
+                        # Initialize service container if it doesn't exist
+                        try:
+                            st.session_state.service_container = ServiceContainer()
+                            container = st.session_state.service_container
+                            logger.info("Service container initialized for image query")
+                        except Exception as e:
+                            st.error(f"Failed to initialize service container: {e}")
+                            st.stop()
 
                     try:
                         # Use same document filtering as text queries
@@ -2360,9 +2366,16 @@ if st.session_state.documents_processed and container:
                 
                 # Use maximum accuracy settings: more chunks, optimized MMR
                 # k and use_mmr will use config defaults optimized for accuracy
+                container = st.session_state.get('service_container')
                 if not container:
-                    st.error("Service container not initialized. Please upload a document first.")
-                    st.stop()
+                    # Initialize service container if it doesn't exist
+                    try:
+                        st.session_state.service_container = ServiceContainer()
+                        container = st.session_state.service_container
+                        logger.info("Service container initialized for text query")
+                    except Exception as e:
+                        st.error(f"Failed to initialize service container: {e}")
+                        st.stop()
                 result = container.query_with_rag(
                     question,
                     use_hybrid_search=(search_mode_param == "hybrid" or search_mode_param == "keyword"),
