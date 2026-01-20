@@ -19,7 +19,8 @@ from shared.schemas import (
     VectorIndexListResponse, VectorIndexInfo, VectorChunkListResponse, VectorChunkInfo,
     VectorChunkCreateRequest, VectorChunkUpdateRequest, VectorIndexDeleteRequest,
     VectorIndexDeleteResponse, BulkVectorIndexDeleteRequest, BulkVectorIndexDeleteResponse,
-    VectorSearchRequest, VectorSearchResponse, IndexMapResponse, IndexMapEntry, IndexMapUpdateRequest
+    VectorSearchRequest, VectorSearchResponse, IndexMapResponse, IndexMapEntry, IndexMapUpdateRequest,
+    FullQueryRequest, FullQueryResponse
 )
 from storage.document_registry import DocumentRegistry
 from shared.utils.sync_manager import SyncManager, get_sync_manager
@@ -943,6 +944,209 @@ async def check_and_sync():
     except Exception as e:
         logger.error(f"Error checking sync: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# COMPREHENSIVE QUERY ENDPOINT - All UI Features
+# ============================================================================
+
+@app.post("/query/full", response_model=FullQueryResponse)
+async def query_rag_full(
+    request: Request,
+    query_request: FullQueryRequest,
+    engine: RetrievalEngine = Depends(get_engine)
+):
+    """
+    🚀 **FULL RAG QUERY ENDPOINT**
+    
+    This endpoint provides ALL features available in the UI for document querying:
+    
+    **Search Modes:**
+    - `semantic` - Pure vector similarity search (best for conceptual queries)
+    - `keyword` - Pure text/keyword matching (best for exact terms)
+    - `hybrid` - Combined semantic + keyword (recommended, best overall)
+    
+    **Agentic RAG:**
+    When enabled, complex questions are automatically broken down into sub-queries
+    for more comprehensive answers.
+    
+    **Multi-Language Support:**
+    - `auto_translate` - Translates non-English queries for better search
+    - `response_language` - Forces response in specific language
+    - `filter_language` - Only searches documents in specified language
+    
+    **Document Filtering:**
+    - Use `active_sources` to search specific documents by name
+    - Leave empty or null to search ALL documents
+    
+    **Example Usage (curl):**
+    ```bash
+    curl -X POST "http://localhost:8502/query/full" \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "question": "What are the main components of the system?",
+        "search_mode": "hybrid",
+        "semantic_weight": 0.75,
+        "k": 10,
+        "use_agentic_rag": true,
+        "temperature": 0.0,
+        "max_tokens": 1200,
+        "auto_translate": true,
+        "include_images": false
+      }'
+    ```
+    
+    **Example with document filtering:**
+    ```bash
+    curl -X POST "http://localhost:8502/query/full" \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "question": "Explain the process flow",
+        "active_sources": ["document1.pdf", "document2.pdf"],
+        "search_mode": "hybrid",
+        "use_agentic_rag": true
+      }'
+    ```
+    
+    **Example with multi-language:**
+    ```bash
+    curl -X POST "http://localhost:8502/query/full" \\
+      -H "Content-Type: application/json" \\
+      -d '{
+        "question": "¿Cuáles son las especificaciones técnicas?",
+        "auto_translate": true,
+        "response_language": "Spanish",
+        "filter_language": "spa"
+      }'
+    ```
+    """
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    start_time = time_module.time()
+    
+    logger.info(f"POST /query/full - [ReqID: {request_id}] Question: {query_request.question[:50]}...")
+    logger.info(f"POST /query/full - [ReqID: {request_id}] Settings: mode={query_request.search_mode}, "
+                f"agentic={query_request.use_agentic_rag}, k={query_request.k}, "
+                f"include_images={query_request.include_images}")
+    
+    try:
+        # Determine active sources
+        active_sources = query_request.active_sources
+        if not active_sources and query_request.document_id:
+            # Map document_id to source name
+            try:
+                registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+                doc_metadata = registry.get_document(query_request.document_id)
+                if doc_metadata:
+                    active_sources = [doc_metadata.get('document_name', query_request.document_id)]
+                else:
+                    active_sources = [query_request.document_id]
+            except Exception:
+                active_sources = [query_request.document_id]
+        
+        # Detect query language for logging
+        query_language = None
+        translated_query = None
+        try:
+            from langdetect import detect
+            query_language = detect(query_request.question)
+        except:
+            query_language = "unknown"
+        
+        # Execute main RAG query
+        result = engine.query_with_rag(
+            question=query_request.question,
+            k=query_request.k,
+            use_mmr=query_request.use_mmr,
+            active_sources=active_sources,
+            use_hybrid_search=(query_request.search_mode == "hybrid"),
+            semantic_weight=query_request.semantic_weight,
+            search_mode=query_request.search_mode,
+            use_agentic_rag=query_request.use_agentic_rag,
+            temperature=query_request.temperature,
+            max_tokens=query_request.max_tokens,
+            response_language=query_request.response_language,
+            filter_language=query_request.filter_language,
+            auto_translate=query_request.auto_translate
+        )
+        
+        # Build citations
+        citations = []
+        for i, src in enumerate(result.get("citations", [])):
+            image_number = src.get('image_number')
+            page = src.get("page", 1)
+            if image_number is not None:
+                source_location = f"Page {page}, Image {image_number}"
+            else:
+                source_location = src.get("source_location", f"Page {page}")
+            
+            citations.append(
+                Citation(
+                    id=src.get('id', i) if isinstance(src.get('id'), int) else i,
+                    source=src.get("source", ""),
+                    page=page,
+                    image_number=image_number,
+                    snippet=src.get("snippet", ""),
+                    full_text=src.get("full_text", ""),
+                    source_location=source_location,
+                    content_type=src.get("content_type", "image" if image_number else "text"),
+                    image_ref=src.get("image_ref"),
+                    image_info=src.get("image_info"),
+                    similarity_score=src.get("similarity_score"),
+                    similarity_percentage=src.get("similarity_percentage"),
+                    chunk_index=src.get("chunk_index"),
+                    extraction_method=src.get("extraction_method")
+                )
+            )
+        
+        # Optionally include image search results
+        image_results = None
+        num_images = 0
+        if query_request.include_images:
+            try:
+                images = engine.query_images(
+                    question=query_request.question,
+                    active_sources=active_sources,
+                    k=query_request.image_k
+                )
+                image_results = []
+                for r in images:
+                    image_results.append(ImageResult(
+                        image_id=r.get("image_id", ""),
+                        source=r.get("source", ""),
+                        image_number=r.get("image_number", 0),
+                        page=max(1, r.get("page", 1)),
+                        ocr_text=r.get("ocr_text", ""),
+                        metadata=r.get("metadata", {}),
+                        score=r.get("score")
+                    ))
+                num_images = len(image_results)
+            except Exception as img_err:
+                logger.warning(f"Image search failed: {img_err}")
+        
+        total_time = time_module.time() - start_time
+        
+        return FullQueryResponse(
+            answer=result["answer"],
+            sources=result.get("sources", []),
+            citations=citations,
+            num_chunks_used=result.get("num_chunks_used", 0),
+            images=image_results,
+            num_images=num_images,
+            response_time=total_time,
+            context_tokens=result.get("context_tokens", 0),
+            response_tokens=result.get("response_tokens", 0),
+            total_tokens=result.get("total_tokens", 0),
+            sub_queries=result.get("sub_queries"),
+            query_language=query_language,
+            translated_query=translated_query,
+            search_mode_used=query_request.search_mode,
+            semantic_weight_used=query_request.semantic_weight,
+            documents_searched=active_sources
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in full query: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
 
 if __name__ == "__main__":

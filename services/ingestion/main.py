@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 from scripts.setup_logging import setup_logging
 from shared.config.settings import ARISConfig
-from shared.schemas import DocumentMetadata, ProcessingResult
+from shared.schemas import DocumentMetadata, ProcessingResult, FullIngestionRequest, FullIngestionResponse
 from .engine import IngestionEngine
 from .processor import DocumentProcessor
 from shared.utils.sync_manager import SyncManager, get_sync_manager
@@ -757,6 +757,222 @@ async def check_and_sync():
     except Exception as e:
         logger.error(f"Error checking sync: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# COMPREHENSIVE INGESTION ENDPOINT - All UI Features
+# ============================================================================
+
+@app.post("/ingest/full", response_model=FullIngestionResponse)
+async def ingest_document_full(
+    request: Request,
+    file: UploadFile = File(...),
+    # Parser Settings
+    parser: str = Form(default="pymupdf"),
+    # Language Settings
+    language: str = Form(default="eng"),
+    # Chunking Settings
+    chunk_size: int = Form(default=384),
+    chunk_overlap: int = Form(default=120),
+    chunking_strategy: str = Form(default="comprehensive"),
+    # Index Settings
+    index_name: Optional[str] = Form(default=None),
+    # Update Settings
+    force_update: bool = Form(default=False),
+    # OCR Settings
+    enable_ocr: bool = Form(default=True),
+    ocr_language: str = Form(default="eng"),
+    # Advanced Settings
+    extract_images: bool = Form(default=True),
+    preserve_formatting: bool = Form(default=False),
+    processor: DocumentProcessor = Depends(get_processor)
+):
+    """
+    🚀 **FULL DOCUMENT INGESTION ENDPOINT**
+    
+    This endpoint provides ALL features available in the UI for document processing:
+    
+    **Parser Options:**
+    - `pymupdf` - Fast, reliable PDF parsing (recommended for most PDFs)
+    - `docling` - Advanced parsing for complex tables and layouts
+    - `llamascan` - Vision AI for image-heavy documents
+    - `ocrmypdf` - Best for scanned/image-based PDFs
+    - `textract` - AWS OCR service
+    
+    **Language Codes:**
+    - `eng` - English
+    - `spa` - Spanish
+    - `fra` - French
+    - `deu` - German
+    - etc.
+    
+    **Chunking Strategies:**
+    - `comprehensive` - More chunks, better recall (recommended)
+    - `balanced` - Default balance
+    - `fast` - Fewer chunks, faster processing
+    
+    **Example Usage (curl):**
+    ```bash
+    curl -X POST "http://localhost:8501/ingest/full" \\
+      -F "file=@document.pdf" \\
+      -F "parser=pymupdf" \\
+      -F "language=eng" \\
+      -F "chunk_size=384" \\
+      -F "chunk_overlap=120" \\
+      -F "chunking_strategy=comprehensive" \\
+      -F "force_update=false" \\
+      -F "enable_ocr=true" \\
+      -F "extract_images=true"
+    ```
+    """
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    logger.info(f"POST /ingest/full - [ReqID: {request_id}] File: {file.filename}, Parser: {parser}")
+    
+    # Validate file type
+    allowed_extensions = {'.pdf', '.txt', '.docx', '.doc'}
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    if file_ext not in allowed_extensions:
+        return FullIngestionResponse(
+            success=False,
+            document_id="",
+            document_name=file.filename,
+            status="failed",
+            message=f"Unsupported file type: {file_ext}. Allowed: {', '.join(allowed_extensions)}"
+        )
+    
+    try:
+        # Read content
+        content = await file.read()
+        file_hash = hashlib.md5(content).hexdigest()
+        
+        # Check for duplicates
+        from storage.document_registry import DocumentRegistry
+        registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+        
+        effective_parser = parser.lower() if parser else 'pymupdf'
+        all_existing_docs = registry.find_documents_by_name(file.filename)
+        
+        is_update = False
+        documents_to_delete = []
+        
+        if all_existing_docs:
+            # Check for exact match
+            exact_match = None
+            for existing_doc in all_existing_docs:
+                if existing_doc.get('file_hash') == file_hash:
+                    exact_match = existing_doc
+                    break
+            
+            if exact_match and not force_update:
+                return FullIngestionResponse(
+                    success=True,
+                    document_id=exact_match['document_id'],
+                    document_name=file.filename,
+                    status="already_exists",
+                    message=f"Document already exists with identical content. Use force_update=true to re-process.",
+                    parser_used=exact_match.get('parser_used'),
+                    language=exact_match.get('language'),
+                    pages=exact_match.get('pages', 0),
+                    chunks_created=exact_match.get('chunks_created', 0),
+                    images_extracted=exact_match.get('image_count', 0),
+                    text_index=exact_match.get('text_index'),
+                    images_index=exact_match.get('images_index'),
+                    is_update=False
+                )
+            
+            # Delete existing versions
+            for existing_doc in all_existing_docs:
+                old_doc_id = existing_doc.get('document_id')
+                old_index = existing_doc.get('text_index') or existing_doc.get('index_name')
+                documents_to_delete.append({
+                    'document_id': old_doc_id,
+                    'index_name': old_index
+                })
+                
+                # Cleanup
+                try:
+                    if old_index and processor and hasattr(processor, '_cleanup_old_index_data'):
+                        processor._cleanup_old_index_data(old_doc_id, old_index, file.filename)
+                    registry.remove_document(old_doc_id)
+                except Exception as cleanup_err:
+                    logger.warning(f"Cleanup error: {cleanup_err}")
+            
+            is_update = True
+        
+        # Generate new document ID
+        document_id = str(uuid.uuid4())
+        
+        # Save temp file
+        upload_dir = "data/uploads"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_path = os.path.join(upload_dir, f"{document_id}_{file.filename}")
+        
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Register document
+        registration_data = {
+            'document_id': document_id,
+            'document_name': file.filename,
+            'status': 'processing',
+            'progress': 0.0,
+            'file_hash': file_hash,
+            'is_update': is_update,
+            'parser_used': effective_parser,
+            'language': language,
+            'chunk_size': chunk_size,
+            'chunk_overlap': chunk_overlap,
+            'chunking_strategy': chunking_strategy,
+            'created_at': time_module.time()
+        }
+        registry.add_document(document_id, registration_data)
+        
+        # Process synchronously for immediate result
+        result = processor.process_document(
+            file_path=file_path,
+            file_content=content,
+            file_name=file.filename,
+            parser_preference=effective_parser,
+            document_id=document_id,
+            index_name=index_name,
+            language=language,
+            is_update=is_update,
+            old_index_name=documents_to_delete[-1].get('index_name') if documents_to_delete else None
+        )
+        
+        # Get updated document info
+        doc_info = registry.get_document(document_id) or {}
+        
+        return FullIngestionResponse(
+            success=result.success if hasattr(result, 'success') else True,
+            document_id=document_id,
+            document_name=file.filename,
+            status="completed" if (hasattr(result, 'success') and result.success) or result.chunks_created > 0 else "failed",
+            message=result.message if hasattr(result, 'message') and result.message else f"Document processed with {result.chunks_created} chunks",
+            parser_used=result.parser_used if hasattr(result, 'parser_used') else effective_parser,
+            language=language,
+            pages=result.pages if hasattr(result, 'pages') else 0,
+            chunks_created=result.chunks_created if hasattr(result, 'chunks_created') else 0,
+            images_extracted=result.image_count if hasattr(result, 'image_count') else 0,
+            processing_time=result.processing_time if hasattr(result, 'processing_time') else 0.0,
+            extraction_percentage=result.extraction_percentage if hasattr(result, 'extraction_percentage') else 0.0,
+            confidence=result.confidence if hasattr(result, 'confidence') else 0.0,
+            text_index=doc_info.get('text_index'),
+            images_index=doc_info.get('images_index'),
+            is_update=is_update,
+            previous_version_id=documents_to_delete[0]['document_id'] if documents_to_delete else None
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in full ingestion: {e}", exc_info=True)
+        return FullIngestionResponse(
+            success=False,
+            document_id="",
+            document_name=file.filename,
+            status="failed",
+            message=str(e)
+        )
 
 
 if __name__ == "__main__":
