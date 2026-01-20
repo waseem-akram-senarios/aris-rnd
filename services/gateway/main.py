@@ -288,13 +288,26 @@ async def query_rag(request: QueryRequest, service: GatewayService = Depends(get
 
 @app.post("/query/images")
 async def query_images(request: Dict[str, Any], service: GatewayService = Depends(get_service)):
-    """Query images specifically"""
+    """Query images specifically.
+    
+    Supports filtering by:
+    - active_sources: List of document names (same as text query)
+    - source: Single document name (deprecated)
+    - Empty = search ALL documents
+    """
     question = request.get("question", "")
     k = request.get("k", 5)
     source = request.get("source")
+    active_sources = request.get("active_sources")
     
-    images = await service.query_images_only(question, k, source)
-    return {"images": images, "total": len(images)}
+    # Use active_sources from request, or from gateway service state
+    if active_sources is None and hasattr(service, 'active_sources') and service.active_sources:
+        active_sources = service.active_sources
+    
+    images = await service.query_images_only(question, k, source, active_sources)
+    
+    filter_msg = f" from {len(active_sources)} document(s)" if active_sources else " from all documents"
+    return {"images": images, "total": len(images), "message": f"Found {len(images)} images{filter_msg}"}
 
 
 # ============================================================================

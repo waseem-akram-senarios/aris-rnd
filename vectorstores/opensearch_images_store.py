@@ -579,6 +579,7 @@ class OpenSearchImagesStore:
         self,
         query: str,
         source: Optional[str] = None,
+        sources: Optional[List[str]] = None,
         k: int = 5
     ) -> List[Dict[str, Any]]:
         """
@@ -586,7 +587,8 @@ class OpenSearchImagesStore:
         
         Args:
             query: Search query text
-            source: Optional source filter
+            source: Optional single source filter (deprecated, use sources)
+            sources: Optional list of document names to filter by
             k: Number of results to return
             
         Returns:
@@ -603,6 +605,9 @@ class OpenSearchImagesStore:
             # Generate query embedding
             query_vector = self.embeddings.embed_query(query)
             
+            # Determine effective sources: sources list takes priority over single source
+            effective_sources = sources if sources else ([source] if source else None)
+            
             # Try k-NN search first, fall back to text search if it fails
             try:
                 # Correct OpenSearch k-NN query format
@@ -618,23 +623,28 @@ class OpenSearchImagesStore:
                     }
                 }
                 
-                # Add source filter if specified
-                if source:
-                    source_variants = [
-                        source,
-                        os.path.basename(source or ""),
-                        (source or "").lower(),
-                        os.path.basename(source or "").lower()
-                    ]
+                # Add source filter if specified (supports multiple sources)
+                if effective_sources and len(effective_sources) > 0:
                     should_clauses = []
-                    for variant in source_variants:
-                        if not variant:
+                    for src in effective_sources:
+                        if not src:
                             continue
-                        should_clauses.extend([
-                            {"term": {"metadata.source.keyword": variant}},
-                            {"term": {"metadata.source": variant}},
-                            {"match_phrase": {"metadata.source": variant}}
-                        ])
+                        # Add variants for each source
+                        source_variants = [
+                            src,
+                            os.path.basename(src),
+                            src.lower(),
+                            os.path.basename(src).lower()
+                        ]
+                        for variant in source_variants:
+                            if not variant:
+                                continue
+                            should_clauses.extend([
+                                {"term": {"metadata.source.keyword": variant}},
+                                {"term": {"metadata.source": variant}},
+                                {"match_phrase": {"metadata.source": variant}}
+                            ])
+                    
                     if should_clauses:
                         # Add filter to the bool query
                         knn_query["query"] = {
@@ -657,6 +667,9 @@ class OpenSearchImagesStore:
                                 }
                             }
                         }
+                        logger.info(f"Image search filtered to {len(effective_sources)} document(s)")
+                else:
+                    logger.info(f"Image search across ALL documents (no filter)")
                 
                 response = client.search(index=self.index_name, body=knn_query)
                 logger.info(f"k-NN search succeeded on images index with {len(response.get('hits', {}).get('hits', []))} results")

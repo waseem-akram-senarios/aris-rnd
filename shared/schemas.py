@@ -219,7 +219,8 @@ class MetricsInfo(BaseModel):
 class ImageQueryRequest(BaseModel):
     """Request model for querying images"""
     question: str = Field(..., description="The search query for images")
-    source: Optional[str] = Field(default=None, description="Optional document source to filter by")
+    source: Optional[str] = Field(default=None, description="Optional single document source to filter by (deprecated, use active_sources)")
+    active_sources: Optional[List[str]] = Field(default=None, description="Optional list of document names to filter images. Empty list = all documents.")
     k: int = Field(default=5, ge=1, le=50, description="Number of images to retrieve")
 
 

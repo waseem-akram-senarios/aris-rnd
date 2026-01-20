@@ -7004,6 +7004,7 @@ Answer:"""
         self,
         question: str,
         source: Optional[str] = None,
+        active_sources: Optional[List[str]] = None,
         k: int = 5
     ) -> List[Dict[str, Any]]:
         """
@@ -7011,7 +7012,8 @@ Answer:"""
         
         Args:
             question: Search query
-            source: Optional document source to filter by
+            source: Optional single document source to filter by (deprecated)
+            active_sources: Optional list of document names to filter by (preferred)
             k: Number of results to return
             
         Returns:
@@ -7039,16 +7041,25 @@ Answer:"""
                 region=getattr(self, 'region', None)
             )
             
+            # Determine effective sources: active_sources takes priority over source
+            effective_sources = active_sources if active_sources else ([source] if source else None)
+            
+            # Log the filter being applied
+            if effective_sources:
+                logger.info(f"Image query filtered to documents: {effective_sources}")
+            else:
+                logger.info(f"Image query across ALL documents")
+            
             # Search images
             results = images_store.search_images(
                 query=question,
-                source=source,
+                sources=effective_sources,
                 k=k
             )
             
             logger.info(f"Found {len(results)} images matching query: {question[:50]}")
             if len(results) == 0:
-                logger.debug(f"No images found for query: '{question}'. Source filter: {source}")
+                logger.debug(f"No images found for query: '{question}'. Source filter: {effective_sources}")
             return results
         except ImportError as e:
             logger.warning(f"OpenSearch images store not available: {str(e)}")

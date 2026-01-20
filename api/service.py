@@ -85,14 +85,28 @@ class ServiceContainer:
             logger.error(f"Gateway query failed: {e}")
             return {"answer": f"Error: {e}", "citations": [], "num_chunks_used": 0}
     
-    def query_images_only(self, question: str, k: int = 5, source: Optional[str] = None) -> List[Dict]:
-        """Query Gateway for image results"""
+    def query_images_only(self, question: str, k: int = 5, source: Optional[str] = None, active_sources: Optional[List[str]] = None) -> List[Dict]:
+        """Query Gateway for image results.
+        
+        Args:
+            question: Search query
+            k: Number of results
+            source: Single document filter (deprecated)
+            active_sources: List of document names to filter (same as text query)
+        """
+        # Get active_sources from parameter or gateway_service state
+        effective_sources = active_sources or self.gateway_service.active_sources
+        if effective_sources:
+            logger.info(f"[UI] ServiceContainer: Image query filtered to documents: {effective_sources}")
+        else:
+            logger.info(f"[UI] ServiceContainer: Image query across ALL documents")
+        
         logger.info(f"[UI] ServiceContainer: Proxying image query to Gateway: {question[:50]}...")
         try:
             import concurrent.futures
             
             async def _query():
-                return await self.gateway_service.query_images_only(question, k, source)
+                return await self.gateway_service.query_images_only(question, k, source, effective_sources)
             
             # Handle nested event loop case
             try:

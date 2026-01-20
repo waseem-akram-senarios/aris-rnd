@@ -285,15 +285,29 @@ async def query_images(
 ):
     """
     Search for images in the document corpus using semantic search on OCR text.
+    
+    Supports filtering by:
+    - active_sources: List of document names (preferred, like text query)
+    - source: Single document name (deprecated, use active_sources)
+    - Empty active_sources or no filter: Search ALL documents
     """
     request_id = request.headers.get("X-Request-ID", "unknown")
-    logger.info(f"POST /query/images - [ReqID: {request_id}] Query: {image_request.question[:50]}...")
+    
+    # Determine effective sources
+    active_sources = image_request.active_sources
+    if active_sources:
+        logger.info(f"POST /query/images - [ReqID: {request_id}] Query: '{image_request.question[:50]}...' filtered to {len(active_sources)} document(s)")
+    elif image_request.source:
+        active_sources = [image_request.source]
+        logger.info(f"POST /query/images - [ReqID: {request_id}] Query: '{image_request.question[:50]}...' filtered to single doc: {image_request.source}")
+    else:
+        logger.info(f"POST /query/images - [ReqID: {request_id}] Query: '{image_request.question[:50]}...' across ALL documents")
     
     try:
-        # Use the engine's query_images method
+        # Use the engine's query_images method with active_sources support
         results = engine.query_images(
             question=image_request.question,
-            source=image_request.source,
+            active_sources=active_sources,
             k=image_request.k
         )
         
@@ -310,10 +324,11 @@ async def query_images(
                 score=r.get("score")
             ))
         
+        filter_msg = f" from {len(active_sources)} document(s)" if active_sources else " from all documents"
         return ImageQueryResponse(
             images=image_results,
             total=len(image_results),
-            message=f"Found {len(image_results)} images matching query"
+            message=f"Found {len(image_results)} images matching query{filter_msg}"
         )
     except Exception as e:
         logger.error(f"Error querying images: {e}", exc_info=True)

@@ -465,18 +465,39 @@ class GatewayService:
                 logger.error(f"Error calling ingestion service: {e}")
                 raise Exception(f"Ingestion service error: {str(e)}")
 
-    async def query_images_only(self, question: str, k: int = 5, source: Optional[str] = None) -> List[Dict]:
-        """Proxies image query to Retrieval Service"""
+    async def query_images_only(self, question: str, k: int = 5, source: Optional[str] = None, active_sources: Optional[List[str]] = None) -> List[Dict]:
+        """Proxies image query to Retrieval Service.
+        
+        Args:
+            question: Search query for images
+            k: Number of results
+            source: Single document to filter (deprecated)
+            active_sources: List of document names to filter (preferred, same as text query)
+        """
         import uuid
         request_id = str(uuid.uuid4())
+        
+        # Determine effective filter
+        if active_sources:
+            logger.info(f"Gateway: [ReqID: {request_id}] Image query filtered to {len(active_sources)} document(s): {active_sources}")
+        elif source:
+            logger.info(f"Gateway: [ReqID: {request_id}] Image query filtered to single doc: {source}")
+        else:
+            logger.info(f"Gateway: [ReqID: {request_id}] Image query across ALL documents")
+        
         logger.info(f"Gateway: [ReqID: {request_id}] Starting query_images_only for question: '{question[:50]}...'")
         
         async with httpx.AsyncClient(timeout=60.0) as client:
             payload = {
                 "question": question,
-                "k": k,
-                "source": source
+                "k": k
             }
+            # Add filter - prefer active_sources over source
+            if active_sources:
+                payload["active_sources"] = active_sources
+            elif source:
+                payload["source"] = source
+            
             try:
                 headers = {"X-Request-ID": request_id}
                 response = await client.post(f"{self.retrieval_url}/query/images", json=payload, headers=headers)
