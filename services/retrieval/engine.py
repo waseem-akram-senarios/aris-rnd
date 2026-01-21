@@ -1522,21 +1522,18 @@ class RetrievalEngine:
         req_id = self.current_request_id
         
         # Determine active sources for this request
-        # CRITICAL: Handle empty list explicitly to support "All Documents" mode
-        if active_sources is None:
-            # No parameter passed - use instance-level setting
-            active_sources = self.active_sources
-            logger.info(f"📄 [ACTIVE_SOURCES] Using instance filter: {active_sources}")
-        elif active_sources == []:
-            # Empty list explicitly passed - this means "ALL DOCUMENTS" mode
-            # MUST clear instance-level filter to prevent stale values
+        # CRITICAL FIX: Don't use stale instance-level filter for API requests
+        # Each request should be independent - None or [] means "search all documents"
+        if active_sources is None or active_sources == []:
+            # No filter or empty list - search ALL documents
+            # Clear any stale instance-level filter to prevent stateful bugs
             self.active_sources = None
-            active_sources = None
-            logger.info(f"📚 [ACTIVE_SOURCES] ALL DOCUMENTS mode - filter cleared")
+            active_sources = None  # Will trigger "search all indexes" logic below
+            logger.info(f"📚 [ACTIVE_SOURCES] ALL DOCUMENTS mode - searching across all indexes")
         else:
-            # Specific documents passed - sync instance-level setting
+            # Specific documents passed - set filter for this request
             self.active_sources = active_sources
-            logger.info(f"📄 [ACTIVE_SOURCES] Set document filter: {active_sources}")
+            logger.info(f"📄 [ACTIVE_SOURCES] Document filter: {active_sources}")
             
         # Store UI configuration for citation extraction and LLM calls
         self.ui_config = {
@@ -1562,7 +1559,7 @@ class RetrievalEngine:
                 
                 trans_start = time_module.time()
                 detector = get_detector()
-                detected_language = detector.detect(question)
+                detected_language = detector.detect(original_question)  # FIX: Detect from original, not potentially translated question
                 
                 # If query is not English, translate for better search matching
                 if detected_language and detected_language != "en":
@@ -1644,7 +1641,7 @@ class RetrievalEngine:
             try:
                 from services.language.detector import get_detector
                 detector = get_detector()
-                detected_language = detector.detect(question)
+                detected_language = detector.detect(original_question)  # FIX: Detect from original question
                 if detected_language:
                     response_language = detector.get_language_name(detected_language)
                     self.ui_config['response_language'] = response_language
