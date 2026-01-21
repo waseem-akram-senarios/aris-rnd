@@ -1083,22 +1083,38 @@ class OpenSearchMultiIndexManager:
         alternate_query: Optional[str] = None,
         **kwargs
     ) -> List[Document]:
-        """Search across multiple indexes and combine results."""
+        """
+        Search across multiple indexes and combine results with GLOBAL RE-RANKING.
+        
+        FIX: Previous implementation divided results per index (k/n per index) and 
+        concatenated without re-ranking. This caused irrelevant results when searching
+        all documents because early indexes got priority regardless of relevance.
+        
+        NEW: Get k results from EACH index, then globally re-rank by relevance score.
+        """
         all_results = []
-        results_per_index = max(1, k // len(index_names)) if index_names else k
+        
+        # FIX: Get k results from EACH index (not k/n), then re-rank globally
+        # This ensures we get the best results from each document
+        results_per_index = max(k, 10)  # At least k or 10 results per index
+        
+        # Pre-compute query embedding ONCE for efficiency (avoid embedding per index)
+        query_vector = None
+        if use_hybrid_search and index_names:
+            try:
+                first_store = self.get_or_create_index_store(index_names[0])
+                query_vector = first_store.embeddings.embed_query(query)
+            except Exception as e:
+                logger.warning(f"Could not pre-compute query embedding: {e}")
         
         for index_name in index_names:
             try:
                 store = self.get_or_create_index_store(index_name)
                 
                 if use_hybrid_search:
-                    # Use hybrid search with dual-language support
-                    # We need to embed the query here if not passed, but hybrid_search expects vector
-                    # Note: engine.py usually passes embeddings, but here we might need to generate it
-                    # Optimization: Generate vector once outside loop? 
-                    # engine.py calls this method with 'query' string.
-                    # We can use store.embeddings to embed
-                    query_vector = store.embeddings.embed_query(query)
+                    # Use pre-computed embedding for efficiency
+                    if query_vector is None:
+                        query_vector = store.embeddings.embed_query(query)
                     
                     results = store.hybrid_search(
                         query=query,
@@ -1110,6 +1126,8 @@ class OpenSearchMultiIndexManager:
                         alternate_query=alternate_query
                     )
                 elif use_mmr:
+                    # MMR: Use retriever (scores not directly available, but diversity is maintained)
+                    # Add index-based ranking for re-ranking purposes
                     retriever = store.vectorstore.as_retriever(
                         search_type="mmr",
                         search_kwargs={
@@ -1119,16 +1137,40 @@ class OpenSearchMultiIndexManager:
                             "filter": filter
                         }
                     )
-                    results = retriever.invoke(query)
+                    mmr_results = retriever.invoke(query)
+                    # Add score based on MMR ranking (higher rank = higher score)
+                    for rank, doc in enumerate(mmr_results):
+                        doc.metadata = doc.metadata or {}
+                        # MMR ranking score: first result gets highest score
+                        doc.metadata["_opensearch_score"] = 1.0 / (1 + rank)
+                    results = mmr_results
                 else:
-                    search_kwargs={"k": results_per_index}
-                    if filter:
-                        search_kwargs["filter"] = filter
+                    # Basic similarity search: Use similarity_search_with_score for scores
+                    try:
+                        # similarity_search_with_score returns List[(Document, score)]
+                        search_kwargs_inner = {"k": results_per_index}
+                        if filter:
+                            search_kwargs_inner["filter"] = filter
                         
-                    retriever = store.vectorstore.as_retriever(
-                        search_kwargs=search_kwargs
-                    )
-                    results = retriever.invoke(query)
+                        results_with_scores = store.vectorstore.similarity_search_with_score(
+                            query, **search_kwargs_inner
+                        )
+                        results = []
+                        for doc, score in results_with_scores:
+                            doc.metadata = doc.metadata or {}
+                            doc.metadata["_opensearch_score"] = float(score)
+                            results.append(doc)
+                    except Exception as score_err:
+                        # Fallback to retriever if similarity_search_with_score not available
+                        logger.debug(f"similarity_search_with_score failed, using retriever: {score_err}")
+                        search_kwargs={"k": results_per_index}
+                        if filter:
+                            search_kwargs["filter"] = filter
+                            
+                        retriever = store.vectorstore.as_retriever(
+                            search_kwargs=search_kwargs
+                        )
+                        results = retriever.invoke(query)
                 
                 all_results.extend(results)
                 logger.debug(f"Found {len(results)} results in index '{index_name}'")
@@ -1136,7 +1178,11 @@ class OpenSearchMultiIndexManager:
                 logger.warning(f"Error searching index '{index_name}': {e}")
                 continue
         
-        # Deduplicate by content hash and return top k
+        # ======== GLOBAL RE-RANKING ========
+        # FIX: Sort ALL results by relevance score before returning top k
+        # This ensures the most relevant results from ANY document are returned
+        
+        # Deduplicate by content hash while preserving scores
         seen = set()
         unique_results = []
         for doc in all_results:
@@ -1144,6 +1190,28 @@ class OpenSearchMultiIndexManager:
             if content_hash not in seen:
                 seen.add(content_hash)
                 unique_results.append(doc)
+        
+        # GLOBAL RE-RANKING: Sort by relevance score (descending)
+        # Use _opensearch_score from hybrid search, or default to 0
+        def get_relevance_score(doc: Document) -> float:
+            """Extract relevance score from document metadata."""
+            metadata = doc.metadata or {}
+            # Priority: _opensearch_score (hybrid) > _score > 0
+            if "_opensearch_score" in metadata:
+                return float(metadata["_opensearch_score"])
+            if "_score" in metadata:
+                return float(metadata["_score"])
+            return 0.0
+        
+        # Sort by relevance score (highest first)
+        unique_results.sort(key=get_relevance_score, reverse=True)
+        
+        logger.info(f"🔄 Global re-ranking: {len(unique_results)} unique results from {len(index_names)} indexes, returning top {k}")
+        
+        # Log top results for debugging
+        if unique_results:
+            top_scores = [f"{get_relevance_score(doc):.4f}" for doc in unique_results[:min(5, len(unique_results))]]
+            logger.debug(f"Top {len(top_scores)} scores after global re-ranking: {top_scores}")
         
         return unique_results[:k]
     
