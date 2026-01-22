@@ -2705,14 +2705,36 @@ class RetrievalEngine:
             # Get page_extraction_method from chunk metadata for debugging
             page_extraction_method = doc.metadata.get('page_extraction_method', 'unknown')
             
-            # Extract image_number from image_ref or metadata
+            # Extract image_number from image_ref, metadata, OR text patterns
             image_number = None
+            
+            # PRIORITY 1: Check metadata sources
             if image_ref and isinstance(image_ref, dict):
-                image_number = image_ref.get('image_index')
-            elif doc.metadata.get('image_index') is not None:
+                image_number = image_ref.get('image_index') or image_ref.get('image_number')
+            
+            if image_number is None and doc.metadata.get('image_index') is not None:
                 image_number = doc.metadata.get('image_index')
-            elif doc.metadata.get('image_number') is not None:
+            
+            if image_number is None and doc.metadata.get('image_number') is not None:
                 image_number = doc.metadata.get('image_number')
+            
+            # PRIORITY 2: Extract from text patterns (for OCR content)
+            if image_number is None and chunk_text:
+                import re
+                # Pattern: "Image X on Page Y" or "IMAGE X"
+                image_text_match = re.search(r'(?:Image|IMAGE|Imagen|Fig(?:ure)?|FIGURE)\s*[#:]?\s*(\d+)', chunk_text[:500])
+                if image_text_match:
+                    image_number = int(image_text_match.group(1))
+                    logger.debug(f"Citation {i}: Extracted image number {image_number} from text pattern")
+            
+            # PRIORITY 3: Check for image markers in text
+            if image_number is None and '<!-- image -->' in chunk_text:
+                # Try to find image number near the marker
+                import re
+                marker_match = re.search(r'(?:Image|IMAGE|Imagen|Fig(?:ure)?)\s*(\d+).*?<!--\s*image\s*-->', chunk_text[:1000], re.IGNORECASE | re.DOTALL)
+                if marker_match:
+                    image_number = int(marker_match.group(1))
+                    logger.debug(f"Citation {i}: Extracted image number {image_number} from image marker context")
             
             # Build enhanced source_location with page AND image number
             if image_number is not None:
@@ -5051,13 +5073,20 @@ Answer:"""
         
         # For image content, also check for page patterns in the text
         if has_image or image_index is not None or image_ref or '<!-- image -->' in chunk_text:
-            # Check for "Image X on Page Y" pattern
-            image_page_match = re.search(r'Image\s+\d+\s+on\s+[Pp]age\s+(\d+)', chunk_text)
-            if image_page_match:
-                img_page_num = int(image_page_match.group(1))
-                if validate_against_doc(img_page_num):
-                    logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} extracted from 'Image X on Page Y' text")
-                    return img_page_num, 0.95
+            # Check for "Image X on Page Y" pattern (various formats)
+            image_page_patterns = [
+                r'Image\s+\d+\s+on\s+[Pp]age\s+(\d+)',           # "Image 5 on Page 3"
+                r'Imagen\s+\d+\s+(?:en\s+)?[Pp][áa]gina\s+(\d+)',  # Spanish: "Imagen 5 en Página 3"
+                r'Fig(?:ure)?\s*\d+.*?[Pp]age\s+(\d+)',           # "Figure 5 - Page 3"
+                r'[Pp]age\s+(\d+).*?Image\s+\d+',                  # "Page 3 - Image 5"
+            ]
+            for pattern in image_page_patterns:
+                image_page_match = re.search(pattern, chunk_text[:500], re.IGNORECASE)
+                if image_page_match:
+                    img_page_num = int(image_page_match.group(1))
+                    if validate_against_doc(img_page_num):
+                        logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} extracted from image-page pattern in text")
+                        return img_page_num, 0.95
             
             # Check for "Page X" pattern at start of text
             page_ref_match = re.search(r'^[Pp]age\s+(\d+)', chunk_text[:100])
@@ -5066,22 +5095,55 @@ Answer:"""
                 if validate_against_doc(img_page_num):
                     logger.info(f"📸 [IMAGE PAGE] Page {img_page_num} from page reference at start of image content")
                     return img_page_num, 0.9
+            
+            # Check for footer-style page numbers (common in OCR)
+            footer_page_patterns = [
+                r'[-–—]\s*(\d+)\s*[-–—]',                        # "- 5 -" or "— 5 —"
+                r'\bp(?:g|age)?\.?\s*(\d+)\b',                    # "pg. 5" or "p. 5" or "page 5"
+                r'\bpágina\s+(\d+)\b',                            # Spanish "página 5"
+            ]
+            for pattern in footer_page_patterns:
+                footer_match = re.search(pattern, chunk_text[-200:], re.IGNORECASE)
+                if footer_match:
+                    footer_page = int(footer_match.group(1))
+                    if validate_against_doc(footer_page):
+                        logger.info(f"📸 [IMAGE PAGE] Page {footer_page} from footer pattern in OCR content")
+                        return footer_page, 0.85
         
-        # If no text markers, use image metadata (lower confidence since it might be wrong)
+        # If no text markers, use image metadata
+        # IMPROVED: Accept page 1 if there's corroborating evidence (start_char is small)
         if image_ref and isinstance(image_ref, dict):
             img_page = image_ref.get('page') or image_ref.get('image_page') or image_ref.get('source_page')
             if img_page and validate_against_doc(img_page):
-                # Only use metadata if page > 1 (page 1 is often a wrong default)
-                if int(img_page) > 1:
-                    logger.info(f"📸 [IMAGE METADATA] Page {img_page} from image_ref (confidence reduced)")
-                    return int(img_page), 0.7  # Lower confidence - metadata might be wrong
+                img_page_int = int(img_page)
+                start_char_val = doc.metadata.get('start_char', None)
+                
+                # Accept page 1 if start_char is at beginning of document (< 2000 chars)
+                # or if image_index is 0 or 1 (first images are usually on page 1)
+                img_idx = doc.metadata.get('image_index', 0) or image_ref.get('image_index', 0)
+                is_early_content = (start_char_val is not None and start_char_val < 2000) or (img_idx in [0, 1])
+                
+                if img_page_int > 1:
+                    logger.info(f"📸 [IMAGE METADATA] Page {img_page} from image_ref")
+                    return img_page_int, 0.8
+                elif is_early_content:
+                    # Page 1 is likely correct for early content
+                    logger.info(f"📸 [IMAGE METADATA] Page 1 from image_ref (corroborated by early position)")
+                    return 1, 0.75
                 else:
-                    logger.warning(f"📸 [IMAGE METADATA] Ignoring page {img_page} from image_ref (likely default value)")
+                    logger.debug(f"📸 [IMAGE METADATA] Page {img_page} from image_ref (uncertain - checking other sources)")
         
         if image_page and validate_against_doc(image_page):
-            if int(image_page) > 1:
+            img_page_int = int(image_page)
+            if img_page_int > 1:
                 logger.info(f"📸 [IMAGE METADATA] Page {image_page} from image_page metadata")
-                return int(image_page), 0.7
+                return img_page_int, 0.8
+            else:
+                # Check if it's early content
+                start_char_val = doc.metadata.get('start_char', None)
+                if start_char_val is not None and start_char_val < 2000:
+                    logger.info(f"📸 [IMAGE METADATA] Page 1 from image_page (corroborated by early position)")
+                    return 1, 0.75
         
         # PRIORITY 1: Character position-based matching (HIGHEST ACCURACY for text content)
         start_char = doc.metadata.get('start_char', None)
@@ -6274,12 +6336,27 @@ Answer:"""
             # Get page_extraction_method from chunk metadata for debugging
             page_extraction_method = doc.metadata.get('page_extraction_method', 'unknown')
             
-            # Extract image_number from image_ref or metadata (agentic RAG)
+            # Extract image_number from image_ref, metadata, OR text patterns (agentic RAG)
             image_number = None
+            
+            # PRIORITY 1: Check metadata sources
             if image_ref and isinstance(image_ref, dict):
-                image_number = image_ref.get('image_index')
-            elif doc.metadata.get('image_index') is not None:
+                image_number = image_ref.get('image_index') or image_ref.get('image_number')
+            
+            if image_number is None and doc.metadata.get('image_index') is not None:
                 image_number = doc.metadata.get('image_index')
+            
+            if image_number is None and doc.metadata.get('image_number') is not None:
+                image_number = doc.metadata.get('image_number')
+            
+            # PRIORITY 2: Extract from text patterns (for OCR content)
+            if image_number is None and chunk_text:
+                import re
+                # Pattern: "Image X on Page Y" or "IMAGE X" or "Figure X"
+                image_text_match = re.search(r'(?:Image|IMAGE|Imagen|Fig(?:ure)?|FIGURE)\s*[#:]?\s*(\d+)', chunk_text[:500])
+                if image_text_match:
+                    image_number = int(image_text_match.group(1))
+                    logger.debug(f"Agentic RAG Citation {i}: Extracted image number {image_number} from text pattern")
             elif doc.metadata.get('image_number') is not None:
                 image_number = doc.metadata.get('image_number')
             

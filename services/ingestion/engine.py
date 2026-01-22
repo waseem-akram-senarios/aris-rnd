@@ -274,7 +274,14 @@ class IngestionEngine:
                     chunk.metadata['source_page'] = chunk.metadata['page']
                 continue
                 
+            # Get start_index from LangChain splitter - maps to character position
             start_index = chunk.metadata.get('start_index', 0)
+            chunk_length = len(chunk.page_content) if hasattr(chunk, 'page_content') else 0
+            end_index = start_index + chunk_length
+            
+            # IMPROVED: Also set start_char and end_char for retrieval compatibility
+            chunk.metadata['start_char'] = start_index
+            chunk.metadata['end_char'] = end_index
             
             # Fast-forward to the block that might contain this start_index
             while block_idx < num_blocks - 1 and page_blocks[block_idx].get('end_char', 0) < start_index:
@@ -285,13 +292,25 @@ class IngestionEngine:
             if current_block.get('start_char', 0) <= start_index <= current_block.get('end_char', 0):
                 chunk_page = current_block.get('page', 1)
             else:
-                # Fallback to the last seen page or 1
-                chunk_page = current_block.get('page', 1)
+                # Fallback: Try to find the best matching block based on overlap
+                best_page = 1
+                best_overlap = 0
+                for block in page_blocks:
+                    block_start = block.get('start_char', 0)
+                    block_end = block.get('end_char', 0)
+                    overlap = min(end_index, block_end) - max(start_index, block_start)
+                    if overlap > best_overlap:
+                        best_overlap = overlap
+                        best_page = block.get('page', 1)
+                chunk_page = best_page if best_overlap > 0 else current_block.get('page', 1)
             
             chunk.metadata['page'] = chunk_page
             # Also set source_page for consistency if missing
             if 'source_page' not in chunk.metadata:
                 chunk.metadata['source_page'] = chunk_page
+            
+            # Store page extraction method for debugging
+            chunk.metadata['page_extraction_method'] = 'char_position_ingestion'
                 
         return chunks
     
