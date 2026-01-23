@@ -360,19 +360,113 @@ async def list_tools():
 # MAIN ENTRY POINT
 # ============================================================================
 
-def run_fastapi():
-    """Run the FastAPI server."""
+def run_combined_server():
+    """
+    Run combined FastAPI + MCP server.
+    
+    Uses FastMCP's http_app as the base and mounts FastAPI routes on it.
+    """
     import uvicorn
+    from starlette.applications import Starlette
+    from starlette.routing import Route, Mount
+    from starlette.responses import JSONResponse
     
     port = int(os.getenv("MCP_SERVER_PORT", "8503"))
     host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
     
-    logger.info(f"🌐 Starting FastAPI on {host}:{port}")
-    uvicorn.run(app, host=host, port=port)
+    logger.info(f"🚀 Starting Combined MCP + FastAPI Server on {host}:{port}")
+    logger.info(f"   MCP SSE endpoint: http://{host}:{port}/sse")
+    logger.info(f"   Health endpoint: http://{host}:{port}/health")
+    logger.info(f"   Tools: rag_ingest, rag_search")
+    
+    # Get the MCP's HTTP app (Starlette-based)
+    mcp_http_app = mcp.http_app()
+    
+    # Create health check handler
+    async def health_handler(request):
+        from shared.config.settings import ARISConfig
+        return JSONResponse({
+            "status": "healthy",
+            "service": "mcp",
+            "server_name": mcp.name,
+            "tools": ["rag_ingest", "rag_search"],
+            "accuracy_features": {
+                "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
+                "reranking": ARISConfig.ENABLE_RERANKING,
+                "agentic_rag": ARISConfig.DEFAULT_USE_AGENTIC_RAG,
+                "auto_translate": ARISConfig.ENABLE_AUTO_TRANSLATE
+            },
+            "timestamp": datetime.now().isoformat()
+        })
+    
+    # Create info handler
+    async def info_handler(request):
+        from shared.config.settings import ARISConfig
+        return JSONResponse({
+            "service": "ARIS RAG MCP Server",
+            "version": "1.0.0",
+            "description": "Model Context Protocol server for document ingestion and search",
+            "tools": {
+                "rag_ingest": {
+                    "description": "Add documents to RAG system",
+                    "supports": ["plain text", "S3 URIs", "PDF", "DOCX", "TXT"]
+                },
+                "rag_search": {
+                    "description": "Query RAG system with advanced search",
+                    "search_modes": ["hybrid", "semantic", "keyword"]
+                }
+            },
+            "configuration": {
+                "embedding_model": ARISConfig.EMBEDDING_MODEL,
+                "chunk_size": ARISConfig.DEFAULT_CHUNK_SIZE,
+                "reranking_enabled": ARISConfig.ENABLE_RERANKING,
+                "agentic_rag_enabled": ARISConfig.DEFAULT_USE_AGENTIC_RAG
+            },
+            "endpoints": {
+                "health": "/health",
+                "info": "/info",
+                "mcp_sse": "/sse"
+            }
+        })
+    
+    # Create tools list handler
+    async def tools_handler(request):
+        return JSONResponse({
+            "tools": [
+                {
+                    "name": "rag_ingest",
+                    "description": "Add content to the RAG system for indexing",
+                    "parameters": {
+                        "content": {"type": "string", "required": True},
+                        "metadata": {"type": "object", "required": False}
+                    }
+                },
+                {
+                    "name": "rag_search",
+                    "description": "Query the RAG system with advanced search",
+                    "parameters": {
+                        "query": {"type": "string", "required": True},
+                        "filters": {"type": "object", "required": False},
+                        "k": {"type": "integer", "default": 10},
+                        "search_mode": {"type": "string", "default": "hybrid"},
+                        "use_agentic_rag": {"type": "boolean", "default": True},
+                        "include_answer": {"type": "boolean", "default": True}
+                    }
+                }
+            ]
+        })
+    
+    # Add custom routes to the MCP HTTP app
+    mcp_http_app.routes.insert(0, Route("/health", health_handler, methods=["GET"]))
+    mcp_http_app.routes.insert(1, Route("/info", info_handler, methods=["GET"]))
+    mcp_http_app.routes.insert(2, Route("/tools", tools_handler, methods=["GET"]))
+    
+    # Run the combined server
+    uvicorn.run(mcp_http_app, host=host, port=port)
 
 
-def run_mcp():
-    """Run the MCP server with SSE transport."""
+def run_mcp_only():
+    """Run the MCP server only with SSE transport."""
     port = int(os.getenv("MCP_SERVER_PORT", "8503"))
     host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
     transport = os.getenv("MCP_TRANSPORT", "sse")
@@ -387,12 +481,28 @@ def run_mcp():
         mcp.run(transport="sse", host=host, port=port)
 
 
+def run_fastapi_only():
+    """Run only the FastAPI server (without MCP)."""
+    import uvicorn
+    
+    port = int(os.getenv("MCP_SERVER_PORT", "8503"))
+    host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
+    
+    logger.info(f"🌐 Starting FastAPI on {host}:{port}")
+    uvicorn.run(app, host=host, port=port)
+
+
 if __name__ == "__main__":
     # Determine mode from environment
-    mode = os.getenv("MCP_MODE", "mcp")  # 'mcp' or 'api'
+    # 'combined' (default) - Both FastAPI endpoints + MCP SSE
+    # 'mcp' - MCP server only
+    # 'api' - FastAPI only
+    mode = os.getenv("MCP_MODE", "combined")
     
     if mode == "api":
-        run_fastapi()
+        run_fastapi_only()
+    elif mode == "mcp":
+        run_mcp_only()
     else:
-        run_mcp()
+        run_combined_server()
 

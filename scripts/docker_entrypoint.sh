@@ -25,9 +25,10 @@ elif [ "$SERVICE_TYPE" == "ui" ]; then
     exec streamlit run app.py --server.port 80 --server.address 0.0.0.0
 elif [ "$SERVICE_TYPE" == "mcp" ]; then
     # MCP Server - Model Context Protocol for AI agents
-    MCP_PORT=${MCP_SERVER_PORT:-8503}
-    MCP_TRANSPORT=${MCP_TRANSPORT:-sse}
-    echo "Starting MCP Microservice on port $MCP_PORT (transport: $MCP_TRANSPORT)..."
+    # Combines FastAPI health endpoints with MCP SSE server
+    export MCP_PORT=${MCP_SERVER_PORT:-8503}
+    export MCP_MODE=${MCP_MODE:-combined}
+    echo "Starting MCP Microservice on port $MCP_PORT (mode: $MCP_MODE)..."
     exec python3 -m services.mcp.main
 else
     echo "❌ Unknown service type: $SERVICE_TYPE"
