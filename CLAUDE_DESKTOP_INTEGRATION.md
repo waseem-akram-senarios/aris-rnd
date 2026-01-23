@@ -29,7 +29,7 @@ If the file doesn't exist, create it. Add this configuration:
   "mcpServers": {
     "aris-rag": {
       "command": "uvx",
-      "args": ["mcp-server-sse", "--url", "http://44.221.84.58:8503/sse"],
+      "args": ["mcp-server-sse", "--url", "http://44.221.84.58:8503/mcp"],
       "env": {}
     }
   }
@@ -42,12 +42,14 @@ If the file doesn't exist, create it. Add this configuration:
   "mcpServers": {
     "aris-rag": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sse", "--url", "http://44.221.84.58:8503/sse"],
+      "args": ["-y", "@modelcontextprotocol/server-sse", "--url", "http://44.221.84.58:8503/mcp"],
       "env": {}
     }
   }
 }
 ```
+
+> **Note:** The MCP endpoint is at `/mcp`. The `/sse` endpoint redirects to `/mcp` for backwards compatibility.
 
 ---
 
@@ -66,8 +68,11 @@ mcp-cli connect sse --url http://44.221.84.58:8503/sse
 
 ### **Option B: Direct HTTP Testing**
 ```bash
-# Test with curl
-curl -X POST "http://44.221.84.58:8503/messages/?session_id=test123" \
+# Test health endpoint
+curl -s 'http://44.221.84.58:8503/health' | python3 -m json.tool
+
+# Test MCP endpoint
+curl -X POST "http://44.221.84.58:8503/mcp" \
   -H "Content-Type: application/json" \
   -d '{
     "jsonrpc": "2.0",
@@ -180,10 +185,13 @@ When using your MCP server through Claude, you get:
 
 **Check:**
 ```bash
-# Test server connectivity
-curl -s 'http://44.221.84.58:8503/sse' -H 'Accept: text/event-stream' --max-time 5
+# Test health endpoint
+curl -s 'http://44.221.84.58:8503/health'
 
-# Should return: event: endpoint\ndata: /messages/?session_id=...
+# Test MCP endpoint
+curl -s 'http://44.221.84.58:8503/mcp' -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
 **Solutions:**
