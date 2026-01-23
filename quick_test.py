@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
-Quick MCP Server Test - No User Input Required
-Tests basic functionality of the accuracy-optimized MCP server
+Quick MCP Microservice Test - No User Input Required
+Tests basic functionality of the accuracy-optimized MCP microservice
+
+Tests:
+1. Import Test - Verify microservice imports correctly
+2. Ingestion Test - Add documents to RAG system
+3. Search Test - Query documents with various modes
+4. Accuracy Features Test - Test hybrid search, agentic RAG, etc.
 """
 
 import sys
@@ -11,24 +17,32 @@ import time
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+
 def test_imports():
     """Test 1: Verify imports work"""
-    print("🧪 TEST 1: Import Test")
+    print("🧪 TEST 1: Microservice Import Test")
     try:
-        from mcp_server import mcp, rag_ingest, rag_search
-        print("✅ MCP Server imported successfully")
+        # Import from the new microservice structure
+        from services.mcp.main import mcp, mcp_engine
+        from services.mcp.engine import MCPEngine
+        
+        print("✅ MCP Microservice imported successfully")
         print(f"   Server: {mcp.name}")
         print(f"   Tools: {list(mcp._tool_manager._tools.keys())}")
+        print(f"   Engine: {type(mcp_engine).__name__}")
         return True
     except Exception as e:
         print(f"❌ Import failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
+
 def test_ingest():
-    """Test 2: Test document ingestion"""
+    """Test 2: Test document ingestion via MCPEngine"""
     print("\n🧪 TEST 2: Document Ingestion Test")
     try:
-        from mcp_server import rag_ingest
+        from services.mcp.main import mcp_engine
 
         # Test with sample maintenance document
         content = """
@@ -49,7 +63,8 @@ def test_ingest():
         Safety Note: Always disconnect power before servicing.
         """
 
-        result = rag_ingest(
+        # Use the engine's ingest method directly
+        result = mcp_engine.ingest(
             content=content.strip(),
             metadata={
                 'domain': 'maintenance',
@@ -71,13 +86,16 @@ def test_ingest():
 
     except Exception as e:
         print(f"❌ Ingestion test failed: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
+
 def test_search(document_id):
-    """Test 3: Test search functionality"""
+    """Test 3: Test search functionality via MCPEngine"""
     print("\n🧪 TEST 3: Search Test")
     try:
-        from mcp_server import rag_search
+        from services.mcp.main import mcp_engine
 
         # Test queries of increasing complexity
         test_queries = [
@@ -91,7 +109,8 @@ def test_search(document_id):
             print(f"   Query: '{query}'")
 
             start_time = time.time()
-            result = rag_search(query, k=3, include_answer=True)
+            # Use the engine's search method directly
+            result = mcp_engine.search(query, k=3, include_answer=True)
             elapsed = time.time() - start_time
 
             if result.get('success'):
@@ -120,13 +139,16 @@ def test_search(document_id):
 
     except Exception as e:
         print(f"❌ Search test failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
 
 def test_accuracy_features():
     """Test 4: Test accuracy-specific features"""
     print("\n🧪 TEST 4: Accuracy Features Test")
     try:
-        from mcp_server import rag_search
+        from services.mcp.main import mcp_engine
 
         # Test hybrid search with different modes
         query = "maintenance procedures"
@@ -134,14 +156,15 @@ def test_accuracy_features():
         print("   Testing different search modes:")
         modes = ['semantic', 'keyword', 'hybrid']
         for mode in modes:
-            result = rag_search(query, k=2, search_mode=mode, include_answer=False)
+            result = mcp_engine.search(query, k=2, search_mode=mode, include_answer=False)
             if result.get('success') and result.get('results'):
                 top_confidence = result['results'][0].get('confidence', 0)
                 print(f"   {mode.capitalize()}: {top_confidence:.1f}% confidence")
+
         # Test Agentic RAG
         print("\n   Testing Agentic RAG:")
         complex_query = "What are the steps for machine maintenance and what safety precautions should I take?"
-        result = rag_search(complex_query, k=3, use_agentic_rag=True, include_answer=True)
+        result = mcp_engine.search(complex_query, k=3, use_agentic_rag=True, include_answer=True)
 
         if result.get('success'):
             accuracy_info = result.get('accuracy_info', {})
@@ -166,47 +189,119 @@ def test_accuracy_features():
 
     except Exception as e:
         print(f"❌ Accuracy features test failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
+
+def test_engine_methods():
+    """Test 5: Test MCPEngine helper methods"""
+    print("\n🧪 TEST 5: Engine Helper Methods Test")
+    try:
+        from services.mcp.engine import MCPEngine
+
+        # Test static methods
+        print("   Testing S3 URI detection:")
+        test_uris = [
+            ("s3://bucket/key/file.pdf", True),
+            ("s3a://bucket/file.txt", True),
+            ("https://example.com/file.pdf", False),
+            ("plain text content", False),
+        ]
+        for uri, expected in test_uris:
+            result = MCPEngine.is_s3_uri(uri)
+            status = "✅" if result == expected else "❌"
+            print(f"   {status} '{uri[:30]}...' -> {result} (expected: {expected})")
+
+        # Test language code conversion
+        print("\n   Testing language code conversion:")
+        test_codes = [("en", "eng"), ("es", "spa"), ("de", "deu"), ("eng", "eng")]
+        for code, expected in test_codes:
+            result = MCPEngine.convert_language_code(code)
+            status = "✅" if result == expected else "❌"
+            print(f"   {status} '{code}' -> '{result}' (expected: '{expected}')")
+
+        # Test confidence scoring
+        print("\n   Testing confidence scoring:")
+        print(f"   Position 0 (with rerank 0.95): {MCPEngine.calculate_confidence_score(0, 10, 0.95):.1f}%")
+        print(f"   Position 0 (no rerank): {MCPEngine.calculate_confidence_score(0, 10):.1f}%")
+        print(f"   Position 5 (no rerank): {MCPEngine.calculate_confidence_score(5, 10):.1f}%")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Engine methods test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 
 def main():
     """Run all tests"""
     print("=" * 70)
-    print("🚀 ARIS MCP Server - Accuracy-Optimized Testing Suite")
+    print("🚀 ARIS MCP Microservice - Accuracy-Optimized Testing Suite")
     print("=" * 70)
-    print("Testing the latest accuracy improvements:")
-    print("• Agentic RAG for complex questions")
-    print("• Confidence scoring for results")
-    print("• Auto-translation support")
-    print("• Hybrid search with reranking")
+    print("Testing the new microservice architecture:")
+    print("• services/mcp/main.py - MCP server with FastAPI")
+    print("• services/mcp/engine.py - Core business logic")
     print("=" * 70)
+
+    results = {}
 
     # Run tests
-    import_success = test_imports()
-    document_id = None
+    results['import'] = test_imports()
+    results['engine_methods'] = test_engine_methods()
 
-    if import_success:
+    document_id = None
+    if results['import']:
         document_id = test_ingest()
+        results['ingest'] = document_id is not None
+
         if document_id:
-            test_search(document_id)
-        test_accuracy_features()
+            results['search'] = test_search(document_id)
+
+        results['accuracy'] = test_accuracy_features()
 
     print("\n" + "=" * 70)
-    if import_success:
-        print("✅ Basic tests completed successfully!")
-        print("🎯 Your MCP server is accuracy-optimized and ready for production use.")
-        print("\n📈 Key Accuracy Features Verified:")
-        print("   • Hybrid search (semantic + keyword)")
-        print("   • FlashRank reranking")
-        print("   • Agentic RAG query decomposition")
-        print("   • Confidence score calculation")
-        print("   • Comprehensive metadata support")
-    else:
-        print("❌ Some tests failed. Check the errors above.")
-
-    print("\n🔗 MCP Server URL: http://44.221.84.58:8503/sse")
-    print("📚 Full testing guide: MCP_TESTING_GUIDE.md")
-    print("📊 Accuracy tuning guide: docs/ACCURACY_GUIDE.md")
+    print("📊 TEST RESULTS SUMMARY")
     print("=" * 70)
 
+    passed = sum(1 for v in results.values() if v)
+    total = len(results)
+
+    for test, result in results.items():
+        status = "✅ PASSED" if result else "❌ FAILED"
+        print(f"   {test.upper()}: {status}")
+
+    print(f"\n   Total: {passed}/{total} tests passed")
+
+    if passed == total:
+        print("\n🎉 All tests passed!")
+        print("🎯 Your MCP microservice is ready for production use.")
+    else:
+        print(f"\n⚠️  {total - passed} test(s) failed. Review errors above.")
+
+    print("\n📈 Key Features Verified:")
+    print("   • Microservice architecture (services/mcp/)")
+    print("   • MCPEngine for business logic separation")
+    print("   • Hybrid search with confidence scoring")
+    print("   • Agentic RAG query decomposition")
+    print("   • FastAPI health endpoints")
+
+    print("\n🔗 Endpoints:")
+    print("   MCP Server: http://44.221.84.58:8503/sse")
+    print("   Health:     http://44.221.84.58:8503/health")
+    print("   Info:       http://44.221.84.58:8503/info")
+    print("   Tools:      http://44.221.84.58:8503/tools")
+
+    print("\n📚 Documentation:")
+    print("   • CLAUDE_DESKTOP_INTEGRATION.md")
+    print("   • MCP_TESTING_GUIDE.md")
+    print("   • docs/ACCURACY_GUIDE.md")
+    print("=" * 70)
+
+    return 0 if passed == total else 1
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

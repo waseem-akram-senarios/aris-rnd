@@ -26,8 +26,9 @@ elif [ "$SERVICE_TYPE" == "ui" ]; then
 elif [ "$SERVICE_TYPE" == "mcp" ]; then
     # MCP Server - Model Context Protocol for AI agents
     MCP_PORT=${MCP_SERVER_PORT:-8503}
-    echo "Starting MCP Server on port $MCP_PORT..."
-    exec python3 mcp_server.py
+    MCP_TRANSPORT=${MCP_TRANSPORT:-sse}
+    echo "Starting MCP Microservice on port $MCP_PORT (transport: $MCP_TRANSPORT)..."
+    exec python3 -m services.mcp.main
 else
     echo "❌ Unknown service type: $SERVICE_TYPE"
     echo "Please set SERVICE_TYPE to 'gateway', 'ingestion', 'retrieval', 'ui', or 'mcp'."
