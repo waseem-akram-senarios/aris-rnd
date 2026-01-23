@@ -456,12 +456,23 @@ def run_combined_server():
             ]
         })
     
+    # Create a redirect from /sse to /mcp for backwards compatibility
+    async def sse_redirect(request):
+        from starlette.responses import RedirectResponse
+        # Include any query parameters
+        query_string = request.url.query
+        redirect_url = "/mcp" + ("?" + query_string if query_string else "")
+        return RedirectResponse(url=redirect_url, status_code=307)
+    
     # Add custom routes to the MCP HTTP app
+    # Note: Routes are matched in order, so insert at beginning
     mcp_http_app.routes.insert(0, Route("/health", health_handler, methods=["GET"]))
     mcp_http_app.routes.insert(1, Route("/info", info_handler, methods=["GET"]))
     mcp_http_app.routes.insert(2, Route("/tools", tools_handler, methods=["GET"]))
+    mcp_http_app.routes.insert(3, Route("/sse", sse_redirect, methods=["GET", "POST"]))
     
     # Run the combined server
+    logger.info(f"   Available routes: /health, /info, /tools, /sse (→ /mcp), /mcp")
     uvicorn.run(mcp_http_app, host=host, port=port)
 
 
