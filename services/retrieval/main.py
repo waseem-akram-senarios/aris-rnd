@@ -228,33 +228,24 @@ async def query_rag(
             auto_translate=query_request.auto_translate
         )
         
-        # Build citations for response schema with full metadata including image_number
+        # Build citations for response schema
+        # NOTE: We don't use image_number as it's misleading (document-wide sequential counter, not per-page position)
         citations = []
         for i, src in enumerate(result.get("citations", [])):
-            # Extract image_number from source data
-            image_number = src.get('image_number')
-            if image_number is None and src.get('image_ref'):
-                image_ref = src.get('image_ref')
-                if isinstance(image_ref, dict):
-                    image_number = image_ref.get('image_index')
-            
-            # Build source_location with page and image info
             page = src.get("page", 1)
-            if image_number is not None:
-                source_location = f"Page {page}, Image {image_number}"
-            else:
-                source_location = src.get("source_location", f"Page {page}")
+            # Use source_location from engine (already cleaned up)
+            source_location = src.get("source_location", f"Page {page}")
             
             citations.append(
                 Citation(
                     id=src.get('id', i) if isinstance(src.get('id'), int) else i,
                     source=src.get("source", ""),
                     page=page,
-                    image_number=image_number,
+                    image_number=None,  # Don't show misleading image numbers
                     snippet=src.get("snippet", ""),
                     full_text=src.get("full_text", ""),
                     source_location=source_location,
-                    content_type=src.get("content_type", "image" if image_number else "text"),
+                    content_type=src.get("content_type", "text"),
                     image_ref=src.get("image_ref"),
                     image_info=src.get("image_info"),
                     similarity_score=src.get("similarity_score"),
@@ -1187,23 +1178,20 @@ async def query_rag_full(
         # Build citations
         citations = []
         for i, src in enumerate(result.get("citations", [])):
-            image_number = src.get('image_number')
             page = src.get("page", 1)
-            if image_number is not None:
-                source_location = f"Page {page}, Image {image_number}"
-            else:
-                source_location = src.get("source_location", f"Page {page}")
+            # Use source_location from engine (already cleaned up)
+            source_location = src.get("source_location", f"Page {page}")
             
             citations.append(
                 Citation(
                     id=src.get('id', i) if isinstance(src.get('id'), int) else i,
                     source=src.get("source", ""),
                     page=page,
-                    image_number=image_number,
+                    image_number=None,  # Don't show misleading image numbers
                     snippet=src.get("snippet", ""),
                     full_text=src.get("full_text", ""),
                     source_location=source_location,
-                    content_type=src.get("content_type", "image" if image_number else "text"),
+                    content_type=src.get("content_type", "text"),
                     image_ref=src.get("image_ref"),
                     image_info=src.get("image_info"),
                     similarity_score=src.get("similarity_score"),
@@ -1240,6 +1228,10 @@ async def query_rag_full(
         
         total_time = time_module.time() - start_time
         
+        # FIX: When active_sources is empty, show actual documents that were searched
+        # Use the sources from the result (which now only contains citation sources)
+        docs_searched = active_sources if active_sources else result.get("sources", [])
+        
         return FullQueryResponse(
             answer=result["answer"],
             sources=result.get("sources", []),
@@ -1256,7 +1248,7 @@ async def query_rag_full(
             translated_query=translated_query,
             search_mode_used=query_request.search_mode,
             semantic_weight_used=query_request.semantic_weight,
-            documents_searched=active_sources
+            documents_searched=docs_searched
         )
         
     except Exception as e:

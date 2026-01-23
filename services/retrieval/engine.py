@@ -1356,25 +1356,25 @@ class RetrievalEngine:
                 page = 1
                 logger.debug(f"find_all_occurrences citation {idx}: page was None, using fallback page 1")
             
-            # Extract image_number
-            image_number = occ.get('image_index') or occ.get('image_number')
+            # Extract image metadata (for internal tracking only)
+            # NOTE: image_number from ingestion is a document-wide sequential counter, not per-page position
+            # So we DON'T show it in citations as it's misleading (e.g., "Image 2" doesn't mean 2nd image on page)
+            raw_image_number = occ.get('image_index') or occ.get('image_number')
+            is_image_content = raw_image_number is not None or '<!-- image -->' in (occ.get('snippet') or '')
             
-            # Build source_location with page and image info
-            if image_number is not None:
-                source_location = f"Page {page}, Image {image_number}"
-            else:
-                source_location = f"Page {page}"
+            # Build source_location - just show Page number, indicate image content via content_type
+            source_location = f"Page {page}"
             
             citations.append({
                 'id': idx,
                 'source': occ.get('source') or source_name,
                 'page': page,  # Always guaranteed to be an integer >= 1
-                'image_number': image_number,  # Image number if from image content
+                'image_number': None,  # Don't show misleading sequential image numbers
                 'snippet': occ.get('snippet'),
                 'full_text': occ.get('snippet') or '',
-                'source_location': source_location,  # Now includes "Page X, Image Y" when applicable
-                'content_type': 'image' if image_number is not None else 'text',
-                'image_ref': {'image_index': image_number, 'page': page} if image_number is not None else None,
+                'source_location': source_location,
+                'content_type': 'image' if is_image_content else 'text',
+                'image_ref': {'page': page, 'has_image': True} if is_image_content else None,
             })
 
         sources = [source_name]
@@ -2727,20 +2727,14 @@ class RetrievalEngine:
                     image_number = int(image_text_match.group(1))
                     logger.debug(f"Citation {i}: Extracted image number {image_number} from text pattern")
             
-            # PRIORITY 3: Check for image markers in text
-            if image_number is None and '<!-- image -->' in chunk_text:
-                # Try to find image number near the marker
-                import re
-                marker_match = re.search(r'(?:Image|IMAGE|Imagen|Fig(?:ure)?)\s*(\d+).*?<!--\s*image\s*-->', chunk_text[:1000], re.IGNORECASE | re.DOTALL)
-                if marker_match:
-                    image_number = int(marker_match.group(1))
-                    logger.debug(f"Citation {i}: Extracted image number {image_number} from image marker context")
+            # Check if this is image-derived content (for content_type indicator only)
+            # NOTE: We don't show specific image numbers as they're misleading
+            # (document-wide sequential counters, not per-page positions)
+            is_image_content = (image_number is not None) or (image_ref is not None) or ('<!-- image -->' in chunk_text)
             
-            # Build enhanced source_location with page AND image number
-            if image_number is not None:
-                source_location = f"Page {page}, Image {image_number}"
-            else:
-                source_location = f"Page {page}"
+            # Build source_location - just show Page number
+            # Content type indicates if it's from image/OCR
+            source_location = f"Page {page}"
             
             # Build citation entry with enhanced metadata including confidence scores
             citation = {
@@ -2748,7 +2742,7 @@ class RetrievalEngine:
                 'source': source if source and source != 'Unknown' else 'Unknown',
                 'source_confidence': source_confidence,
                 'page': page,  # Always guaranteed to be an integer >= 1
-                'image_number': image_number,  # Image number if from image content
+                'image_number': None,  # Don't show misleading sequential image numbers
                 'page_confidence': page_confidence,
                 'page_extraction_method': page_extraction_method,  # How page was determined
                 'section': section,
@@ -2757,10 +2751,10 @@ class RetrievalEngine:
                 'start_char': start_char,
                 'end_char': end_char,
                 'chunk_index': doc.metadata.get('chunk_index', None),
-                'image_ref': image_ref,  # Image reference if available
-                'image_info': image_info,  # Human-readable image info
-                'source_location': source_location,  # Certification field: exact location (Page X or Page X, Image Y)
-                'content_type': 'image' if image_ref or image_number else 'text',  # Type of content
+                'image_ref': {'page': page, 'has_image': True} if is_image_content else image_ref,
+                'image_info': f"Image content on Page {page}" if is_image_content else image_info,
+                'source_location': source_location,
+                'content_type': 'image' if is_image_content else 'text',  # Type of content
                 'extraction_method': extraction_method,  # How source was extracted
                 'similarity_score': similarity_score,  # Vector similarity score for ranking
                 's3_url': doc.metadata.get('s3_url')
@@ -3744,9 +3738,9 @@ class RetrievalEngine:
                             'start_char': None,
                             'end_char': None,
                             'chunk_index': None,
-                            'image_ref': {'image_index': img_idx, 'page': page},
-                            'image_info': f"Image {img_idx} on Page {page}",
-                            'source_location': f"Page {page}, Image {img_idx}",
+                            'image_ref': {'page': page, 'has_image': True},
+                            'image_info': f"Image content on Page {page}",
+                            'source_location': f"Page {page}",  # Don't show misleading image numbers
                             'content_type': 'image',
                             'extraction_method': 'opensearch_images_index',
                             'similarity_score': 0.85,  # Good score for direct image match
@@ -3754,7 +3748,7 @@ class RetrievalEngine:
                         }
                         citations.append(image_citation)
                         next_citation_id += 1
-                        logger.info(f"📷 Added image citation: {os.path.basename(source)} Page {page}, Image {img_idx}")
+                        logger.info(f"📷 Added image citation: {os.path.basename(source)} Page {page}")
         
         # Collect document-level metadata (image counts, etc.) from all retrieved documents
         document_metadata = {}
@@ -3899,9 +3893,16 @@ class RetrievalEngine:
                 total_tokens=total_tokens
             )
         
+        # FIX: Only include sources that have citations (filtered sources)
+        # This prevents showing irrelevant documents in the sources list
+        citation_sources = list(set([c.get('source', 'Unknown') for c in citations if c.get('source')]))
+        if not citation_sources:
+            # Fallback to retrieved docs if no citations
+            citation_sources = list(set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs]))
+        
         return {
             "answer": answer,
-            "sources": list(set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs])),
+            "sources": citation_sources,  # Only sources with citations
             "context_chunks": [doc.page_content for doc in relevant_docs],  # Full chunk text for citation display
             "citations": citations,  # Detailed citation information with page numbers and snippets
             "num_chunks_used": len(relevant_docs),
@@ -5721,6 +5722,55 @@ Answer:"""
             snippet += "..."
         return snippet
     
+    def _extract_query_keywords(self, query: str) -> List[str]:
+        """
+        Extract meaningful keywords from a query for content relevance scoring.
+        
+        Removes common stop words and extracts content-bearing terms.
+        
+        Args:
+            query: User query string
+        
+        Returns:
+            List of keyword strings (lowercase)
+        """
+        import re
+        
+        # Common English stop words to ignore
+        stop_words = {
+            'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+            'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
+            'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by',
+            'from', 'as', 'into', 'through', 'during', 'before', 'after',
+            'above', 'below', 'between', 'under', 'again', 'further', 'then',
+            'once', 'here', 'there', 'when', 'where', 'why', 'how', 'all',
+            'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor',
+            'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just',
+            'and', 'but', 'if', 'or', 'because', 'until', 'while', 'although',
+            'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those',
+            'am', 'it', 'its', 'i', 'me', 'my', 'myself', 'we', 'our', 'ours',
+            'you', 'your', 'he', 'him', 'his', 'she', 'her', 'they', 'them',
+            'about', 'also', 'any', 'both', 'but', 'get', 'got', 'out', 'up',
+            'down', 'off', 'over'
+        }
+        
+        # Split into words (alphanumeric only)
+        words = re.findall(r'\b[a-zA-Z0-9]+\b', query.lower())
+        
+        # Filter out stop words and short words
+        keywords = [w for w in words if w not in stop_words and len(w) > 2]
+        
+        # Also add 2-word phrases for better matching
+        words_original = re.findall(r'\b[a-zA-Z0-9]+\b', query.lower())
+        for i in range(len(words_original) - 1):
+            phrase = f"{words_original[i]} {words_original[i+1]}"
+            # Only add phrases without stop words
+            if words_original[i] not in stop_words and words_original[i+1] not in stop_words:
+                keywords.append(phrase)
+        
+        return keywords
+    
     def _deduplicate_citations(self, citations: List[Dict]) -> List[Dict]:
         """
         Merge duplicate citations (same source + page).
@@ -5876,17 +5926,17 @@ Answer:"""
     
     def _rank_citations_by_relevance(self, citations: List[Dict], query: str) -> List[Dict]:
         """
-        Rank citations by similarity score - most similar first.
-        Uses vector similarity scores from similarity_search_with_score.
-        Automatically handles both distance-based (lower = more similar) and 
-        similarity-based (higher = more similar) scoring systems.
+        Rank citations by relevance to query - most relevant first.
+        
+        ENHANCED: When RRF/position-based scores are detected (nearly identical scores),
+        use keyword-based content relevance to re-rank citations.
         
         Args:
             citations: List of citation dictionaries with similarity_score field
-            query: User query string (used for logging/debugging)
+            query: User query string (used for keyword matching and logging)
         
         Returns:
-            Ranked list of citations sorted by similarity_score (most similar first)
+            Ranked list of citations sorted by relevance (most relevant first)
         """
         import re
         from scripts.setup_logging import get_logger
@@ -5895,17 +5945,91 @@ Answer:"""
         if not citations or not query:
             return citations
         
+        # STEP 1: Calculate query-content relevance score for each citation
+        # This helps when RRF scores are nearly identical
+        query_keywords = self._extract_query_keywords(query)
+        logger.info(f"📊 [CITATION_RANK] Query keywords: {query_keywords}")
+        
+        for citation in citations:
+            content = (citation.get('full_text', '') or '') + ' ' + (citation.get('snippet', '') or '')
+            content_lower = content.lower()
+            
+            # Count keyword matches with phrase weighting
+            # Phrases (2+ words) are weighted higher than single words
+            keyword_matches = 0
+            phrase_matches = 0
+            matched_keywords = []
+            
+            for kw in query_keywords:
+                if kw.lower() in content_lower:
+                    keyword_matches += 1
+                    matched_keywords.append(kw)
+                    # Phrases (containing space) are more specific, weight them higher
+                    if ' ' in kw:
+                        phrase_matches += 1
+            
+            # Calculate content relevance score (0.0 to 1.0)
+            # Phrase matches are weighted 2x more than single-word matches
+            single_word_matches = keyword_matches - phrase_matches
+            weighted_matches = single_word_matches + (phrase_matches * 2)
+            max_possible = len([kw for kw in query_keywords if ' ' not in kw]) + (len([kw for kw in query_keywords if ' ' in kw]) * 2)
+            
+            content_relevance = weighted_matches / max(max_possible, 1)
+            
+            # STRICTER FILTERING: Require at least 2 keyword matches OR 1 phrase match
+            # to be considered "relevant" (avoids false positives from single generic words)
+            is_truly_relevant = (keyword_matches >= 2) or (phrase_matches >= 1)
+            if not is_truly_relevant and keyword_matches == 1:
+                # Only 1 single-word match - mark as weakly relevant (will be filtered)
+                content_relevance = 0.0
+                logger.debug(f"Citation weakly relevant (only 1 keyword): {matched_keywords}")
+            
+            citation['_content_relevance'] = content_relevance
+            citation['_matched_keywords'] = matched_keywords
+            citation['_phrase_matches'] = phrase_matches
+            
+            # Log relevance for debugging
+            source = citation.get('source', 'Unknown')[:30]
+            logger.debug(f"Citation from {source}: relevance={content_relevance:.2f}, matched={matched_keywords}, phrases={phrase_matches}")
+        
+        # STEP 2: Filter out completely irrelevant citations (0 keyword matches)
+        # ACTUALLY REMOVE irrelevant citations - don't just move them to the end
+        relevant_citations = [c for c in citations if c.get('_content_relevance', 0) > 0]
+        irrelevant_citations = [c for c in citations if c.get('_content_relevance', 0) == 0]
+        
+        if relevant_citations:
+            # We have relevant citations - REMOVE the irrelevant ones entirely
+            if irrelevant_citations:
+                logger.info(f"📊 [CITATION_FILTER] REMOVING {len(irrelevant_citations)} irrelevant citations "
+                           f"(keeping only {len(relevant_citations)} relevant ones)")
+                for irr in irrelevant_citations[:3]:  # Log first 3 removed
+                    logger.debug(f"   Removed: {irr.get('source', 'Unknown')[:40]} (0 keyword matches)")
+            citations = relevant_citations  # ONLY keep relevant citations
+        else:
+            # No relevant citations found - keep all but warn
+            logger.warning(f"📊 [CITATION_FILTER] No citations matched query keywords! Keeping all {len(citations)} citations.")
+        
         # Check if we have similarity scores
         similarity_scores = [c.get('similarity_score') for c in citations if c.get('similarity_score') is not None]
         
         if not similarity_scores:
-            logger.warning("No similarity scores found in citations. Citations will be returned in original order.")
+            logger.warning("No similarity scores found in citations. Using content relevance for ranking.")
+            # Sort by content relevance only
+            citations.sort(key=lambda c: -c.get('_content_relevance', 0))
             return citations
         
         # Determine if scores are distance-based (lower is better) or similarity-based (higher is better)
         # Distance-based scores are typically > 1.0, similarity-based are typically <= 1.0
         min_score = min(similarity_scores)
         max_score = max(similarity_scores)
+        
+        # ENHANCED: Detect RRF scores (very small, closely packed scores like 0.004...)
+        # RRF formula: 1/(60+rank), which gives scores between 0.016 (rank 1) and 0.01 (rank 40)
+        is_rrf_scores = max_score < 0.05 and (max_score - min_score) < 0.01
+        
+        # ENHANCED: Detect MIXED scoring systems (some high ~0.8, some low ~0.004)
+        # This happens when some citations have actual similarity scores and others have RRF scores
+        is_mixed_scores = max_score > 0.5 and min_score < 0.05 and len(similarity_scores) > 1
         
         # If scores are mostly > 1.0, they're likely distance-based
         # If scores are mostly <= 1.0, they're likely similarity-based
@@ -5914,6 +6038,80 @@ Answer:"""
         is_position_based = (max_score <= 1.0 and min_score >= 0.5 and 
                             (max_score - min_score) < 0.5 and len(similarity_scores) > 1)
         is_distance_based = max_score > 1.0 and min_score > 0.5 and not is_position_based
+        
+        if is_mixed_scores or is_rrf_scores:
+            score_type = "mixed" if is_mixed_scores else "RRF"
+            logger.warning(f"📊 [CITATION_RANK] Detected {score_type} scores (range: {min_score:.4f}-{max_score:.4f}). "
+                          f"Using CONTENT RELEVANCE as PRIMARY ranking factor.")
+            # Sort by content relevance FIRST, then by similarity score
+            citations.sort(key=lambda c: (
+                -c.get('_content_relevance', 0),  # Primary: content relevance (higher = better)
+                -c.get('similarity_score', 0) if c.get('similarity_score') is not None else 999,  # Secondary: similarity
+                c.get('id', 0)  # Tertiary: original order
+            ))
+            # Calculate percentages based on content relevance ranking
+            # FIX: Top citation always gets 100%, others scale down based on relevance
+            max_relevance = max([c.get('_content_relevance', 0) for c in citations]) if citations else 0
+            
+            for idx, citation in enumerate(citations):
+                relevance = citation.get('_content_relevance', 0)
+                if idx == 0 and relevance > 0:
+                    # TOP citation always gets 100% (it's the most relevant)
+                    citation['similarity_percentage'] = 100.0
+                elif relevance > 0:
+                    # Scale percentage relative to top citation's relevance
+                    if max_relevance > 0:
+                        relative_relevance = relevance / max_relevance
+                        # Scale from 95% down to 50% based on relative relevance
+                        citation['similarity_percentage'] = round(50.0 + (relative_relevance * 45.0), 1)
+                    else:
+                        citation['similarity_percentage'] = round(90.0 - (idx * 10), 1)
+                else:
+                    # Irrelevant citations get low percentages
+                    citation['similarity_percentage'] = round(max(10.0, 30.0 - (idx * 5)), 1)
+                citation['id'] = idx + 1
+            
+            top_3 = [(c.get('source', 'Unknown')[:25], f"rel={c.get('_content_relevance', 0):.2f}", f"{c.get('similarity_percentage', 0):.0f}%") for c in citations[:3]]
+            logger.info(f"📊 [CITATION_RANK] Ranked by content relevance. Top 3: {top_3}")
+            
+            # CLEANUP: Remove internal fields before returning
+            internal_fields = ['_content_relevance', '_matched_keywords', '_phrase_matches']
+            for citation in citations:
+                for field in internal_fields:
+                    citation.pop(field, None)
+            
+            return citations
+        
+        if is_rrf_scores:
+            logger.warning(f"📊 [CITATION_RANK] Detected RRF scores (range: {min_score:.4f}-{max_score:.4f}). "
+                          f"Using content relevance as PRIMARY ranking factor.")
+            # Sort by content relevance FIRST, then by similarity score
+            citations.sort(key=lambda c: (
+                -c.get('_content_relevance', 0),  # Primary: content relevance (higher = better)
+                -c.get('similarity_score', 0) if c.get('similarity_score') is not None else 999,  # Secondary: similarity
+                c.get('id', 0)  # Tertiary: original order
+            ))
+            # Skip the rest of the similarity-based ranking
+            # Calculate percentages based on content relevance
+            for idx, citation in enumerate(citations):
+                relevance = citation.get('_content_relevance', 0)
+                if relevance > 0:
+                    # Scale percentage by content relevance: 100% * relevance, with minimum 50% for any relevant citation
+                    citation['similarity_percentage'] = round(max(50.0, relevance * 100.0), 1)
+                else:
+                    # Irrelevant citations get low percentages
+                    citation['similarity_percentage'] = round(max(10.0, 30.0 - (idx * 5)), 1)
+                citation['id'] = idx + 1
+            
+            top_3 = [(c.get('source', 'Unknown')[:25], c.get('_content_relevance', 0), c.get('similarity_percentage', 0)) for c in citations[:3]]
+            logger.info(f"📊 [CITATION_RANK] Ranked by content relevance. Top 3: {top_3}")
+            
+            # CLEANUP: Remove internal fields before returning
+            for citation in citations:
+                for field in ['_content_relevance', '_matched_keywords', '_phrase_matches']:
+                    citation.pop(field, None)
+            
+            return citations
         
         if is_position_based:
             logger.warning(f"Detected position-based fallback scores (range: {min_score:.3f}-{max_score:.3f}). "
@@ -6086,6 +6284,13 @@ Answer:"""
         
         top_3_scores = [f'{c.get("similarity_score", "N/A")} ({c.get("similarity_percentage") or 0:.1f}%)' for c in citations[:3]]
         logger.info(f"Ranked {len(citations)} citations by similarity (highest to lowest). Top 3: {top_3_scores}")
+        
+        # CLEANUP: Remove internal fields before returning (they shouldn't be in API response)
+        internal_fields = ['_content_relevance', '_matched_keywords', '_phrase_matches']
+        for citation in citations:
+            for field in internal_fields:
+                citation.pop(field, None)
+        
         return citations
     
     def _deduplicate_chunks(self, chunks: List, threshold: float = 0.95) -> List:
@@ -6360,18 +6565,19 @@ Answer:"""
             elif doc.metadata.get('image_number') is not None:
                 image_number = doc.metadata.get('image_number')
             
-            # Build enhanced source_location with page AND image number (agentic RAG)
-            if image_number is not None:
-                source_location = f"Page {page}, Image {image_number}"
-            else:
-                source_location = f"Page {page}"
+            # Check if this is image-derived content (for content_type only)
+            # NOTE: We don't show specific image numbers as they're misleading
+            is_image_content = (image_number is not None) or (image_ref is not None) or ('<!-- image -->' in chunk_text)
+            
+            # Build source_location - just show Page number
+            source_location = f"Page {page}"
             
             citation = {
                 'id': i,
                 'source': source if source and source != 'Unknown' else 'Unknown',
                 'source_confidence': source_confidence,
                 'page': page,  # Always guaranteed to be an integer >= 1
-                'image_number': image_number,  # Image number if from image content
+                'image_number': None,  # Don't show misleading sequential image numbers
                 'page_confidence': page_confidence,
                 'page_extraction_method': page_extraction_method,  # How page was determined
                 'section': section,
@@ -6381,14 +6587,14 @@ Answer:"""
                 'start_char': start_char,
                 'end_char': end_char,
                 'chunk_index': doc.metadata.get('chunk_index', None),
-                'image_ref': image_ref,
-                'image_info': image_info,
-                'source_location': source_location,  # Now includes "Page X, Image Y" when applicable
-                'content_type': 'image' if image_ref or image_number else 'text',
+                'image_ref': {'page': page, 'has_image': True} if is_image_content else image_ref,
+                'image_info': f"Image content on Page {page}" if is_image_content else image_info,
+                'source_location': source_location,
+                'content_type': 'image' if is_image_content else 'text',
                 'extraction_method': extraction_method
             }
             citations.append(citation)
-            logger.debug(f"Agentic RAG Citation {i}: source='{source}', page={page}, image={image_number}, method={page_extraction_method}, chunk_index={citation.get('chunk_index', 'N/A')}")
+            logger.debug(f"Agentic RAG Citation {i}: source='{source}', page={page}, is_image={is_image_content}, method={page_extraction_method}")
             
             page_info = f" (Page {page})"  # page is always set
             context_parts.append(f"[Source {i}: {source}{page_info}]\n{chunk_text}")
@@ -6430,9 +6636,14 @@ Answer:"""
                 total_tokens=total_tokens
             )
         
+        # FIX: Only include sources that have citations (filtered sources)
+        citation_sources = list(set([c.get('source', 'Unknown') for c in citations if c.get('source')]))
+        if not citation_sources:
+            citation_sources = list(set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs]))
+        
         return {
             "answer": answer,
-            "sources": list(set([doc.metadata.get('source', 'Unknown') for doc in relevant_docs])),
+            "sources": citation_sources,  # Only sources with citations
             "context_chunks": [doc.page_content for doc in relevant_docs],
             "citations": citations,
             "num_chunks_used": len(relevant_docs),

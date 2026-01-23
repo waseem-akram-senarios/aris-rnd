@@ -44,3 +44,7 @@ pytest>=7.4.0
 # Accuracy improvements
 langchain-text-splitters>=0.0.1
 flashrank>=0.2.0
+langdetect>=1.0.9
+
+# MCP Server
+fastmcp>=0.1.0

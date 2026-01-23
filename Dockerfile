@@ -76,6 +76,7 @@ COPY api/ ./api/
 COPY pages/ ./pages/
 COPY .streamlit/ ./.streamlit/
 COPY app.py .
+COPY mcp_server.py .
 
 # Copy and set entrypoint
 COPY scripts/docker_entrypoint.sh /app/entrypoint.sh

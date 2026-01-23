@@ -23,8 +23,13 @@ elif [ "$SERVICE_TYPE" == "retrieval" ]; then
 elif [ "$SERVICE_TYPE" == "ui" ]; then
     # Streamlit UI
     exec streamlit run app.py --server.port 80 --server.address 0.0.0.0
+elif [ "$SERVICE_TYPE" == "mcp" ]; then
+    # MCP Server - Model Context Protocol for AI agents
+    MCP_PORT=${MCP_SERVER_PORT:-8503}
+    echo "Starting MCP Server on port $MCP_PORT..."
+    exec python3 mcp_server.py
 else
     echo "❌ Unknown service type: $SERVICE_TYPE"
-    echo "Please set SERVICE_TYPE to 'gateway', 'ingestion', 'retrieval', or 'ui'."
+    echo "Please set SERVICE_TYPE to 'gateway', 'ingestion', 'retrieval', 'ui', or 'mcp'."
     exit 1
 fi
