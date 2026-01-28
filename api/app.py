@@ -38,8 +38,13 @@ logger = logging.getLogger(__name__)
 st.set_page_config(
     page_title="ARIS R&D - RAG Document Q&A",
     page_icon="📚",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+# Apply Custom CSS
+from api.styles import get_custom_css, get_glass_card
+st.markdown(get_custom_css(), unsafe_allow_html=True)
 
 # Initialize session state
 if 'documents_processed' not in st.session_state:
@@ -642,12 +647,18 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
         return False
 
 # Main UI
-st.title("📚 ARIS R&D - RAG Document Q&A System")
-st.markdown("Upload documents and ask questions about them using AI with advanced parsers!")
+# Main UI - Custom Hero Header
+st.markdown("""
+<div class="hero-header">
+    <div class="hero-title">ARIS R&D</div>
+    <div class="hero-subtitle">Next-Generation RAG Document Intelligence System</div>
+</div>
+""", unsafe_allow_html=True)
+# st.markdown("Upload documents and ask questions about them using AI with advanced parsers!")
 
 # Sidebar for settings
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.markdown("### ⚙️ Control Panel")
     
     # API selection (use shared config default)
     default_api = "Cerebras" if ARISConfig.USE_CEREBRAS else "OpenAI"
@@ -660,8 +671,8 @@ with st.sidebar:
     use_cerebras = api_choice == "Cerebras"
     
     # Model selection based on API choice
-    st.divider()
-    st.header("🤖 Model Settings")
+    st.markdown("---")
+    st.markdown("### 🤖 Model Settings")
     
     # Model descriptions
     openai_models = {
@@ -1206,10 +1217,8 @@ with st.sidebar:
                         st.markdown(f"**📄 {doc_name}**")
                         
                         # Status badge
-                        if status == 'success':
-                            st.caption(f"✅ Status: {status.upper()}")
-                        else:
-                            st.caption(f"⚠️ Status: {status.upper()}")
+                        badge_class = "badge-success" if status == 'success' else "badge-error" if status == 'failed' else "badge-warning"
+                        st.markdown(f'<span class="badge {badge_class}">{status.upper()}</span>', unsafe_allow_html=True)
                         
                         # Document stats in columns
                         col1, col2 = st.columns(2)
@@ -1412,7 +1421,7 @@ with st.sidebar:
     st.divider()
     
     # Document upload
-    st.header("📄 Upload Documents")
+    st.markdown("### 📄 Upload Documents")
     
     # Document Language Selector for Ingestion (Enhanced multilingual support)
     # Language options with friendly names
@@ -1642,13 +1651,13 @@ with st.sidebar:
         st.subheader("📈 Overview")
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Documents", processing_stats.get('total_documents', 0))
+             st.markdown(get_glass_card("Documents", processing_stats.get('total_documents', 0)), unsafe_allow_html=True)
         with col2:
-            st.metric("Chunks", processing_stats.get('total_chunks', 0))
+             st.markdown(get_glass_card("Chunks", processing_stats.get('total_chunks', 0)), unsafe_allow_html=True)
         with col3:
-            st.metric("Total Tokens", f"{processing_stats.get('total_tokens', 0):,}")
+             st.markdown(get_glass_card("Total Tokens", f"{processing_stats.get('total_tokens', 0):,}"), unsafe_allow_html=True)
         with col4:
-            st.metric("Queries", query_stats.get('total_queries', 0))
+             st.markdown(get_glass_card("Queries", query_stats.get('total_queries', 0)), unsafe_allow_html=True)
         
         # Performance Metrics
         st.subheader("⚡ Performance")

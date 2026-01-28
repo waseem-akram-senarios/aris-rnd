@@ -344,6 +344,7 @@ class OpenSearchImagesStore:
                 "size": limit,
                 "query": {
                     "bool": {
+                        "must": [{"term": {"metadata.content_type.keyword": "image_ocr"}}],
                         "should": should_clauses or [{"match_all": {}}],
                         "minimum_should_match": 1
                     }
@@ -645,7 +646,6 @@ class OpenSearchImagesStore:
                                 {"match_phrase": {"metadata.source": variant}}
                             ])
                     
-                    if should_clauses:
                         # Add filter to the bool query
                         knn_query["query"] = {
                             "bool": {
@@ -661,6 +661,8 @@ class OpenSearchImagesStore:
                                 ],
                                 "filter": {
                                     "bool": {
+                                        # Strict filter for image_ocr content type to avoid polluted text chunks
+                                        "must": [{"term": {"metadata.content_type.keyword": "image_ocr"}}],
                                         "should": should_clauses,
                                         "minimum_should_match": 1
                                     }
@@ -669,7 +671,25 @@ class OpenSearchImagesStore:
                         }
                         logger.info(f"Image search filtered to {len(effective_sources)} document(s)")
                 else:
-                    logger.info(f"Image search across ALL documents (no filter)")
+                    # Add content_type filter even without source filter
+                    knn_query["query"] = {
+                        "bool": {
+                            "must": [
+                                {
+                                    "knn": {
+                                        "vector_field": {
+                                            "vector": query_vector,
+                                            "k": k
+                                        }
+                                    }
+                                }
+                            ],
+                            "filter": {
+                                "term": {"metadata.content_type.keyword": "image_ocr"}
+                            }
+                        }
+                    }
+                    logger.info(f"Image search across ALL documents (filtered by content_type=image_ocr)")
                 
                 response = client.search(index=self.index_name, body=knn_query)
                 logger.info(f"k-NN search succeeded on images index with {len(response.get('hits', {}).get('hits', []))} results")
@@ -712,9 +732,20 @@ class OpenSearchImagesStore:
                                 "must": [text_query["query"]],
                                 "filter": {
                                     "bool": {
+                                        "must": [{"term": {"metadata.content_type.keyword": "image_ocr"}}],
                                         "should": should_clauses,
                                         "minimum_should_match": 1
                                     }
+                                }
+                            }
+                        }
+                    else:
+                        # Add content_type filter if no source filter
+                        text_query["query"] = {
+                            "bool": {
+                                "must": [text_query["query"]],
+                                "filter": {
+                                    "term": {"metadata.content_type.keyword": "image_ocr"}
                                 }
                             }
                         }

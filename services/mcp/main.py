@@ -63,7 +63,8 @@ ACCURACY FEATURES:
 
 TOOLS:
 1. rag_ingest - Add documents (text or S3 URI) with metadata
-2. rag_search - Query with filters, returns ranked results with confidence scores
+2. rag_upload_document - Upload documents directly (PDF, DOCX, TXT, etc.) with base64 encoding
+3. rag_search - Query with filters, returns ranked results with confidence scores
 """
 )
 
@@ -128,6 +129,84 @@ def rag_ingest(
         )
     """
     return mcp_engine.ingest(content, metadata)
+
+
+@mcp.tool()
+def rag_upload_document(
+    file_content: str,
+    filename: str,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Upload and ingest a document directly into the RAG system.
+    
+    This tool allows you to upload documents directly without needing S3.
+    The file content should be base64-encoded for binary files (PDF, DOCX, DOC)
+    or can be plain text for text-based files (TXT, MD, HTML).
+    
+    SUPPORTED FORMATS:
+    - PDF: Portable Document Format (base64-encoded)
+    - DOCX: Microsoft Word Document (base64-encoded)
+    - DOC: Legacy Word Document (base64-encoded)
+    - TXT: Plain text file (plain text or base64)
+    - MD: Markdown file (plain text or base64)
+    - HTML/HTM: HTML file (plain text or base64)
+    
+    ACCURACY FEATURES:
+    - Automatic parser selection for optimal text extraction
+    - Token-aware chunking (512 tokens, 128 overlap) for better retrieval
+    - Page-level metadata for accurate citations
+    - OCR support for scanned PDF documents
+    
+    Args:
+        file_content: The document content. For binary files (PDF, DOCX, DOC),
+                     this MUST be base64-encoded. For text files (TXT, MD, HTML),
+                     this can be either plain text or base64-encoded.
+        filename: The filename with extension (e.g., "manual.pdf", "policy.docx").
+                 The extension is used to determine the file type and parser.
+        metadata: Optional key-value pairs for categorization. Examples:
+                 - language: Document language code (e.g., "en", "es", "de")
+                 - domain: Content domain (e.g., "ticket", "machine_manual", "policy")
+                 - source: Identifier for origin system
+                 - Any custom fields as needed
+    
+    Returns:
+        Dictionary containing:
+        - success: Whether upload and ingestion was successful
+        - document_id: Unique identifier for the ingested document
+        - chunks_created: Number of chunks created
+        - tokens_added: Approximate token count
+        - pages_extracted: Number of pages (for PDF/DOCX)
+        - message: Status message
+        - metadata: The metadata attached to the document
+        - accuracy_info: Information about parsing quality
+    
+    Examples:
+        # Upload a PDF document (base64-encoded)
+        import base64
+        with open("manual.pdf", "rb") as f:
+            content = base64.b64encode(f.read()).decode("utf-8")
+        rag_upload_document(
+            file_content=content,
+            filename="manual.pdf",
+            metadata={"domain": "machine_manual", "language": "en"}
+        )
+        
+        # Upload a plain text file
+        rag_upload_document(
+            file_content="This is the content of my document...",
+            filename="notes.txt",
+            metadata={"domain": "notes"}
+        )
+        
+        # Upload a Markdown file
+        rag_upload_document(
+            file_content="# Title\\n\\nThis is markdown content...",
+            filename="readme.md",
+            metadata={"domain": "documentation"}
+        )
+    """
+    return mcp_engine.upload_document(file_content, filename, metadata)
 
 
 @mcp.tool()
@@ -223,7 +302,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("🚀 Starting MCP Microservice...")
     logger.info(f"   Server: {mcp.name}")
-    logger.info(f"   Tools: rag_ingest, rag_search")
+    logger.info(f"   Tools: rag_ingest, rag_upload_document, rag_search")
     yield
     logger.info("👋 Shutting down MCP Microservice...")
 
@@ -239,6 +318,7 @@ app = FastAPI(
     ## MCP Tools Available
     
     - **rag_ingest**: Add documents to the RAG system (text or S3 URI)
+    - **rag_upload_document**: Upload documents directly (PDF, DOCX, TXT, MD, HTML) with base64 encoding
     - **rag_search**: Query documents with advanced search capabilities
     
     ## Accuracy Features
@@ -278,7 +358,7 @@ async def health_check():
         "status": "healthy",
         "service": "mcp",
         "server_name": mcp.name,
-        "tools": ["rag_ingest", "rag_search"],
+        "tools": ["rag_ingest", "rag_upload_document", "rag_search"],
         "accuracy_features": {
             "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
             "reranking": ARISConfig.ENABLE_RERANKING,
@@ -302,7 +382,13 @@ async def service_info():
             "rag_ingest": {
                 "description": "Add documents to RAG system",
                 "parameters": ["content (required)", "metadata (optional)"],
-                "supports": ["plain text", "S3 URIs", "PDF", "DOCX", "TXT", "MD", "HTML"]
+                "supports": ["plain text", "S3 URIs"]
+            },
+            "rag_upload_document": {
+                "description": "Upload documents directly with base64 encoding",
+                "parameters": ["file_content (required)", "filename (required)", "metadata (optional)"],
+                "supports": ["PDF", "DOCX", "DOC", "TXT", "MD", "HTML"],
+                "note": "Binary files (PDF, DOCX, DOC) must be base64-encoded"
             },
             "rag_search": {
                 "description": "Query RAG system with advanced search",
@@ -334,11 +420,21 @@ async def list_tools():
         "tools": [
             {
                 "name": "rag_ingest",
-                "description": "Add content to the RAG system for indexing",
+                "description": "Add content to the RAG system for indexing (text or S3 URI)",
                 "parameters": {
-                    "content": {"type": "string", "required": True},
-                    "metadata": {"type": "object", "required": False}
+                    "content": {"type": "string", "required": True, "description": "Plain text or S3 URI (s3://bucket/key)"},
+                    "metadata": {"type": "object", "required": False, "description": "Optional metadata (language, domain, etc.)"}
                 }
+            },
+            {
+                "name": "rag_upload_document",
+                "description": "Upload documents directly with base64 encoding (PDF, DOCX, TXT, etc.)",
+                "parameters": {
+                    "file_content": {"type": "string", "required": True, "description": "Base64-encoded content for binary files, or plain text"},
+                    "filename": {"type": "string", "required": True, "description": "Filename with extension (e.g., 'manual.pdf')"},
+                    "metadata": {"type": "object", "required": False, "description": "Optional metadata (language, domain, etc.)"}
+                },
+                "supported_formats": ["PDF", "DOCX", "DOC", "TXT", "MD", "HTML"]
             },
             {
                 "name": "rag_search",
@@ -377,7 +473,7 @@ def run_combined_server():
     logger.info(f"🚀 Starting Combined MCP + FastAPI Server on {host}:{port}")
     logger.info(f"   MCP SSE endpoint: http://{host}:{port}/sse")
     logger.info(f"   Health endpoint: http://{host}:{port}/health")
-    logger.info(f"   Tools: rag_ingest, rag_search")
+    logger.info(f"   Tools: rag_ingest, rag_upload_document, rag_search")
     
     # Get the MCP's HTTP app (Starlette-based)
     mcp_http_app = mcp.http_app()
@@ -389,7 +485,7 @@ def run_combined_server():
             "status": "healthy",
             "service": "mcp",
             "server_name": mcp.name,
-            "tools": ["rag_ingest", "rag_search"],
+            "tools": ["rag_ingest", "rag_upload_document", "rag_search"],
             "accuracy_features": {
                 "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
                 "reranking": ARISConfig.ENABLE_RERANKING,
@@ -409,7 +505,11 @@ def run_combined_server():
             "tools": {
                 "rag_ingest": {
                     "description": "Add documents to RAG system",
-                    "supports": ["plain text", "S3 URIs", "PDF", "DOCX", "TXT"]
+                    "supports": ["plain text", "S3 URIs"]
+                },
+                "rag_upload_document": {
+                    "description": "Upload documents directly with base64 encoding",
+                    "supports": ["PDF", "DOCX", "DOC", "TXT", "MD", "HTML"]
                 },
                 "rag_search": {
                     "description": "Query RAG system with advanced search",
@@ -435,11 +535,21 @@ def run_combined_server():
             "tools": [
                 {
                     "name": "rag_ingest",
-                    "description": "Add content to the RAG system for indexing",
+                    "description": "Add content to the RAG system for indexing (text or S3 URI)",
                     "parameters": {
                         "content": {"type": "string", "required": True},
                         "metadata": {"type": "object", "required": False}
                     }
+                },
+                {
+                    "name": "rag_upload_document",
+                    "description": "Upload documents directly with base64 encoding",
+                    "parameters": {
+                        "file_content": {"type": "string", "required": True, "description": "Base64-encoded for binary, or plain text"},
+                        "filename": {"type": "string", "required": True, "description": "Filename with extension"},
+                        "metadata": {"type": "object", "required": False}
+                    },
+                    "supported_formats": ["PDF", "DOCX", "DOC", "TXT", "MD", "HTML"]
                 },
                 {
                     "name": "rag_search",
@@ -484,7 +594,7 @@ def run_mcp_only():
     
     logger.info(f"🚀 Starting MCP Server on {host}:{port}")
     logger.info(f"   Transport: {transport}")
-    logger.info(f"   Tools: rag_ingest, rag_search")
+    logger.info(f"   Tools: rag_ingest, rag_upload_document, rag_search")
     
     if transport == "stdio":
         mcp.run(transport="stdio")

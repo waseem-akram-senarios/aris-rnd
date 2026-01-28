@@ -24,7 +24,7 @@ class TestAgenticRAG:
         )
         
         # Mock query decomposer
-        with patch('rag.query_decomposer.QueryDecomposer') as mock_decomposer_class, \
+        with patch('services.retrieval.query_decomposer.QueryDecomposer') as mock_decomposer_class, \
              patch('openai.OpenAI') as mock_openai:
             
             mock_decomposer = MagicMock()
@@ -77,7 +77,7 @@ class TestAgenticRAG:
             metadatas=[{"source": f"doc{i}.pdf"} for i in range(len(sample_documents))]
         )
         
-        with patch('rag.query_decomposer.QueryDecomposer') as mock_decomposer_class, \
+        with patch('services.retrieval.query_decomposer.QueryDecomposer') as mock_decomposer_class, \
              patch('openai.OpenAI') as mock_openai:
             
             mock_decomposer = MagicMock()
@@ -129,7 +129,7 @@ class TestAgenticRAG:
             metadatas=[{"source": f"doc{i}.pdf"} for i in range(len(sample_documents))]
         )
         
-        with patch('rag.query_decomposer.QueryDecomposer') as mock_decomposer_class, \
+        with patch('services.retrieval.query_decomposer.QueryDecomposer') as mock_decomposer_class, \
              patch('openai.OpenAI') as mock_openai:
             
             mock_decomposer = MagicMock()
@@ -178,7 +178,7 @@ class TestAgenticRAG:
             metadatas=[{"source": f"doc{i}.pdf"} for i in range(len(sample_documents))]
         )
         
-        with patch('rag.query_decomposer.QueryDecomposer') as mock_decomposer_class, \
+        with patch('services.retrieval.query_decomposer.QueryDecomposer') as mock_decomposer_class, \
              patch('openai.OpenAI') as mock_openai:
             
             mock_decomposer = MagicMock()

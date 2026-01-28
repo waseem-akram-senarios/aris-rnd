@@ -1,5 +1,6 @@
 """
 ARIS Admin Management - CRUD Operations for Documents and Vector Database
+Premium Glassmorphism Design
 """
 import sys
 from pathlib import Path
@@ -18,27 +19,156 @@ from typing import Optional, List, Dict, Any
 # Page configuration
 st.set_page_config(
     page_title="ARIS Admin - Document & Vector Management",
-    page_icon="🔧",
+    page_icon="⚙️",
     layout="wide"
 )
 
+# Apply the same CSS as the main app
+from api.styles import get_custom_css
+st.markdown(get_custom_css(), unsafe_allow_html=True)
+
+# Additional Admin-specific CSS
+st.markdown("""
+<style>
+    /* Admin Header */
+    .admin-header {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(59, 130, 246, 0.2) 100%);
+        border: 1px solid rgba(139, 92, 246, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+    
+    .admin-header h1 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #a78bfa 0%, #60a5fa 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 0.5rem;
+    }
+    
+    .admin-header p {
+        color: #94a3b8;
+        font-size: 1.1rem;
+    }
+    
+    /* Stats Cards */
+    .stats-row {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .stat-card {
+        flex: 1;
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        backdrop-filter: blur(10px);
+    }
+    
+    .stat-card .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    
+    .stat-card .stat-label {
+        color: #94a3b8;
+        font-size: 0.85rem;
+        margin-top: 0.25rem;
+    }
+    
+    /* Action Cards */
+    .action-card {
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        transition: all 0.2s ease;
+    }
+    
+    .action-card:hover {
+        border-color: rgba(59, 130, 246, 0.3);
+        transform: translateY(-2px);
+    }
+    
+    /* Status Badges */
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    
+    .status-success {
+        background: rgba(16, 185, 129, 0.2);
+        color: #34d399;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    
+    .status-failed {
+        background: rgba(239, 68, 68, 0.2);
+        color: #f87171;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    
+    .status-processing {
+        background: rgba(245, 158, 11, 0.2);
+        color: #fbbf24;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    
+    /* Table Styling */
+    .dataframe {
+        background: rgba(30, 41, 59, 0.4) !important;
+        border-radius: 8px !important;
+    }
+    
+    /* Sidebar Quick Stats */
+    .sidebar-stat {
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 0.75rem;
+        text-align: center;
+    }
+    
+    .sidebar-stat .value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #60a5fa;
+    }
+    
+    .sidebar-stat .label {
+        font-size: 0.75rem;
+        color: #94a3b8;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Configuration
-# In Docker, use service name; locally use localhost
 import os
 DEFAULT_GATEWAY_URL = os.getenv("GATEWAY_URL", "http://gateway:8500" if os.path.exists("/.dockerenv") else "http://localhost:8500")
 DEFAULT_INGESTION_URL = os.getenv("INGESTION_URL", "http://ingestion:8501" if os.path.exists("/.dockerenv") else "http://localhost:8501")
 DEFAULT_RETRIEVAL_URL = os.getenv("RETRIEVAL_URL", "http://retrieval:8502" if os.path.exists("/.dockerenv") else "http://localhost:8502")
 
 def get_gateway_url():
-    """Get gateway URL from session state or environment."""
     return os.getenv("GATEWAY_URL", DEFAULT_GATEWAY_URL)
 
 def get_ingestion_url():
-    """Get ingestion service URL from environment."""
     return os.getenv("INGESTION_URL", DEFAULT_INGESTION_URL)
 
 def get_retrieval_url():
-    """Get retrieval service URL from environment."""
     return os.getenv("RETRIEVAL_URL", DEFAULT_RETRIEVAL_URL)
 
 
@@ -48,18 +178,15 @@ def get_retrieval_url():
 
 def _get_service_url(endpoint: str) -> str:
     """Determine which service URL to use based on endpoint path."""
-    # Admin document registry stats goes to Ingestion service
     if endpoint == "/admin/documents/registry-stats":
         return get_ingestion_url()
-    # Admin vector/index endpoints go to Retrieval service
     elif endpoint.startswith("/admin/index") or endpoint.startswith("/admin/search"):
         return get_retrieval_url()
-    # All other endpoints (including /documents/*) go through Gateway
     else:
         return get_gateway_url()
 
 def api_get(endpoint: str, params: dict = None) -> dict:
-    """Make GET request to appropriate service (Gateway, Ingestion, or Retrieval)."""
+    """Make GET request to appropriate service."""
     try:
         base_url = _get_service_url(endpoint)
         url = f"{base_url}{endpoint}"
@@ -70,9 +197,8 @@ def api_get(endpoint: str, params: dict = None) -> dict:
         st.error(f"API Error: {str(e)}")
         return {}
 
-
 def api_post(endpoint: str, data: dict = None, json_data: dict = None) -> dict:
-    """Make POST request to appropriate service (Gateway, Ingestion, or Retrieval)."""
+    """Make POST request to appropriate service."""
     try:
         base_url = _get_service_url(endpoint)
         url = f"{base_url}{endpoint}"
@@ -83,9 +209,8 @@ def api_post(endpoint: str, data: dict = None, json_data: dict = None) -> dict:
         st.error(f"API Error: {str(e)}")
         return {}
 
-
 def api_put(endpoint: str, json_data: dict) -> dict:
-    """Make PUT request to appropriate service (Gateway, Ingestion, or Retrieval)."""
+    """Make PUT request to appropriate service."""
     try:
         base_url = _get_service_url(endpoint)
         url = f"{base_url}{endpoint}"
@@ -96,9 +221,8 @@ def api_put(endpoint: str, json_data: dict) -> dict:
         st.error(f"API Error: {str(e)}")
         return {}
 
-
 def api_delete(endpoint: str, params: dict = None) -> dict:
-    """Make DELETE request to appropriate service (Gateway, Ingestion, or Retrieval)."""
+    """Make DELETE request to appropriate service."""
     try:
         base_url = _get_service_url(endpoint)
         url = f"{base_url}{endpoint}"
@@ -110,33 +234,66 @@ def api_delete(endpoint: str, params: dict = None) -> dict:
         return {}
 
 
+def get_status_badge(status: str) -> str:
+    """Generate HTML for status badge."""
+    status_lower = status.lower()
+    if status_lower == "success":
+        return '<span class="status-badge status-success">✓ Success</span>'
+    elif status_lower == "failed":
+        return '<span class="status-badge status-failed">✗ Failed</span>'
+    elif status_lower == "processing":
+        return '<span class="status-badge status-processing">⟳ Processing</span>'
+    else:
+        return f'<span class="status-badge">{status}</span>'
+
+
 # ============================================================================
 # UI Components
 # ============================================================================
 
 def render_document_management():
     """Render Document Registry CRUD section."""
-    st.subheader("📚 Document Registry Management")
+    st.markdown("### 📚 Document Registry")
     
     # Get documents from registry
     docs_response = api_get("/documents")
     documents = docs_response.get("documents", [])
     
-    # Statistics row
+    # Statistics cards
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Total Documents", len(documents))
+        st.markdown("""
+        <div class="stat-card">
+            <div class="stat-value">{}</div>
+            <div class="stat-label">Total Documents</div>
+        </div>
+        """.format(len(documents)), unsafe_allow_html=True)
     with col2:
         success_count = sum(1 for d in documents if d.get("status") == "success")
-        st.metric("Successfully Processed", success_count)
+        st.markdown("""
+        <div class="stat-card">
+            <div class="stat-value">{}</div>
+            <div class="stat-label">Processed</div>
+        </div>
+        """.format(success_count), unsafe_allow_html=True)
     with col3:
         total_chunks = sum(d.get("chunks_created", 0) for d in documents)
-        st.metric("Total Chunks", total_chunks)
+        st.markdown("""
+        <div class="stat-card">
+            <div class="stat-value">{}</div>
+            <div class="stat-label">Total Chunks</div>
+        </div>
+        """.format(total_chunks), unsafe_allow_html=True)
     with col4:
         total_images = sum(d.get("images_stored", 0) or d.get("image_count", 0) for d in documents)
-        st.metric("Total Images", total_images)
+        st.markdown("""
+        <div class="stat-card">
+            <div class="stat-value">{}</div>
+            <div class="stat-label">Images Stored</div>
+        </div>
+        """.format(total_images), unsafe_allow_html=True)
     
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # Document List
     if documents:
@@ -157,58 +314,52 @@ def render_document_management():
         
         df = pd.DataFrame(df_data)
         
-        # Selection
-        st.write("**Select documents to manage:**")
-        
-        # Use data editor for selection
-        selection = st.data_editor(
+        # Display table
+        st.dataframe(
             df[["ID", "Name", "Status", "Language", "Chunks", "Images", "Parser", "Created"]],
-            hide_index=True,
             use_container_width=True,
+            hide_index=True,
             column_config={
-                "ID": st.column_config.TextColumn("ID", width="small"),
-                "Name": st.column_config.TextColumn("Name", width="medium"),
-                "Status": st.column_config.TextColumn("Status", width="small"),
-                "Language": st.column_config.TextColumn("Lang", width="small"),
-                "Chunks": st.column_config.NumberColumn("Chunks", width="small"),
-                "Images": st.column_config.NumberColumn("Images", width="small"),
-                "Parser": st.column_config.TextColumn("Parser", width="small"),
-                "Created": st.column_config.TextColumn("Created", width="medium"),
-            },
-            disabled=True,
-            key="doc_table"
+                "Status": st.column_config.TextColumn("Status", help="Document processing status"),
+                "Chunks": st.column_config.NumberColumn("Chunks", help="Number of text chunks"),
+            }
         )
         
-        # Action buttons
-        st.write("**Actions:**")
+        # Action buttons in cards
+        st.markdown("#### 🎯 Document Actions")
         
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2 = st.columns([1, 2])
         
         with col1:
-            # Single document selection for actions
             selected_doc = st.selectbox(
-                "Select document for actions",
+                "Select Document",
                 options=[""] + [d["Full ID"] for d in df_data],
-                format_func=lambda x: next((d["Name"] for d in df_data if d["Full ID"] == x), "Select a document") if x else "Select a document",
+                format_func=lambda x: next((d["Name"] for d in df_data if d["Full ID"] == x), "Select...") if x else "Select a document...",
                 key="doc_select"
             )
         
         with col2:
-            if st.button("🔍 View Details", disabled=not selected_doc, type="secondary"):
-                if selected_doc:
-                    doc_details = api_get(f"/documents/{selected_doc}")
-                    if doc_details:
-                        st.session_state["view_doc_details"] = doc_details
-        
-        with col3:
-            if st.button("✏️ Edit Document", disabled=not selected_doc, type="secondary"):
-                if selected_doc:
-                    st.session_state["edit_doc_id"] = selected_doc
-        
-        with col4:
-            if st.button("🗑️ Delete Document", disabled=not selected_doc, type="primary"):
-                if selected_doc:
-                    st.session_state["delete_doc_id"] = selected_doc
+            action_cols = st.columns(4)
+            with action_cols[0]:
+                if st.button("🔍 View", disabled=not selected_doc, use_container_width=True):
+                    if selected_doc:
+                        doc_details = api_get(f"/documents/{selected_doc}")
+                        if doc_details:
+                            st.session_state["view_doc_details"] = doc_details
+            
+            with action_cols[1]:
+                if st.button("✏️ Edit", disabled=not selected_doc, use_container_width=True):
+                    if selected_doc:
+                        st.session_state["edit_doc_id"] = selected_doc
+            
+            with action_cols[2]:
+                if st.button("🔄 Re-process", disabled=not selected_doc, use_container_width=True):
+                    st.info("Re-processing feature available in main app")
+            
+            with action_cols[3]:
+                if st.button("🗑️ Delete", disabled=not selected_doc, type="primary", use_container_width=True):
+                    if selected_doc:
+                        st.session_state["delete_doc_id"] = selected_doc
         
         # Document Details View
         if "view_doc_details" in st.session_state:
@@ -217,47 +368,46 @@ def render_document_management():
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.write(f"**Document ID:** `{doc.get('document_id', 'N/A')}`")
-                    st.write(f"**Name:** {doc.get('document_name', 'N/A')}")
-                    st.write(f"**Status:** {doc.get('status', 'N/A')}")
-                    st.write(f"**Language:** {doc.get('language', 'N/A')}")
-                    st.write(f"**Parser Used:** {doc.get('parser_used', 'N/A')}")
+                    st.markdown(f"**Document ID:** `{doc.get('document_id', 'N/A')}`")
+                    st.markdown(f"**Name:** {doc.get('document_name', 'N/A')}")
+                    st.markdown(f"**Status:** {doc.get('status', 'N/A')}")
+                    st.markdown(f"**Language:** {doc.get('language', 'N/A')}")
+                    st.markdown(f"**Parser:** {doc.get('parser_used', 'N/A')}")
                 
                 with col2:
-                    st.write(f"**Chunks Created:** {doc.get('chunks_created', 0)}")
-                    st.write(f"**Images Stored:** {doc.get('images_stored', 0)}")
-                    st.write(f"**Extraction %:** {doc.get('extraction_percentage', 0):.1f}%")
-                    st.write(f"**Processing Time:** {doc.get('processing_time', 0):.2f}s")
-                    st.write(f"**Created:** {doc.get('created_at', 'N/A')}")
+                    st.markdown(f"**Chunks:** {doc.get('chunks_created', 0)}")
+                    st.markdown(f"**Images:** {doc.get('images_stored', 0)}")
+                    st.markdown(f"**Extraction:** {doc.get('extraction_percentage', 0):.1f}%")
+                    st.markdown(f"**Processing Time:** {doc.get('processing_time', 0):.2f}s")
+                    st.markdown(f"**Created:** {doc.get('created_at', 'N/A')}")
                 
-                # Show full JSON
-                with st.expander("Raw JSON"):
+                with st.expander("📄 Raw JSON"):
                     st.json(doc)
                 
-                if st.button("Close Details"):
+                if st.button("Close", key="close_details"):
                     del st.session_state["view_doc_details"]
                     st.rerun()
         
-        # Edit Document Modal
+        # Edit Modal
         if "edit_doc_id" in st.session_state:
             doc_id = st.session_state["edit_doc_id"]
             doc = next((d for d in documents if d.get("document_id") == doc_id), None)
             
             if doc:
                 with st.expander("✏️ Edit Document", expanded=True):
-                    st.write(f"Editing: **{doc.get('document_name', 'Unknown')}**")
+                    st.markdown(f"Editing: **{doc.get('document_name', 'Unknown')}**")
                     
-                    new_name = st.text_input("Document Name", value=doc.get("document_name", ""))
+                    new_name = st.text_input("Name", value=doc.get("document_name", ""))
                     new_status = st.selectbox(
                         "Status",
                         options=["success", "failed", "processing", "pending"],
-                        index=["success", "failed", "processing", "pending"].index(doc.get("status", "pending"))
+                        index=["success", "failed", "processing", "pending"].index(doc.get("status", "pending")) if doc.get("status", "pending") in ["success", "failed", "processing", "pending"] else 0
                     )
-                    new_language = st.text_input("Language Code", value=doc.get("language", "eng"))
+                    new_language = st.text_input("Language", value=doc.get("language", "eng"))
                     
                     col1, col2 = st.columns(2)
                     with col1:
-                        if st.button("💾 Save Changes", type="primary"):
+                        if st.button("💾 Save", type="primary"):
                             update_data = {}
                             if new_name != doc.get("document_name"):
                                 update_data["document_name"] = new_name
@@ -269,14 +419,14 @@ def render_document_management():
                             if update_data:
                                 result = api_put(f"/documents/{doc_id}", update_data)
                                 if result:
-                                    st.success("Document updated successfully!")
+                                    st.success("✅ Document updated!")
                                     del st.session_state["edit_doc_id"]
                                     st.rerun()
                             else:
                                 st.info("No changes to save")
                     
                     with col2:
-                        if st.button("Cancel"):
+                        if st.button("Cancel", key="cancel_edit"):
                             del st.session_state["edit_doc_id"]
                             st.rerun()
         
@@ -287,334 +437,177 @@ def render_document_management():
             
             if doc:
                 with st.expander("⚠️ Confirm Deletion", expanded=True):
-                    st.warning(f"Are you sure you want to delete **{doc.get('document_name', 'Unknown')}**?")
+                    st.warning(f"Delete **{doc.get('document_name', 'Unknown')}**?")
                     
-                    delete_vectors = st.checkbox("Also delete vector data (OpenSearch)", value=True)
-                    delete_s3 = st.checkbox("Also delete S3 files", value=True)
+                    delete_vectors = st.checkbox("Delete vector data", value=True)
+                    delete_s3 = st.checkbox("Delete S3 files", value=True)
                     
                     col1, col2 = st.columns(2)
                     with col1:
                         if st.button("🗑️ Confirm Delete", type="primary"):
                             result = api_delete(
                                 f"/documents/{doc_id}",
-                                params={"delete_vectors": delete_vectors, "delete_s3": delete_s3} if delete_vectors or delete_s3 else None
+                                params={"delete_vectors": delete_vectors, "delete_s3": delete_s3}
                             )
                             if result:
-                                st.success(f"Document deleted: {result.get('message', 'Success')}")
+                                st.success(f"✅ Deleted: {result.get('message', 'Success')}")
                                 del st.session_state["delete_doc_id"]
                                 st.rerun()
                     
                     with col2:
-                        if st.button("Cancel Deletion"):
+                        if st.button("Cancel", key="cancel_delete"):
                             del st.session_state["delete_doc_id"]
                             st.rerun()
         
-        # Bulk Delete Section
-        st.divider()
-        with st.expander("🗑️ Bulk Delete Documents"):
+        # Bulk Delete
+        with st.expander("🗑️ Bulk Delete"):
             st.warning("⚠️ This action cannot be undone!")
             
             bulk_select = st.multiselect(
-                "Select documents to delete",
+                "Select documents",
                 options=[d["Full ID"] for d in df_data],
                 format_func=lambda x: next((d["Name"] for d in df_data if d["Full ID"] == x), x)
             )
             
-            bulk_delete_vectors = st.checkbox("Delete vector data", value=True, key="bulk_vectors")
-            bulk_delete_s3 = st.checkbox("Delete S3 files", value=True, key="bulk_s3")
-            
-            if st.button("🗑️ Delete Selected Documents", type="primary", disabled=len(bulk_select) == 0):
-                if bulk_select:
-                    # Bulk delete by deleting each document individually
-                    deleted = 0
-                    failed = 0
-                    for doc_id in bulk_select:
-                        try:
-                            result = api_delete(
-                                f"/documents/{doc_id}",
-                                params={"delete_vectors": bulk_delete_vectors, "delete_s3": bulk_delete_s3} if bulk_delete_vectors or bulk_delete_s3 else None
-                            )
-                            if result:
-                                deleted += 1
-                            else:
-                                failed += 1
-                        except:
-                            failed += 1
-                    
-                    if deleted > 0:
-                        st.success(f"Deleted {deleted} document(s)" + (f", {failed} failed" if failed > 0 else ""))
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to delete {failed} document(s)")
+            if st.button("🗑️ Delete Selected", type="primary", disabled=len(bulk_select) == 0):
+                deleted = 0
+                for doc_id in bulk_select:
+                    result = api_delete(f"/documents/{doc_id}", params={"delete_vectors": True, "delete_s3": True})
+                    if result:
+                        deleted += 1
+                if deleted > 0:
+                    st.success(f"✅ Deleted {deleted} document(s)")
+                    st.rerun()
     else:
-        st.info("No documents in registry. Upload documents using the main app.")
+        st.info("📭 No documents in registry. Upload documents from the main app.")
 
 
 def render_vector_management():
     """Render Vector Database CRUD section."""
-    st.subheader("🗄️ Vector Database Management")
+    st.markdown("### 🗄️ Vector Indexes")
     
     # Get vector indexes
     indexes_response = api_get("/admin/indexes", params={"prefix": "aris-"})
     indexes = indexes_response.get("indexes", [])
     
-    # Statistics row
+    # Stats
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Indexes", len(indexes))
+        st.markdown("""
+        <div class="stat-card">
+            <div class="stat-value">{}</div>
+            <div class="stat-label">Total Indexes</div>
+        </div>
+        """.format(len(indexes)), unsafe_allow_html=True)
     with col2:
         total_chunks = sum(idx.get("chunk_count", 0) for idx in indexes)
-        st.metric("Total Chunks", total_chunks)
+        st.markdown("""
+        <div class="stat-card">
+            <div class="stat-value">{}</div>
+            <div class="stat-label">Total Chunks</div>
+        </div>
+        """.format(total_chunks), unsafe_allow_html=True)
     with col3:
-        active_indexes = sum(1 for idx in indexes if idx.get("status") == "active")
-        st.metric("Active Indexes", active_indexes)
+        active = sum(1 for idx in indexes if idx.get("status") == "active")
+        st.markdown("""
+        <div class="stat-card">
+            <div class="stat-value">{}</div>
+            <div class="stat-label">Active</div>
+        </div>
+        """.format(active), unsafe_allow_html=True)
     
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
     
-    # Index List
     if indexes:
-        # Create DataFrame
-        df_data = []
-        for idx in indexes:
-            df_data.append({
-                "Index Name": idx.get("index_name", ""),
-                "Document": idx.get("document_name", "N/A"),
-                "Chunks": idx.get("chunk_count", 0),
-                "Dimension": idx.get("dimension", "N/A"),
-                "Status": idx.get("status", "unknown")
-            })
+        df = pd.DataFrame([{
+            "Index": idx.get("index_name", ""),
+            "Document": idx.get("document_name", "N/A"),
+            "Chunks": idx.get("chunk_count", 0),
+            "Dimension": idx.get("dimension", "N/A"),
+            "Status": idx.get("status", "unknown")
+        } for idx in indexes])
         
-        df = pd.DataFrame(df_data)
-        
-        st.write("**Vector Indexes:**")
         st.dataframe(df, use_container_width=True, hide_index=True)
         
-        # Action buttons
-        st.write("**Actions:**")
-        
-        col1, col2, col3 = st.columns(3)
-        
+        # Actions
+        col1, col2, col3 = st.columns([1, 1, 1])
         with col1:
-            selected_index = st.selectbox(
-                "Select index for actions",
-                options=[""] + [idx["Index Name"] for idx in df_data],
-                key="index_select"
-            )
-        
+            selected = st.selectbox("Select Index", [""] + [idx.get("index_name") for idx in indexes])
         with col2:
-            if st.button("🔍 View Chunks", disabled=not selected_index, type="secondary"):
-                if selected_index:
-                    st.session_state["view_chunks_index"] = selected_index
-        
+            if st.button("🔍 View Chunks", disabled=not selected, use_container_width=True):
+                st.session_state["view_chunks_index"] = selected
         with col3:
-            if st.button("🗑️ Delete Index", disabled=not selected_index, type="primary"):
-                if selected_index:
-                    st.session_state["delete_index_name"] = selected_index
+            if st.button("🗑️ Delete Index", disabled=not selected, type="primary", use_container_width=True):
+                st.session_state["delete_index_name"] = selected
         
         # View Chunks
         if "view_chunks_index" in st.session_state:
-            index_name = st.session_state["view_chunks_index"]
-            
-            with st.expander(f"📄 Chunks in {index_name}", expanded=True):
-                offset = st.number_input("Offset", min_value=0, value=0, step=10, key="chunks_offset")
-                limit = st.number_input("Limit", min_value=1, max_value=100, value=20, key="chunks_limit")
-                
-                chunks_response = api_get(
-                    f"/admin/indexes/{index_name}/chunks",
-                    params={"offset": offset, "limit": limit}
-                )
-                
+            with st.expander(f"📄 Chunks: {st.session_state['view_chunks_index']}", expanded=True):
+                chunks_response = api_get(f"/admin/indexes/{st.session_state['view_chunks_index']}/chunks", params={"limit": 20})
                 chunks = chunks_response.get("chunks", [])
-                total = chunks_response.get("total", 0)
+                st.write(f"Found {chunks_response.get('total', 0)} chunks")
                 
-                st.write(f"Showing {len(chunks)} of {total} chunks")
+                for i, chunk in enumerate(chunks[:10]):
+                    with st.expander(f"Chunk {i+1} - Page {chunk.get('page', 'N/A')}"):
+                        st.text_area("Content", chunk.get("text", "")[:500], height=100, disabled=True, key=f"chunk_{i}")
                 
-                if chunks:
-                    for i, chunk in enumerate(chunks):
-                        with st.expander(f"Chunk {offset + i + 1}: {chunk.get('chunk_id', 'N/A')[:20]}..."):
-                            st.write(f"**Page:** {chunk.get('page', 'N/A')}")
-                            st.write(f"**Source:** {chunk.get('source', 'N/A')}")
-                            st.write(f"**Language:** {chunk.get('language', 'N/A')}")
-                            st.write("**Text:**")
-                            st.text_area(
-                                "Content",
-                                value=chunk.get("text", ""),
-                                height=150,
-                                key=f"chunk_text_{i}",
-                                disabled=True
-                            )
-                            
-                            if st.button(f"🗑️ Delete Chunk", key=f"delete_chunk_{i}"):
-                                result = api_delete(f"/admin/indexes/{index_name}/chunks/{chunk.get('chunk_id')}")
-                                if result:
-                                    st.success("Chunk deleted")
-                                    st.rerun()
-                
-                if st.button("Close Chunks View"):
+                if st.button("Close", key="close_chunks"):
                     del st.session_state["view_chunks_index"]
                     st.rerun()
         
-        # Delete Index Confirmation
+        # Delete Index
         if "delete_index_name" in st.session_state:
-            index_name = st.session_state["delete_index_name"]
-            idx_info = next((idx for idx in indexes if idx.get("index_name") == index_name), None)
-            
-            with st.expander("⚠️ Confirm Index Deletion", expanded=True):
-                if idx_info:
-                    st.warning(
-                        f"Are you sure you want to delete index **{index_name}**?\n\n"
-                        f"This will permanently delete **{idx_info.get('chunk_count', 0)} chunks**."
-                    )
+            with st.expander("⚠️ Delete Index?", expanded=True):
+                idx_info = next((idx for idx in indexes if idx.get("index_name") == st.session_state["delete_index_name"]), {})
+                st.warning(f"Delete **{st.session_state['delete_index_name']}** ({idx_info.get('chunk_count', 0)} chunks)?")
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("🗑️ Confirm Delete Index", type="primary"):
-                        result = api_delete(f"/admin/indexes/{index_name}", params={"confirm": True})
+                    if st.button("🗑️ Confirm", type="primary"):
+                        result = api_delete(f"/admin/indexes/{st.session_state['delete_index_name']}", params={"confirm": True})
                         if result:
-                            st.success(f"Index deleted: {result.get('message', 'Success')}")
+                            st.success("✅ Index deleted")
                             del st.session_state["delete_index_name"]
                             st.rerun()
-                
                 with col2:
-                    if st.button("Cancel Index Deletion"):
+                    if st.button("Cancel", key="cancel_idx"):
                         del st.session_state["delete_index_name"]
                         st.rerun()
-        
-        # Bulk Delete Indexes
-        st.divider()
-        with st.expander("🗑️ Bulk Delete Indexes"):
-            st.warning("⚠️ This action cannot be undone! All vector data will be permanently deleted.")
-            
-            bulk_indexes = st.multiselect(
-                "Select indexes to delete",
-                options=[idx["Index Name"] for idx in df_data],
-                key="bulk_indexes"
-            )
-            
-            if st.button("🗑️ Delete Selected Indexes", type="primary", disabled=len(bulk_indexes) == 0):
-                if bulk_indexes:
-                    result = api_post(
-                        "/admin/indexes/bulk-delete",
-                        json_data={"index_names": bulk_indexes, "confirm": True}
-                    )
-                    if result:
-                        st.success(f"Bulk delete result: {result.get('message', 'Complete')}")
-                        st.rerun()
     else:
-        st.info("No vector indexes found. Process documents to create indexes.")
+        st.info("📭 No vector indexes found.")
 
 
-def render_vector_search():
-    """Render direct vector search section."""
-    st.subheader("🔍 Direct Vector Search")
+def render_search():
+    """Render direct vector search."""
+    st.markdown("### 🔍 Direct Vector Search")
     
-    st.write("Search vectors directly without RAG answer generation.")
-    
-    query = st.text_input("Search Query", placeholder="Enter your search query...")
+    query = st.text_input("Search Query", placeholder="Enter search query...")
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        k = st.number_input("Results (k)", min_value=1, max_value=100, value=10)
+        k = st.slider("Results (k)", 1, 50, 10)
     with col2:
-        use_hybrid = st.checkbox("Use Hybrid Search", value=True)
+        use_hybrid = st.checkbox("Hybrid Search", value=True)
     with col3:
         semantic_weight = st.slider("Semantic Weight", 0.0, 1.0, 0.7, disabled=not use_hybrid)
     
-    # Index selection
-    indexes_response = api_get("/admin/indexes", params={"prefix": "aris-"})
-    indexes = indexes_response.get("indexes", [])
-    index_names = [idx.get("index_name") for idx in indexes]
-    
-    selected_indexes = st.multiselect(
-        "Search in indexes (empty = all)",
-        options=index_names,
-        default=[]
-    )
-    
     if st.button("🔍 Search", type="primary", disabled=not query):
         with st.spinner("Searching..."):
-            result = api_post(
-                "/admin/search",
-                json_data={
-                    "query": query,
-                    "index_names": selected_indexes if selected_indexes else None,
-                    "k": k,
-                    "use_hybrid": use_hybrid,
-                    "semantic_weight": semantic_weight
-                }
-            )
+            result = api_post("/admin/search", json_data={
+                "query": query,
+                "k": k,
+                "use_hybrid": use_hybrid,
+                "semantic_weight": semantic_weight
+            })
             
             if result:
-                st.success(f"Found {result.get('total', 0)} results in {result.get('search_time_ms', 0):.2f}ms")
+                st.success(f"Found {result.get('total', 0)} results in {result.get('search_time_ms', 0):.1f}ms")
                 
-                for i, chunk in enumerate(result.get("results", [])):
-                    with st.expander(f"Result {i + 1}: Score {chunk.get('score', 'N/A'):.4f}" if chunk.get('score') else f"Result {i + 1}"):
-                        st.write(f"**Index:** {chunk.get('index', 'N/A')}")
-                        st.write(f"**Source:** {chunk.get('source', 'N/A')}")
-                        st.write(f"**Page:** {chunk.get('page', 'N/A')}")
-                        st.write("**Text:**")
-                        st.text_area("", value=chunk.get("text", ""), height=150, key=f"search_result_{i}", disabled=True)
-
-
-def render_index_map():
-    """Render index map management section."""
-    st.subheader("🗺️ Document-Index Mapping")
-    
-    st.write("Manage the mapping between document names and OpenSearch indexes.")
-    
-    # Get index map
-    map_response = api_get("/admin/index-map")
-    entries = map_response.get("entries", [])
-    
-    if entries:
-        df_data = []
-        for entry in entries:
-            df_data.append({
-                "Document Name": entry.get("document_name", ""),
-                "Index Name": entry.get("index_name", ""),
-                "Document ID": entry.get("document_id", "N/A")
-            })
-        
-        df = pd.DataFrame(df_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        # Delete mapping
-        st.write("**Remove Mapping:**")
-        col1, col2 = st.columns(2)
-        with col1:
-            doc_to_remove = st.selectbox(
-                "Select document to remove from map",
-                options=[""] + [e["Document Name"] for e in df_data],
-                key="remove_map_doc"
-            )
-        with col2:
-            if st.button("🗑️ Remove Mapping", disabled=not doc_to_remove):
-                if doc_to_remove:
-                    result = api_delete(f"/admin/index-map/{doc_to_remove}")
-                    if result:
-                        st.success("Mapping removed")
-                        st.rerun()
-    else:
-        st.info("No index mappings found.")
-    
-    # Add new mapping
-    st.divider()
-    st.write("**Add/Update Mapping:**")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        new_doc_name = st.text_input("Document Name", placeholder="my-document.pdf")
-    with col2:
-        new_index_name = st.text_input("Index Name", placeholder="aris-doc-abc123")
-    
-    if st.button("➕ Add/Update Mapping", disabled=not new_doc_name or not new_index_name):
-        result = api_post(
-            "/admin/index-map",
-            json_data={"document_name": new_doc_name, "index_name": new_index_name}
-        )
-        if result:
-            st.success("Mapping added/updated")
-            st.rerun()
+                for i, chunk in enumerate(result.get("results", [])[:10]):
+                    score = chunk.get('score', 0)
+                    with st.expander(f"Result {i+1} - Score: {score:.4f} - {chunk.get('source', 'Unknown')}"):
+                        st.markdown(f"**Page:** {chunk.get('page', 'N/A')}")
+                        st.text_area("", chunk.get("text", "")[:500], height=100, disabled=True, key=f"res_{i}")
 
 
 # ============================================================================
@@ -622,47 +615,50 @@ def render_index_map():
 # ============================================================================
 
 def main():
-    st.title("🔧 ARIS Admin Management")
-    st.markdown("Manage documents and vector database with full CRUD operations.")
+    # Header
+    st.markdown("""
+    <div class="admin-header">
+        <h1>⚙️ Admin Management</h1>
+        <p>Manage documents, vector indexes, and search configuration</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Connection status
+    # Sidebar
     with st.sidebar:
-        st.header("⚙️ Settings")
-        gateway_url = st.text_input("Gateway URL", value=get_gateway_url())
+        st.markdown("### 🔗 Connection")
         
         # Test connection
-        if st.button("🔗 Test Connection"):
-            try:
-                response = requests.get(f"{gateway_url}/health", timeout=5)
-                if response.status_code == 200:
-                    st.success("✅ Connected to Gateway")
-                    health = response.json()
-                    st.json(health)
-                else:
-                    st.error(f"❌ Gateway returned {response.status_code}")
-            except Exception as e:
-                st.error(f"❌ Connection failed: {str(e)}")
+        try:
+            response = requests.get(f"{get_gateway_url()}/health", timeout=5)
+            if response.status_code == 200:
+                st.success("✅ Gateway Connected")
+                health = response.json()
+                
+                st.markdown("""
+                <div class="sidebar-stat">
+                    <div class="value">{}</div>
+                    <div class="label">Documents</div>
+                </div>
+                """.format(health.get("registry_document_count", 0)), unsafe_allow_html=True)
+            else:
+                st.error("❌ Gateway Error")
+        except:
+            st.warning("⚠️ Gateway Unreachable")
         
         st.divider()
-        st.header("📊 Quick Stats")
         
-        # Get quick stats
+        # Quick stats from ingestion
         try:
             stats = api_get("/admin/documents/registry-stats")
             if stats:
-                st.metric("Documents", stats.get("total_documents", 0))
+                st.markdown("### 📊 Stats")
                 st.metric("Total Chunks", stats.get("total_chunks", 0))
                 st.metric("Total Images", stats.get("total_images", 0))
         except:
-            st.warning("Could not load stats")
+            pass
     
-    # Main content tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📚 Documents",
-        "🗄️ Vector Indexes",
-        "🔍 Vector Search",
-        "🗺️ Index Map"
-    ])
+    # Main tabs
+    tab1, tab2, tab3 = st.tabs(["📚 Documents", "🗄️ Indexes", "🔍 Search"])
     
     with tab1:
         render_document_management()
@@ -671,12 +667,8 @@ def main():
         render_vector_management()
     
     with tab3:
-        render_vector_search()
-    
-    with tab4:
-        render_index_map()
+        render_search()
 
 
 if __name__ == "__main__":
     main()
-

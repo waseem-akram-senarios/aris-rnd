@@ -45,7 +45,7 @@ class RetrievalEngine:
                  embedding_model=None,
                  openai_model=None,
                  cerebras_model=None,
-                 vector_store_type="faiss",
+                 vector_store_type="opensearch",
                  opensearch_domain=None,
                  opensearch_index=None,
                  chunk_size=None,
@@ -1726,8 +1726,14 @@ class RetrievalEngine:
                 }
 
         if self.vectorstore is None:
-            # For OpenSearch, initialize on-demand
-            if self.vector_store_type == "opensearch":
+            # For OpenSearch, check if we have per-document indexes first
+            has_per_doc_indexes = hasattr(self, 'document_index_map') and self.document_index_map and len(self.document_index_map) > 0
+            
+            if self.vector_store_type == "opensearch" and has_per_doc_indexes:
+                # Skip default vectorstore initialization - we'll use multi-index search
+                logger.info(f"✅ Using per-document indexes ({len(self.document_index_map)} available) - skipping default vectorstore")
+            elif self.vector_store_type == "opensearch":
+                # No per-document indexes, try to initialize default
                 try:
                     target_index = getattr(self, 'opensearch_index', None) or ARISConfig.AWS_OPENSEARCH_INDEX
                     self.vectorstore = VectorStoreFactory.create_vector_store(
@@ -1743,8 +1749,10 @@ class RetrievalEngine:
                         f"Could not initialize OpenSearch. Please check your AWS_OPENSEARCH_DOMAIN configuration. Error: {e}"
                     )
             
-            # If still None, check document registry for better error message
-            if self.vectorstore is None:
+            # If still None AND no per-document indexes, check document registry for better error message
+            has_per_doc_indexes = hasattr(self, 'document_index_map') and self.document_index_map and len(self.document_index_map) > 0
+            
+            if self.vectorstore is None and not has_per_doc_indexes:
                 try:
                     from storage.document_registry import DocumentRegistry
                     registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
@@ -1859,11 +1867,14 @@ class RetrievalEngine:
         # Agentic RAG: Decompose query and perform multi-query retrieval
         if use_agentic_rag:
             try:
-                from rag.query_decomposer import QueryDecomposer
+                from services.retrieval.query_decomposer import QueryDecomposer
                 
-                # Initialize query decomposer
+                # Initialize query decomposer with FAST model (gpt-4o-mini is 10x faster than gpt-4o)
+                decomposition_model = getattr(ARISConfig, 'QUERY_DECOMPOSITION_MODEL', 'gpt-4o-mini')
+                decomp_start = time_module.time()
+                
                 query_decomposer = QueryDecomposer(
-                    llm_model=self.openai_model,
+                    llm_model=decomposition_model,
                     openai_api_key=self.openai_api_key
                 )
                 
@@ -1873,7 +1884,8 @@ class RetrievalEngine:
                     max_subqueries=agentic_config['max_sub_queries']
                 )
                 
-                logger.info(f"Agentic RAG: Decomposed query into {len(sub_queries)} sub-queries")
+                decomp_time = time_module.time() - decomp_start
+                logger.info(f"⚡ Query decomposition: {decomp_time:.2f}s using {decomposition_model} → {len(sub_queries)} sub-queries")
                 
                 # If decomposition resulted in single query, use standard flow
                 if len(sub_queries) == 1:
@@ -1881,12 +1893,14 @@ class RetrievalEngine:
                     use_agentic_rag = False
                 else:
                     # Perform multi-query retrieval
+                    # Note: Using sequential execution to avoid ThreadPoolExecutor issues with Streamlit/OpenSearch connections
                     all_chunks = []
                     chunks_per_subquery = agentic_config['chunks_per_subquery']
                     
-                    for sub_query in sub_queries:
+                    retrieval_start = time_module.time()
+                    
+                    for i, sub_query in enumerate(sub_queries):
                         try:
-                            # Retrieve chunks for this sub-query
                             sub_chunks = self._retrieve_chunks_for_query(
                                 sub_query,
                                 k=chunks_per_subquery,
@@ -1898,10 +1912,13 @@ class RetrievalEngine:
                                 disable_reranking=is_contact_query  # Disable for contact queries (QA fix)
                             )
                             all_chunks.extend(sub_chunks)
-                            logger.info(f"Retrieved {len(sub_chunks)} chunks for sub-query: {sub_query[:50]}...")
+                            logger.debug(f"Retrieved {len(sub_chunks)} chunks for sub-query {i+1}/{len(sub_queries)}: {sub_query[:50]}...")
                         except Exception as e:
                             logger.warning(f"Failed to retrieve chunks for sub-query '{sub_query[:50]}...': {e}")
                             continue
+                    
+                    retrieval_time = time_module.time() - retrieval_start
+                    logger.info(f"⚡ Sub-query retrieval completed in {retrieval_time:.2f}s for {len(sub_queries)} sub-queries")
                     
                     if not all_chunks:
                         logger.warning("Agentic RAG: No chunks retrieved from any sub-query, falling back to standard retrieval")
@@ -3688,36 +3705,46 @@ class RetrievalEngine:
                         import re
                         page = None
                         
-                        if ocr_text:
-                            # PRIORITY 1: "--- Page X ---" markers (most reliable)
+
+                        # Improved Page Extraction Logic
+                        # Prioritize stored metadata if it looks valid (>1), as it comes from parser context
+                        # OCR text often contains "Page X" references to OTHER pages, which is misleading
+                        
+                        # PRIORITY 1: Stored metadata (if valid)
+                        if stored_page and stored_page > 1:
+                            page = stored_page
+                            logger.info(f"📄 [IMAGE CITATION] Page {page} from stored metadata (Priority 1)")
+                        
+                        # PRIORITY 2: "--- Page X ---" markers (explicit delimiters)
+                        elif ocr_text:
                             page_markers = re.findall(r'---\s*Page\s+(\d+)\s*---', ocr_text)
                             if page_markers:
                                 page = int(page_markers[0])
-                                logger.info(f"📄 [IMAGE CITATION] Page {page} from '--- Page X ---' marker (found {len(page_markers)} markers)")
+                                logger.info(f"📄 [IMAGE CITATION] Page {page} from '--- Page X ---' marker")
+                        
+                        # PRIORITY 3: Fallback to other text patterns only if no page found yet
+                        if page is None and ocr_text:
+                            # "Page X" at line end
+                            page_match = re.search(r'Page\s+(\d+)\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
+                            if page_match:
+                                page = int(page_match.group(1))
+                                logger.info(f"📄 [IMAGE CITATION] Page {page} from 'Page X' at line end")
                             
-                            # PRIORITY 2: "Page X" at line end
-                            if page is None:
-                                page_match = re.search(r'Page\s+(\d+)\s*$', ocr_text, re.IGNORECASE | re.MULTILINE)
-                                if page_match:
-                                    page = int(page_match.group(1))
-                                    logger.info(f"📄 [IMAGE CITATION] Page {page} from 'Page X' at line end")
-                            
-                            # PRIORITY 3: "Page X" anywhere (but not Figure X)
+                            # "Page X" in text (lowest confidence)
                             if page is None:
                                 page_match = re.search(r'\bPage\s+(\d+)\b', ocr_text, re.IGNORECASE)
                                 if page_match:
-                                    page = int(page_match.group(1))
+                                    possible_page = int(page_match.group(1))
+                                    # Only accept if reasonable (e.g. within 5 pages of expected?)
+                                    # For now, just log valid
+                                    page = possible_page
                                     logger.info(f"📄 [IMAGE CITATION] Page {page} from 'Page X' in text")
-                        
-                        # PRIORITY 4: Use stored page only if > 1 (page 1 is often wrong default)
-                        if page is None and stored_page and stored_page > 1:
-                            page = stored_page
-                            logger.info(f"📄 [IMAGE CITATION] Page {page} from stored metadata")
-                        
+
                         # Fallback to 1 only as last resort
                         if page is None or page == 0:
                             page = stored_page if stored_page else 1
-                            logger.warning(f"📄 [IMAGE CITATION] Using fallback page {page} (no markers found)")
+                            if page == 1:
+                                logger.warning(f"📄 [IMAGE CITATION] Using fallback page {page} (no markers found)")
                         if img_idx is None or img_idx == 0:
                             img_idx = 1
                         
@@ -5722,6 +5749,67 @@ Answer:"""
             snippet += "..."
         return snippet
     
+    def _fuzzy_match(self, word: str, text: str, threshold: float = 0.8) -> bool:
+        """
+        Check if a word fuzzy-matches any word in the text.
+        Handles typos like "attedece" matching "attendance".
+        
+        OPTIMIZED: Uses quick character overlap check before expensive SequenceMatcher.
+        
+        Args:
+            word: The query keyword to match
+            text: The text to search in (lowercase)
+            threshold: Minimum similarity ratio (0.0 to 1.0)
+        
+        Returns:
+            True if a fuzzy match is found
+        """
+        word_lower = word.lower()
+        
+        # FAST PATH: Check exact substring match first
+        if word_lower in text:
+            return True
+        
+        # For very short words (< 4 chars), only accept exact matches
+        if len(word_lower) < 4:
+            return False
+        
+        # For short words (4-5 chars), require higher threshold
+        if len(word_lower) < 6:
+            threshold = 0.85
+        
+        # OPTIMIZATION: Quick character set overlap check (50%+ common chars required)
+        word_chars = set(word_lower)
+        
+        # Extract unique words from text (cached via set comprehension)
+        import re
+        text_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', text.lower()))  # Only words 4+ chars
+        
+        # Check fuzzy match against words of similar length only
+        from difflib import SequenceMatcher
+        
+        for text_word in text_words:
+            len_diff = abs(len(text_word) - len(word_lower))
+            
+            # Only compare words of similar length (within 2 chars)
+            if len_diff > 2:
+                continue
+            
+            # QUICK CHECK: Character overlap (must share >50% of characters)
+            text_word_chars = set(text_word)
+            common_chars = word_chars & text_word_chars
+            min_common = min(len(word_chars), len(text_word_chars)) * 0.5
+            
+            if len(common_chars) < min_common:
+                continue
+            
+            # Expensive check only if quick check passes
+            ratio = SequenceMatcher(None, word_lower, text_word).ratio()
+            if ratio >= threshold:
+                return True
+        
+        return False
+    
     def _extract_query_keywords(self, query: str) -> List[str]:
         """
         Extract meaningful keywords from a query for content relevance scoring.
@@ -5956,17 +6044,31 @@ Answer:"""
             
             # Count keyword matches with phrase weighting
             # Phrases (2+ words) are weighted higher than single words
+            # ENHANCED: Use fuzzy matching to handle typos
             keyword_matches = 0
             phrase_matches = 0
             matched_keywords = []
             
             for kw in query_keywords:
-                if kw.lower() in content_lower:
-                    keyword_matches += 1
-                    matched_keywords.append(kw)
-                    # Phrases (containing space) are more specific, weight them higher
-                    if ' ' in kw:
+                # Use fuzzy matching for single words (handles typos)
+                if ' ' not in kw:
+                    if self._fuzzy_match(kw, content_lower, threshold=0.75):
+                        keyword_matches += 1
+                        matched_keywords.append(kw)
+                else:
+                    # For phrases, check exact match first, then fuzzy match each word
+                    if kw.lower() in content_lower:
+                        keyword_matches += 1
                         phrase_matches += 1
+                        matched_keywords.append(kw)
+                    else:
+                        # Check if all words in phrase fuzzy-match
+                        phrase_words = kw.split()
+                        all_match = all(self._fuzzy_match(pw, content_lower, threshold=0.75) for pw in phrase_words)
+                        if all_match:
+                            keyword_matches += 1
+                            phrase_matches += 1
+                            matched_keywords.append(kw)
             
             # Calculate content relevance score (0.0 to 1.0)
             # Phrase matches are weighted 2x more than single-word matches

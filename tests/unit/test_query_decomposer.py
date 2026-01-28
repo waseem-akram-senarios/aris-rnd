@@ -3,7 +3,7 @@ Unit tests for QueryDecomposer
 """
 import pytest
 from unittest.mock import Mock, MagicMock, patch
-from rag.query_decomposer import QueryDecomposer
+from services.retrieval.query_decomposer import QueryDecomposer
 
 
 @pytest.mark.unit
@@ -12,7 +12,7 @@ class TestQueryDecomposer:
     
     def test_initialization(self):
         """Test QueryDecomposer initialization"""
-        with patch('rag.query_decomposer.OpenAI') as mock_openai:
+        with patch('services.retrieval.query_decomposer.OpenAI') as mock_openai:
             mock_client = MagicMock()
             mock_openai.return_value = mock_client
             
@@ -32,7 +32,7 @@ class TestQueryDecomposer:
     
     def test_is_simple_query_short(self):
         """Test simple query detection for short queries"""
-        with patch('rag.query_decomposer.OpenAI'):
+        with patch('services.retrieval.query_decomposer.OpenAI'):
             with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
                 decomposer = QueryDecomposer("gpt-4o", "test-key")
                 
@@ -42,7 +42,7 @@ class TestQueryDecomposer:
     
     def test_is_simple_query_long(self):
         """Test simple query detection for long queries"""
-        with patch('rag.query_decomposer.OpenAI'):
+        with patch('services.retrieval.query_decomposer.OpenAI'):
             with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
                 decomposer = QueryDecomposer("gpt-4o", "test-key")
                 
@@ -52,7 +52,7 @@ class TestQueryDecomposer:
     
     def test_is_simple_query_with_conjunctions(self):
         """Test simple query detection with conjunctions"""
-        with patch('rag.query_decomposer.OpenAI'):
+        with patch('services.retrieval.query_decomposer.OpenAI'):
             with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
                 decomposer = QueryDecomposer("gpt-4o", "test-key")
                 
@@ -70,7 +70,7 @@ class TestQueryDecomposer:
     
     def test_is_simple_query_multiple_questions(self):
         """Test simple query detection with multiple questions"""
-        with patch('rag.query_decomposer.OpenAI'):
+        with patch('services.retrieval.query_decomposer.OpenAI'):
             with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
                 decomposer = QueryDecomposer("gpt-4o", "test-key")
                 
@@ -91,7 +91,7 @@ class TestQueryDecomposer:
     
     def test_decompose_query_simple(self):
         """Test decomposition of simple query"""
-        with patch('rag.query_decomposer.OpenAI'):
+        with patch('services.retrieval.query_decomposer.OpenAI'):
             with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
                 decomposer = QueryDecomposer("gpt-4o", "test-key")
                 
@@ -101,7 +101,7 @@ class TestQueryDecomposer:
     
     def test_decompose_query_empty(self):
         """Test decomposition of empty query"""
-        with patch('rag.query_decomposer.OpenAI'):
+        with patch('services.retrieval.query_decomposer.OpenAI'):
             with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
                 decomposer = QueryDecomposer("gpt-4o", "test-key")
                 
@@ -113,7 +113,7 @@ class TestQueryDecomposer:
     
     def test_decompose_query_complex(self):
         """Test decomposition of complex query"""
-        with patch('rag.query_decomposer.OpenAI') as mock_openai:
+        with patch('services.retrieval.query_decomposer.OpenAI') as mock_openai:
             mock_client = MagicMock()
             mock_openai.return_value = mock_client
             
@@ -135,7 +135,7 @@ class TestQueryDecomposer:
     
     def test_decompose_query_llm_failure(self):
         """Test decomposition when LLM call fails"""
-        with patch('rag.query_decomposer.OpenAI') as mock_openai:
+        with patch('services.retrieval.query_decomposer.OpenAI') as mock_openai:
             mock_client = MagicMock()
             mock_openai.return_value = mock_client
             mock_client.chat.completions.create.side_effect = Exception("API Error")
@@ -149,7 +149,7 @@ class TestQueryDecomposer:
     
     def test_validate_subqueries(self):
         """Test sub-query validation"""
-        with patch('rag.query_decomposer.OpenAI'):
+        with patch('services.retrieval.query_decomposer.OpenAI'):
             with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-key'}):
                 decomposer = QueryDecomposer("gpt-4o", "test-key")
                 
@@ -165,7 +165,7 @@ class TestQueryDecomposer:
     
     def test_call_llm_for_decomposition(self):
         """Test LLM call for decomposition"""
-        with patch('rag.query_decomposer.OpenAI') as mock_openai:
+        with patch('services.retrieval.query_decomposer.OpenAI') as mock_openai:
             mock_client = MagicMock()
             mock_openai.return_value = mock_client
             

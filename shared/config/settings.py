@@ -1,6 +1,8 @@
 """
 Shared configuration module for ARIS RAG System.
-Provides centralized configuration for both Streamlit and FastAPI.
+Provides centralized configuration for ALL services (Gateway, Ingestion, Retrieval, MCP, UI).
+
+🎯 OPTIMIZED FOR MAXIMUM ACCURACY (R&D Settings)
 """
 import os
 from typing import Optional
@@ -10,21 +12,41 @@ load_dotenv()
 
 
 class ARISConfig:
-    """Centralized configuration for ARIS RAG System"""
+    """
+    Centralized configuration for ARIS RAG System
     
+    ⚠️ ALL SERVICES USE THESE SETTINGS - Keep in sync!
+    - Gateway Service (8500)
+    - Ingestion Service (8501)  
+    - Retrieval Service (8502)
+    - MCP Server (8503)
+    - Streamlit UI (80)
+    """
+    
+    # =========================================================================
     # API Configuration
+    # =========================================================================
     USE_CEREBRAS: bool = os.getenv('USE_CEREBRAS', 'false').lower() == 'true'
     OPENAI_API_KEY: Optional[str] = os.getenv('OPENAI_API_KEY')
     CEREBRAS_API_KEY: Optional[str] = os.getenv('CEREBRAS_API_KEY')
     
-    # Model Configuration - Best quality defaults
-    EMBEDDING_MODEL: str = os.getenv('EMBEDDING_MODEL', 'text-embedding-3-large')  # Best quality: 3072 dimensions
-    OPENAI_MODEL: str = os.getenv('OPENAI_MODEL', 'gpt-4o')  # Best quality: Latest GPT-4o model
-    CEREBRAS_MODEL: str = os.getenv('CEREBRAS_MODEL', 'llama-3.3-70b')  # Best quality: 70B parameter model
+    # =========================================================================
+    # 🎯 MODEL CONFIGURATION - Maximum Quality
+    # =========================================================================
+    # Embedding: text-embedding-3-large has 3072 dimensions (highest quality)
+    EMBEDDING_MODEL: str = os.getenv('EMBEDDING_MODEL', 'text-embedding-3-large')
     
-    # Vector Store Configuration
+    # LLM: GPT-4o is the latest and most capable model
+    OPENAI_MODEL: str = os.getenv('OPENAI_MODEL', 'gpt-4o')
+    CEREBRAS_MODEL: str = os.getenv('CEREBRAS_MODEL', 'llama-3.3-70b')
+    
+    # =========================================================================
+    # VECTOR STORE CONFIGURATION
+    # =========================================================================
     VECTOR_STORE_TYPE: str = os.getenv('VECTOR_STORE_TYPE', 'opensearch').lower()
     VECTORSTORE_PATH: str = os.getenv('VECTORSTORE_PATH', 'vectorstore')
+    
+    # OpenSearch Configuration
     AWS_OPENSEARCH_DOMAIN: Optional[str] = os.getenv('AWS_OPENSEARCH_DOMAIN', 'intelycx-waseem-os')
     AWS_OPENSEARCH_INDEX: str = os.getenv('AWS_OPENSEARCH_INDEX', 'aris-rag-index')
     AWS_OPENSEARCH_ACCESS_KEY_ID: Optional[str] = os.getenv('AWS_OPENSEARCH_ACCESS_KEY_ID')
@@ -35,73 +57,144 @@ class ARISConfig:
     ENABLE_S3_STORAGE: bool = os.getenv('ENABLE_S3_STORAGE', 'true').lower() == 'true'
     AWS_S3_BUCKET: str = os.getenv('AWS_S3_BUCKET', 'intelycx-waseem-s3-bucket')
     
-    # Chunking Configuration - Optimized for maximum accuracy
+    # =========================================================================
+    # 🎯 CHUNKING CONFIGURATION - Optimized for Accuracy
+    # =========================================================================
+    # Strategy: 'comprehensive' uses semantic boundaries for better chunks
     CHUNKING_STRATEGY: str = os.getenv('CHUNKING_STRATEGY', 'comprehensive')
     
-    # Default chunking parameters - Optimized for retrieval accuracy
-    # Smaller chunks = more precise retrieval, larger overlap = better context continuity
-    DEFAULT_CHUNK_SIZE: int = int(os.getenv('DEFAULT_CHUNK_SIZE', '512'))  # Increased for Reranking context
-    DEFAULT_CHUNK_OVERLAP: int = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '128'))  # Keep significant overlap
+    # Chunk Size: 800 tokens is optimal for:
+    # - Enough context for understanding
+    # - Not too large to dilute relevance
+    # - Good for reranking (needs sufficient context)
+    DEFAULT_CHUNK_SIZE: int = int(os.getenv('DEFAULT_CHUNK_SIZE', '800'))
     
-    # Retrieval Configuration - Optimized for cross-language accuracy (QA-driven: k=30)
-    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '30'))  # Increased to 30 based on QA findings (English 1.71/10 → target 4.0+/10)
-    DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '60'))
-    DEFAULT_MMR_LAMBDA: float = float(os.getenv('DEFAULT_MMR_LAMBDA', '0.35'))
-    DEFAULT_USE_MMR: bool = os.getenv('DEFAULT_USE_MMR', 'false').lower() == 'true'  # Disable MMR for Reranking
+    # Chunk Overlap: 200 tokens (~25% overlap)
+    # - Ensures context continuity across chunk boundaries
+    # - Captures information that spans chunks
+    DEFAULT_CHUNK_OVERLAP: int = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '200'))
+    
+    # =========================================================================
+    # 🎯 RETRIEVAL CONFIGURATION - Maximum Accuracy
+    # =========================================================================
+    # K value: 25 chunks for comprehensive retrieval
+    # - More chunks = better chance of finding relevant info
+    # - Reranking will filter to top results
+    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '25'))
+    
+    # MMR (Maximal Marginal Relevance) - Disabled for reranking
+    DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '50'))
+    DEFAULT_MMR_LAMBDA: float = float(os.getenv('DEFAULT_MMR_LAMBDA', '0.5'))
+    DEFAULT_USE_MMR: bool = os.getenv('DEFAULT_USE_MMR', 'false').lower() == 'true'
+    
+    # 🎯 RERANKING - CRITICAL FOR ACCURACY
+    # FlashRank reranking significantly improves result quality
     ENABLE_RERANKING: bool = os.getenv('ENABLE_RERANKING', 'true').lower() == 'true'
+    RERANK_TOP_K: int = int(os.getenv('RERANK_TOP_K', '10'))  # Return top 10 after reranking
     
-    # Generation Configuration - Optimized for comprehensive answers (QA-driven: temp=0.1)
-    DEFAULT_TEMPERATURE: float = float(os.getenv('DEFAULT_TEMPERATURE', '0.1'))  # Slightly increased for better answer synthesis
-    DEFAULT_MAX_TOKENS: int = int(os.getenv('DEFAULT_MAX_TOKENS', '2000'))  # Increased for detailed answers
+    # =========================================================================
+    # 🎯 GENERATION CONFIGURATION - Factual & Comprehensive
+    # =========================================================================
+    # Temperature: 0.1 for highly factual, consistent answers
+    DEFAULT_TEMPERATURE: float = float(os.getenv('DEFAULT_TEMPERATURE', '0.1'))
     
-    # Hybrid Search Configuration - Optimized for cross-language queries (QA-driven: sw=0.3)
+    # Max Tokens: 2500 for detailed, comprehensive answers
+    DEFAULT_MAX_TOKENS: int = int(os.getenv('DEFAULT_MAX_TOKENS', '2500'))
+    
+    # =========================================================================
+    # 🎯 HYBRID SEARCH CONFIGURATION - Balanced for Accuracy
+    # =========================================================================
+    # Hybrid search combines semantic understanding with keyword matching
     DEFAULT_USE_HYBRID_SEARCH: bool = os.getenv('DEFAULT_USE_HYBRID_SEARCH', 'true').lower() == 'true'
-    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.3'))  # Reduced to 0.3 for better cross-language (QA: English 1.71/10)
-    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.7'))  # Increased to 0.7 for better keyword matching
-    DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'hybrid')  # 'semantic', 'keyword', 'hybrid'
     
-    # Agentic RAG Configuration - Optimized for comprehensive synthesis
+    # Semantic Weight: 0.6 - Emphasize meaning understanding
+    # Keyword Weight: 0.4 - Capture exact term matches
+    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.6'))
+    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.4'))
+    DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'hybrid')
+    
+    # =========================================================================
+    # 🎯 AGENTIC RAG CONFIGURATION - Smart Query Handling
+    # =========================================================================
+    # Agentic RAG decomposes complex queries for better retrieval
     DEFAULT_USE_AGENTIC_RAG: bool = os.getenv('DEFAULT_USE_AGENTIC_RAG', 'true').lower() == 'true'
-    DEFAULT_MAX_SUB_QUERIES: int = int(os.getenv('DEFAULT_MAX_SUB_QUERIES', '4'))
-    DEFAULT_CHUNKS_PER_SUBQUERY: int = int(os.getenv('DEFAULT_CHUNKS_PER_SUBQUERY', '8'))  # Increased for deeper context
-    DEFAULT_MAX_TOTAL_CHUNKS: int = int(os.getenv('DEFAULT_MAX_TOTAL_CHUNKS', '35'))  # Increased for better synthesis
-    DEFAULT_DEDUPLICATION_THRESHOLD: float = float(os.getenv('DEFAULT_DEDUPLICATION_THRESHOLD', '0.95'))
     
-    # Summary Query Configuration
+    # Sub-queries: 3 for balanced decomposition
+    DEFAULT_MAX_SUB_QUERIES: int = int(os.getenv('DEFAULT_MAX_SUB_QUERIES', '3'))
+    
+    # Chunks per sub-query: 10 for comprehensive coverage
+    DEFAULT_CHUNKS_PER_SUBQUERY: int = int(os.getenv('DEFAULT_CHUNKS_PER_SUBQUERY', '10'))
+    
+    # Decomposition model: gpt-4o-mini for speed (decomposition doesn't need full power)
+    QUERY_DECOMPOSITION_MODEL: str = os.getenv('QUERY_DECOMPOSITION_MODEL', 'gpt-4o-mini')
+    
+    # Total chunks limit after deduplication
+    DEFAULT_MAX_TOTAL_CHUNKS: int = int(os.getenv('DEFAULT_MAX_TOTAL_CHUNKS', '30'))
+    
+    # Deduplication threshold: 0.92 to remove near-duplicates
+    DEFAULT_DEDUPLICATION_THRESHOLD: float = float(os.getenv('DEFAULT_DEDUPLICATION_THRESHOLD', '0.92'))
+    
+    # =========================================================================
+    # SUMMARY QUERY CONFIGURATION
+    # =========================================================================
     DEFAULT_SUMMARY_QUERY_K_MULTIPLIER: float = float(os.getenv('DEFAULT_SUMMARY_QUERY_K_MULTIPLIER', '2.0'))
     DEFAULT_SUMMARY_QUERY_MIN_K: int = int(os.getenv('DEFAULT_SUMMARY_QUERY_MIN_K', '20'))
     DEFAULT_AUTO_ENABLE_AGENTIC_FOR_SUMMARIES: bool = os.getenv('DEFAULT_AUTO_ENABLE_AGENTIC_FOR_SUMMARIES', 'true').lower() == 'true'
     
-    # Document Storage Configuration
+    # =========================================================================
+    # DOCUMENT STORAGE CONFIGURATION
+    # =========================================================================
     DOCUMENT_REGISTRY_PATH: str = os.getenv('DOCUMENT_REGISTRY_PATH', 'storage/document_registry.json')
+    DOCUMENT_REGISTRY_SYNC_INTERVAL_SECONDS: int = int(os.getenv('DOCUMENT_REGISTRY_SYNC_INTERVAL_SECONDS', '30'))
     
-    # Parser Configuration
-    # Docling is the recommended default for: 100% page extraction accuracy and robustness.
-    # PyMuPDF is available for high-speed processing.
-    # OCRmyPDF is available for scanned documents (requires Tesseract in Docker).
-    # LlamaScan is recommended for highly visual documents or those with complex tables/diagrams.
-    DEFAULT_PARSER: str = os.getenv('DEFAULT_PARSER', 'docling')  # Best for Accuracy & Robustness
-    DOCLING_MAX_TIMEOUT: int = int(os.getenv('DOCLING_MAX_TIMEOUT', '1800'))  # 30 minutes default
+    # =========================================================================
+    # 🎯 PARSER CONFIGURATION - Best Quality Extraction
+    # =========================================================================
+    # Docling: Best for accuracy & robustness (layout-aware, handles tables)
+    # PyMuPDF: Fast but less accurate for complex layouts
+    # LlamaScan: Best for highly visual documents
+    DEFAULT_PARSER: str = os.getenv('DEFAULT_PARSER', 'docling')
+    DOCLING_MAX_TIMEOUT: int = int(os.getenv('DOCLING_MAX_TIMEOUT', '1800'))  # 30 minutes
     
-    # Ingestion Performance Configuration
-    EMBEDDING_BATCH_SIZE: int = int(os.getenv('EMBEDDING_BATCH_SIZE', '1000'))
-    OPENSEARCH_BULK_SIZE: int = int(os.getenv('OPENSEARCH_BULK_SIZE', '5000'))  # Increased to handle large documents
+    # Parser fallback chain for robustness
+    PARSER_FALLBACK_CHAIN: str = os.getenv('PARSER_FALLBACK_CHAIN', 'docling,pymupdf,llama_scan')
+    
+    # =========================================================================
+    # INGESTION PERFORMANCE CONFIGURATION
+    # =========================================================================
+    EMBEDDING_BATCH_SIZE: int = int(os.getenv('EMBEDDING_BATCH_SIZE', '500'))
+    OPENSEARCH_BULK_SIZE: int = int(os.getenv('OPENSEARCH_BULK_SIZE', '5000'))
     MAX_PAGE_BLOCKS_PER_DOC: int = int(os.getenv('MAX_PAGE_BLOCKS_PER_DOC', '2000'))
     
-    # Multilingual Configuration
+    # =========================================================================
+    # MULTILINGUAL CONFIGURATION
+    # =========================================================================
     ENABLE_AUTO_TRANSLATE: bool = os.getenv('ENABLE_AUTO_TRANSLATE', 'true').lower() == 'true'
     TRANSLATE_DOCUMENTS_ON_INGESTION: bool = os.getenv('TRANSLATE_DOCUMENTS_ON_INGESTION', 'false').lower() == 'true'
-    TRANSLATION_PROVIDER: str = os.getenv('TRANSLATION_PROVIDER', 'openai')  # 'openai' or 'aws'
-    DEFAULT_DOCUMENT_LANGUAGE: str = os.getenv('DEFAULT_DOCUMENT_LANGUAGE', 'eng')  # ISO 639-3
-    DEFAULT_RESPONSE_LANGUAGE: str = os.getenv('DEFAULT_RESPONSE_LANGUAGE', 'auto')  # 'auto', 'en', 'es', etc.
+    TRANSLATION_PROVIDER: str = os.getenv('TRANSLATION_PROVIDER', 'openai')
+    DEFAULT_DOCUMENT_LANGUAGE: str = os.getenv('DEFAULT_DOCUMENT_LANGUAGE', 'eng')
+    DEFAULT_RESPONSE_LANGUAGE: str = os.getenv('DEFAULT_RESPONSE_LANGUAGE', 'auto')
     ENABLE_DUAL_SEARCH: bool = os.getenv('ENABLE_DUAL_SEARCH', 'true').lower() == 'true'
     AUTO_DETECT_LANGUAGE: bool = os.getenv('AUTO_DETECT_LANGUAGE', 'true').lower() == 'true'
-    SUPPORTED_LANGUAGES: str = os.getenv('SUPPORTED_LANGUAGES', 'eng,spa,fra,deu,por,ita,rus,jpn,kor,zho,ara')  # Extended
+    SUPPORTED_LANGUAGES: str = os.getenv('SUPPORTED_LANGUAGES', 'eng,spa,fra,deu,por,ita,rus,jpn,kor,zho,ara')
     
-    # OCR Configuration for multilingual support
+    # OCR Configuration
     OCR_DEFAULT_DPI: int = int(os.getenv('OCR_DEFAULT_DPI', '300'))
-    OCR_CJK_DPI: int = int(os.getenv('OCR_CJK_DPI', '400'))  # Higher DPI for complex scripts
-    OCR_TIMEOUT_PER_PAGE: int = int(os.getenv('OCR_TIMEOUT_PER_PAGE', '180'))  # 3 minutes per page
+    OCR_CJK_DPI: int = int(os.getenv('OCR_CJK_DPI', '400'))
+    OCR_TIMEOUT_PER_PAGE: int = int(os.getenv('OCR_TIMEOUT_PER_PAGE', '180'))
+    
+    # =========================================================================
+    # 🎯 CONFIDENCE & ACCURACY THRESHOLDS
+    # =========================================================================
+    # Minimum confidence for citations to be shown
+    MIN_CITATION_CONFIDENCE: float = float(os.getenv('MIN_CITATION_CONFIDENCE', '0.3'))
+    
+    # Fuzzy matching threshold for keyword matching (typo tolerance)
+    FUZZY_MATCH_THRESHOLD: float = float(os.getenv('FUZZY_MATCH_THRESHOLD', '0.75'))
+    
+    # =========================================================================
+    # HELPER METHODS
+    # =========================================================================
     
     @classmethod
     def get_multilingual_config(cls) -> dict:
@@ -125,7 +218,6 @@ class ARISConfig:
         """Get vectorstore path, optionally with model-specific subdirectory"""
         base_path = cls.VECTORSTORE_PATH
         if embedding_model:
-            # Create model-specific path to support multiple embedding models
             model_safe = embedding_model.replace("/", "_")
             return os.path.join(base_path, model_safe)
         return base_path
@@ -161,9 +253,20 @@ class ARISConfig:
         }
     
     @classmethod
+    def get_retrieval_config(cls) -> dict:
+        """Get retrieval configuration for maximum accuracy"""
+        return {
+            'k': cls.DEFAULT_RETRIEVAL_K,
+            'use_mmr': cls.DEFAULT_USE_MMR,
+            'mmr_fetch_k': cls.DEFAULT_MMR_FETCH_K,
+            'mmr_lambda': cls.DEFAULT_MMR_LAMBDA,
+            'enable_reranking': cls.ENABLE_RERANKING,
+            'rerank_top_k': cls.RERANK_TOP_K,
+        }
+    
+    @classmethod
     def get_hybrid_search_config(cls) -> dict:
         """Get hybrid search configuration"""
-        # Ensure weights sum to 1.0
         semantic_weight = cls.DEFAULT_SEMANTIC_WEIGHT
         keyword_weight = cls.DEFAULT_KEYWORD_WEIGHT
         total = semantic_weight + keyword_weight
@@ -171,8 +274,8 @@ class ARISConfig:
             semantic_weight = semantic_weight / total
             keyword_weight = keyword_weight / total
         else:
-            semantic_weight = 0.7
-            keyword_weight = 0.3
+            semantic_weight = 0.6
+            keyword_weight = 0.4
         
         return {
             'use_hybrid_search': cls.DEFAULT_USE_HYBRID_SEARCH,
@@ -189,7 +292,16 @@ class ARISConfig:
             'max_sub_queries': cls.DEFAULT_MAX_SUB_QUERIES,
             'chunks_per_subquery': cls.DEFAULT_CHUNKS_PER_SUBQUERY,
             'max_total_chunks': cls.DEFAULT_MAX_TOTAL_CHUNKS,
-            'deduplication_threshold': cls.DEFAULT_DEDUPLICATION_THRESHOLD
+            'deduplication_threshold': cls.DEFAULT_DEDUPLICATION_THRESHOLD,
+            'decomposition_model': cls.QUERY_DECOMPOSITION_MODEL
+        }
+    
+    @classmethod
+    def get_generation_config(cls) -> dict:
+        """Get generation configuration"""
+        return {
+            'temperature': cls.DEFAULT_TEMPERATURE,
+            'max_tokens': cls.DEFAULT_MAX_TOKENS,
         }
     
     @classmethod
@@ -200,4 +312,16 @@ class ARISConfig:
             'min_k': cls.DEFAULT_SUMMARY_QUERY_MIN_K,
             'auto_enable_agentic': cls.DEFAULT_AUTO_ENABLE_AGENTIC_FOR_SUMMARIES
         }
-
+    
+    @classmethod
+    def get_accuracy_config(cls) -> dict:
+        """Get all accuracy-related configuration"""
+        return {
+            'chunking': cls.get_chunking_config(),
+            'retrieval': cls.get_retrieval_config(),
+            'hybrid_search': cls.get_hybrid_search_config(),
+            'agentic_rag': cls.get_agentic_rag_config(),
+            'generation': cls.get_generation_config(),
+            'min_citation_confidence': cls.MIN_CITATION_CONFIDENCE,
+            'fuzzy_match_threshold': cls.FUZZY_MATCH_THRESHOLD,
+        }

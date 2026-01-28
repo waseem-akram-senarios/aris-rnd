@@ -754,7 +754,7 @@ def test_query_decomposition():
     print_section("TEST 15: Query Decomposition")
     
     try:
-        from rag.query_decomposer import QueryDecomposer
+        from services.retrieval.query_decomposer import QueryDecomposer
         from shared.config.settings import ARISConfig
         import os
         

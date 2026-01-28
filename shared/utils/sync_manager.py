@@ -60,7 +60,7 @@ class SyncManager:
         self._index_map_mtime = 0
         self._registry_mtime = 0
         self._last_sync_time = 0
-        self._sync_interval = 3.0  # Check for changes every 3 seconds
+        self._sync_interval = 30.0  # Check for changes every 30 seconds (reduced from 3s for performance)
         
         # Background sync task control
         self._background_task: Optional[asyncio.Task] = None

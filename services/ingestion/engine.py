@@ -718,17 +718,10 @@ class IngestionEngine:
                             opensearch_index=index_name  # Use document-specific index
                         )
                     except ValueError as e:
-                        if 'OpenSearch' in str(e) or 'domain' in str(e).lower():
-                            logger.warning(f"OpenSearch initialization failed: {e}. Falling back to FAISS.")
-                            self.vector_store_type = 'faiss'
-                            self.opensearch_domain = None
-                            self.opensearch_index = None
-                            self.vectorstore = VectorStoreFactory.create_vector_store(
-                                store_type='faiss',
-                                embeddings=self.embeddings
-                            )
-                        else:
-                            raise
+                        logger.error(f"OpenSearch initialization failed: {e}")
+                        raise ValueError(
+                            f"Failed to initialize OpenSearch. Please check your AWS_OPENSEARCH_DOMAIN configuration. Error: {e}"
+                        )
                 else:
                     # Check if we need to switch to a different index
                     current_index = getattr(self.vectorstore, 'index_name', None)
@@ -771,17 +764,10 @@ class IngestionEngine:
                         opensearch_index=self.opensearch_index
                     )
                 except ValueError as e:
-                    if 'OpenSearch' in str(e) or 'domain' in str(e).lower():
-                        logger.warning(f"OpenSearch initialization failed: {e}. Falling back to FAISS.")
-                        self.vector_store_type = 'faiss'
-                        self.opensearch_domain = None
-                        self.opensearch_index = None
-                        self.vectorstore = VectorStoreFactory.create_vector_store(
-                            store_type='faiss',
-                            embeddings=self.embeddings
-                        )
-                    else:
-                        raise
+                    logger.error(f"OpenSearch initialization failed: {e}")
+                    raise ValueError(
+                        f"Failed to initialize OpenSearch. Please check your AWS_OPENSEARCH_DOMAIN configuration. Error: {e}"
+                    )
                 
                 # Process in batches for large documents to show progress
                 # Increased batch size for better throughput on large documents

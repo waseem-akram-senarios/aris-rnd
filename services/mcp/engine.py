@@ -148,17 +148,25 @@ class MCPEngine:
     @staticmethod
     def calculate_confidence_score(rank: int, total: int, rerank_score: float = None) -> float:
         """Calculate confidence score for a search result."""
+        # Handle rerank scores - they can be in different ranges
         if rerank_score is not None:
-            return min(100.0, max(0.0, rerank_score * 100))
+            # If score is already in 0-100 range
+            if rerank_score > 1.0:
+                return min(100.0, max(0.0, rerank_score))
+            # If score is in 0-1 range (percentage as decimal)
+            elif rerank_score > 0:
+                return min(100.0, max(0.0, rerank_score * 100))
         
         if total == 0:
             return 0.0
         
-        base_score = 100.0
-        decay_rate = 0.15
+        # Position-based scoring as fallback
+        # Top result gets ~95%, decays by position
+        base_score = 95.0
+        decay_rate = 0.08  # Slower decay for better distribution
         position_score = base_score * (1 - decay_rate) ** rank
         
-        return round(max(0.0, min(100.0, position_score)), 1)
+        return round(max(5.0, min(100.0, position_score)), 1)
     
     def fetch_and_parse_s3_document(self, s3_uri: str, language: str = "eng") -> tuple:
         """Fetch a document from S3 and parse it."""
@@ -235,6 +243,271 @@ class MCPEngine:
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+    
+    @staticmethod
+    def is_base64(content: str) -> bool:
+        """Check if content appears to be base64 encoded."""
+        import base64
+        if not content or len(content) < 8:
+            return False
+        
+        # Remove any whitespace for checking
+        clean_content = content.replace('\n', '').replace('\r', '').replace(' ', '')
+        
+        # Plain text typically has spaces, punctuation, newlines
+        # Check for common plain text indicators first (before cleaning)
+        plain_text_indicators = [
+            ' the ', ' is ', ' a ', ' an ', ' to ', ' and ', ' of ', ' in ',
+            '. ', ', ', '! ', '? ', ': ', '; ',
+            '\n\n',  # Double newlines common in text
+            '  ',  # Double spaces
+        ]
+        lower_content = content.lower()
+        for indicator in plain_text_indicators:
+            if indicator in lower_content:
+                return False
+        
+        # Check if string contains only valid base64 characters
+        # Base64 uses A-Z, a-z, 0-9, +, /, and = for padding
+        base64_pattern = re.compile(r'^[A-Za-z0-9+/]+={0,2}$')
+        
+        if not base64_pattern.match(clean_content):
+            return False
+        
+        # Base64 strings length should be divisible by 4 (with padding)
+        if len(clean_content) % 4 != 0:
+            return False
+        
+        # Try to decode to confirm it's valid base64
+        try:
+            base64.b64decode(clean_content)
+            return True
+        except Exception:
+            return False
+    
+    def parse_uploaded_document(
+        self,
+        file_content: bytes,
+        filename: str,
+        language: str = "eng"
+    ) -> tuple:
+        """Parse an uploaded document from bytes."""
+        from services.ingestion.parsers.parser_factory import ParserFactory
+        
+        extension = self.get_file_extension(filename)
+        
+        supported_formats = {"pdf", "docx", "doc", "txt", "md", "html", "htm"}
+        if extension not in supported_formats:
+            raise ValueError(
+                f"Unsupported document format: .{extension}. "
+                f"Supported formats: {', '.join(sorted(supported_formats))}"
+            )
+        
+        # Write to temp file for processing
+        with tempfile.NamedTemporaryFile(suffix=f".{extension}", delete=False) as tmp_file:
+            tmp_file.write(file_content)
+            tmp_path = tmp_file.name
+        
+        try:
+            if extension == "txt":
+                text = file_content.decode("utf-8", errors="replace")
+                metadata = {
+                    "source": filename,
+                    "file_type": "txt",
+                    "parser_used": "text",
+                    "upload_method": "direct"
+                }
+            elif extension in {"md", "html", "htm"}:
+                text = file_content.decode("utf-8", errors="replace")
+                metadata = {
+                    "source": filename,
+                    "file_type": extension,
+                    "parser_used": "text",
+                    "upload_method": "direct"
+                }
+            else:
+                # Use parser factory for binary formats (PDF, DOCX, DOC)
+                parsed = ParserFactory.parse_with_fallback(
+                    file_path=tmp_path,
+                    file_content=file_content,
+                    preferred_parser="auto",
+                    language=language
+                )
+                text = parsed.text
+                metadata = {
+                    "source": filename,
+                    "file_type": extension,
+                    "pages": parsed.pages,
+                    "parser_used": parsed.parser_used,
+                    "images_detected": parsed.images_detected,
+                    "image_count": parsed.image_count,
+                    "confidence": parsed.confidence,
+                    "upload_method": "direct",
+                    **parsed.metadata
+                }
+            
+            return text, metadata
+            
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+    
+    def upload_document(
+        self,
+        file_content: str,
+        filename: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Upload and ingest a document directly.
+        
+        Args:
+            file_content: Base64-encoded content for binary files, or plain text
+            filename: Filename with extension (e.g., "document.pdf")
+            metadata: Optional metadata for the document
+            
+        Returns:
+            Dictionary with upload and ingestion results
+        """
+        import base64
+        
+        if not file_content or not file_content.strip():
+            raise ValueError("File content cannot be empty")
+        
+        if not filename or not filename.strip():
+            raise ValueError("Filename is required")
+        
+        filename = filename.strip()
+        extension = self.get_file_extension(filename)
+        metadata = metadata or {}
+        
+        supported_formats = {"pdf", "docx", "doc", "txt", "md", "html", "htm"}
+        if extension not in supported_formats:
+            raise ValueError(
+                f"Unsupported document format: .{extension}. "
+                f"Supported formats: {', '.join(sorted(supported_formats))}"
+            )
+        
+        # Binary formats that require base64 encoding
+        binary_formats = {"pdf", "docx", "doc"}
+        text_formats = {"txt", "md", "html", "htm"}
+        
+        accuracy_info = {
+            "chunk_size": self.config.DEFAULT_CHUNK_SIZE,
+            "chunk_overlap": self.config.DEFAULT_CHUNK_OVERLAP,
+            "embedding_model": self.config.EMBEDDING_MODEL,
+            "upload_method": "direct"
+        }
+        
+        try:
+            # Decode content based on format
+            if extension in binary_formats:
+                # Binary formats must be base64 encoded
+                try:
+                    # Clean up the base64 string
+                    clean_content = file_content.replace('\n', '').replace('\r', '').replace(' ', '')
+                    file_bytes = base64.b64decode(clean_content)
+                except Exception as e:
+                    raise ValueError(
+                        f"Invalid base64 encoding for binary file. "
+                        f"Binary files (PDF, DOCX, DOC) must be base64-encoded. Error: {str(e)}"
+                    )
+            else:
+                # Text formats - check if it's base64 or plain text
+                if self.is_base64(file_content):
+                    try:
+                        clean_content = file_content.replace('\n', '').replace('\r', '').replace(' ', '')
+                        file_bytes = base64.b64decode(clean_content)
+                    except:
+                        # If decode fails, treat as plain text
+                        file_bytes = file_content.encode("utf-8")
+                else:
+                    # Plain text
+                    file_bytes = file_content.encode("utf-8")
+            
+            logger.info(f"Processing uploaded document: {filename} ({len(file_bytes)} bytes)")
+            
+            # Get language for parsing
+            language = metadata.get("language", "eng")
+            language = self.convert_language_code(language)
+            
+            # Parse the document
+            text, doc_metadata = self.parse_uploaded_document(
+                file_bytes, filename, language
+            )
+            
+            if not text or not text.strip():
+                raise ValueError(f"No text extracted from document: {filename}")
+            
+            # Merge metadata
+            final_metadata = {**doc_metadata, **metadata}
+            final_metadata["source"] = filename
+            
+            accuracy_info["parser_used"] = doc_metadata.get("parser_used", "unknown")
+            accuracy_info["extraction_confidence"] = doc_metadata.get("confidence", 1.0)
+            accuracy_info["pages_extracted"] = doc_metadata.get("pages", 0)
+            accuracy_info["file_size_bytes"] = len(file_bytes)
+            
+            # Detect language if not specified
+            if "language" not in final_metadata:
+                try:
+                    from langdetect import detect
+                    detected_lang = detect(text[:1000])
+                    final_metadata["language"] = self.convert_language_code(detected_lang)
+                    accuracy_info["language_detected"] = True
+                except:
+                    final_metadata["language"] = "eng"
+                    accuracy_info["language_detected"] = False
+            
+            # Generate document ID
+            document_id = self.generate_document_id(text, filename)
+            final_metadata["document_id"] = document_id
+            
+            # Determine index name
+            index_name = metadata.get("index_name") or self.config.AWS_OPENSEARCH_INDEX
+            
+            # Process and ingest
+            logger.info(f"Ingesting uploaded document: {document_id} ({len(text)} chars)")
+            
+            result = self.ingestion_engine.add_documents_incremental(
+                texts=[text],
+                metadatas=[final_metadata],
+                index_name=index_name
+            )
+            
+            # Register the document
+            registry_entry = {
+                "document_id": document_id,
+                "document_name": filename,
+                "status": "completed",
+                "chunks_created": result.get("chunks_created", 0),
+                "tokens_extracted": result.get("tokens_added", 0),
+                "language": final_metadata.get("language", "eng"),
+                "metadata": final_metadata,
+                "accuracy_info": accuracy_info,
+                "upload_method": "direct",
+                "ingested_at": datetime.now().isoformat()
+            }
+            self.document_registry.add_document(document_id, registry_entry)
+            
+            return {
+                "success": True,
+                "document_id": document_id,
+                "filename": filename,
+                "file_type": extension,
+                "file_size_bytes": len(file_bytes),
+                "chunks_created": result.get("chunks_created", 0),
+                "tokens_added": result.get("tokens_added", 0),
+                "pages_extracted": doc_metadata.get("pages", 0),
+                "total_chunks": result.get("total_chunks", 0),
+                "message": f"Successfully uploaded and ingested '{filename}' with {result.get('chunks_created', 0)} chunks",
+                "metadata": final_metadata,
+                "accuracy_info": accuracy_info
+            }
+            
+        except Exception as e:
+            logger.error(f"Document upload failed: {str(e)}", exc_info=True)
+            raise ValueError(f"Failed to upload document: {str(e)}")
     
     def ingest(
         self,
@@ -423,6 +696,9 @@ class MCPEngine:
             
             logger.info(f"Searching RAG: query='{query[:50]}...', mode={search_mode}, k={k}")
             
+            import time as time_module
+            search_start = time_module.time()
+            
             if include_answer:
                 result = self.retrieval_engine.query_with_rag(
                     question=query,
@@ -454,14 +730,45 @@ class MCPEngine:
                     ) if hasattr(self.retrieval_engine, '_retrieve_chunks_for_query') else []
                 }
             
-            # Format results
+            retrieval_time = time_module.time() - search_start
+            logger.info(f"⏱️ RAG retrieval completed in {retrieval_time:.2f}s")
+            
+            citation_format_start = time_module.time()
+            
+            # Format results - prioritize citations that match the answer
             formatted_results = []
             citations = result.get("citations", [])
+            
+            # Sort citations by relevance score (highest first)
+            if citations:
+                def get_score(c):
+                    if isinstance(c, dict):
+                        # Priority: similarity_percentage (best indicator after ranking)
+                        # Then: rerank_score, similarity_score
+                        sim_pct = c.get("similarity_percentage", 0)
+                        if sim_pct and sim_pct > 0:
+                            return sim_pct / 100.0  # Normalize to 0-1 range
+                        
+                        score = c.get("rerank_score") or c.get("similarity_score") or c.get("relevance_score") or 0
+                        # Normalize if needed
+                        if score > 1:
+                            score = score / 100.0
+                        return score
+                    elif hasattr(c, 'metadata'):
+                        meta = c.metadata
+                        sim_pct = meta.get("similarity_percentage", 0)
+                        if sim_pct and sim_pct > 0:
+                            return sim_pct / 100.0
+                        return meta.get("rerank_score") or meta.get("similarity_score") or 0
+                    return 0
+                
+                # Sort by score descending
+                citations = sorted(citations, key=get_score, reverse=True)
             
             if citations and hasattr(citations[0], 'page_content'):
                 for i, doc in enumerate(citations[:k]):
                     metadata = doc.metadata if hasattr(doc, 'metadata') else {}
-                    rerank_score = metadata.get('rerank_score')
+                    rerank_score = metadata.get('rerank_score') or metadata.get('similarity_score')
                     
                     chunk_result = {
                         "content": doc.page_content,
@@ -475,28 +782,44 @@ class MCPEngine:
             else:
                 for i, citation in enumerate(citations[:k]):
                     if isinstance(citation, dict):
-                        rerank_score = citation.get("rerank_score") or citation.get("similarity_score")
+                        # Priority: similarity_percentage (pre-calculated by ranking)
+                        # Then: rerank_score, similarity_score
+                        sim_pct = citation.get("similarity_percentage")
+                        if sim_pct and sim_pct > 0:
+                            # Use similarity_percentage directly as confidence
+                            confidence = min(100.0, max(0.0, sim_pct))
+                        else:
+                            rerank_score = citation.get("rerank_score") or citation.get("similarity_score") or citation.get("relevance_score")
+                            # Normalize the score if it's a percentage
+                            if rerank_score and rerank_score > 1:
+                                rerank_score = rerank_score / 100.0
+                            confidence = self.calculate_confidence_score(i, len(citations), rerank_score)
                         
                         chunk_result = {
                             "content": citation.get("full_text", citation.get("snippet", "")),
                             "snippet": citation.get("snippet", "")[:200],
                             "source": citation.get("source", "unknown"),
                             "page": citation.get("page", 1),
-                            "confidence": self.calculate_confidence_score(i, len(citations), rerank_score),
+                            "confidence": confidence,
                             "metadata": {
                                 k: v for k, v in citation.items()
-                                if k not in {"full_text", "snippet", "source", "page", "rerank_score", "similarity_score"}
+                                if k not in {"full_text", "snippet", "source", "page", "rerank_score", "similarity_score", "relevance_score", "content_relevance", "similarity_percentage"}
                             }
                         }
                     else:
                         rerank_score = getattr(citation, "rerank_score", None) or getattr(citation, "similarity_score", None)
+                        sim_pct = getattr(citation, "similarity_percentage", None)
+                        if sim_pct and sim_pct > 0:
+                            confidence = min(100.0, max(0.0, sim_pct))
+                        else:
+                            confidence = self.calculate_confidence_score(i, len(citations), rerank_score)
                         
                         chunk_result = {
                             "content": getattr(citation, "full_text", getattr(citation, "snippet", "")),
                             "snippet": getattr(citation, "snippet", "")[:200],
                             "source": getattr(citation, "source", "unknown"),
                             "page": getattr(citation, "page", 1),
-                            "confidence": self.calculate_confidence_score(i, len(citations), rerank_score),
+                            "confidence": confidence,
                             "metadata": {}
                         }
                     
@@ -514,11 +837,19 @@ class MCPEngine:
             
             answer = result.get("answer", "")
             
+            citation_format_time = time_module.time() - citation_format_start
+            total_search_time = time_module.time() - search_start
+            logger.info(f"⏱️ Citation formatting: {citation_format_time:.2f}s | Total search: {total_search_time:.2f}s")
+            
             if use_agentic_rag:
                 sub_queries = result.get("sub_queries", [])
                 if sub_queries:
                     accuracy_info["sub_queries_generated"] = len(sub_queries)
                     accuracy_info["sub_queries"] = sub_queries
+            
+            # Add timing info to response
+            accuracy_info["retrieval_time_seconds"] = round(retrieval_time, 2)
+            accuracy_info["total_time_seconds"] = round(total_search_time, 2)
             
             return {
                 "success": True,

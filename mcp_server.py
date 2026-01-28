@@ -16,12 +16,16 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import and re-export from microservice
-from services.mcp.main import mcp, mcp_engine, rag_ingest, rag_search, app
+from services.mcp.main import mcp, mcp_engine, rag_ingest, rag_upload_document, rag_search, app
 
 # For backwards compatibility, expose the engine functions
 def ingest(content, metadata=None):
     """Wrapper for MCP engine ingest."""
     return mcp_engine.ingest(content, metadata)
+
+def upload_document(file_content, filename, metadata=None):
+    """Wrapper for MCP engine upload_document."""
+    return mcp_engine.upload_document(file_content, filename, metadata)
 
 def search(query, filters=None, k=10, search_mode="hybrid", use_agentic_rag=True, include_answer=True):
     """Wrapper for MCP engine search."""
