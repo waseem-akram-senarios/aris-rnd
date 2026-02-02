@@ -1,0 +1,74 @@
+{
+  "timestamp": "2026-01-29 20:04:43",
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0
+  },
+  "details": [
+    {
+      "id": "T1",
+      "category": "Technical Detail",
+      "status": "PASS",
+      "duration": 95.22100257873535,
+      "pages": [
+        "1",
+        "14",
+        "2",
+        "7",
+        "9"
+      ],
+      "confidence": 100.0,
+      "found_docs": [
+        "EM11, top seal.pdf"
+      ],
+      "answer_preview": "The specific parameters or measurements for the 'top seal' in EM11 are not explicitly detailed in th..."
+    },
+    {
+      "id": "T2",
+      "category": "Cross-Language",
+      "status": "PASS",
+      "duration": 42.58599066734314,
+      "pages": [
+        "10"
+      ],
+      "confidence": 100.0,
+      "found_docs": [
+        "VUORMAR.pdf"
+      ],
+      "answer_preview": "The context does not provide specific safety maintenance steps for the motor drum according to VUORM..."
+    },
+    {
+      "id": "T3",
+      "category": "Agentic RAG",
+      "status": "PASS",
+      "duration": 99.75550270080566,
+      "pages": [
+        "2",
+        "5",
+        "7"
+      ],
+      "confidence": 100.0,
+      "found_docs": [
+        "EM11, top seal.pdf",
+        "EM10, degasing.pdf"
+      ],
+      "answer_preview": "The EM10 and EM11 manuals describe distinct cleaning and maintenance routines tailored to their spec..."
+    },
+    {
+      "id": "T4",
+      "category": "Procedural Logic",
+      "status": "PASS",
+      "duration": 36.55071783065796,
+      "pages": [
+        "1",
+        "2"
+      ],
+      "confidence": 100.0,
+      "found_docs": [
+        "EM10, degasing.pdf"
+      ],
+      "answer_preview": "To adjust the air level if it is too high in the bag for the degassing system, you can follow these ..."
+    }
+  ]
+}

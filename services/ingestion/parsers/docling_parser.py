@@ -556,15 +556,37 @@ class DoclingParser(BaseParser):
                 logger.warning("Docling: Pages structure format not recognized, will use fallback")
                 return "", [], False
             
-            # Try to extract text from each page
+            # Try to extract text from each page using physical numbering
             pages_with_text = 0
+            
+            # Create a sorted list of physical pages to ensure strict 1-to-N mapping
+            # This avoids logical container duplicates
+            physical_pages_visited = set()
+            
             for page_idx, page_obj in pages_iterable:
-                page_num = page_idx if isinstance(page_idx, int) else page_idx[0] if isinstance(page_idx, tuple) else 1
-                page_content = page_obj if not isinstance(page_idx, tuple) else page_idx[1]
+                # CRITICAL: Prioritize physical page number property (page_no)
+                # Fallback to logical key if property missing
+                physical_page_num = getattr(page_obj, 'page_no', None)
+                if physical_page_num is None:
+                    # Try other common PDF property names
+                    physical_page_num = getattr(page_obj, 'physical_page_number', None)
                 
+                # If still None, use the key or index (1-based fallback)
+                if physical_page_num is None:
+                    page_num = (page_idx if isinstance(page_idx, int) else 
+                               page_idx[0] if isinstance(page_idx, tuple) else 1)
+                else:
+                    page_num = int(physical_page_num)
+                
+                # Prevent logical duplicates for the same physical page
+                if page_num in physical_pages_visited:
+                    logger.debug(f"Docling: Skipping redundant logical block for physical page {page_num}")
+                    continue
+                physical_pages_visited.add(page_num)
+                
+                page_content = page_obj if not isinstance(page_idx, tuple) else page_idx[1]
                 page_text = ""
                 
-                # Try multiple methods to extract text from page
                 # Method 1: page.export_to_text()
                 if hasattr(page_content, 'export_to_text'):
                     try:
@@ -587,15 +609,11 @@ class DoclingParser(BaseParser):
                 if not page_text and hasattr(page_content, 'blocks'):
                     try:
                         block_texts = []
-                        image_blocks_found = []
-                        for block_idx, block in enumerate(page_content.blocks):
-                            # Check if this is an image block
+                        for block in page_content.blocks:
                             is_image_block = False
                             if hasattr(block, 'type') and block.type in ['image', 'figure', 'picture', 'illustration']:
                                 is_image_block = True
-                                image_blocks_found.append(block_idx)
                             
-                            # Extract text from block
                             block_text = ""
                             if hasattr(block, 'text') and block.text:
                                 block_text = block.text
@@ -606,7 +624,6 @@ class DoclingParser(BaseParser):
                                     pass
                             
                             if block_text:
-                                # If this is an image block, insert marker before its text
                                 if is_image_block:
                                     block_texts.append("<!-- image -->\n" + block_text)
                                 else:
@@ -618,6 +635,7 @@ class DoclingParser(BaseParser):
                                 per_page_extraction_success = True
                     except Exception as e:
                         logger.debug(f"Docling: Page {page_num} blocks extraction failed: {e}")
+
                 
                 # Check for images on this page (pictures attribute)
                 page_has_images = False
@@ -1443,30 +1461,19 @@ class DoclingParser(BaseParser):
                     detection_methods.append(f"doc.pictures ({image_count} pictures)")
                     logger.info(f"Docling: Found {image_count} pictures in document")
                     
-                    # Extract image positions from doc.pictures
+                    # Extract image positions from doc.pictures using physical page mapping
                     try:
                         for pic_idx, picture in enumerate(doc.pictures):
-                            # Try to get page number from picture
-                            page_num = None
-                            if hasattr(picture, 'page'):
-                                page_num = picture.page
-                            elif hasattr(picture, 'page_num'):
-                                page_num = picture.page_num
-                            elif hasattr(picture, 'page_number'):
-                                page_num = picture.page_number
-                            
-                            # Try to get position/bbox
-                            char_offset = None
-                            if hasattr(picture, 'bbox') and picture.bbox:
-                                # Estimate character offset from bbox (approximate)
-                                # This is a rough estimate - we'll refine with page markers
-                                char_offset = None  # Will be calculated from page markers
+                            # CRITICAL: Prioritize physical page property
+                            page_num = getattr(picture, 'page_no', None) or getattr(picture, 'page', None)
                             
                             if page_num is not None:
+                                page_num = int(page_num)
                                 if page_num not in image_positions_by_page:
                                     image_positions_by_page[page_num] = []
                                 image_positions_by_page[page_num].append(pic_idx)
                                 image_positions.append((page_num, pic_idx))
+
                         
                         if image_positions:
                             logger.info(f"Docling: Extracted image positions: {len(image_positions)} images across {len(image_positions_by_page)} pages")
@@ -1685,10 +1692,11 @@ class DoclingParser(BaseParser):
                 for img in extracted_images:
                     page_blocks.append({
                         'type': 'image',
-                        'page': img.get('page', 1),
+                        'page': int(img.get('page', 1)), # Keep physical 1-based
                         'image_index': img.get('image_index'),
                         'bbox': img.get('bbox')
                     })
+
             
             metadata = {
                 "source": file_path,

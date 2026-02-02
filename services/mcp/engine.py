@@ -127,6 +127,34 @@ class MCPEngine:
         """Get cached document registry (singleton)."""
         return _get_cached_document_registry()
     
+    @property
+    def sync_manager(self):
+        """Get sync manager for MCP service."""
+        from shared.utils.sync_manager import get_sync_manager
+        return get_sync_manager("mcp")
+    
+    def _broadcast_sync_after_ingestion(self):
+        """
+        Trigger sync broadcast to all services after successful ingestion.
+        This ensures all services (Gateway, Retrieval, UI) see the new document immediately.
+        """
+        try:
+            import httpx
+            gateway_url = os.getenv("GATEWAY_URL", "http://127.0.0.1:8500")
+            
+            # First, instant sync locally
+            self.sync_manager.instant_sync()
+            
+            # Then trigger gateway to broadcast to all services
+            with httpx.Client(timeout=5.0) as client:
+                response = client.post(f"{gateway_url}/sync/broadcast")
+                if response.status_code == 200:
+                    logger.info("📡 [MCP] Sync broadcast triggered successfully")
+                else:
+                    logger.warning(f"📡 [MCP] Sync broadcast returned status: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"📡 [MCP] Sync broadcast failed (non-critical): {e}")
+    
     @staticmethod
     def is_s3_uri(content: str) -> bool:
         """Check if the content is an S3 URI."""
@@ -437,7 +465,8 @@ class MCPEngine:
                 "pages_extracted": doc_metadata.get("pages", 0),
                 "total_chunks": result.get("total_chunks", 0),
                 "message": f"Successfully uploaded and ingested '{filename}' with {result.get('chunks_created', 0)} chunks",
-                "metadata": final_metadata, "accuracy_info": accuracy_info
+                "metadata": final_metadata, "accuracy_info": accuracy_info,
+                "sync_triggered": self._broadcast_sync_after_ingestion()
             }
             
         except Exception as e:
@@ -523,7 +552,8 @@ class MCPEngine:
                 "tokens_added": result.get("tokens_added", 0),
                 "total_chunks": result.get("total_chunks", 0),
                 "message": f"Successfully ingested document with {result.get('chunks_created', 0)} chunks",
-                "metadata": final_metadata, "accuracy_info": accuracy_info
+                "metadata": final_metadata, "accuracy_info": accuracy_info,
+                "sync_triggered": self._broadcast_sync_after_ingestion()
             }
             
         except Exception as e:
@@ -647,6 +677,8 @@ class MCPEngine:
                 "query": query,
                 "answer": result.get("answer", "") if include_answer else None,
                 "results": formatted_results,
+                "citations": formatted_results,
+                "sources": list(set([r.get("source") for r in formatted_results if r.get("source")])),
                 "total_results": len(formatted_results),
                 "search_mode": search_mode,
                 "filters_applied": filters,

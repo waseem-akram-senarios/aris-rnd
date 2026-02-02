@@ -9,6 +9,7 @@ import json
 import asyncio
 import threading
 import logging
+import httpx
 from typing import Dict, Optional, List, Callable, Any
 from pathlib import Path
 from shared.config.settings import ARISConfig
@@ -16,6 +17,14 @@ from storage.document_registry import DocumentRegistry
 from scripts.setup_logging import get_logger
 
 logger = get_logger("aris_rag.sync_manager")
+
+# Service URLs for cross-service sync coordination
+SERVICE_URLS = {
+    "gateway": os.getenv("GATEWAY_URL", "http://127.0.0.1:8500"),
+    "ingestion": os.getenv("INGESTION_SERVICE_URL", "http://127.0.0.1:8501"),
+    "retrieval": os.getenv("RETRIEVAL_SERVICE_URL", "http://127.0.0.1:8502"),
+    "mcp": os.getenv("MCP_SERVICE_URL", "http://127.0.0.1:8503"),
+}
 
 
 class SyncManager:
@@ -49,18 +58,18 @@ class SyncManager:
         self.registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
         self.index_map_path = os.path.join(ARISConfig.VECTORSTORE_PATH, "document_index_map.json")
         
-        # Initialize registry
+        # Initialize registry (now stateless/OpenSearch backend)
         try:
-            self.document_registry = DocumentRegistry(self.registry_path)
+            self.document_registry = DocumentRegistry()
         except Exception as e:
-            logger.warning(f"Could not initialize registry: {e}")
+            logger.warning(f"Could not initialize registry client: {e}")
             self.document_registry = None
         
         # File modification tracking
         self._index_map_mtime = 0
         self._registry_mtime = 0
         self._last_sync_time = 0
-        self._sync_interval = 30.0  # Check for changes every 30 seconds (reduced from 3s for performance)
+        self._sync_interval = 5.0  # Check for changes every 5 seconds for real-time sync
         
         # Background sync task control
         self._background_task: Optional[asyncio.Task] = None
@@ -99,43 +108,11 @@ class SyncManager:
     
     def sync_document_registry(self, force: bool = False) -> bool:
         """
-        Sync document registry from disk/S3.
-        
-        Args:
-            force: If True, reload even if file hasn't changed
-            
-        Returns:
-            True if registry was reloaded, False otherwise
+        No-op for OpenSearch backend.
+        Registry is now database-backed and always consistent.
         """
-        try:
-            if os.path.exists(self.registry_path):
-                current_mtime = os.path.getmtime(self.registry_path)
-                if force or current_mtime > self._registry_mtime:
-                    # Reload registry
-                    self.document_registry = DocumentRegistry(self.registry_path)
-                    self._registry_mtime = current_mtime
-                    
-                    # Update cache
-                    try:
-                        with open(self.registry_path, 'r') as f:
-                            self._cached_registry_data = json.load(f)
-                    except:
-                        pass
-                    
-                    doc_count = len(self.document_registry.list_documents()) if self.document_registry else 0
-                    logger.info(f"✅ [{self.service_name}] Synced document registry ({doc_count} documents)")
-                    return True
-            else:
-                # Create empty registry if doesn't exist
-                os.makedirs(os.path.dirname(self.registry_path), exist_ok=True)
-                with open(self.registry_path, 'w') as f:
-                    json.dump({}, f)
-                self._registry_mtime = os.path.getmtime(self.registry_path)
-                logger.info(f"✅ [{self.service_name}] Created empty document registry")
-            return False
-        except Exception as e:
-            logger.warning(f"[{self.service_name}] Could not sync document registry: {e}")
-            return False
+        # For backward compatibility with existing calls
+        return False
     
     def sync_index_map(self, force: bool = False) -> Optional[Dict[str, str]]:
         """
@@ -258,9 +235,11 @@ class SyncManager:
         index_map_mtime = os.path.getmtime(self.index_map_path) if index_map_exists else 0
         
         doc_count = 0
-        if registry_exists and self.document_registry:
+        if self.document_registry:
             try:
-                doc_count = len(self.document_registry.list_documents())
+                # This is now a database count
+                status = self.document_registry.get_sync_status()
+                doc_count = status.get('total_documents', 0)
             except:
                 pass
         
@@ -278,10 +257,10 @@ class SyncManager:
         return {
             "service": self.service_name,
             "registry": {
-                "exists": registry_exists,
-                "last_modified": registry_mtime,
+                "exists": True,
+                "backend": "opensearch",
                 "document_count": doc_count,
-                "in_sync": self._registry_mtime >= registry_mtime
+                "in_sync": True
             },
             "index_map": {
                 "exists": index_map_exists,
@@ -426,6 +405,160 @@ class SyncManager:
         except Exception as e:
             logger.error(f"[{self.service_name}] Failed to remove from index map: {e}")
             return False
+    
+    def instant_sync(self) -> Dict[str, Any]:
+        """
+        Perform immediate synchronization without waiting for interval.
+        Use this for critical operations like after document ingestion.
+        
+        Returns:
+            Dict with sync results
+        """
+        # Reset last sync time to force immediate sync
+        self._last_sync_time = 0
+        
+        registry_synced = self.sync_document_registry(force=True)
+        index_map = self.sync_index_map(force=True)
+        
+        result = {
+            "registry": registry_synced,
+            "index_map": index_map is not None,
+            "timestamp": time.time(),
+            "service": self.service_name,
+            "type": "instant"
+        }
+        
+        if registry_synced or index_map is not None:
+            self._sync_count += 1
+            self._last_sync_result = result
+            self._notify_callbacks(result)
+        
+        logger.info(f"⚡ [{self.service_name}] Instant sync completed")
+        return result
+    
+    async def trigger_remote_sync(self, target_service: str, timeout: float = 5.0) -> Dict[str, Any]:
+        """
+        Trigger sync on a remote service via HTTP.
+        
+        Args:
+            target_service: Service name (gateway, ingestion, retrieval, mcp)
+            timeout: Request timeout in seconds
+            
+        Returns:
+            Dict with sync result from remote service
+        """
+        if target_service not in SERVICE_URLS:
+            return {"success": False, "error": f"Unknown service: {target_service}"}
+        
+        url = f"{SERVICE_URLS[target_service]}/sync/force"
+        
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post(url)
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(f"✅ [{self.service_name}] Triggered sync on {target_service}: {result}")
+                    return {"success": True, "service": target_service, "result": result}
+                else:
+                    logger.warning(f"[{self.service_name}] Sync trigger failed on {target_service}: {response.status_code}")
+                    return {"success": False, "service": target_service, "status_code": response.status_code}
+        except httpx.TimeoutException:
+            logger.warning(f"[{self.service_name}] Sync trigger timeout on {target_service}")
+            return {"success": False, "service": target_service, "error": "timeout"}
+        except Exception as e:
+            logger.warning(f"[{self.service_name}] Sync trigger error on {target_service}: {e}")
+            return {"success": False, "service": target_service, "error": str(e)}
+    
+    async def broadcast_sync_to_all(self, exclude_self: bool = True) -> Dict[str, Any]:
+        """
+        Broadcast sync trigger to all services.
+        
+        Args:
+            exclude_self: If True, don't trigger sync on own service
+            
+        Returns:
+            Dict with results from all services
+        """
+        logger.info(f"📡 [{self.service_name}] Broadcasting sync to all services...")
+        
+        # First, sync locally
+        local_result = self.instant_sync()
+        
+        # Then trigger remote services
+        services_to_sync = [s for s in SERVICE_URLS.keys() if not exclude_self or s != self.service_name]
+        
+        results = {"local": local_result, "remote": {}}
+        
+        for service in services_to_sync:
+            result = await self.trigger_remote_sync(service)
+            results["remote"][service] = result
+        
+        successful = sum(1 for r in results["remote"].values() if r.get("success"))
+        logger.info(f"📡 [{self.service_name}] Broadcast complete: {successful}/{len(services_to_sync)} services synced")
+        
+        return results
+    
+    def trigger_remote_sync_sync(self, target_service: str, timeout: float = 5.0) -> Dict[str, Any]:
+        """
+        Synchronous version of trigger_remote_sync for non-async contexts.
+        
+        Args:
+            target_service: Service name (gateway, ingestion, retrieval, mcp)
+            timeout: Request timeout in seconds
+            
+        Returns:
+            Dict with sync result from remote service
+        """
+        if target_service not in SERVICE_URLS:
+            return {"success": False, "error": f"Unknown service: {target_service}"}
+        
+        url = f"{SERVICE_URLS[target_service]}/sync/force"
+        
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                response = client.post(url)
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(f"✅ [{self.service_name}] Triggered sync on {target_service}: {result}")
+                    return {"success": True, "service": target_service, "result": result}
+                else:
+                    logger.warning(f"[{self.service_name}] Sync trigger failed on {target_service}: {response.status_code}")
+                    return {"success": False, "service": target_service, "status_code": response.status_code}
+        except httpx.TimeoutException:
+            logger.warning(f"[{self.service_name}] Sync trigger timeout on {target_service}")
+            return {"success": False, "service": target_service, "error": "timeout"}
+        except Exception as e:
+            logger.warning(f"[{self.service_name}] Sync trigger error on {target_service}: {e}")
+            return {"success": False, "service": target_service, "error": str(e)}
+    
+    def broadcast_sync_to_all_sync(self, exclude_self: bool = True) -> Dict[str, Any]:
+        """
+        Synchronous version of broadcast_sync_to_all for non-async contexts.
+        
+        Args:
+            exclude_self: If True, don't trigger sync on own service
+            
+        Returns:
+            Dict with results from all services
+        """
+        logger.info(f"📡 [{self.service_name}] Broadcasting sync to all services (sync)...")
+        
+        # First, sync locally
+        local_result = self.instant_sync()
+        
+        # Then trigger remote services
+        services_to_sync = [s for s in SERVICE_URLS.keys() if not exclude_self or s != self.service_name]
+        
+        results = {"local": local_result, "remote": {}}
+        
+        for service in services_to_sync:
+            result = self.trigger_remote_sync_sync(service)
+            results["remote"][service] = result
+        
+        successful = sum(1 for r in results["remote"].values() if r.get("success"))
+        logger.info(f"📡 [{self.service_name}] Broadcast complete: {successful}/{len(services_to_sync)} services synced")
+        
+        return results
 
 
 # Global function to get sync manager instance

@@ -423,6 +423,7 @@ async def check_and_sync(service: GatewayService = Depends(get_service)):
         
         ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://127.0.0.1:8501")
         retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://127.0.0.1:8502")
+        mcp_url = os.getenv("MCP_SERVICE_URL", "http://127.0.0.1:8503")
         
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
@@ -436,6 +437,12 @@ async def check_and_sync(service: GatewayService = Depends(get_service)):
                 result["retrieval"] = retrieval_result.json() if retrieval_result.status_code == 200 else {"error": "Failed"}
             except Exception as e:
                 result["retrieval"] = {"error": str(e)}
+            
+            try:
+                mcp_result = await client.post(f"{mcp_url}/sync/check")
+                result["mcp"] = mcp_result.json() if mcp_result.status_code == 200 else {"error": "Failed"}
+            except Exception as e:
+                result["mcp"] = {"error": str(e)}
         
         return {
             "success": True,
@@ -444,6 +451,90 @@ async def check_and_sync(service: GatewayService = Depends(get_service)):
         }
     except Exception as e:
         logger.error(f"Error checking sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sync/instant")
+async def instant_sync(service: GatewayService = Depends(get_service)):
+    """
+    Perform immediate synchronization without waiting for interval.
+    Use this for critical operations that require immediate state consistency.
+    """
+    global sync_manager
+    if sync_manager is None:
+        raise HTTPException(status_code=500, detail="Sync manager not initialized")
+    
+    try:
+        # Instant sync locally
+        result = sync_manager.instant_sync()
+        
+        # Reload gateway's registry immediately
+        service._reload_registry()
+        
+        return {
+            "success": True,
+            "message": "Instant synchronization completed",
+            "sync_result": result
+        }
+    except Exception as e:
+        logger.error(f"Error during instant sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/sync/broadcast")
+async def broadcast_sync(service: GatewayService = Depends(get_service)):
+    """
+    Broadcast sync trigger to ALL services including MCP.
+    Use this after document ingestion or deletion to ensure all services are updated.
+    """
+    global sync_manager
+    if sync_manager is None:
+        raise HTTPException(status_code=500, detail="Sync manager not initialized")
+    
+    try:
+        logger.info("📡 Broadcasting sync to all services...")
+        
+        # First, sync gateway locally
+        gateway_result = sync_manager.instant_sync()
+        service._reload_registry()
+        
+        results = {
+            "gateway": gateway_result,
+            "services": {}
+        }
+        
+        # Define all services to sync
+        services = {
+            "ingestion": os.getenv("INGESTION_SERVICE_URL", "http://127.0.0.1:8501"),
+            "retrieval": os.getenv("RETRIEVAL_SERVICE_URL", "http://127.0.0.1:8502"),
+            "mcp": os.getenv("MCP_SERVICE_URL", "http://127.0.0.1:8503")
+        }
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for service_name, url in services.items():
+                try:
+                    response = await client.post(f"{url}/sync/force")
+                    if response.status_code == 200:
+                        results["services"][service_name] = {"success": True, "result": response.json()}
+                    else:
+                        results["services"][service_name] = {"success": False, "status_code": response.status_code}
+                except httpx.TimeoutException:
+                    results["services"][service_name] = {"success": False, "error": "timeout"}
+                except Exception as e:
+                    results["services"][service_name] = {"success": False, "error": str(e)}
+        
+        successful = sum(1 for r in results["services"].values() if r.get("success"))
+        total = len(services)
+        
+        logger.info(f"📡 Broadcast complete: {successful}/{total} services synced")
+        
+        return {
+            "success": True,
+            "message": f"Sync broadcast completed - {successful}/{total} services synced",
+            "results": results
+        }
+    except Exception as e:
+        logger.error(f"Error broadcasting sync: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

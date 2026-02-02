@@ -743,21 +743,25 @@ class OpenSearchVectorStore:
                 semantic_weight = 0.5
                 keyword_weight = 0.5
             
-            # Semantic search (k-NN) remains the same...
+            # Semantic search (k-NN) - use correct OpenSearch query format
             semantic_results = []
             if semantic_weight > 0:
                 try:
-                    # ... (k-NN query construction)
+                    # OpenSearch k-NN query format: "query" -> "knn" -> "field_name" -> {vector, k}
+                    knn_size = int(k * (1 + semantic_weight))
                     knn_query = {
-                        "size": int(k * (1 + semantic_weight)),
-                        "knn": {
-                            "field": "vector_field",
-                            "vector": query_vector,
-                            "k": int(k * (1 + semantic_weight))
+                        "size": knn_size,
+                        "query": {
+                            "knn": {
+                                "vector_field": {
+                                    "vector": query_vector,
+                                    "k": knn_size
+                                }
+                            }
                         }
                     }
                     if filter:
-                        knn_query["knn"]["filter"] = filter
+                        knn_query["query"]["knn"]["vector_field"]["filter"] = filter
                     semantic_response = client.search(index=self.index_name, body=knn_query)
                     semantic_results = semantic_response.get("hits", {}).get("hits", [])
                 except Exception as e:

@@ -418,10 +418,9 @@ class DocumentProcessor:
             english_translation = None
             
             try:
-                from shared.config.settings import ARISConfig
+                # Auto-detect language if enabled and not explicitly set
                 multilingual_config = ARISConfig.get_multilingual_config()
                 
-                # Auto-detect language if enabled and not explicitly set
                 if multilingual_config.get('auto_detect_language', True) and language == "eng" and len(doc_text) > 50:
                     try:
                         from services.language.detector import get_detector
@@ -502,6 +501,7 @@ class DocumentProcessor:
             
             # Store language in metadata (MANDATORY for language-isolated search)
             language = detected_language
+
             
             # Step 4: Process with RAG system (chunking and embedding)
             logger.info("[STEP 4] DocumentProcessor: Starting chunking and embedding process...")

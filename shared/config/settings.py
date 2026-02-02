@@ -40,6 +40,10 @@ class ARISConfig:
     OPENAI_MODEL: str = os.getenv('OPENAI_MODEL', 'gpt-4o')
     CEREBRAS_MODEL: str = os.getenv('CEREBRAS_MODEL', 'llama-3.3-70b')
     
+    # Dual-Model Strategy: Simple queries use a fast model, Deep queries use a powerful model
+    SIMPLE_QUERY_MODEL = os.getenv('SIMPLE_QUERY_MODEL', 'gpt-4o')  # Best model for simple queries
+    DEEP_QUERY_MODEL = os.getenv('DEEP_QUERY_MODEL', 'gpt-4o')      # Best model for deep research
+    
     # =========================================================================
     # VECTOR STORE CONFIGURATION
     # =========================================================================
@@ -56,6 +60,12 @@ class ARISConfig:
     # S3 Storage Configuration
     ENABLE_S3_STORAGE: bool = os.getenv('ENABLE_S3_STORAGE', 'true').lower() == 'true'
     AWS_S3_BUCKET: str = os.getenv('AWS_S3_BUCKET', 'intelycx-waseem-s3-bucket')
+    
+    # =========================================================================
+    # 🎯 DOCUMENT REGISTRY CONFIGURATION
+    # =========================================================================
+    # Replaces local file storage with OpenSearch index
+    DOCUMENT_REGISTRY_INDEX: str = os.getenv('DOCUMENT_REGISTRY_INDEX', 'aris-registry-metadata')
     
     # =========================================================================
     # 🎯 CHUNKING CONFIGURATION - Optimized for Accuracy
@@ -240,7 +250,9 @@ class ARISConfig:
             'use_cerebras': cls.USE_CEREBRAS,
             'embedding_model': cls.EMBEDDING_MODEL,
             'openai_model': cls.OPENAI_MODEL,
-            'cerebras_model': cls.CEREBRAS_MODEL
+            'cerebras_model': cls.CEREBRAS_MODEL,
+            'simple_query_model': cls.SIMPLE_QUERY_MODEL,
+            'deep_query_model': cls.DEEP_QUERY_MODEL
         }
     
     @classmethod

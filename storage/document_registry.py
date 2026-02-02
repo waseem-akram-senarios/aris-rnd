@@ -1,473 +1,312 @@
 """
-Shared document registry for storing document metadata.
-Thread-safe operations for concurrent access from FastAPI and Streamlit.
+Shared document registry using OpenSearch as the backend database.
+Replaces file-based JSON storage to eliminate race conditions and improve scalability.
 """
 import os
 import json
-import threading
+import logging
 import time
-import fcntl
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from datetime import datetime
-from pathlib import Path
-from shared.utils.s3_service import S3Service
+import boto3
+from boto3 import Session
+from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth, NotFoundError
 from shared.config.settings import ARISConfig
 
+logger = logging.getLogger(__name__)
 
 class DocumentRegistry:
-    """Thread-safe document metadata registry"""
+    """
+    OpenSearch-backed Document Registry.
+    Stores document metadata in a dedicated OpenSearch index.
+    """
     
-    def __init__(self, registry_path: str = "storage/document_registry.json"):
+    def __init__(self, registry_path: str = None):
         """
-        Initialize document registry.
+        Initialize OpenSearch registry.
         
         Args:
-            registry_path: Path to JSON file for storing metadata
+            registry_path: Ignored, kept for backward compatibility.
         """
-        self.registry_path = registry_path
-        self._lock = threading.Lock()
-        self._version_file = f"{registry_path}.version"
-        self._ensure_directory()
+        self.index_name = ARISConfig.DOCUMENT_REGISTRY_INDEX
+        self.client = self._initialize_client()
+        self._ensure_index_exists()
         
-        # Initialize S3 Service for synchronization
-        self.s3_service = S3Service()
-        self.s3_registry_key = f"configs/{os.path.basename(registry_path)}"
+    def _initialize_client(self) -> OpenSearch:
+        """Initialize OpenSearch client."""
+        host = ARISConfig.AWS_OPENSEARCH_DOMAIN
+        region = ARISConfig.AWS_OPENSEARCH_REGION
         
-        # Sync from S3 on startup if enabled
-        if ARISConfig.ENABLE_S3_STORAGE:
-            self._sync_from_s3()
+        if not host:
+            raise ValueError("AWS_OPENSEARCH_DOMAIN not configured")
             
-        self._last_loaded_version = 0.0
-        self._lock_file = f"{self.registry_path}.lock"
-        self._load_registry()
-    
-    def _ensure_directory(self):
-        """Ensure storage directory exists"""
-        Path(self.registry_path).parent.mkdir(parents=True, exist_ok=True)
-    
-    def _load_registry(self):
-        """Load registry from disk"""
-        if os.path.exists(self.registry_path):
+        credentials = Session().get_credentials()
+
+        # If host doesn't look like a URL (no dots), assume it's a domain name and resolve it
+        if '.' not in host and 'localhost' not in host:
             try:
-                with open(self.registry_path, 'r', encoding='utf-8') as f:
-                    self._documents = json.load(f)
-                
-                # Update last loaded version from version file
-                if os.path.exists(self._version_file):
-                    try:
-                        with open(self._version_file, 'r') as vf:
-                            self._last_loaded_version = float(vf.read().strip())
-                    except:
-                        self._last_loaded_version = os.path.getmtime(self.registry_path)
-                else:
-                    self._last_loaded_version = os.path.getmtime(self.registry_path)
-                    
-            except (json.JSONDecodeError, IOError) as e:
-                # If file is corrupted or can't be read, start fresh
-                self._documents = {}
-                self._last_loaded_version = 0.0
-        else:
-            self._documents = {}
-            self._last_loaded_version = 0.0
+                opensearch_client = boto3.client(
+                    'opensearch',
+                    region_name=region,
+                    aws_access_key_id=ARISConfig.AWS_OPENSEARCH_ACCESS_KEY_ID,
+                    aws_secret_access_key=ARISConfig.AWS_OPENSEARCH_SECRET_ACCESS_KEY
+                )
+                response = opensearch_client.describe_domain(DomainName=host)
+                host = response['DomainStatus']['Endpoint']
+                logger.info(f"Resolved OpenSearch domain '{ARISConfig.AWS_OPENSEARCH_DOMAIN}' to endpoint: {host}")
+            except Exception as e:
+                logger.warning(f"Failed to resolve OpenSearch domain '{host}': {e}. Using as-is.")
 
-    def _sync_from_s3(self):
-        """Try to download the registry from S3 if it's newer or local is missing."""
-        if not self.s3_service.enabled:
-            return
-
-        try:
-            # For simplicity, we just download it on startup if it exists in S3
-            # In a more advanced version, we could check ETag or last modified
-            if self.s3_service.download_file(self.s3_registry_key, self.registry_path):
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(f"🔄 Synced document registry from S3: {self.s3_registry_key}")
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"⚠️ Failed to sync registry from S3: {e}")
-    
-    def _save_registry(self):
-        """Save registry to disk - simplified atomic write without flock for debugging"""
-        try:
-            # Write to temp file first, then rename (atomic operation)
-            temp_path = f"{self.registry_path}.tmp"
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                json.dump(self._documents, f, indent=2, ensure_ascii=False)
-            
-            os.replace(temp_path, self.registry_path)
-            
-            # Update version file and memory bookmark
-            current_time = time.time()
-            with open(self._version_file, 'w') as vf:
-                vf.write(str(current_time))
-            
-            self._last_loaded_version = current_time
-                
-            # Sync to S3 if enabled
-            if ARISConfig.ENABLE_S3_STORAGE:
-                self._sync_to_s3()
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ Failed to save document registry: {e}")
-                
-            # Sync to S3 if enabled
-            if ARISConfig.ENABLE_S3_STORAGE:
-                self._sync_to_s3()
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"❌ Failed to save document registry: {e}")
-                
-        except IOError as e:
-            # Log error but don't fail
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Failed to save document registry: {e}")
-
-    def _sync_to_s3(self):
-        """Upload the local registry to S3."""
-        if not self.s3_service.enabled:
-            return
-
-        try:
-            self.s3_service.upload_file(self.registry_path, self.s3_registry_key, content_type="application/json")
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"⚠️ Failed to upload registry to S3: {e}")
-    
-    def add_document(self, document_id: str, metadata: Dict):
-        """
-        Add or update document metadata.
+        # Clean host URL
+        if host.startswith('https://'):
+            host = host.replace('https://', '')
+        elif host.startswith('http://'):
+            host = host.replace('http://', '')
         
-        Args:
-            document_id: Unique document identifier
-            metadata: Document metadata dictionary
-        """
-        with self._lock:
-            # Check if document already exists (for version tracking)
-            existing_doc = self._documents.get(document_id)
+        # Use boto3 credentials if available
+        if credentials:
+            auth = AWSV4SignerAuth(credentials, region, 'es')
+        else:
+            # Fallback to manual credentials from config
+            try:
+                from requests_aws4auth import AWS4Auth
+                if ARISConfig.AWS_OPENSEARCH_ACCESS_KEY_ID and ARISConfig.AWS_OPENSEARCH_SECRET_ACCESS_KEY:
+                    auth = AWS4Auth(
+                        ARISConfig.AWS_OPENSEARCH_ACCESS_KEY_ID,
+                        ARISConfig.AWS_OPENSEARCH_SECRET_ACCESS_KEY,
+                        region,
+                        'es'
+                    )
+                else:
+                    logger.warning("No OpenSearch credentials found (env vars or ~/.aws/credentials)")
+                    auth = None
+            except ImportError:
+                logger.warning("requests_aws4auth not installed, trying unauthenticated (likely to fail)")
+                auth = None
+
+        return OpenSearch(
+            hosts=[{'host': host, 'port': 443}],
+            http_auth=auth,
+            use_ssl=True,
+            verify_certs=True,
+            connection_class=RequestsHttpConnection
+        )
+
+    def _ensure_index_exists(self):
+        """Create registry index if it doesn't exist."""
+        try:
+            if not self.client.indices.exists(index=self.index_name):
+                mapping = {
+                    "mappings": {
+                        "properties": {
+                            "document_id": {"type": "keyword"},
+                            "document_name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                            "status": {"type": "keyword"},
+                            "created_at": {"type": "date"},
+                            "updated_at": {"type": "date"},
+                            "file_hash": {"type": "keyword"},
+                            "parser_used": {"type": "keyword"},
+                            "metadata": {"type": "object", "dynamic": True}
+                        }
+                    }
+                }
+                self.client.indices.create(index=self.index_name, body=mapping)
+                logger.info(f"Created registry index: {self.index_name}")
+        except Exception as e:
+            logger.error(f"Error checking/creating registry index: {e}")
+
+    def add_document(self, document_id: str, metadata: Dict):
+        """Add or update document metadata."""
+        try:
+            # Ensure document_id is in the metadata
+            metadata['document_id'] = document_id
             
-            # Add timestamp if not present
+            # Add timestamps
             if 'created_at' not in metadata:
-                if existing_doc and existing_doc.get('created_at'):
-                    metadata['created_at'] = existing_doc['created_at']
+                # Check if exists to preserve created_at
+                existing = self.get_document(document_id)
+                if existing and 'created_at' in existing:
+                    metadata['created_at'] = existing['created_at']
                 else:
                     metadata['created_at'] = datetime.now().isoformat()
             
-            # Track version if document exists
-            if existing_doc:
-                # Increment version
-                existing_version = existing_doc.get('version_info', {}).get('version', 1)
-                new_version = existing_version + 1
-                
-                # Store version history
-                if 'version_history' not in metadata.get('version_info', {}):
-                    version_info = metadata.get('version_info', {})
-                    if 'version_history' not in version_info:
-                        version_info['version_history'] = []
-                    
-                    # Add previous version to history
-                    version_info['version_history'].append({
-                        'version': existing_version,
-                        'updated_at': existing_doc.get('updated_at'),
-                        'changes': self._detect_changes(existing_doc, metadata)
-                    })
-                    version_info['version'] = new_version
-                    metadata['version_info'] = version_info
-                else:
-                    version_info = metadata.get('version_info', {})
-                    version_info['version'] = new_version
-            
             metadata['updated_at'] = datetime.now().isoformat()
             
-            self._documents[document_id] = metadata
-            self._save_registry()
-    
-    def _detect_changes(self, old_metadata: Dict, new_metadata: Dict) -> List[str]:
-        """
-        Detect changes between old and new metadata.
-        
-        Args:
-            old_metadata: Previous metadata
-            new_metadata: New metadata
-        
-        Returns:
-            List of change descriptions
-        """
-        changes = []
-        
-        # Check key fields
-        key_fields = ['document_name', 'parser_used', 'chunks_created', 'images_stored', 'file_hash']
-        for field in key_fields:
-            if old_metadata.get(field) != new_metadata.get(field):
-                changes.append(f"{field} changed from {old_metadata.get(field)} to {new_metadata.get(field)}")
-        
-        return changes
-    
-    def find_duplicate(self, document_name: str, file_hash: Optional[str] = None) -> Optional[Dict]:
-        """
-        Find existing document by name or file hash.
-        
-        Args:
-            document_name: Name of the document file
-            file_hash: Optional MD5 hash of file content
-        
-        Returns:
-            Document metadata with document_id if found, None otherwise
-        """
-        with self._lock:
-            for doc_id, doc in self._documents.items():
-                # Check by exact filename match
-                if doc.get('document_name') == document_name:
-                    result = dict(doc)
-                    result['document_id'] = doc_id
-                    return result
-                
-                # Check by file hash if provided
-                if file_hash and doc.get('file_hash') == file_hash:
-                    result = dict(doc)
-                    result['document_id'] = doc_id
-                    return result
-        
-        return None
-    
-    def find_documents_by_name(self, document_name: str) -> List[Dict]:
-        """
-        Find all documents with a given name (may have multiple versions from different parsers).
-        
-        Args:
-            document_name: Name of the document file
-        
-        Returns:
-            List of document metadata dicts with document_id included
-        """
-        with self._lock:
-            results = []
-            for doc_id, doc in self._documents.items():
-                if doc.get('document_name') == document_name:
-                    result = dict(doc)
-                    result['document_id'] = doc_id
-                    results.append(result)
-            return results
-    
-    def find_document_by_name_and_parser(self, document_name: str, parser_used: str) -> Optional[Dict]:
-        """
-        Find document by name AND parser combination (unique identifier for updates).
-        
-        Args:
-            document_name: Name of the document file
-            parser_used: Parser used for processing (e.g., 'pymupdf', 'docling')
-        
-        Returns:
-            Document metadata with document_id if found, None otherwise
-        """
-        with self._lock:
-            for doc_id, doc in self._documents.items():
-                if (doc.get('document_name') == document_name and 
-                    doc.get('parser_used', '').lower() == parser_used.lower()):
-                    result = dict(doc)
-                    result['document_id'] = doc_id
-                    return result
-        
-        return None
-    
-    def mark_for_reindex(self, document_id: str) -> bool:
-        """
-        Mark a document for re-indexing (sets status to 'pending_reindex').
-        
-        Args:
-            document_id: Document identifier
-        
-        Returns:
-            True if marked, False if document not found
-        """
-        with self._lock:
-            if document_id in self._documents:
-                self._documents[document_id]['status'] = 'pending_reindex'
-                self._documents[document_id]['updated_at'] = datetime.now().isoformat()
-                self._save_registry()
-                return True
-            return False
-    
-    def add_document_version(self, document_id: str, metadata: Dict):
-        """
-        Add new version of existing document.
-        
-        Args:
-            document_id: Document identifier
-            metadata: New version metadata
-        """
-        self.add_document(document_id, metadata)
-    
-    def get_document_versions(self, document_id: str) -> List[Dict]:
-        """
-        Get all versions of a document.
-        
-        Args:
-            document_id: Document identifier
-        
-        Returns:
-            List of version metadata dictionaries
-        """
-        with self._lock:
-            doc = self._documents.get(document_id)
-            if not doc:
-                return []
-            
-            versions = [doc]  # Current version
-            
-            # Get version history if available
-            version_info = doc.get('version_info', {})
-            version_history = version_info.get('version_history', [])
-            
-            # Note: Full version history would require storing all versions
-            # For now, we return current version with history metadata
-            return versions
-    
+            # Version tracking (simplified)
+            if 'version_info' not in metadata:
+                metadata['version_info'] = {'version': 1}
+            else:
+                current_ver = metadata['version_info'].get('version', 1)
+                metadata['version_info']['version'] = current_ver + 1
+
+            self.client.index(
+                index=self.index_name,
+                id=document_id,
+                body=metadata,
+                refresh=True  # Ensure immediate consistency
+            )
+            logger.info(f"Added/Updated document {document_id} in registry")
+        except Exception as e:
+            logger.error(f"Failed to add document {document_id}: {e}")
+            raise
+
     def get_document(self, document_id: str) -> Optional[Dict]:
-        """
-        Get document metadata by ID. Auto-reloads if modified on disk.
-        
-        Args:
-            document_id: Document identifier
-        
-        Returns:
-            Document metadata or None if not found
-        """
-        # Check for external changes before reading
-        conflict = self.check_for_conflicts()
-        if conflict:
-            self.reload_from_disk()
-            
-        with self._lock:
-            return self._documents.get(document_id)
-    
+        """Get document metadata by ID."""
+        try:
+            response = self.client.get(index=self.index_name, id=document_id)
+            return response['_source']
+        except NotFoundError:
+            return None
+        except Exception as e:
+            logger.error(f"Error getting document {document_id}: {e}")
+            return None
+
     def list_documents(self) -> List[Dict]:
-        """
-        List all documents. Auto-reloads if modified on disk.
-        
-        Returns:
-            List of document metadata dictionaries (with document_id included)
-        """
-        # Check for external changes before reading
-        conflict = self.check_for_conflicts()
-        if conflict:
-            self.reload_from_disk()
-            
-        with self._lock:
-            # Include document_id in each document
-            result = []
-            for doc_id, doc in self._documents.items():
-                doc_with_id = dict(doc)  # Copy to avoid modifying original
-                if 'document_id' not in doc_with_id or not doc_with_id.get('document_id'):
-                    doc_with_id['document_id'] = doc_id
-                result.append(doc_with_id)
-            return result
-    
+        """List all documents."""
+        try:
+            # Search all using scan/scroll or high limit
+            # For registry, 10000 is a safe reasonable limit for now
+            response = self.client.search(
+                index=self.index_name,
+                body={"query": {"match_all": {}}, "size": 1000}
+            )
+            return [hit['_source'] for hit in response['hits']['hits']]
+        except Exception as e:
+            logger.error(f"Error listing documents: {e}")
+            return []
+
     def remove_document(self, document_id: str) -> bool:
-        """
-        Remove document from registry.
-        
-        Args:
-            document_id: Document identifier
-        
-        Returns:
-            True if removed, False if not found
-        """
-        with self._lock:
-            if document_id in self._documents:
-                del self._documents[document_id]
-                self._save_registry()
+        """Remove document from registry."""
+        try:
+            self.client.delete(index=self.index_name, id=document_id, refresh=True)
+            logger.info(f"Removed document {document_id} from registry")
+            return True
+        except NotFoundError:
+            return False
+        except Exception as e:
+            logger.error(f"Error removing document {document_id}: {e}")
+            return False
+
+    def find_duplicate(self, document_name: str, file_hash: Optional[str] = None) -> Optional[Dict]:
+        """Find existing document by name or hash."""
+        try:
+            should_clauses = [{"term": {"document_name.keyword": document_name}}]
+            if file_hash:
+                should_clauses.append({"term": {"file_hash": file_hash}})
+            
+            query = {
+                "query": {
+                    "bool": {
+                        "should": should_clauses,
+                        "minimum_should_match": 1
+                    }
+                },
+                "size": 1
+            }
+            response = self.client.search(index=self.index_name, body=query)
+            hits = response['hits']['hits']
+            if hits:
+                return hits[0]['_source']
+            return None
+        except Exception as e:
+            logger.error(f"Error finding duplicate: {e}")
+            return None
+
+    def find_documents_by_name(self, document_name: str) -> List[Dict]:
+        """Find all documents with a given name."""
+        try:
+            query = {
+                "query": {
+                    "term": {"document_name.keyword": document_name}
+                }
+            }
+            response = self.client.search(index=self.index_name, body=query)
+            return [hit['_source'] for hit in response['hits']['hits']]
+        except Exception as e:
+            logger.error(f"Error finding documents by name: {e}")
+            return []
+
+    def find_document_by_name_and_parser(self, document_name: str, parser_used: str) -> Optional[Dict]:
+        """Find document by name and parser."""
+        try:
+            query = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"document_name.keyword": document_name}},
+                            {"term": {"parser_used": parser_used}}
+                        ]
+                    }
+                },
+                "size": 1
+            }
+            response = self.client.search(index=self.index_name, body=query)
+            hits = response['hits']['hits']
+            if hits:
+                return hits[0]['_source']
+            return None
+        except Exception as e:
+            logger.error(f"Error finding document by name/parser: {e}")
+            return None
+
+    def mark_for_reindex(self, document_id: str) -> bool:
+        """Mark document for re-indexing."""
+        try:
+            doc = self.get_document(document_id)
+            if doc:
+                doc['status'] = 'pending_reindex'
+                self.add_document(document_id, doc)
                 return True
             return False
-    
+        except Exception as e:
+            logger.error(f"Error marking for reindex: {e}")
+            return False
+
     def clear_all(self):
-        """Clear all documents from registry"""
-        with self._lock:
-            self._documents = {}
-            self._save_registry()
-    
+        """Clear all documents from registry (Dangerous)."""
+        try:
+            self.client.delete_by_query(
+                index=self.index_name,
+                body={"query": {"match_all": {}}},
+                refresh=True
+            )
+            logger.info("Cleared all documents from registry")
+        except Exception as e:
+            logger.error(f"Error clearing registry: {e}")
+
+    # --- Backward Compatibility Methods (No-ops or simple wrappers) ---
+
+    def _ensure_directory(self):
+        pass
+
+    def _sync_from_s3(self):
+        pass  # Data is in OpenSearch, no file sync needed
+
+    def _sync_to_s3(self):
+        pass  # Data is persisted in OpenSearch
+
     def get_sync_status(self) -> Dict:
-        """
-        Get synchronization status.
-        
-        Returns:
-            Dictionary with sync status information
-        """
-        with self._lock:
-            last_update = None
-            if self._documents:
-                # Find most recent update
-                updates = [doc.get('updated_at') for doc in self._documents.values() if doc.get('updated_at')]
-                if updates:
-                    last_update = max(updates)
-            
-            # Get version timestamp
-            version_timestamp = None
-            if os.path.exists(self._version_file):
-                try:
-                    with open(self._version_file, 'r') as vf:
-                        version_timestamp = float(vf.read().strip())
-                except (ValueError, IOError):
-                    pass
-            
+        """Get simplified sync status."""
+        try:
+            count = self.client.count(index=self.index_name)['count']
             return {
-                'total_documents': len(self._documents),
-                'last_update': last_update,
-                'registry_path': self.registry_path,
-                'registry_exists': os.path.exists(self.registry_path),
-                'version_timestamp': version_timestamp
+                'total_documents': count,
+                'backend': 'opensearch',
+                'index': self.index_name
             }
-    
+        except Exception:
+            return {'status': 'error', 'backend': 'opensearch'}
+
     def check_for_conflicts(self) -> Optional[Dict]:
-        """
-        Check if registry was modified externally.
-        
-        Returns:
-            Conflict info dict if conflict detected, None otherwise
-        """
-        if not os.path.exists(self.registry_path):
-            return None
-        
-        # Check version file
-        if os.path.exists(self._version_file):
-            try:
-                with open(self._version_file, 'r') as vf:
-                    disk_version = float(vf.read().strip())
-                
-                # Get current in-memory version
-                memory_version = self._last_loaded_version
-                
-                # If disk version is newer, there's a conflict
-                if disk_version > memory_version:
-                    return {
-                        'conflict': True,
-                        'message': 'Registry was modified externally',
-                        'disk_version': disk_version,
-                        'memory_version': memory_version
-                    }
-            except (ValueError, IOError):
-                pass
-        
-        return None
-    
+        return None  # No file conflicts in DB
+
     def reload_from_disk(self) -> bool:
-        """
-        Reload registry from disk, discarding in-memory changes.
-        
-        Returns:
-            True if reloaded successfully
-        """
-        with self._lock:
-            try:
-                self._load_registry()
-                return True
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Failed to reload registry: {e}")
-                return False
+        return True  # Always fresh from DB
+
+    def get_document_versions(self, document_id: str) -> List[Dict]:
+        doc = self.get_document(document_id)
+        return [doc] if doc else []
+
+    def add_document_version(self, document_id: str, metadata: Dict):
+        self.add_document(document_id, metadata)
 

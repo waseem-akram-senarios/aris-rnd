@@ -64,6 +64,10 @@ class RetrievalEngine:
         self.openai_model = openai_model
         self.cerebras_model = cerebras_model
         
+        # Dual-Model strategy: Track simple and deep models
+        self.simple_query_model = ARISConfig.SIMPLE_QUERY_MODEL
+        self.deep_query_model = ARISConfig.DEEP_QUERY_MODEL
+        
         # Vector store configuration - REQUIRE OpenSearch
         self.vector_store_type = vector_store_type.lower()
         if self.vector_store_type != 'opensearch':
@@ -1864,6 +1868,14 @@ class RetrievalEngine:
         if use_agentic_rag and (not self.use_cerebras) and (not self.openai_api_key):
             use_agentic_rag = False
         
+        # Select target model based on search mode (Agent vs Simple)
+        if use_agentic_rag:
+            target_llm_model = self.deep_query_model
+            logger.info(f"🧠 Agent Mode detected - switching to DEEP model: {target_llm_model}")
+        else:
+            target_llm_model = self.simple_query_model
+            logger.info(f"⚡ Simple Mode detected - switching to FAST model: {target_llm_model}")
+
         # Agentic RAG: Decompose query and perform multi-query retrieval
         if use_agentic_rag:
             try:
@@ -1891,6 +1903,8 @@ class RetrievalEngine:
                 if len(sub_queries) == 1:
                     logger.info("Agentic RAG: Single query after decomposition, using standard retrieval")
                     use_agentic_rag = False
+                    target_llm_model = self.simple_query_model
+                    logger.info(f"⚡ Reverting to FAST model for single query: {target_llm_model}")
                 else:
                     # Perform multi-query retrieval
                     # Note: Using sequential execution to avoid ThreadPoolExecutor issues with Streamlit/OpenSearch connections
@@ -1923,6 +1937,8 @@ class RetrievalEngine:
                     if not all_chunks:
                         logger.warning("Agentic RAG: No chunks retrieved from any sub-query, falling back to standard retrieval")
                         use_agentic_rag = False
+                        target_llm_model = self.simple_query_model
+                        logger.info(f"⚡ Reverting to FAST model: {target_llm_model}")
                     else:
                         # Deduplicate chunks
                         unique_chunks = self._deduplicate_chunks(
@@ -1976,11 +1992,14 @@ class RetrievalEngine:
                             question=question,
                             sub_queries=sub_queries,
                             relevant_docs=relevant_docs,
-                            query_start_time=query_start_time
+                            query_start_time=query_start_time,
+                            model=target_llm_model  # Pass target model to synthesis
                         )
             except Exception as e:
                 logger.warning(f"Agentic RAG failed: {e}. Falling back to standard retrieval.", exc_info=True)
                 use_agentic_rag = False
+                target_llm_model = self.simple_query_model # Update model if falling back
+                logger.info(f"⚡ Reverting to FAST model after error: {target_llm_model}")
         
         # Standard RAG flow (or fallback from Agentic RAG)
         # Initialize flag to track if we should skip retriever logic
@@ -3886,14 +3905,23 @@ class RetrievalEngine:
                 f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"E","location":"rag_system.py:2747","message":"Context before LLM query","data":{"context_length":len(context),"context_tokens":context_tokens,"has_image_section":has_image_section,"image_section_start":image_section_start,"image_section_length":image_section_length,"context_preview":context[:200]},"timestamp":int(time_module.time()*1000)})+"\n")
         except: pass
         # #endregion
-        
+
+        # Choose synthesis function based on backend (Cerebras or OpenAI)
         if self.use_cerebras:
-            answer, response_tokens = self._query_cerebras(question, context, relevant_docs, mentioned_documents, question_doc_number, response_language=response_language)
+            answer, response_tokens = self._query_cerebras(
+                question, context, relevant_docs, 
+                mentioned_documents, question_doc_number, response_language,
+                model=target_llm_model
+            )
         else:
             if not self.openai_api_key:
                 answer, response_tokens = self._query_offline(question, context, relevant_docs)
             else:
-                answer, response_tokens = self._query_openai(question, context, relevant_docs, mentioned_documents, question_doc_number, response_language=response_language)
+                answer, response_tokens = self._query_openai(
+                    question, context, relevant_docs, 
+                    mentioned_documents, question_doc_number, response_language,
+                    model=target_llm_model
+                )
         
         response_time = time_module.time() - query_start_time
         total_tokens = context_tokens + response_tokens
@@ -3965,7 +3993,7 @@ class RetrievalEngine:
         answer = "OpenAI is not configured (missing OPENAI_API_KEY). Retrieved context:\n" + "\n".join(parts)
         return answer, self.count_tokens(answer)
     
-    def _query_openai(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None, response_language: str = None) -> tuple:
+    def _query_openai(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None, response_language: str = None, model: str = None) -> tuple:
         """
         Query OpenAI with maximum accuracy settings.
         
@@ -3976,9 +4004,13 @@ class RetrievalEngine:
             mentioned_documents: List of documents mentioned in the question (for filtering)
             question_doc_number: Document number extracted from question (e.g., 1, 2)
             response_language: Language to answer in
+            model: Specific model to use (defaults to self.openai_model)
         """
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        
+        # Select model: use provided model, then instance model, then default
+        target_model = model or self.openai_model or ARISConfig.OPENAI_MODEL
         
         # Truncate context if it exceeds model's token limit
         # Most OpenAI models have 128k context limit, reserve space for prompt and response
@@ -4256,7 +4288,7 @@ Answer:"""
                 error_answer = f"Error querying OpenAI: {error_msg}"
             return error_answer, self.count_tokens(error_answer)
     
-    def _query_cerebras(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None, response_language: str = None) -> tuple:
+    def _query_cerebras(self, question: str, context: str, relevant_docs: List = None, mentioned_documents: List = None, question_doc_number: int = None, response_language: str = None, model: str = None) -> tuple:
         """Query Cerebras API with maximum accuracy settings
         
         Args:
@@ -4266,6 +4298,7 @@ Answer:"""
             mentioned_documents: List of documents mentioned in the question (for filtering)
             question_doc_number: Document number extracted from question (e.g., 1, 2)
             response_language: Language to answer in
+            model: Specific model to use (defaults to self.cerebras_model)
         """
         
         # Build language instruction
@@ -5063,26 +5096,27 @@ Answer:"""
                 return False
             return True
         
-        # PRIORITY 0: TEXT MARKERS (HIGHEST PRIORITY - these are authoritative)
-        # FIX: Text markers like "--- Page X ---" are more reliable than metadata
-        # because metadata might be set incorrectly during ingestion
-        
-        # Check for "--- Page X ---" markers ANYWHERE in the text (most reliable)
+        # PRIORITY 1: METADATA (Authoritative physical aligned metadata)
+        # Check for explicitly stored page number in metadata
+        meta_page = doc.metadata.get('page')
+        if meta_page is not None:
+            try:
+                page_val = int(meta_page)
+                if validate_against_doc(page_val):
+                    # We trust metadata more if it's explicitly set as 'page' 
+                    # and not just a broad document-level 'pages' count.
+                    return page_val, 0.95
+            except (ValueError, TypeError):
+                pass
+
+        # PRIORITY 2: TEXT MARKERS
         # Find ALL page markers and use the FIRST one (indicates starting page of content)
         page_markers = re.findall(r'---\s*Page\s+(\d+)\s*---', chunk_text)
         if page_markers:
             first_page = int(page_markers[0])
             if validate_against_doc(first_page):
-                logger.info(f"📄 [TEXT MARKER] Page {first_page} from '--- Page X ---' marker (found {len(page_markers)} markers: {page_markers[:5]})")
-                return first_page, 1.0  # Highest confidence - text markers are authoritative
-        
-        # Check for HTML-style page markers (e.g., "<!-- page=4 -->")
-        html_page_match = re.search(r'<!--\s*page\s*=\s*(\d+)\s*-->', chunk_text, re.IGNORECASE)
-        if html_page_match:
-            html_page_num = int(html_page_match.group(1))
-            if validate_against_doc(html_page_num):
-                logger.info(f"📄 [TEXT MARKER] Page {html_page_num} from HTML marker (<!-- page=X -->)")
-                return html_page_num, 1.0
+                return first_page, 0.90
+
 
         # Check for "Source: Page X" patterns (common in some document formats)
         source_page_match = re.search(r'Source:.*?Page\s+(\d+)', chunk_text, re.IGNORECASE)
@@ -6452,13 +6486,13 @@ Answer:"""
         # This would require embedding comparison which is expensive
         
         return unique_chunks
-    
     def _synthesize_agentic_results(
         self,
         question: str,
         sub_queries: List[str],
         relevant_docs: List,
-        query_start_time: float
+        query_start_time: float,
+        model: str = None
     ) -> Dict:
         """
         Synthesize results from multiple sub-queries using LLM.
@@ -6708,12 +6742,12 @@ Answer:"""
         
         # Generate answer using synthesis prompt
         if self.use_cerebras:
-            answer, response_tokens = self._query_cerebras_agentic(question, sub_queries, context, relevant_docs)
+            answer, response_tokens = self._query_cerebras_agentic(question, sub_queries, context, relevant_docs, model=model)
         else:
             if not self.openai_api_key:
                 answer, response_tokens = self._query_offline(question, context, relevant_docs)
             else:
-                answer, response_tokens = self._query_openai_agentic(question, sub_queries, context, relevant_docs)
+                answer, response_tokens = self._query_openai_agentic(question, sub_queries, context, relevant_docs, model=model)
         
         response_time = time_module.time() - query_start_time
         total_tokens = context_tokens + response_tokens
@@ -6761,7 +6795,8 @@ Answer:"""
         question: str,
         sub_queries: List[str],
         context: str,
-        relevant_docs: List = None
+        relevant_docs: List = None,
+        model: str = None
     ) -> tuple:
         """
         Query OpenAI with Agentic RAG synthesis prompt.
@@ -6778,6 +6813,9 @@ Answer:"""
         from openai import OpenAI
         from shared.config.settings import ARISConfig
         client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        
+        # Select target model
+        target_model = model or self.openai_model or ARISConfig.OPENAI_MODEL
         
         # Truncate context if it exceeds model's token limit
         MAX_CONTEXT_TOKENS = 100000  # Reserve ~28k for prompt, question, and response
@@ -6965,7 +7003,8 @@ Answer:"""
         question: str,
         sub_queries: List[str],
         context: str,
-        relevant_docs: List = None
+        relevant_docs: List = None,
+        model: str = None
     ) -> tuple:
         """
         Query Cerebras with Agentic RAG synthesis prompt.

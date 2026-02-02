@@ -231,7 +231,11 @@ class S3DocumentStorage:
             return True
             
         except ClientError as e:
-            logger.error(f"S3 delete failed: {e}")
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            if error_code == 'AccessDenied':
+                logger.warning(f"S3 delete permission denied. IAM user needs s3:DeleteObject and s3:ListObjectsV2 permissions on bucket '{self.bucket_name}'")
+            else:
+                logger.error(f"S3 delete failed: {error_code} - {e}")
             return False
         except Exception as e:
             logger.error(f"S3 delete error: {str(e)}")
@@ -242,7 +246,7 @@ class S3DocumentStorage:
         List all documents in S3 storage.
         
         Returns:
-            List of document info dicts
+            List of document info dicts (empty list if permission denied or error)
         """
         documents = []
         
@@ -277,7 +281,11 @@ class S3DocumentStorage:
             return documents
             
         except ClientError as e:
-            logger.error(f"S3 list failed: {e}")
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            if error_code == 'AccessDenied':
+                logger.warning(f"S3 list permission denied. IAM user needs s3:ListObjectsV2 permission on bucket '{self.bucket_name}'. Using local registry instead.")
+            else:
+                logger.error(f"S3 list failed: {error_code} - {e}")
             return []
         except Exception as e:
             logger.error(f"S3 list error: {str(e)}")

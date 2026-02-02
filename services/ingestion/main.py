@@ -106,11 +106,11 @@ app.add_middleware(
 
 @app.middleware("http")
 async def auto_sync_middleware(request: Request, call_next):
-    """Middleware to automatically sync state before operations."""
+    """Middleware to automatically sync state before and after operations."""
     request_id = request.headers.get("X-Request-ID", "internal")
     
     # Auto-sync before critical operations
-    if sync_manager and request.url.path in ["/ingest", "/process", "/health", "/status"]:
+    if sync_manager and request.url.path in ["/ingest", "/process", "/health", "/status", "/ingest/full"]:
         try:
             sync_manager.check_and_sync()
         except Exception as e:
@@ -120,10 +120,27 @@ async def auto_sync_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     
-    # Auto-sync after document ingestion operations to propagate changes
-    if sync_manager and request.url.path in ["/ingest", "/process"]:
+    # AUTOMATIC BROADCAST SYNC after document ingestion operations
+    # This ensures ALL services (Gateway, Retrieval, UI, MCP) see the new document immediately
+    if sync_manager and request.url.path in ["/ingest", "/process", "/ingest/full"] and response.status_code in [200, 201]:
         try:
-            sync_manager.force_full_sync()
+            # First, sync locally
+            sync_manager.instant_sync()
+            
+            # Then broadcast to all services via Gateway
+            import httpx
+            gateway_url = os.getenv("GATEWAY_URL", "http://127.0.0.1:8500")
+            
+            try:
+                with httpx.Client(timeout=5.0) as client:
+                    broadcast_response = client.post(f"{gateway_url}/sync/broadcast")
+                    if broadcast_response.status_code == 200:
+                        logger.info(f"📡 [Ingestion] Auto-broadcast sync to all services completed")
+                    else:
+                        logger.debug(f"📡 [Ingestion] Broadcast returned: {broadcast_response.status_code}")
+            except Exception as broadcast_err:
+                logger.debug(f"📡 [Ingestion] Broadcast failed (services may sync on next interval): {broadcast_err}")
+                
         except Exception as e:
             logger.debug(f"Post-operation sync failed: {e}")
     

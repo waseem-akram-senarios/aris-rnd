@@ -54,17 +54,18 @@ mcp = FastMCP(
     name="ARIS RAG MCP Server",
     instructions="""MCP server for ARIS RAG system - document ingestion and semantic search.
 
-ACCURACY FEATURES:
-- Hybrid search combining semantic (vector) and keyword (BM25) search
-- FlashRank cross-encoder reranking for precision
-- Agentic RAG with automatic query decomposition for complex questions
-- Multi-language support with auto-translation
-- Confidence scores for result quality assessment
+This server provides professional-grade RAG (Retrieval Augmented Generation) tools optimized for accuracy and speed.
+
+MODES:
+1. Quick Query (rag_quick_query): Optimized for speed. Uses a fast model (gpt-4o-mini). Best for simple questions.
+2. Research Search (rag_research_query): Optimized for depth. Uses a deep model (gpt-4o) with Agentic RAG decomposition. Best for complex research.
 
 TOOLS:
 1. rag_ingest - Add documents (text or S3 URI) with metadata
 2. rag_upload_document - Upload documents directly (PDF, DOCX, TXT, etc.) with base64 encoding
-3. rag_search - Query with filters, returns ranked results with confidence scores
+3. rag_quick_query - FAST search for simple questions (Uses Simple Mode)
+4. rag_research_query - DEEP search for complex research (Uses Agent Mode)
+5. rag_search - General search with configurable toggles (legacy)
 """
 )
 
@@ -207,6 +208,65 @@ def rag_upload_document(
         )
     """
     return mcp_engine.upload_document(file_content, filename, metadata)
+
+
+@mcp.tool()
+def rag_quick_query(
+    query: str,
+    filters: Optional[Dict[str, Any]] = None,
+    k: int = 5,
+    include_answer: bool = True
+) -> Dict[str, Any]:
+    """
+    ⚡ QUICK QUERY: FAST response for simple questions.
+    
+    Uses Simple Mode (gpt-4o-mini) for maximum speed. Best for direct lookups
+    and simple informational questions where speed is prioritized over deep analysis.
+    
+    Args:
+        query: Specific question or lookup (e.g., "What is the contact email?")
+        filters: Metadata constraints (e.g., {"source": "manual.pdf"})
+        k: Number of results to return (default: 5)
+        include_answer: Generate a direct answer (default: True)
+    """
+    return mcp_engine.search(
+        query=query,
+        filters=filters,
+        k=k,
+        search_mode="hybrid",
+        use_agentic_rag=False,  # Force FAST mode
+        include_answer=include_answer
+    )
+
+
+@mcp.tool()
+def rag_research_query(
+    query: str,
+    filters: Optional[Dict[str, Any]] = None,
+    k: int = 15,
+    include_answer: bool = True
+) -> Dict[str, Any]:
+    """
+    🧠 RESEARCH SEARCH: DEEP analysis for complex questions.
+    
+    Uses Agent Mode (gpt-4o) with Query Decomposition. Breaks complex questions 
+    into sub-queries to find information across multiple sections or documents.
+    Best for "How does X work?", "Summarize Y", or multi-part questions.
+    
+    Args:
+        query: Complex research question (e.g., "How do I maintain the EM10 engine?")
+        filters: Metadata constraints
+        k: Number of chunks to analyze (default: 15)
+        include_answer: Generate a comprehensive analysis (default: True)
+    """
+    return mcp_engine.search(
+        query=query,
+        filters=filters,
+        k=k,
+        search_mode="hybrid",
+        use_agentic_rag=True,  # Force DEEP/AGENT mode
+        include_answer=include_answer
+    )
 
 
 @mcp.tool()
@@ -450,6 +510,102 @@ async def list_tools():
             }
         ]
     }
+
+
+# ============================================================================
+# SYNC ENDPOINTS - Real-time cross-service synchronization
+# ============================================================================
+
+# Global sync manager for MCP service
+_mcp_sync_manager = None
+
+def get_mcp_sync_manager():
+    """Get or create sync manager for MCP service."""
+    global _mcp_sync_manager
+    if _mcp_sync_manager is None:
+        from shared.utils.sync_manager import get_sync_manager
+        _mcp_sync_manager = get_sync_manager("mcp")
+    return _mcp_sync_manager
+
+
+@app.post("/sync/force")
+async def force_sync():
+    """Force full synchronization of MCP service state."""
+    try:
+        sync_mgr = get_mcp_sync_manager()
+        result = sync_mgr.force_full_sync()
+        
+        # Clear cached engines to force reload with fresh state
+        global _engine_cache
+        from services.mcp.engine import _engine_cache
+        _engine_cache["retrieval_engine"] = None
+        _engine_cache["ingestion_engine"] = None
+        _engine_cache["document_registry"] = None
+        _engine_cache["initialized"] = False
+        
+        logger.info("✅ [MCP] Force sync completed, caches cleared")
+        
+        return {
+            "success": True,
+            "message": "MCP sync completed and caches cleared",
+            "result": result
+        }
+    except Exception as e:
+        logger.error(f"[MCP] Force sync failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/sync/status")
+async def sync_status():
+    """Get current synchronization status for MCP service."""
+    try:
+        sync_mgr = get_mcp_sync_manager()
+        status = sync_mgr.get_sync_status()
+        
+        return {
+            "success": True,
+            "service": "mcp",
+            "status": status
+        }
+    except Exception as e:
+        logger.error(f"[MCP] Sync status failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/sync/check")
+async def check_sync():
+    """Check for changes and sync if needed."""
+    try:
+        sync_mgr = get_mcp_sync_manager()
+        result = sync_mgr.check_and_sync()
+        
+        return {
+            "success": True,
+            "checked": True,
+            "result": result
+        }
+    except Exception as e:
+        logger.error(f"[MCP] Sync check failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/sync/instant")
+async def instant_sync():
+    """Perform immediate synchronization without waiting for interval."""
+    try:
+        sync_mgr = get_mcp_sync_manager()
+        result = sync_mgr.instant_sync()
+        
+        logger.info("⚡ [MCP] Instant sync completed")
+        
+        return {
+            "success": True,
+            "message": "Instant sync completed",
+            "result": result
+        }
+    except Exception as e:
+        logger.error(f"[MCP] Instant sync failed: {e}")
+        return {"success": False, "error": str(e)}
 
 
 # ============================================================================

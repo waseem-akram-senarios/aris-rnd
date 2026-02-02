@@ -168,7 +168,11 @@ class S3Service:
             return deleted_count
             
         except ClientError as e:
-            logger.error(f"❌ S3 delete_prefix failed for {prefix}: {str(e)}")
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            if error_code == 'AccessDenied':
+                logger.warning(f"⚠️ S3 permission denied for prefix '{prefix}'. IAM user needs s3:ListObjectsV2 and s3:DeleteObject permissions.")
+            else:
+                logger.error(f"❌ S3 delete_prefix failed for {prefix}: {error_code} - {str(e)}")
             return 0
 
     def get_public_url(self, s3_key: str) -> str:

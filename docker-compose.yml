@@ -28,13 +28,13 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./data:/app/data
       - ./storage:/app/storage
+      - ./data:/app/data
       - ./vectorstore:/app/vectorstore
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8501/health | grep -q 'healthy' || exit 1"]
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8501/health | grep -q 'healthy' || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -63,7 +63,7 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8502/health | grep -q 'healthy' || exit 1"]
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8502/health | grep -q 'healthy' || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -92,7 +92,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8500/health | grep -q 'healthy' || exit 1"]
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8500/health | grep -q 'healthy' || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -131,7 +131,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:80/_stcore/health | grep -q 'ok' || exit 1"]
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:80/_stcore/health | grep -q 'ok' || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -178,7 +178,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8503/health | grep -q 'healthy' || exit 1"]
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8503/health | grep -q 'healthy' || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 5
