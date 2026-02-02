@@ -283,26 +283,47 @@ class IngestionEngine:
             chunk.metadata['start_char'] = start_index
             chunk.metadata['end_char'] = end_index
             
-            # Fast-forward to the block that might contain this start_index
-            while block_idx < num_blocks - 1 and page_blocks[block_idx].get('end_char', 0) < start_index:
-                block_idx += 1
+            # Accuracy Upgrade: Use Maximum Overlap for Page Assignment
+            # Instead of just checking where the chunk starts, we calculate which page 
+            # contains the MOST characters from this chunk.
             
-            # Check if this block contains the index
-            current_block = page_blocks[block_idx]
-            if current_block.get('start_char', 0) <= start_index <= current_block.get('end_char', 0):
-                chunk_page = current_block.get('page', 1)
+            best_page = 1
+            max_overlap_chars = 0
+            
+            # Check blocks starting from current position
+            # We might need to check multiple blocks if the chunk spans pages
+            temp_idx = block_idx
+            
+            while temp_idx < num_blocks:
+                block = page_blocks[temp_idx]
+                block_start = block.get('start_char', 0)
+                block_end = block.get('end_char', 0)
+                
+                # If block starts after chunk ends, we can stop searching
+                if block_start >= end_index:
+                    break
+                
+                # Calculate overlap
+                overlap_start = max(start_index, block_start)
+                overlap_end = min(end_index, block_end)
+                overlap_chars = max(0, overlap_end - overlap_start)
+                
+                if overlap_chars > max_overlap_chars:
+                    max_overlap_chars = overlap_chars
+                    best_page = block.get('page', 1)
+                
+                temp_idx += 1
+            
+            # If no overlap found (rare, e.g. gaps in blocks), fall back to nearest block logic
+            if max_overlap_chars == 0:
+                 # Check if this block contains the index (legacy fallback)
+                current_block = page_blocks[block_idx]
+                if current_block.get('start_char', 0) <= start_index <= current_block.get('end_char', 0):
+                    chunk_page = current_block.get('page', 1)
+                else:
+                    chunk_page = current_block.get('page', 1)
             else:
-                # Fallback: Try to find the best matching block based on overlap
-                best_page = 1
-                best_overlap = 0
-                for block in page_blocks:
-                    block_start = block.get('start_char', 0)
-                    block_end = block.get('end_char', 0)
-                    overlap = min(end_index, block_end) - max(start_index, block_start)
-                    if overlap > best_overlap:
-                        best_overlap = overlap
-                        best_page = block.get('page', 1)
-                chunk_page = best_page if best_overlap > 0 else current_block.get('page', 1)
+                chunk_page = best_page
             
             chunk.metadata['page'] = chunk_page
             # Also set source_page for consistency if missing
