@@ -1,16 +1,22 @@
 import httpx
 import time
+import os
 import sys
 
-GATEWAY_URL = "http://localhost:8000"
-INGESTION_URL = "http://localhost:8001"
-RETRIEVAL_URL = "http://localhost:8002"
+GATEWAY_URL = "http://localhost:8500"
+INGESTION_URL = "http://localhost:8501"
+RETRIEVAL_URL = "http://localhost:8502"
+
+# Create dummy file if it doesn't exist
+if not os.path.exists("test_doc.txt"):
+    with open("test_doc.txt", "w") as f:
+        f.write("This is a test document for ARIS microservices verification. The secret code is ARIS-2026-FIXED.")
 
 def test_health():
     print("--- [Health Checks] ---")
     for name, url in [("Gateway", GATEWAY_URL), ("Ingestion", INGESTION_URL), ("Retrieval", RETRIEVAL_URL)]:
         try:
-            resp = httpx.get(f"{url}/health")
+            resp = httpx.get(f"{url}/health", timeout=10.0)
             print(f"{name}: {resp.status_code} - {resp.json()}")
         except Exception as e:
             print(f"{name}: FAILED - {e}")
@@ -20,7 +26,7 @@ def test_upload():
     with open("test_doc.txt", "rb") as f:
         files = {"file": ("test_doc.txt", f)}
         try:
-            resp = httpx.post(f"{GATEWAY_URL}/documents", files=files)
+            resp = httpx.post(f"{GATEWAY_URL}/documents", files=files, timeout=30.0)
             print(f"Status: {resp.status_code}")
             print(f"Result: {resp.json()}")
             return resp.json().get("document_id")

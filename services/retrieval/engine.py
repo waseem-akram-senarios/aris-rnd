@@ -5874,22 +5874,39 @@ Answer:"""
             'am', 'it', 'its', 'i', 'me', 'my', 'myself', 'we', 'our', 'ours',
             'you', 'your', 'he', 'him', 'his', 'she', 'her', 'they', 'them',
             'about', 'also', 'any', 'both', 'but', 'get', 'got', 'out', 'up',
-            'down', 'off', 'over'
+            'down', 'off', 'over',
+            # Spanish stop words
+            'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del',
+            'en', 'y', 'o', 'a', 'al', 'con', 'por', 'para', 'como', 'su', 'sus',
+            'este', 'esta', 'estos', 'estas', 'lo', 'le', 'les', 'me', 'te', 'se',
+            'nos', 'os', 'mi', 'tu', 'mì', 'tì', 'ti', 'mi', 'que', 'qué',
+            'es', 'son', 'fue', 'era', 'ser', 'estar', 'han', 'había', 'habia',
+            'una', 'uno', 'unas', 'unos', 'todo', 'todos', 'toda', 'todas'
         }
         
-        # Split into words (alphanumeric only)
-        words = re.findall(r'\b[a-zA-Z0-9]+\b', query.lower())
+        # Split into words (support Unicode/accented characters)
+        words = re.findall(r'\b[\w]+\b', query.lower(), re.UNICODE)
         
         # Filter out stop words and short words
         keywords = [w for w in words if w not in stop_words and len(w) > 2]
         
-        # Also add 2-word phrases for better matching
-        words_original = re.findall(r'\b[a-zA-Z0-9]+\b', query.lower())
-        for i in range(len(words_original) - 1):
-            phrase = f"{words_original[i]} {words_original[i+1]}"
-            # Only add phrases without stop words
-            if words_original[i] not in stop_words and words_original[i+1] not in stop_words:
-                keywords.append(phrase)
+        # Also add 2-word phrases for better matching (skip-gram like)
+        # Allows matching "procedimiento degasado" from "procedimiento de degasado"
+        words_original = re.findall(r'\b[\w]+\b', query.lower(), re.UNICODE)
+        for i in range(len(words_original)):
+            # Find next non-stop word within 2 positions
+            if words_original[i] in stop_words:
+                continue
+            
+            # Check i+1, i+2, and i+3 to skip stop words
+            for skip in range(1, 4):
+                if i + skip < len(words_original):
+                    next_word = words_original[i + skip]
+                    if next_word not in stop_words:
+                        keywords.append(f"{words_original[i]} {next_word}")
+                        break  # Only add the nearest meaningful pair
+                else:
+                    break
         
         return keywords
     
@@ -6112,13 +6129,16 @@ Answer:"""
             
             content_relevance = weighted_matches / max(max_possible, 1)
             
-            # STRICTER FILTERING: Require at least 2 keyword matches OR 1 phrase match
-            # to be considered "relevant" (avoids false positives from single generic words)
+            # RELAXED FILTERING: Keep citations with even 1 keyword match
+            # But assign low relevance (0.1) if not truly strong match
             is_truly_relevant = (keyword_matches >= 2) or (phrase_matches >= 1)
-            if not is_truly_relevant and keyword_matches == 1:
-                # Only 1 single-word match - mark as weakly relevant (will be filtered)
+            if not is_truly_relevant and keyword_matches >= 1:
+                # 1 single-word match - keep but mark as low relevance
+                content_relevance = 0.1
+                logger.debug(f"Citation kept with single keyword match: {matched_keywords}")
+            elif not is_truly_relevant:
+                # 0 matches
                 content_relevance = 0.0
-                logger.debug(f"Citation weakly relevant (only 1 keyword): {matched_keywords}")
             
             citation['_content_relevance'] = content_relevance
             citation['_matched_keywords'] = matched_keywords

@@ -87,10 +87,10 @@ class ARISConfig:
     # =========================================================================
     # 🎯 RETRIEVAL CONFIGURATION - Maximum Accuracy
     # =========================================================================
-    # K value: 25 chunks for comprehensive retrieval
+    # K value: 30 chunks for comprehensive retrieval (increased from 25 [QA-driven])
     # - More chunks = better chance of finding relevant info
     # - Reranking will filter to top results
-    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '25'))
+    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '30'))
     
     # MMR (Maximal Marginal Relevance) - Disabled for reranking
     DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '50'))
@@ -117,10 +117,10 @@ class ARISConfig:
     # Hybrid search combines semantic understanding with keyword matching
     DEFAULT_USE_HYBRID_SEARCH: bool = os.getenv('DEFAULT_USE_HYBRID_SEARCH', 'true').lower() == 'true'
     
-    # Semantic Weight: 0.6 - Emphasize meaning understanding
-    # Keyword Weight: 0.4 - Capture exact term matches
-    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.6'))
-    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.4'))
+    # Semantic Weight: 0.3 - Balanced for cross-language (reduced from 0.6 [QA-driven])
+    # Keyword Weight: 0.7 - Ensure exact term matches are prioritized (increased from 0.4 [QA-driven])
+    DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.3'))
+    DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.7'))
     DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'hybrid')
     
     # =========================================================================

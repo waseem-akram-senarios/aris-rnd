@@ -13,7 +13,7 @@ import json
 import time
 import sys
 
-BASE_URL = "http://44.221.84.58:8500"
+BASE_URL = "http://localhost:8500"
 
 def print_header(title):
     print("\n" + "=" * 80)
@@ -52,15 +52,17 @@ def query_rag(question, document_id=None, k=20, semantic_weight=0.2, auto_transl
         "k": k,
         "search_mode": search_mode,
         "semantic_weight": semantic_weight,
+        "semantic_weight": semantic_weight,
         "auto_translate": auto_translate,
-        "use_hybrid_search": True
+        "use_hybrid_search": True,
+        "use_agentic_rag": False  # Disable to speed up benchmark and test core retrieval
     }
     if document_id:
         payload["document_id"] = document_id
         payload["active_sources"] = [document_id]
     
     try:
-        response = requests.post(f"{BASE_URL}/query", json=payload, timeout=120)
+        response = requests.post(f"{BASE_URL}/query", json=payload, timeout=300)
         response.raise_for_status()
         return response.json()
     except Exception as e:

@@ -124,6 +124,9 @@ class GatewayService:
         use_hybrid_search: bool = True,  # Default to hybrid search
         semantic_weight: float = 0.7,
         search_mode: str = "hybrid",  # Default to hybrid mode
+        use_agentic_rag: Optional[bool] = None,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
         response_language: Optional[str] = None,
         filter_language: Optional[str] = None,
         auto_translate: bool = False
@@ -142,6 +145,9 @@ class GatewayService:
                 "use_hybrid_search": use_hybrid_search,
                 "semantic_weight": semantic_weight,
                 "search_mode": search_mode,  # Pass search mode to retrieval
+                "use_agentic_rag": use_agentic_rag,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
                 "active_sources": self._active_sources,
                 "response_language": response_language,
                 "filter_language": filter_language,
