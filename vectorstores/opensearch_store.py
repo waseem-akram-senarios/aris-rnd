@@ -840,8 +840,20 @@ class OpenSearchVectorStore:
                 msearch_body.extend([{"index": self.index_name}, knn_query])
             
             # 2. Prepare Keyword Search (if weight > 0)
+            # ENHANCED: Add phrase matching with high boost to prioritize exact phrase matches
             if keyword_weight > 0:
                 should_clauses = [
+                    # Exact phrase match - HIGHEST priority (boost 5x)
+                    {
+                        "match_phrase": {
+                            "text": {
+                                "query": query,
+                                "boost": 5.0,
+                                "slop": 2  # Allow 2 words between phrase terms
+                            }
+                        }
+                    },
+                    # Standard multi-match for individual terms
                     {
                         "multi_match": {
                             "query": query,
@@ -853,6 +865,16 @@ class OpenSearchVectorStore:
                 ]
                 
                 if alternate_query and alternate_query != query:
+                    # Also add phrase match for alternate query
+                    should_clauses.append({
+                        "match_phrase": {
+                            "text": {
+                                "query": alternate_query,
+                                "boost": 4.0,
+                                "slop": 2
+                            }
+                        }
+                    })
                     should_clauses.append({
                         "multi_match": {
                             "query": alternate_query,
@@ -864,6 +886,7 @@ class OpenSearchVectorStore:
                 
                 text_query = {
                     "size": int(k * (1 + keyword_weight)),
+                    "_source": ["text", "metadata", "source", "page", "content_type"],
                     "query": {
                         "bool": {
                             "should": should_clauses,
