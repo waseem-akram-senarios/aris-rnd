@@ -5043,26 +5043,27 @@ Answer:"""
                 return False
             return True
         
-        # PRIORITY 1: METADATA (Authoritative physical aligned metadata)
+        # PRIORITY 1: TEXT MARKERS (Most accurate - explicit page delimiters in content)
+        # Find ALL page markers and use the FIRST one (indicates starting page of content)
+        # These markers are inserted during PDF parsing and are the most reliable source
+        page_markers = re.findall(r'---\s*Page\s+(\d+)\s*---', chunk_text)
+        if page_markers:
+            first_page = int(page_markers[0])
+            if validate_against_doc(first_page):
+                logger.debug(f"📄 [TEXT MARKER] Page {first_page} from '--- Page X ---' marker (highest priority)")
+                return first_page, 0.98
+        
+        # PRIORITY 2: METADATA (Only if no text markers found)
         # Check for explicitly stored page number in metadata
+        # Note: Metadata page can be inaccurate for chunked content spanning multiple pages
         meta_page = doc.metadata.get('page')
         if meta_page is not None:
             try:
                 page_val = int(meta_page)
                 if validate_against_doc(page_val):
-                    # We trust metadata more if it's explicitly set as 'page' 
-                    # and not just a broad document-level 'pages' count.
-                    return page_val, 0.95
+                    return page_val, 0.85
             except (ValueError, TypeError):
                 pass
-
-        # PRIORITY 2: TEXT MARKERS
-        # Find ALL page markers and use the FIRST one (indicates starting page of content)
-        page_markers = re.findall(r'---\s*Page\s+(\d+)\s*---', chunk_text)
-        if page_markers:
-            first_page = int(page_markers[0])
-            if validate_against_doc(first_page):
-                return first_page, 0.90
 
 
         # Check for "Source: Page X" patterns (common in some document formats)
