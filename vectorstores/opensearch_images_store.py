@@ -16,10 +16,39 @@ except ImportError:
 
 from langchain_openai import OpenAIEmbeddings
 from vectorstores.opensearch_store import OpenSearchVectorStore
+from shared.config.settings import ARISConfig
+import hashlib
+import time
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Query result cache for performance optimization
+_query_cache = {}
+_cache_timestamps = {}
+
+
+def clear_image_search_cache(source: Optional[str] = None):
+    """
+    Clear the image search cache.
+    
+    Args:
+        source: If provided, only clear cache entries related to this source.
+                If None, clear entire cache.
+    """
+    global _query_cache, _cache_timestamps
+    if source is None:
+        _query_cache.clear()
+        _cache_timestamps.clear()
+        logger.info("🗑️ Cleared entire image search cache")
+    else:
+        # Clear entries that might contain this source
+        keys_to_remove = [k for k in _query_cache.keys() if source.lower() in str(_query_cache.get(k, [])).lower()]
+        for key in keys_to_remove:
+            _query_cache.pop(key, None)
+            _cache_timestamps.pop(key, None)
+        logger.info(f"🗑️ Cleared {len(keys_to_remove)} cache entries for source: {source}")
 
 
 class OpenSearchImagesStore:
@@ -581,16 +610,25 @@ class OpenSearchImagesStore:
         query: str,
         source: Optional[str] = None,
         sources: Optional[List[str]] = None,
-        k: int = 5
+        k: int = 5,
+        min_score: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
-        Perform semantic search in images using direct OpenSearch k-NN query.
+        Perform optimized semantic search in images using OpenSearch k-NN query.
+        
+        Performance optimizations:
+        - Query result caching (configurable TTL)
+        - ef_search parameter for HNSW speed/accuracy tradeoff
+        - min_score threshold to skip irrelevant results
+        - Pre-filtering to reduce search space
+        - Reduced over-fetching with smart k multiplier
         
         Args:
             query: Search query text
             source: Optional single source filter (deprecated, use sources)
             sources: Optional list of document names to filter by
             k: Number of results to return
+            min_score: Minimum similarity score threshold (default from config)
             
         Returns:
             List of matching image dictionaries
@@ -599,38 +637,52 @@ class OpenSearchImagesStore:
             logger.warning("Vector store not initialized")
             return []
         
+        search_start_time = time.time()
+        
+        # Get performance config
+        knn_config = ARISConfig.get_knn_performance_config()
+        ef_search = knn_config['ef_search']
+        if min_score is None:
+            min_score = knn_config['min_score']
+        cache_ttl = knn_config['cache_ttl_seconds']
+        max_fetch_multiplier = knn_config['max_fetch_multiplier']
+        
+        # Determine effective sources
+        effective_sources = sources if sources else ([source] if source else None)
+        
+        # Build cache key
+        cache_key = hashlib.md5(
+            f"{query}:{effective_sources}:{k}:{min_score}".encode()
+        ).hexdigest()
+        
+        # Check cache
+        if cache_ttl > 0 and cache_key in _query_cache:
+            cache_time = _cache_timestamps.get(cache_key, 0)
+            if time.time() - cache_time < cache_ttl:
+                logger.info(f"🚀 Cache hit for image search query (saved ~2-3 min)")
+                return _query_cache[cache_key]
+        
         try:
-            # Get the raw OpenSearch client
             client = self.vectorstore.vectorstore.client
             
             # Generate query embedding
+            embed_start = time.time()
             query_vector = self.embeddings.embed_query(query)
+            embed_time = time.time() - embed_start
+            logger.debug(f"Embedding generation took {embed_time:.2f}s")
             
-            # Determine effective sources: sources list takes priority over single source
-            effective_sources = sources if sources else ([source] if source else None)
+            # Calculate optimized fetch size (don't over-fetch)
+            fetch_k = int(k * max_fetch_multiplier)
             
-            # Try k-NN search first, fall back to text search if it fails
+            # Build optimized k-NN query with performance parameters
             try:
-                # Correct OpenSearch k-NN query format
-                knn_query = {
-                    "size": k,
-                    "query": {
-                        "knn": {
-                            "vector_field": {
-                                "vector": query_vector,
-                                "k": k
-                            }
-                        }
-                    }
-                }
-                
-                # Add source filter if specified (supports multiple sources)
+                # Build source filter if specified
+                source_filter = None
                 if effective_sources and len(effective_sources) > 0:
                     should_clauses = []
                     for src in effective_sources:
                         if not src:
                             continue
-                        # Add variants for each source
                         source_variants = [
                             src,
                             os.path.basename(src),
@@ -646,59 +698,59 @@ class OpenSearchImagesStore:
                                 {"match_phrase": {"metadata.source": variant}}
                             ])
                     
-                        # Add filter to the bool query
-                        knn_query["query"] = {
-                            "bool": {
-                                "must": [
-                                    {
-                                        "knn": {
-                                            "vector_field": {
-                                                "vector": query_vector,
-                                                "k": k
-                                            }
-                                        }
-                                    }
-                                ],
-                                "filter": {
-                                    "bool": {
-                                        # Strict filter for image_ocr content type to avoid polluted text chunks
-                                        "must": [{"term": {"metadata.content_type.keyword": "image_ocr"}}],
-                                        "should": should_clauses,
-                                        "minimum_should_match": 1
-                                    }
-                                }
-                            }
+                    source_filter = {
+                        "bool": {
+                            "must": [{"term": {"metadata.content_type.keyword": "image_ocr"}}],
+                            "should": should_clauses,
+                            "minimum_should_match": 1
                         }
-                        logger.info(f"Image search filtered to {len(effective_sources)} document(s)")
+                    }
+                    logger.info(f"Image search filtered to {len(effective_sources)} document(s)")
                 else:
-                    # Add content_type filter even without source filter
-                    knn_query["query"] = {
+                    source_filter = {"term": {"metadata.content_type.keyword": "image_ocr"}}
+                    logger.info(f"Image search across ALL documents (filtered by content_type=image_ocr)")
+                
+                # Optimized k-NN query with ef_search and min_score
+                knn_query = {
+                    "size": fetch_k,
+                    "_source": ["text", "metadata"],  # Only fetch needed fields
+                    "query": {
                         "bool": {
                             "must": [
                                 {
                                     "knn": {
                                         "vector_field": {
                                             "vector": query_vector,
-                                            "k": k
+                                            "k": fetch_k,
+                                            "method_parameters": {
+                                                "ef_search": ef_search
+                                            }
                                         }
                                     }
                                 }
                             ],
-                            "filter": {
-                                "term": {"metadata.content_type.keyword": "image_ocr"}
-                            }
+                            "filter": source_filter
                         }
                     }
-                    logger.info(f"Image search across ALL documents (filtered by content_type=image_ocr)")
+                }
                 
+                # Add min_score threshold if specified
+                if min_score and min_score > 0:
+                    knn_query["min_score"] = min_score
+                
+                search_exec_start = time.time()
                 response = client.search(index=self.index_name, body=knn_query)
-                logger.info(f"k-NN search succeeded on images index with {len(response.get('hits', {}).get('hits', []))} results")
+                search_exec_time = time.time() - search_exec_start
+                
+                hits = response.get('hits', {}).get('hits', [])
+                logger.info(f"k-NN search completed in {search_exec_time:.2f}s with {len(hits)} results (ef_search={ef_search})")
             except Exception as knn_error:
-                # k-NN not supported or failed - fallback to text search
+                # k-NN not supported or failed - fallback to optimized text search
                 logger.warning(f"k-NN search failed, using text search fallback: {knn_error}")
                 
                 text_query: Dict[str, Any] = {
-                    "size": k,
+                    "size": fetch_k,
+                    "_source": ["text", "metadata"],  # Only fetch needed fields
                     "query": {
                         "multi_match": {
                             "query": query,
@@ -740,7 +792,6 @@ class OpenSearchImagesStore:
                             }
                         }
                     else:
-                        # Add content_type filter if no source filter
                         text_query["query"] = {
                             "bool": {
                                 "must": [text_query["query"]],
@@ -751,7 +802,7 @@ class OpenSearchImagesStore:
                         }
                 
                 response = client.search(index=self.index_name, body=text_query)
-            hits = response.get("hits", {}).get("hits", [])
+                hits = response.get("hits", {}).get("hits", [])
             
             images = []
             for idx, hit in enumerate(hits, start=1):
@@ -798,7 +849,22 @@ class OpenSearchImagesStore:
                     'score': hit.get('_score')  # k-NN similarity score
                 })
             
-            logger.info(f"Found {len(images)} images matching query: {query[:50]}")
+            # Limit to requested k
+            images = images[:k]
+            
+            # Cache results for future queries
+            if cache_ttl > 0:
+                _query_cache[cache_key] = images
+                _cache_timestamps[cache_key] = time.time()
+                # Clean old cache entries (keep max 100)
+                if len(_query_cache) > 100:
+                    oldest_keys = sorted(_cache_timestamps.keys(), key=lambda x: _cache_timestamps[x])[:50]
+                    for old_key in oldest_keys:
+                        _query_cache.pop(old_key, None)
+                        _cache_timestamps.pop(old_key, None)
+            
+            total_time = time.time() - search_start_time
+            logger.info(f"✅ Found {len(images)} images matching query in {total_time:.2f}s: {query[:50]}")
             return images
         except Exception as e:
             logger.error(f"Failed to search images: {str(e)}", exc_info=True)

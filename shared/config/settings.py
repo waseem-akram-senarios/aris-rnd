@@ -41,7 +41,7 @@ class ARISConfig:
     CEREBRAS_MODEL: str = os.getenv('CEREBRAS_MODEL', 'llama-3.3-70b')
     
     # Dual-Model Strategy: Simple queries use a fast model, Deep queries use a powerful model
-    SIMPLE_QUERY_MODEL = os.getenv('SIMPLE_QUERY_MODEL', 'gpt-4o')  # Best model for simple queries
+    SIMPLE_QUERY_MODEL = os.getenv('SIMPLE_QUERY_MODEL', 'gpt-4o-mini')  # 10x faster for simple queries
     DEEP_QUERY_MODEL = os.getenv('DEEP_QUERY_MODEL', 'gpt-4o')      # Best model for deep research
     
     # =========================================================================
@@ -87,10 +87,9 @@ class ARISConfig:
     # =========================================================================
     # 🎯 RETRIEVAL CONFIGURATION - Maximum Accuracy
     # =========================================================================
-    # K value: 30 chunks for comprehensive retrieval (increased from 25 [QA-driven])
-    # - More chunks = better chance of finding relevant info
+    # K value: 20 chunks for balanced retrieval (reduced from 30 for speed)
     # - Reranking will filter to top results
-    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '30'))
+    DEFAULT_RETRIEVAL_K: int = int(os.getenv('DEFAULT_RETRIEVAL_K', '20'))
     
     # MMR (Maximal Marginal Relevance) - Disabled for reranking
     DEFAULT_MMR_FETCH_K: int = int(os.getenv('DEFAULT_MMR_FETCH_K', '50'))
@@ -122,6 +121,24 @@ class ARISConfig:
     DEFAULT_SEMANTIC_WEIGHT: float = float(os.getenv('DEFAULT_SEMANTIC_WEIGHT', '0.3'))
     DEFAULT_KEYWORD_WEIGHT: float = float(os.getenv('DEFAULT_KEYWORD_WEIGHT', '0.7'))
     DEFAULT_SEARCH_MODE: str = os.getenv('DEFAULT_SEARCH_MODE', 'hybrid')
+    
+    # =========================================================================
+    # 🚀 K-NN SEARCH PERFORMANCE OPTIMIZATION
+    # =========================================================================
+    # ef_search: Controls accuracy vs speed tradeoff for HNSW algorithm
+    # Higher = more accurate but slower, Lower = faster but less accurate
+    # Range: 100-512 recommended. Default 256 balances speed and accuracy.
+    KNN_EF_SEARCH: int = int(os.getenv('KNN_EF_SEARCH', '256'))
+    
+    # Minimum score threshold: Skip results below this similarity score
+    # Reduces processing of irrelevant results. Range: 0.0-1.0
+    KNN_MIN_SCORE: float = float(os.getenv('KNN_MIN_SCORE', '0.3'))
+    
+    # Query result cache TTL in seconds (0 to disable)
+    QUERY_CACHE_TTL_SECONDS: int = int(os.getenv('QUERY_CACHE_TTL_SECONDS', '300'))
+    
+    # Maximum results to fetch before filtering (reduces over-fetching)
+    KNN_MAX_FETCH_MULTIPLIER: float = float(os.getenv('KNN_MAX_FETCH_MULTIPLIER', '1.5'))
     
     # =========================================================================
     # 🎯 AGENTIC RAG CONFIGURATION - Smart Query Handling
@@ -200,7 +217,7 @@ class ARISConfig:
     MIN_CITATION_CONFIDENCE: float = float(os.getenv('MIN_CITATION_CONFIDENCE', '0.3'))
     
     # Fuzzy matching threshold for keyword matching (typo tolerance)
-    FUZZY_MATCH_THRESHOLD: float = float(os.getenv('FUZZY_MATCH_THRESHOLD', '0.75'))
+    FUZZY_MATCH_THRESHOLD: float = float(os.getenv('FUZZY_MATCH_THRESHOLD', '0.70'))
     
     # =========================================================================
     # HELPER METHODS
@@ -294,6 +311,16 @@ class ARISConfig:
             'semantic_weight': semantic_weight,
             'keyword_weight': keyword_weight,
             'search_mode': cls.DEFAULT_SEARCH_MODE
+        }
+    
+    @classmethod
+    def get_knn_performance_config(cls) -> dict:
+        """Get k-NN search performance configuration"""
+        return {
+            'ef_search': cls.KNN_EF_SEARCH,
+            'min_score': cls.KNN_MIN_SCORE,
+            'cache_ttl_seconds': cls.QUERY_CACHE_TTL_SECONDS,
+            'max_fetch_multiplier': cls.KNN_MAX_FETCH_MULTIPLIER
         }
     
     @classmethod

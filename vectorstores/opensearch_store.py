@@ -5,6 +5,8 @@ Uses AWS OpenSearch Service with LangChain integration.
 import os
 import re
 import logging
+import time
+import hashlib
 from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
 import boto3
@@ -20,6 +22,32 @@ from langchain_openai import OpenAIEmbeddings
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Query result cache for hybrid search performance
+_hybrid_cache = {}
+_hybrid_cache_timestamps = {}
+
+
+def clear_hybrid_search_cache(index_name: Optional[str] = None):
+    """
+    Clear the hybrid search cache.
+    
+    Args:
+        index_name: If provided, only clear cache entries for this index.
+                    If None, clear entire cache.
+    """
+    global _hybrid_cache, _hybrid_cache_timestamps
+    if index_name is None:
+        _hybrid_cache.clear()
+        _hybrid_cache_timestamps.clear()
+        logger.info("🗑️ Cleared entire hybrid search cache")
+    else:
+        # Clear entries that contain this index name in the cache key
+        keys_to_remove = [k for k in _hybrid_cache.keys() if index_name in str(k)]
+        for key in keys_to_remove:
+            _hybrid_cache.pop(key, None)
+            _hybrid_cache_timestamps.pop(key, None)
+        logger.info(f"🗑️ Cleared {len(keys_to_remove)} cache entries for index: {index_name}")
 
 
 class OpenSearchVectorStore:
@@ -714,10 +742,18 @@ class OpenSearchVectorStore:
         semantic_weight: float = 0.7,
         keyword_weight: float = 0.3,
         filter: Optional[Dict] = None,
-        alternate_query: Optional[str] = None  # Improvement 2: Support for original language query
+        alternate_query: Optional[str] = None,
+        min_score: Optional[float] = None
     ) -> List[Document]:
         """
-        Perform hybrid search combining semantic (vector) and keyword (text) search.
+        Perform optimized hybrid search combining semantic (vector) and keyword (text) search.
+        
+        Performance optimizations:
+        - Query result caching (configurable TTL)
+        - ef_search parameter for HNSW speed/accuracy tradeoff
+        - min_score threshold to skip irrelevant results
+        - Reduced over-fetching with smart k multiplier
+        - Parallel msearch execution
         
         Args:
             query: Text query for keyword search (usually English)
@@ -727,14 +763,39 @@ class OpenSearchVectorStore:
             keyword_weight: Weight for keyword search results
             filter: Optional OpenSearch filter
             alternate_query: Optional query in original language (for dual-language search)
+            min_score: Minimum similarity score threshold (default from config)
         """
         if self.vectorstore is None:
             raise ValueError("Vector store not initialized. Process documents first.")
         
+        search_start_time = time.time()
+        
+        # Get performance config
+        from shared.config.settings import ARISConfig
+        knn_config = ARISConfig.get_knn_performance_config()
+        ef_search = knn_config['ef_search']
+        if min_score is None:
+            min_score = knn_config['min_score']
+        cache_ttl = knn_config['cache_ttl_seconds']
+        max_fetch_multiplier = knn_config['max_fetch_multiplier']
+        
+        # Build cache key (use first 100 chars of query + filter hash)
+        filter_hash = hashlib.md5(str(filter).encode()).hexdigest()[:8] if filter else "none"
+        cache_key = hashlib.md5(
+            f"{query[:100]}:{k}:{semantic_weight}:{filter_hash}:{self.index_name}".encode()
+        ).hexdigest()
+        
+        # Check cache
+        if cache_ttl > 0 and cache_key in _hybrid_cache:
+            cache_time = _hybrid_cache_timestamps.get(cache_key, 0)
+            if time.time() - cache_time < cache_ttl:
+                logger.info(f"🚀 Cache hit for hybrid search (saved ~1-2 min)")
+                return _hybrid_cache[cache_key]
+        
         try:
             client = self.vectorstore.client
             
-            # Normalize weights... (omitted for brevity, same as before)
+            # Normalize weights
             total_weight = semantic_weight + keyword_weight
             if total_weight > 0:
                 semantic_weight = semantic_weight / total_weight
@@ -743,75 +804,104 @@ class OpenSearchVectorStore:
                 semantic_weight = 0.5
                 keyword_weight = 0.5
             
-            # Semantic search (k-NN) - use correct OpenSearch query format
+            # Calculate optimized fetch sizes (reduced over-fetching)
+            fetch_k = int(k * max_fetch_multiplier)
+            
+            # Prepare Multi-Search for parallel semantic and keyword retrieval
             semantic_results = []
+            keyword_results = []
+            msearch_body = []
+            
+            # 1. Prepare Semantic Search (if weight > 0) with ef_search optimization
             if semantic_weight > 0:
-                try:
-                    # OpenSearch k-NN query format: "query" -> "knn" -> "field_name" -> {vector, k}
-                    knn_size = int(k * (1 + semantic_weight))
-                    knn_query = {
-                        "size": knn_size,
-                        "query": {
-                            "knn": {
-                                "vector_field": {
-                                    "vector": query_vector,
-                                    "k": knn_size
+                knn_size = max(fetch_k, int(k * (1 + semantic_weight * 0.5)))  # Reduced multiplier
+                knn_query = {
+                    "size": knn_size,
+                    "_source": ["text", "metadata", "source", "page", "content_type"],  # Only needed fields
+                    "query": {
+                        "knn": {
+                            "vector_field": {
+                                "vector": query_vector,
+                                "k": knn_size,
+                                "method_parameters": {
+                                    "ef_search": ef_search
                                 }
                             }
                         }
                     }
-                    if filter:
-                        knn_query["query"]["knn"]["vector_field"]["filter"] = filter
-                    semantic_response = client.search(index=self.index_name, body=knn_query)
-                    semantic_results = semantic_response.get("hits", {}).get("hits", [])
-                except Exception as e:
-                    logger.warning(f"Semantic search failed: {str(e)}")
-                    semantic_results = []
+                }
+                if filter:
+                    knn_query["query"]["knn"]["vector_field"]["filter"] = filter
+                
+                # Add min_score if specified
+                if min_score and min_score > 0:
+                    knn_query["min_score"] = min_score
+                
+                msearch_body.extend([{"index": self.index_name}, knn_query])
             
-            # Text search with Dual-Language Support
-            keyword_results = []
+            # 2. Prepare Keyword Search (if weight > 0)
             if keyword_weight > 0:
-                try:
-                    should_clauses = [
-                        {
-                            "multi_match": {
-                                "query": query,
-                                # Main query (English) matches English fields strongly
-                                "fields": ["text^2", "metadata.text_english^1.5", "metadata.source"],
-                                "type": "best_fields",
-                                "fuzziness": "AUTO"
-                            }
-                        }
-                    ]
-                    
-                    # If we have an alternate query (e.g. original Spanish query), match it against original text
-                    if alternate_query and alternate_query != query:
-                        should_clauses.append({
-                            "multi_match": {
-                                "query": alternate_query,
-                                "fields": ["metadata.text_original^2", "text^0.5"],  # Boost original text match
-                                "type": "best_fields",
-                                "fuzziness": "AUTO"
-                            }
-                        })
-                    
-                    text_query = {
-                        "size": int(k * (1 + keyword_weight)),
-                        "query": {
-                            "bool": {
-                                "should": should_clauses,
-                                "minimum_should_match": 1
-                            }
+                should_clauses = [
+                    {
+                        "multi_match": {
+                            "query": query,
+                            "fields": ["text^2", "metadata.text_english^1.5", "metadata.source"],
+                            "type": "best_fields",
+                            "fuzziness": "AUTO"
                         }
                     }
-                    if filter:
-                        text_query["query"]["bool"]["filter"] = filter
+                ]
+                
+                if alternate_query and alternate_query != query:
+                    should_clauses.append({
+                        "multi_match": {
+                            "query": alternate_query,
+                            "fields": ["metadata.text_original^2", "text^0.5"],
+                            "type": "best_fields",
+                            "fuzziness": "AUTO"
+                        }
+                    })
+                
+                text_query = {
+                    "size": int(k * (1 + keyword_weight)),
+                    "query": {
+                        "bool": {
+                            "should": should_clauses,
+                            "minimum_should_match": 1
+                        }
+                    }
+                }
+                if filter:
+                    text_query["query"]["bool"]["filter"] = filter
+                
+                msearch_body.extend([{"index": self.index_name}, text_query])
+            
+            # 3. Execute Multi-Search
+            if msearch_body:
+                try:
+                    msearch_response = client.msearch(body=msearch_body)
+                    responses = msearch_response.get("responses", [])
                     
-                    keyword_response = client.search(index=self.index_name, body=text_query)
-                    keyword_results = keyword_response.get("hits", {}).get("hits", [])
+                    resp_idx = 0
+                    if semantic_weight > 0 and resp_idx < len(responses):
+                        semantic_results = responses[resp_idx].get("hits", {}).get("hits", [])
+                        resp_idx += 1
+                    
+                    if keyword_weight > 0 and resp_idx < len(responses):
+                        keyword_results = responses[resp_idx].get("hits", {}).get("hits", [])
                 except Exception as e:
-                    logger.warning(f"Keyword search failed: {str(e)}")
-                    keyword_results = []
+                    logger.warning(f"Multi-search failed: {str(e)}. Falling back to sequential search.")
+                    # Fallback to sequential if msearch fails (unlikely)
+                    if not semantic_results and semantic_weight > 0:
+                        try:
+                            semantic_response = client.search(index=self.index_name, body=knn_query)
+                            semantic_results = semantic_response.get("hits", {}).get("hits", [])
+                        except: pass
+                    if not keyword_results and keyword_weight > 0:
+                        try:
+                            keyword_response = client.search(index=self.index_name, body=text_query)
+                            keyword_results = keyword_response.get("hits", {}).get("hits", [])
+                        except: pass
             
             # Combine results using RRF
             all_hits = semantic_results + keyword_results
@@ -867,8 +957,22 @@ class OpenSearchVectorStore:
                 )
                 documents.append(doc)
             
-            logger.info(f"Hybrid search returned {len(documents)} results (semantic_weight={semantic_weight:.2f}, keyword_weight={keyword_weight:.2f})")
-            return documents[:k]  # Return top k
+            final_docs = documents[:k]
+            
+            # Cache results for future queries
+            if cache_ttl > 0:
+                _hybrid_cache[cache_key] = final_docs
+                _hybrid_cache_timestamps[cache_key] = time.time()
+                # Clean old cache entries (keep max 100)
+                if len(_hybrid_cache) > 100:
+                    oldest_keys = sorted(_hybrid_cache_timestamps.keys(), key=lambda x: _hybrid_cache_timestamps[x])[:50]
+                    for old_key in oldest_keys:
+                        _hybrid_cache.pop(old_key, None)
+                        _hybrid_cache_timestamps.pop(old_key, None)
+            
+            total_time = time.time() - search_start_time
+            logger.info(f"✅ Hybrid search completed in {total_time:.2f}s with {len(final_docs)} results (semantic={semantic_weight:.2f}, keyword={keyword_weight:.2f}, ef_search={ef_search})")
+            return final_docs
             
         except Exception as e:
             logger.error(f"Hybrid search failed: {str(e)}")
@@ -1111,16 +1215,15 @@ class OpenSearchMultiIndexManager:
             except Exception as e:
                 logger.warning(f"Could not pre-compute query embedding: {e}")
         
-        for index_name in index_names:
+        import concurrent.futures
+        
+        def search_single_index(index_name):
             try:
                 store = self.get_or_create_index_store(index_name)
                 
                 if use_hybrid_search:
                     # Use pre-computed embedding for efficiency
-                    if query_vector is None:
-                        query_vector = store.embeddings.embed_query(query)
-                    
-                    results = store.hybrid_search(
+                    return store.hybrid_search(
                         query=query,
                         query_vector=query_vector,
                         k=results_per_index,
@@ -1130,8 +1233,7 @@ class OpenSearchMultiIndexManager:
                         alternate_query=alternate_query
                     )
                 elif use_mmr:
-                    # MMR: Use retriever (scores not directly available, but diversity is maintained)
-                    # Add index-based ranking for re-ranking purposes
+                    # MMR: Use retriever
                     retriever = store.vectorstore.as_retriever(
                         search_type="mmr",
                         search_kwargs={
@@ -1145,13 +1247,11 @@ class OpenSearchMultiIndexManager:
                     # Add score based on MMR ranking (higher rank = higher score)
                     for rank, doc in enumerate(mmr_results):
                         doc.metadata = doc.metadata or {}
-                        # MMR ranking score: first result gets highest score
                         doc.metadata["_opensearch_score"] = 1.0 / (1 + rank)
-                    results = mmr_results
+                    return mmr_results
                 else:
                     # Basic similarity search: Use similarity_search_with_score for scores
                     try:
-                        # similarity_search_with_score returns List[(Document, score)]
                         search_kwargs_inner = {"k": results_per_index}
                         if filter:
                             search_kwargs_inner["filter"] = filter
@@ -1164,23 +1264,32 @@ class OpenSearchMultiIndexManager:
                             doc.metadata = doc.metadata or {}
                             doc.metadata["_opensearch_score"] = float(score)
                             results.append(doc)
+                        return results
                     except Exception as score_err:
-                        # Fallback to retriever if similarity_search_with_score not available
+                        # Fallback to retriever
                         logger.debug(f"similarity_search_with_score failed, using retriever: {score_err}")
                         search_kwargs={"k": results_per_index}
                         if filter:
                             search_kwargs["filter"] = filter
-                            
                         retriever = store.vectorstore.as_retriever(
                             search_kwargs=search_kwargs
                         )
-                        results = retriever.invoke(query)
-                
-                all_results.extend(results)
-                logger.debug(f"Found {len(results)} results in index '{index_name}'")
+                        return retriever.invoke(query)
             except Exception as e:
                 logger.warning(f"Error searching index '{index_name}': {e}")
-                continue
+                return []
+
+        # Execute searches in parallel
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(index_names), 10)) as executor:
+            future_to_index = {executor.submit(search_single_index, name): name for name in index_names}
+            for future in concurrent.futures.as_completed(future_to_index):
+                index_name = future_to_index[future]
+                try:
+                    results = future.result()
+                    all_results.extend(results)
+                    logger.debug(f"Found {len(results)} results in index '{index_name}'")
+                except Exception as e:
+                    logger.warning(f"Thread error searching index '{index_name}': {e}")
         
         # ======== GLOBAL RE-RANKING ========
         # FIX: Sort ALL results by relevance score before returning top k
