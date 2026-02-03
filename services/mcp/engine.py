@@ -4,7 +4,9 @@ MCP Engine - Core logic for MCP server operations
 This module contains the MCPEngine class that provides the core functionality
 for document ingestion and semantic search, used by the MCP server tools.
 
-OPTIMIZED: Singleton pattern for engines to avoid re-initialization overhead.
+REFACTORED: Now uses HTTP calls to existing Ingestion/Retrieval microservices
+instead of creating duplicate engine instances. This reduces memory usage and
+ensures consistent caching across all services.
 """
 
 import os
@@ -24,76 +26,41 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# SINGLETON CACHE - Reuse expensive objects across requests
+# SERVICE URLs - Use existing microservices instead of duplicate engines
 # ============================================================================
-_engine_cache: Dict[str, Any] = {
-    "ingestion_engine": None,
-    "retrieval_engine": None,
-    "document_registry": None,
-    "initialized": False
-}
+INGESTION_SERVICE_URL = os.getenv("INGESTION_SERVICE_URL", "http://ingestion:8501")
+RETRIEVAL_SERVICE_URL = os.getenv("RETRIEVAL_SERVICE_URL", "http://retrieval:8502")
+GATEWAY_URL = os.getenv("GATEWAY_URL", "http://gateway:8500")
 
+# HTTP client with connection pooling for efficiency
+_http_client = None
 
-def _get_cached_retrieval_engine():
-    """Get or create cached retrieval engine (singleton)."""
-    if _engine_cache["retrieval_engine"] is None:
-        from shared.config.settings import ARISConfig
-        from services.retrieval.engine import RetrievalEngine
-        
-        logger.info("🚀 Initializing RetrievalEngine (cached singleton)...")
-        start = time_module.time()
-        
-        _engine_cache["retrieval_engine"] = RetrievalEngine(
-            use_cerebras=ARISConfig.USE_CEREBRAS,
-            embedding_model=ARISConfig.EMBEDDING_MODEL,
-            vector_store_type=ARISConfig.VECTOR_STORE_TYPE,
-            opensearch_domain=ARISConfig.AWS_OPENSEARCH_DOMAIN,
-            opensearch_index=ARISConfig.AWS_OPENSEARCH_INDEX
+def _get_http_client():
+    """Get or create HTTP client with connection pooling."""
+    global _http_client
+    if _http_client is None:
+        import httpx
+        _http_client = httpx.Client(
+            timeout=httpx.Timeout(300.0, connect=10.0),  # 5 min timeout for long queries
+            limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
         )
-        
-        elapsed = time_module.time() - start
-        logger.info(f"✅ RetrievalEngine initialized in {elapsed:.2f}s (cached for reuse)")
-    
-    return _engine_cache["retrieval_engine"]
-
-
-def _get_cached_ingestion_engine():
-    """Get or create cached ingestion engine (singleton)."""
-    if _engine_cache["ingestion_engine"] is None:
-        from shared.config.settings import ARISConfig
-        from services.ingestion.engine import IngestionEngine
-        
-        logger.info("🚀 Initializing IngestionEngine (cached singleton)...")
-        start = time_module.time()
-        
-        _engine_cache["ingestion_engine"] = IngestionEngine(
-            use_cerebras=ARISConfig.USE_CEREBRAS,
-            embedding_model=ARISConfig.EMBEDDING_MODEL,
-            vector_store_type=ARISConfig.VECTOR_STORE_TYPE,
-            opensearch_domain=ARISConfig.AWS_OPENSEARCH_DOMAIN,
-            opensearch_index=ARISConfig.AWS_OPENSEARCH_INDEX,
-            chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
-            chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
-        )
-        
-        elapsed = time_module.time() - start
-        logger.info(f"✅ IngestionEngine initialized in {elapsed:.2f}s (cached for reuse)")
-    
-    return _engine_cache["ingestion_engine"]
+        logger.info("✅ HTTP client initialized for MCP service calls")
+    return _http_client
 
 
 def _get_cached_document_registry():
     """Get or create cached document registry (singleton)."""
-    if _engine_cache["document_registry"] is None:
-        from shared.config.settings import ARISConfig
-        from storage.document_registry import DocumentRegistry
-        
-        _engine_cache["document_registry"] = DocumentRegistry(
+    from shared.config.settings import ARISConfig
+    from storage.document_registry import DocumentRegistry
+    
+    # Use a simple module-level cache
+    if not hasattr(_get_cached_document_registry, '_registry'):
+        _get_cached_document_registry._registry = DocumentRegistry(
             ARISConfig.DOCUMENT_REGISTRY_PATH
         )
         logger.info("✅ DocumentRegistry initialized (cached)")
     
-    return _engine_cache["document_registry"]
+    return _get_cached_document_registry._registry
 
 
 class MCPEngine:
@@ -101,26 +68,26 @@ class MCPEngine:
     Core engine for MCP server operations.
     
     Provides high-accuracy document ingestion and search capabilities
-    with all the advanced features of the ARIS RAG system.
+    by calling existing Ingestion and Retrieval microservices via HTTP.
     
-    OPTIMIZED: Uses singleton pattern for expensive resources (RetrievalEngine, 
-    IngestionEngine) to avoid re-initialization overhead on every request.
+    REFACTORED: No longer creates duplicate engine instances. Instead, uses
+    HTTP calls to existing services for:
+    - Shared query cache (faster repeated queries)
+    - Lower memory usage (single engine instance)
+    - Consistent behavior across all entry points
     """
     
     def __init__(self):
-        """Initialize the MCP Engine with cached services."""
+        """Initialize the MCP Engine with HTTP client for service calls."""
         from shared.config.settings import ARISConfig
         self.config = ARISConfig
+        self._http_client = None
+        logger.info("✅ MCPEngine initialized (using HTTP calls to existing services)")
     
     @property
-    def ingestion_engine(self):
-        """Get cached ingestion engine (singleton)."""
-        return _get_cached_ingestion_engine()
-    
-    @property
-    def retrieval_engine(self):
-        """Get cached retrieval engine (singleton)."""
-        return _get_cached_retrieval_engine()
+    def http_client(self):
+        """Get HTTP client for service calls."""
+        return _get_http_client()
     
     @property
     def document_registry(self):
@@ -133,27 +100,51 @@ class MCPEngine:
         from shared.utils.sync_manager import get_sync_manager
         return get_sync_manager("mcp")
     
+    def _call_ingestion_service(self, endpoint: str, data: Dict[str, Any], files: Dict = None) -> Dict[str, Any]:
+        """Call the Ingestion microservice via HTTP."""
+        url = f"{INGESTION_SERVICE_URL}{endpoint}"
+        try:
+            if files:
+                response = self.http_client.post(url, data=data, files=files)
+            else:
+                response = self.http_client.post(url, json=data)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Ingestion service call failed: {e}")
+            raise ValueError(f"Ingestion service error: {str(e)}")
+    
+    def _call_retrieval_service(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Call the Retrieval microservice via HTTP."""
+        url = f"{RETRIEVAL_SERVICE_URL}{endpoint}"
+        try:
+            response = self.http_client.post(url, json=data)
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            logger.error(f"Retrieval service call failed: {e}")
+            raise ValueError(f"Retrieval service error: {str(e)}")
+    
     def _broadcast_sync_after_ingestion(self):
         """
         Trigger sync broadcast to all services after successful ingestion.
         This ensures all services (Gateway, Retrieval, UI) see the new document immediately.
         """
         try:
-            import httpx
-            gateway_url = os.getenv("GATEWAY_URL", "http://127.0.0.1:8500")
-            
             # First, instant sync locally
             self.sync_manager.instant_sync()
             
             # Then trigger gateway to broadcast to all services
-            with httpx.Client(timeout=5.0) as client:
-                response = client.post(f"{gateway_url}/sync/broadcast")
-                if response.status_code == 200:
-                    logger.info("📡 [MCP] Sync broadcast triggered successfully")
-                else:
-                    logger.warning(f"📡 [MCP] Sync broadcast returned status: {response.status_code}")
+            response = self.http_client.post(f"{GATEWAY_URL}/sync/broadcast", timeout=5.0)
+            if response.status_code == 200:
+                logger.info("📡 [MCP] Sync broadcast triggered successfully")
+                return True
+            else:
+                logger.warning(f"📡 [MCP] Sync broadcast returned status: {response.status_code}")
+                return False
         except Exception as e:
             logger.warning(f"📡 [MCP] Sync broadcast failed (non-critical): {e}")
+            return False
     
     @staticmethod
     def is_s3_uri(content: str) -> bool:
@@ -366,7 +357,11 @@ class MCPEngine:
                 os.unlink(tmp_path)
     
     def upload_document(self, file_content: str, filename: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Upload and ingest a document directly."""
+        """
+        Upload and ingest a document via HTTP call to Ingestion microservice.
+        
+        REFACTORED: Calls existing Ingestion service instead of duplicate engine.
+        """
         import base64
         
         if not file_content or not file_content.strip():
@@ -382,22 +377,12 @@ class MCPEngine:
         if extension not in supported_formats:
             raise ValueError(f"Unsupported document format: .{extension}")
         
-        binary_formats = {"pdf", "docx", "doc"}
-        
-        accuracy_info = {
-            "chunk_size": self.config.DEFAULT_CHUNK_SIZE,
-            "chunk_overlap": self.config.DEFAULT_CHUNK_OVERLAP,
-            "embedding_model": self.config.EMBEDDING_MODEL,
-            "upload_method": "direct"
-        }
-        
         try:
+            # Prepare file bytes
+            binary_formats = {"pdf", "docx", "doc"}
             if extension in binary_formats:
-                try:
-                    clean_content = file_content.replace('\n', '').replace('\r', '').replace(' ', '')
-                    file_bytes = base64.b64decode(clean_content)
-                except Exception as e:
-                    raise ValueError(f"Invalid base64 encoding for binary file: {str(e)}")
+                clean_content = file_content.replace('\n', '').replace('\r', '').replace(' ', '')
+                file_bytes = base64.b64decode(clean_content)
             else:
                 if self.is_base64(file_content):
                     try:
@@ -408,65 +393,32 @@ class MCPEngine:
                 else:
                     file_bytes = file_content.encode("utf-8")
             
-            logger.info(f"Processing uploaded document: {filename} ({len(file_bytes)} bytes)")
+            logger.info(f"📤 MCP Upload (via Ingestion service): {filename} ({len(file_bytes)} bytes)")
             
-            language = metadata.get("language", "eng")
-            language = self.convert_language_code(language)
-            
-            text, doc_metadata = self.parse_uploaded_document(file_bytes, filename, language)
-            
-            if not text or not text.strip():
-                raise ValueError(f"No text extracted from document: {filename}")
-            
-            final_metadata = {**doc_metadata, **metadata}
-            final_metadata["source"] = filename
-            
-            accuracy_info["parser_used"] = doc_metadata.get("parser_used", "unknown")
-            accuracy_info["extraction_confidence"] = doc_metadata.get("confidence", 1.0)
-            accuracy_info["pages_extracted"] = doc_metadata.get("pages", 0)
-            accuracy_info["file_size_bytes"] = len(file_bytes)
-            
-            if "language" not in final_metadata:
-                try:
-                    from langdetect import detect
-                    detected_lang = detect(text[:1000])
-                    final_metadata["language"] = self.convert_language_code(detected_lang)
-                    accuracy_info["language_detected"] = True
-                except:
-                    final_metadata["language"] = "eng"
-                    accuracy_info["language_detected"] = False
-            
-            document_id = self.generate_document_id(text, filename)
-            final_metadata["document_id"] = document_id
-            
-            index_name = metadata.get("index_name") or self.config.AWS_OPENSEARCH_INDEX
-            
-            logger.info(f"Ingesting uploaded document: {document_id} ({len(text)} chars)")
-            
-            result = self.ingestion_engine.add_documents_incremental(
-                texts=[text], metadatas=[final_metadata], index_name=index_name
-            )
-            
-            registry_entry = {
-                "document_id": document_id, "document_name": filename, "status": "completed",
-                "chunks_created": result.get("chunks_created", 0),
-                "tokens_extracted": result.get("tokens_added", 0),
-                "language": final_metadata.get("language", "eng"),
-                "metadata": final_metadata, "accuracy_info": accuracy_info,
-                "upload_method": "direct", "ingested_at": datetime.now().isoformat()
+            # Call Ingestion microservice via HTTP with file upload
+            files = {"file": (filename, io.BytesIO(file_bytes), "application/octet-stream")}
+            form_data = {
+                "language": metadata.get("language", "eng"),
+                "parser": metadata.get("parser", "auto")
             }
-            self.document_registry.add_document(document_id, registry_entry)
+            
+            result = self._call_ingestion_service("/upload", form_data, files=files)
+            
+            # Trigger sync after successful ingestion
+            sync_triggered = self._broadcast_sync_after_ingestion()
             
             return {
-                "success": True, "document_id": document_id, "filename": filename,
-                "file_type": extension, "file_size_bytes": len(file_bytes),
+                "success": True,
+                "document_id": result.get("document_id", ""),
+                "filename": filename,
+                "file_type": extension,
+                "file_size_bytes": len(file_bytes),
                 "chunks_created": result.get("chunks_created", 0),
-                "tokens_added": result.get("tokens_added", 0),
-                "pages_extracted": doc_metadata.get("pages", 0),
-                "total_chunks": result.get("total_chunks", 0),
-                "message": f"Successfully uploaded and ingested '{filename}' with {result.get('chunks_created', 0)} chunks",
-                "metadata": final_metadata, "accuracy_info": accuracy_info,
-                "sync_triggered": self._broadcast_sync_after_ingestion()
+                "tokens_added": result.get("tokens_extracted", 0),
+                "pages_extracted": result.get("pages", 0),
+                "message": result.get("message", f"Successfully uploaded '{filename}'"),
+                "accuracy_info": {"via_http": True, "upload_method": "ingestion_service"},
+                "sync_triggered": sync_triggered
             }
             
         except Exception as e:
@@ -474,86 +426,65 @@ class MCPEngine:
             raise ValueError(f"Failed to upload document: {str(e)}")
     
     def ingest(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Ingest content into the RAG system."""
+        """
+        Ingest content into the RAG system via HTTP call to Ingestion microservice.
+        
+        REFACTORED: Calls existing Ingestion service instead of duplicate engine.
+        For S3 URIs, still handles locally then calls ingestion service.
+        """
         if not content or not content.strip():
             raise ValueError("Content cannot be empty")
         
         content = content.strip()
         metadata = metadata or {}
         
-        accuracy_info = {
-            "chunk_size": self.config.DEFAULT_CHUNK_SIZE,
-            "chunk_overlap": self.config.DEFAULT_CHUNK_OVERLAP,
-            "embedding_model": self.config.EMBEDDING_MODEL
-        }
-        
         try:
+            # Handle S3 URIs - fetch and convert to text first
             if self.is_s3_uri(content):
-                logger.info(f"Detected S3 URI: {content}")
+                logger.info(f"📥 MCP Ingest: Detected S3 URI: {content}")
                 
                 language = metadata.get("language", "eng")
                 language = self.convert_language_code(language)
                 
                 text, doc_metadata, filename = self.fetch_and_parse_s3_document(content, language)
                 
-                final_metadata = {**doc_metadata, **metadata}
-                final_metadata["s3_uri"] = content
-                final_metadata["source"] = filename
-                
-                accuracy_info["parser_used"] = doc_metadata.get("parser_used", "unknown")
-                accuracy_info["extraction_confidence"] = doc_metadata.get("confidence", 0.0)
-                accuracy_info["pages_extracted"] = doc_metadata.get("pages", 0)
-                
                 if not text or not text.strip():
                     raise ValueError(f"No text extracted from document: {content}")
+                
+                # Call ingestion service with the extracted text
+                request_data = {
+                    "content": text,
+                    "source": filename,
+                    "language": language,
+                    "s3_uri": content,
+                    "metadata": {**doc_metadata, **metadata}
+                }
             else:
-                text = content
-                filename = metadata.get("source", "text_input")
-                final_metadata = {"source": filename, "content_type": "text", **metadata}
-                accuracy_info["parser_used"] = "direct_text"
-                accuracy_info["extraction_confidence"] = 1.0
+                # Plain text content
+                logger.info(f"📥 MCP Ingest (via Ingestion service): {len(content)} chars")
+                
+                request_data = {
+                    "content": content,
+                    "source": metadata.get("source", "text_input"),
+                    "language": metadata.get("language", "eng"),
+                    "metadata": metadata
+                }
             
-            if "language" not in final_metadata:
-                try:
-                    from langdetect import detect
-                    detected_lang = detect(text[:1000])
-                    final_metadata["language"] = self.convert_language_code(detected_lang)
-                    accuracy_info["language_detected"] = True
-                except:
-                    final_metadata["language"] = "eng"
-                    accuracy_info["language_detected"] = False
+            # Call Ingestion microservice via HTTP
+            result = self._call_ingestion_service("/ingest", request_data)
             
-            document_id = self.generate_document_id(text, final_metadata.get("source"))
-            final_metadata["document_id"] = document_id
-            
-            index_name = metadata.get("index_name") or self.config.AWS_OPENSEARCH_INDEX
-            
-            logger.info(f"Ingesting document: {document_id} ({len(text)} chars)")
-            
-            result = self.ingestion_engine.add_documents_incremental(
-                texts=[text], metadatas=[final_metadata], index_name=index_name
-            )
-            
-            registry_entry = {
-                "document_id": document_id,
-                "document_name": final_metadata.get("source", filename),
-                "status": "completed",
-                "chunks_created": result.get("chunks_created", 0),
-                "tokens_extracted": result.get("tokens_added", 0),
-                "language": final_metadata.get("language", "eng"),
-                "metadata": final_metadata, "accuracy_info": accuracy_info,
-                "ingested_at": datetime.now().isoformat()
-            }
-            self.document_registry.add_document(document_id, registry_entry)
+            # Trigger sync after successful ingestion
+            sync_triggered = self._broadcast_sync_after_ingestion()
             
             return {
-                "success": True, "document_id": document_id,
+                "success": True,
+                "document_id": result.get("document_id", ""),
                 "chunks_created": result.get("chunks_created", 0),
-                "tokens_added": result.get("tokens_added", 0),
+                "tokens_added": result.get("tokens_extracted", 0),
                 "total_chunks": result.get("total_chunks", 0),
-                "message": f"Successfully ingested document with {result.get('chunks_created', 0)} chunks",
-                "metadata": final_metadata, "accuracy_info": accuracy_info,
-                "sync_triggered": self._broadcast_sync_after_ingestion()
+                "message": result.get("message", "Successfully ingested content"),
+                "accuracy_info": {"via_http": True},
+                "sync_triggered": sync_triggered
             }
             
         except Exception as e:
@@ -570,9 +501,10 @@ class MCPEngine:
         include_answer: bool = True
     ) -> Dict[str, Any]:
         """
-        Search the RAG system with accuracy-optimized retrieval.
+        Search the RAG system via HTTP call to Retrieval microservice.
         
-        OPTIMIZED: Uses cached RetrievalEngine to avoid re-initialization.
+        REFACTORED: Calls existing Retrieval service instead of duplicate engine.
+        Benefits: Shared cache, lower memory, consistent behavior.
         """
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
@@ -588,80 +520,48 @@ class MCPEngine:
         try:
             search_start = time_module.time()
             
-            # Build active sources filter
-            active_sources = None
+            # Build request for Retrieval service
+            request_data = {
+                "question": query,
+                "k": k,
+                "search_mode": search_mode,
+                "use_agentic_rag": use_agentic_rag
+            }
+            
+            # Add source filter if provided
             if "source" in filters:
                 source_filter = filters.pop("source")
                 if isinstance(source_filter, str):
-                    active_sources = [source_filter]
+                    request_data["sources"] = [source_filter]
                 elif isinstance(source_filter, list):
-                    active_sources = source_filter
+                    request_data["sources"] = source_filter
             
-            # Get language filter
-            filter_language = filters.pop("language", None)
-            if filter_language:
-                filter_language = self.convert_language_code(filter_language)
+            # Add language filter if provided
+            if "language" in filters:
+                request_data["filter_language"] = self.convert_language_code(filters.pop("language"))
             
-            # Accuracy settings
-            use_hybrid = search_mode == "hybrid"
-            semantic_weight = self.config.DEFAULT_SEMANTIC_WEIGHT if use_hybrid else (
-                1.0 if search_mode == "semantic" else 0.0
-            )
+            logger.info(f"🔍 MCP Search (via Retrieval service): query='{query[:50]}...', mode={search_mode}, k={k}")
             
-            # Use configured retrieval K for better coverage
-            retrieval_k = max(k, self.config.DEFAULT_RETRIEVAL_K)
+            # Call Retrieval microservice via HTTP
+            result = self._call_retrieval_service("/query", request_data)
+            
+            retrieval_time = time_module.time() - search_start
+            logger.info(f"⏱️ Retrieval service responded in {retrieval_time:.2f}s")
+            
+            # Format response
+            citations = result.get("citations", [])
+            formatted_results = self._format_citations(citations, k)
+            
+            total_time = time_module.time() - search_start
             
             accuracy_info = {
                 "search_mode": search_mode,
-                "semantic_weight": semantic_weight,
-                "keyword_weight": 1.0 - semantic_weight if use_hybrid else (0.0 if search_mode == "semantic" else 1.0),
-                "reranking_enabled": self.config.ENABLE_RERANKING,
                 "agentic_rag_enabled": use_agentic_rag,
-                "retrieval_k": retrieval_k,
                 "final_k": k,
-                "auto_translate": self.config.ENABLE_AUTO_TRANSLATE
+                "retrieval_time_seconds": round(retrieval_time, 2),
+                "total_time_seconds": round(total_time, 2),
+                "via_http": True  # Indicates using shared service
             }
-            
-            logger.info(f"🔍 MCP Search: query='{query[:50]}...', mode={search_mode}, k={k}")
-            
-            # Use cached retrieval engine (FAST - already initialized)
-            if include_answer:
-                result = self.retrieval_engine.query_with_rag(
-                    question=query,
-                    k=retrieval_k,
-                    use_mmr=self.config.DEFAULT_USE_MMR,
-                    active_sources=active_sources,
-                    use_hybrid_search=use_hybrid,
-                    semantic_weight=semantic_weight,
-                    search_mode=search_mode,
-                    use_agentic_rag=use_agentic_rag,
-                    temperature=self.config.DEFAULT_TEMPERATURE,
-                    max_tokens=self.config.DEFAULT_MAX_TOKENS,
-                    filter_language=filter_language,
-                    auto_translate=self.config.ENABLE_AUTO_TRANSLATE
-                )
-            else:
-                result = {
-                    "answer": "",
-                    "citations": self.retrieval_engine._retrieve_chunks_for_query(
-                        query=query, k=retrieval_k,
-                        use_mmr=self.config.DEFAULT_USE_MMR,
-                        use_hybrid_search=use_hybrid,
-                        semantic_weight=semantic_weight,
-                        keyword_weight=1.0 - semantic_weight,
-                        search_mode=search_mode,
-                        active_sources=active_sources,
-                        filter_language=filter_language
-                    ) if hasattr(self.retrieval_engine, '_retrieve_chunks_for_query') else []
-                }
-            
-            retrieval_time = time_module.time() - search_start
-            logger.info(f"⏱️ RAG retrieval completed in {retrieval_time:.2f}s")
-            
-            # Format results efficiently
-            formatted_results = self._format_citations(result.get("citations", []), k)
-            
-            total_time = time_module.time() - search_start
             
             if use_agentic_rag:
                 sub_queries = result.get("sub_queries", [])
@@ -669,16 +569,13 @@ class MCPEngine:
                     accuracy_info["sub_queries_generated"] = len(sub_queries)
                     accuracy_info["sub_queries"] = sub_queries
             
-            accuracy_info["retrieval_time_seconds"] = round(retrieval_time, 2)
-            accuracy_info["total_time_seconds"] = round(total_time, 2)
-            
             return {
                 "success": True,
                 "query": query,
                 "answer": result.get("answer", "") if include_answer else None,
                 "results": formatted_results,
                 "citations": formatted_results,
-                "sources": list(set([r.get("source") for r in formatted_results if r.get("source")])),
+                "sources": result.get("sources", []),
                 "total_results": len(formatted_results),
                 "search_mode": search_mode,
                 "filters_applied": filters,
