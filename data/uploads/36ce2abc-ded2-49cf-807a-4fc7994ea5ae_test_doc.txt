@@ -1,0 +1,1 @@
+This is a test document for ARIS microservices verification. The secret code is ARIS-2026-FIXED.

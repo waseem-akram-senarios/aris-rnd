@@ -79,8 +79,8 @@ class QueryDecomposer:
         """
         question_lower = question.lower().strip()
         
-        # Very short queries
-        if len(question_lower) < 30:
+        # Very short queries (increased to 60 to cover typical "what is X" questions)
+        if len(question_lower) < 60:
             return True
         
         # Check for multiple question indicators

@@ -136,7 +136,7 @@ class GatewayService:
         request_id = str(uuid.uuid4())
         logger.info(f"Gateway: [ReqID: {request_id}] Starting query_text_only for question: '{question[:50]}...' (search_mode={search_mode})")
         
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             payload = {
                 "question": question,
                 "k": k,
@@ -295,7 +295,7 @@ class GatewayService:
             payload["active_sources"] = []
             logger.info(f"Gateway: [ReqID: {request_id}] 📚 ALL DOCUMENTS mode - no filter applied")
         
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=300.0) as client:
             try:
                 headers = {"X-Request-ID": request_id}
                 response = await client.post(f"{self.retrieval_url}/query", json=payload, headers=headers)
