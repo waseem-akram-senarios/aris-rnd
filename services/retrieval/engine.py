@@ -102,13 +102,18 @@ class RetrievalEngine:
         self.chunk_overlap = chunk_overlap
         
         # Use selected embedding model (use instance variable after defaults applied)
+        actual_embeddings = None
         if os.getenv('OPENAI_API_KEY'):
-            self.embeddings = OpenAIEmbeddings(
+            actual_embeddings = OpenAIEmbeddings(
                 openai_api_key=os.getenv('OPENAI_API_KEY'),
                 model=self.embedding_model
             )
         else:
-            self.embeddings = LocalHashEmbeddings(model_name=self.embedding_model)
+            actual_embeddings = LocalHashEmbeddings(model_name=self.embedding_model)
+            
+        # Wrap embeddings with caching to avoid redundant API calls
+        from shared.utils.cached_embeddings import CachedEmbeddings
+        self.embeddings = CachedEmbeddings(actual_embeddings)
         self.vectorstore = None
         
         # Try to load existing FAISS vectorstore if using FAISS
@@ -1906,16 +1911,17 @@ class RetrievalEngine:
                     target_llm_model = self.simple_query_model
                     logger.info(f"⚡ Reverting to FAST model for single query: {target_llm_model}")
                 else:
-                    # Perform multi-query retrieval
-                    # Note: Using sequential execution to avoid ThreadPoolExecutor issues with Streamlit/OpenSearch connections
+                    # Perform multi-query retrieval in parallel
                     all_chunks = []
                     chunks_per_subquery = agentic_config['chunks_per_subquery']
                     
                     retrieval_start = time_module.time()
                     
-                    for i, sub_query in enumerate(sub_queries):
-                        try:
-                            sub_chunks = self._retrieve_chunks_for_query(
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(sub_queries), 5)) as executor:
+                        future_to_query = {
+                            executor.submit(
+                                self._retrieve_chunks_for_query,
                                 sub_query,
                                 k=chunks_per_subquery,
                                 use_mmr=use_mmr,
@@ -1923,13 +1929,19 @@ class RetrievalEngine:
                                 semantic_weight=semantic_weight,
                                 keyword_weight=keyword_weight,
                                 search_mode=search_mode,
-                                disable_reranking=is_contact_query  # Disable for contact queries (QA fix)
-                            )
-                            all_chunks.extend(sub_chunks)
-                            logger.debug(f"Retrieved {len(sub_chunks)} chunks for sub-query {i+1}/{len(sub_queries)}: {sub_query[:50]}...")
-                        except Exception as e:
-                            logger.warning(f"Failed to retrieve chunks for sub-query '{sub_query[:50]}...': {e}")
-                            continue
+                                disable_reranking=is_contact_query,
+                                active_sources=active_sources
+                            ): sub_query for sub_query in sub_queries
+                        }
+                        
+                        for future in concurrent.futures.as_completed(future_to_query):
+                            sub_query = future_to_query[future]
+                            try:
+                                sub_chunks = future.result()
+                                all_chunks.extend(sub_chunks)
+                                logger.debug(f"Retrieved {len(sub_chunks)} chunks for sub-query: {sub_query[:50]}...")
+                            except Exception as e:
+                                logger.warning(f"Failed to retrieve chunks for sub-query '{sub_query[:50]}...': {e}")
                     
                     retrieval_time = time_module.time() - retrieval_start
                     logger.info(f"⚡ Sub-query retrieval completed in {retrieval_time:.2f}s for {len(sub_queries)} sub-queries")
@@ -2997,69 +3009,50 @@ class RetrievalEngine:
         additional_image_docs = []
         should_search_for_images = should_extract_image_content or len(documents_with_images) > 0
         
-        if should_search_for_images and self.vectorstore is not None:
+        if should_search_for_images:
+            # For OpenSearch/multi-index, we need a search function that handles multiple indexes
+            def search_images(q):
+                try:
+                    if self.vector_store_type == 'opensearch' and hasattr(self, 'multi_index_manager'):
+                        # Use multi-index search for images
+                        return self.multi_index_manager.search_across_indexes(
+                            query=q,
+                            index_names=indexes_to_search,
+                            k=100,
+                            use_hybrid_search=True
+                        )
+                    elif self.vectorstore is not None:
+                        return self.vectorstore.similarity_search(q, k=100)
+                    return []
+                except Exception as e:
+                    logger.debug(f"Image search failed for query '{q}': {e}")
+                    return []
+
             logger.info(f"Searching for image chunks: image_question={is_image_question}, documents_with_images={len(documents_with_images)}")
-            # #region agent log
             try:
-                with open('/home/senarios/Desktop/aris/.cursor/debug.log', 'a') as f:
-                    import json
-                    f.write(json.dumps({"sessionId":"debug-session","runId":"run1","hypothesisId":"B","location":"rag_system.py:2163","message":"Starting image chunk search","data":{"should_search":True,"has_vectorstore":True,"image_question":is_image_question,"documents_with_images_count":len(documents_with_images)},"timestamp":int(time_module.time()*1000)})+"\n")
-            except: pass
-            # #endregion
-            # Search for chunks with image markers from ALL documents (not just mentioned ones)
-            # This ensures we find image content even if similarity search didn't return those chunks
-            try:
-                # Strategy 1: Search for chunks with image markers using multiple queries
+                # Strategy 1: Search for chunks with image markers in parallel
                 image_queries = [
                     "image diagram figure picture",
                     "drawer tool wrench socket",
                     "part number quantity tool list"
                 ]
                 
-                for image_query in image_queries:
-                    try:
-                        if hasattr(self.vectorstore, 'similarity_search_with_score'):
-                            search_results = self.vectorstore.similarity_search_with_score(
-                                image_query,
-                                k=100  # Increased to get more chunks
-                            )
-                            for doc_result, score in search_results:
-                                if hasattr(doc_result, 'page_content'):
-                                    # Check for image markers OR image metadata
-                                    has_marker = '<!-- image -->' in doc_result.page_content
-                                    has_metadata = False
-                                    if hasattr(doc_result, 'metadata') and doc_result.metadata:
-                                        has_metadata = (
-                                            doc_result.metadata.get('images_detected', False) or
-                                            doc_result.metadata.get('image_count', 0) > 0 or
-                                            doc_result.metadata.get('has_image', False)
-                                        )
-                                    
-                                    if (has_marker or has_metadata) and doc_result not in relevant_docs:
-                                        # Check if it's from a document with images
-                                        doc_source = doc_result.metadata.get('source', '') if hasattr(doc_result, 'metadata') and doc_result.metadata else ''
-                                        if not documents_with_images or doc_source in documents_with_images or not doc_source:
-                                            additional_image_docs.append(doc_result)
-                        elif hasattr(self.vectorstore, 'similarity_search'):
-                            search_results = self.vectorstore.similarity_search(image_query, k=100)
-                            for doc_result in search_results:
-                                if hasattr(doc_result, 'page_content'):
-                                    has_marker = '<!-- image -->' in doc_result.page_content
-                                    has_metadata = False
-                                    if hasattr(doc_result, 'metadata') and doc_result.metadata:
-                                        has_metadata = (
-                                            doc_result.metadata.get('images_detected', False) or
-                                            doc_result.metadata.get('image_count', 0) > 0 or
-                                            doc_result.metadata.get('has_image', False)
-                                        )
-                                    
-                                    if (has_marker or has_metadata) and doc_result not in relevant_docs:
-                                        doc_source = doc_result.metadata.get('source', '') if hasattr(doc_result, 'metadata') and doc_result.metadata else ''
-                                        if not documents_with_images or doc_source in documents_with_images or not doc_source:
-                                            additional_image_docs.append(doc_result)
-                    except Exception as e:
-                        logger.debug(f"Could not search for image chunks with query '{image_query}': {e}")
-                        continue
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                    futures = [executor.submit(search_images, q) for q in image_queries]
+                    for future in concurrent.futures.as_completed(futures):
+                        search_results = future.result()
+                        for doc_result in search_results:
+                            if hasattr(doc_result, 'page_content'):
+                                has_marker = '<!-- image -->' in doc_result.page_content
+                                has_metadata = False
+                                if hasattr(doc_result, 'metadata') and doc_result.metadata:
+                                    has_metadata = any(doc_result.metadata.get(k) for k in ['images_detected', 'image_count', 'has_image'])
+                                
+                                if (has_marker or has_metadata) and doc_result not in relevant_docs:
+                                    doc_source = doc_result.metadata.get('source', '') if hasattr(doc_result, 'metadata') and doc_result.metadata else ''
+                                    if not documents_with_images or doc_source in documents_with_images or not doc_source:
+                                        additional_image_docs.append(doc_result)
                 
                 # Remove duplicates
                 seen = set()
@@ -3096,104 +3089,58 @@ class RetrievalEngine:
                 logger.debug(traceback.format_exc())
         
         # Phase 2: Expand search for tool/item names in image content
-        if should_extract_image_content and tool_item_names and self.vectorstore is not None:
+        if should_extract_image_content and tool_item_names:
             logger.info(f"🔍 Expanding search for tool/item names: {tool_item_names}")
             try:
-                # Search for chunks containing these items in image content
-                for item_name in tool_item_names:
-                    try:
-                        # Search with item name + image-related terms
-                        search_query = f"{item_name} image drawer tool part"
-                        if hasattr(self.vectorstore, 'similarity_search_with_score'):
-                            search_results = self.vectorstore.similarity_search_with_score(
-                                search_query,
-                                k=min(10, k * 2) if k else 10
-                            )
-                            for doc_result, score in search_results:
-                                # Filter for chunks with image markers
-                                if hasattr(doc_result, 'page_content') and '<!-- image -->' in doc_result.page_content:
-                                    if doc_result not in relevant_docs:
-                                        relevant_docs.append(doc_result)
-                                        logger.debug(f"Found chunk with '{item_name}' in image content")
-                        elif hasattr(self.vectorstore, 'similarity_search'):
-                            search_results = self.vectorstore.similarity_search(
-                                search_query,
-                                k=min(10, k * 2) if k else 10
-                            )
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(tool_item_names), 5)) as executor:
+                    futures = {executor.submit(search_images, f"{name} image drawer tool part"): name for name in tool_item_names}
+                    
+                    for future in concurrent.futures.as_completed(futures):
+                        item_name = futures[future]
+                        try:
+                            search_results = future.result()
                             for doc_result in search_results:
                                 if hasattr(doc_result, 'page_content') and '<!-- image -->' in doc_result.page_content:
                                     if doc_result not in relevant_docs:
                                         relevant_docs.append(doc_result)
                                         logger.debug(f"Found chunk with '{item_name}' in image content")
-                    except Exception as e:
-                        logger.debug(f"Error searching for {item_name}: {e}")
-                        continue
+                        except Exception as e:
+                            logger.debug(f"Error searching for {item_name}: {e}")
                 
-                if tool_item_names:
-                    logger.info(f"✅ Expanded search completed for {len(tool_item_names)} tool/item name(s)")
+                logger.info(f"✅ Expanded search completed for {len(tool_item_names)} tool/item name(s)")
             except Exception as e:
                 logger.warning(f"Error in tool/item name search: {e}")
-                import traceback
-                logger.debug(traceback.format_exc())
         
-        if is_image_question and mentioned_documents and self.vectorstore is not None:
+        if is_image_question and mentioned_documents:
             try:
                 # Query for chunks with image metadata from mentioned documents
-                for mentioned_source in mentioned_documents:
-                    # Create a query to find image chunks from this document
-                    # Use a generic image-related query
-                    image_query = "image diagram figure picture"
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(mentioned_documents), 5)) as executor:
+                    # Search specifically for image-related chunks in mentioned documents
+                    futures = {executor.submit(search_images, "image diagram figure picture"): doc for doc in mentioned_documents}
                     
-                    # Try to retrieve chunks with image metadata
-                    try:
-                        # Use similarity search with filter for this document
-                        if hasattr(self.vectorstore, 'similarity_search_with_score'):
-                            # For FAISS, we'll search and filter
-                            search_results = self.vectorstore.similarity_search_with_score(
-                                image_query,
-                                k=min(20, k * 2) if k else 20  # Get more chunks for image search
-                            )
-                            # Filter for mentioned document and image metadata
-                            for doc_result, score in search_results:
-                                if hasattr(doc_result, 'metadata') and doc_result.metadata:
-                                    doc_source = doc_result.metadata.get('source', '')
-                                    if doc_source == mentioned_source:
-                                        # Check if it has image metadata
-                                        if (doc_result.metadata.get('has_image') or
-                                            doc_result.metadata.get('image_ref') or
-                                            doc_result.metadata.get('images_detected') or
-                                            '<!-- image -->' in (doc_result.page_content if hasattr(doc_result, 'page_content') else '')):
-                                            # Check if not already in relevant_docs
-                                            if doc_result not in relevant_docs:
-                                                additional_image_docs.append(doc_result)
-                        elif hasattr(self.vectorstore, 'similarity_search'):
-                            # Fallback to similarity_search
-                            search_results = self.vectorstore.similarity_search(
-                                image_query,
-                                k=min(20, k * 2) if k else 20
-                            )
+                    for future in concurrent.futures.as_completed(futures):
+                        mentioned_source = futures[future]
+                        try:
+                            search_results = future.result()
                             for doc_result in search_results:
                                 if hasattr(doc_result, 'metadata') and doc_result.metadata:
                                     doc_source = doc_result.metadata.get('source', '')
                                     if doc_source == mentioned_source:
-                                        if (doc_result.metadata.get('has_image') or
-                                            doc_result.metadata.get('image_ref') or
-                                            doc_result.metadata.get('images_detected') or
-                                            '<!-- image -->' in (doc_result.page_content if hasattr(doc_result, 'page_content') else '')):
+                                        # Check if it has image flags
+                                        has_img = any(doc_result.metadata.get(k) for k in ['has_image', 'image_ref', 'images_detected'])
+                                        if has_img or '<!-- image -->' in (doc_result.page_content if hasattr(doc_result, 'page_content') else ''):
                                             if doc_result not in relevant_docs:
                                                 additional_image_docs.append(doc_result)
-                    except Exception as e:
-                        logger.debug(f"Could not retrieve additional image chunks for {mentioned_source}: {e}")
-                        # Continue with other documents
-                        pass
+                        except Exception as e:
+                            logger.debug(f"Could not retrieve additional image chunks for {mentioned_source}: {e}")
                 
                 if additional_image_docs:
                     logger.info(f"Found {len(additional_image_docs)} additional image chunks from mentioned documents")
-                    # Add to relevant_docs for comprehensive image content extraction
                     relevant_docs = relevant_docs + additional_image_docs
             except Exception as e:
                 logger.debug(f"Error expanding image search: {e}")
-                # Continue with normal flow
         
         # CRITICAL: Always extract image content from ALL retrieved chunks
         # This ensures image content is available even if question phrasing doesn't trigger is_image_question
@@ -5808,9 +5755,9 @@ Answer:"""
         if len(word_lower) < 4:
             return False
         
-        # For short words (4-5 chars), require higher threshold
+        # For short words (4-5 chars), require slightly higher threshold, but not as high as 0.85
         if len(word_lower) < 6:
-            threshold = 0.85
+            threshold = max(threshold, 0.80)  # Lowered from 0.85 for better typo handling
         
         # OPTIMIZATION: Quick character set overlap check (50%+ common chars required)
         word_chars = set(word_lower)
@@ -6089,56 +6036,108 @@ Answer:"""
         query_keywords = self._extract_query_keywords(query)
         logger.info(f"📊 [CITATION_RANK] Query keywords: {query_keywords}")
         
+        # Separate phrases from single keywords for stricter matching
+        phrase_keywords = [kw for kw in query_keywords if ' ' in kw]
+        single_keywords = [kw for kw in query_keywords if ' ' not in kw]
+        
         for citation in citations:
             content = (citation.get('full_text', '') or '') + ' ' + (citation.get('snippet', '') or '')
             content_lower = content.lower()
             
             # Count keyword matches with phrase weighting
-            # Phrases (2+ words) are weighted higher than single words
-            # ENHANCED: Use fuzzy matching to handle typos
+            # STRICT: Phrase matches are REQUIRED for relevance when phrases exist in query
             keyword_matches = 0
             phrase_matches = 0
             matched_keywords = []
+            context_valid_single_matches = 0  # Single keywords that appear in relevant context
             
-            for kw in query_keywords:
-                # Use fuzzy matching for single words (handles typos)
-                if ' ' not in kw:
-                    if self._fuzzy_match(kw, content_lower, threshold=0.75):
-                        keyword_matches += 1
-                        matched_keywords.append(kw)
+            # STEP 1: Check phrase matches FIRST (most important)
+            for kw in phrase_keywords:
+                if kw.lower() in content_lower:
+                    keyword_matches += 1
+                    phrase_matches += 1
+                    matched_keywords.append(kw)
                 else:
-                    # For phrases, check exact match first, then fuzzy match each word
-                    if kw.lower() in content_lower:
-                        keyword_matches += 1
-                        phrase_matches += 1
-                        matched_keywords.append(kw)
-                    else:
-                        # Check if all words in phrase fuzzy-match
-                        phrase_words = kw.split()
-                        all_match = all(self._fuzzy_match(pw, content_lower, threshold=0.75) for pw in phrase_words)
-                        if all_match:
-                            keyword_matches += 1
-                            phrase_matches += 1
-                            matched_keywords.append(kw)
+                    # Check if all words in phrase appear close together (within 50 chars)
+                    phrase_words = kw.split()
+                    if len(phrase_words) >= 2:
+                        # Find positions of each word
+                        import re
+                        positions = []
+                        for pw in phrase_words:
+                            matches = list(re.finditer(r'\b' + re.escape(pw.lower()) + r'\b', content_lower))
+                            if matches:
+                                positions.append([m.start() for m in matches])
+                            else:
+                                positions.append([])
+                        
+                        # Check if words appear close together (proximity match)
+                        if all(positions):
+                            # Check all combinations for proximity
+                            found_proximity = False
+                            for pos1 in positions[0]:
+                                for pos2 in positions[-1]:
+                                    if abs(pos1 - pos2) < 100:  # Within 100 chars
+                                        found_proximity = True
+                                        break
+                                if found_proximity:
+                                    break
+                            
+                            if found_proximity:
+                                keyword_matches += 1
+                                phrase_matches += 1
+                                matched_keywords.append(kw + " (proximity)")
+            
+            # STEP 2: Check single keywords, but validate context
+            for kw in single_keywords:
+                kw_lower = kw.lower()
+                # Check if keyword exists
+                if self._fuzzy_match(kw, content_lower, threshold=0.70):
+                    keyword_matches += 1
+                    matched_keywords.append(kw)
+                    
+                    # CONTEXT VALIDATION: Check if keyword appears in relevant context
+                    # For ambiguous words like "leave", check surrounding words
+                    import re
+                    pattern = r'.{0,30}\b' + re.escape(kw_lower) + r'\b.{0,30}'
+                    contexts = re.findall(pattern, content_lower)
+                    
+                    # Check if any context contains other query keywords
+                    for ctx in contexts:
+                        other_keywords = [k for k in single_keywords if k != kw]
+                        if any(ok.lower() in ctx for ok in other_keywords):
+                            context_valid_single_matches += 1
+                            break
+                        # Also check if phrase keywords' words appear in context
+                        for pk in phrase_keywords:
+                            pk_words = pk.split()
+                            if any(pkw.lower() in ctx for pkw in pk_words):
+                                context_valid_single_matches += 1
+                                break
             
             # Calculate content relevance score (0.0 to 1.0)
-            # Phrase matches are weighted 2x more than single-word matches
-            single_word_matches = keyword_matches - phrase_matches
-            weighted_matches = single_word_matches + (phrase_matches * 2)
-            max_possible = len([kw for kw in query_keywords if ' ' not in kw]) + (len([kw for kw in query_keywords if ' ' in kw]) * 2)
+            # STRICT SCORING: Phrase matches are weighted 3x, context-valid singles 1.5x
+            weighted_matches = (phrase_matches * 3) + (context_valid_single_matches * 1.5) + ((keyword_matches - phrase_matches - context_valid_single_matches) * 0.5)
+            max_possible = (len(phrase_keywords) * 3) + (len(single_keywords) * 1.5)
             
             content_relevance = weighted_matches / max(max_possible, 1)
             
-            # RELAXED FILTERING: Keep citations with even 1 keyword match
-            # But assign low relevance (0.1) if not truly strong match
-            is_truly_relevant = (keyword_matches >= 2) or (phrase_matches >= 1)
-            if not is_truly_relevant and keyword_matches >= 1:
-                # 1 single-word match - keep but mark as low relevance
-                content_relevance = 0.1
-                logger.debug(f"Citation kept with single keyword match: {matched_keywords}")
-            elif not is_truly_relevant:
-                # 0 matches
+            # STRICT FILTERING: Require phrase match OR multiple keyword matches for relevance
+            # Single keyword match alone is NOT enough (prevents "leave lights" matching "leave policy")
+            has_phrase_match = phrase_matches >= 1
+            has_multiple_keywords = keyword_matches >= 2
+            has_context_valid_match = context_valid_single_matches >= 1
+            
+            is_truly_relevant = has_phrase_match or has_multiple_keywords or has_context_valid_match
+            
+            if not is_truly_relevant:
+                # Single keyword match without context - mark as IRRELEVANT
                 content_relevance = 0.0
+                logger.debug(f"Citation REJECTED (single keyword, no context): {matched_keywords}")
+            elif not has_phrase_match and keyword_matches == 1:
+                # Only 1 keyword match but has context - low relevance
+                content_relevance = 0.15
+                logger.debug(f"Citation kept with context-valid single match: {matched_keywords}")
             
             citation['_content_relevance'] = content_relevance
             citation['_matched_keywords'] = matched_keywords
@@ -6146,7 +6145,7 @@ Answer:"""
             
             # Log relevance for debugging
             source = citation.get('source', 'Unknown')[:30]
-            logger.debug(f"Citation from {source}: relevance={content_relevance:.2f}, matched={matched_keywords}, phrases={phrase_matches}")
+            logger.debug(f"Citation from {source}: relevance={content_relevance:.2f}, matched={matched_keywords}, phrases={phrase_matches}, context_valid={context_valid_single_matches}")
         
         # STEP 2: Filter out completely irrelevant citations (0 keyword matches)
         # ACTUALLY REMOVE irrelevant citations - don't just move them to the end
