@@ -6041,7 +6041,15 @@ Answer:"""
         single_keywords = [kw for kw in query_keywords if ' ' not in kw]
         
         for citation in citations:
-            content = (citation.get('full_text', '') or '') + ' ' + (citation.get('snippet', '') or '')
+            # CRITICAL FIX: Only use SNIPPET for relevance scoring, not full_text
+            # full_text may contain unrelated content from the same page
+            # The snippet is what's actually shown to the user and should be relevant
+            snippet = citation.get('snippet', '') or ''
+            # Only use full_text if snippet is too short (< 50 chars)
+            if len(snippet) < 50:
+                content = (citation.get('full_text', '') or '') + ' ' + snippet
+            else:
+                content = snippet
             content_lower = content.lower()
             
             # Count keyword matches with phrase weighting
