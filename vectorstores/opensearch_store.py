@@ -840,24 +840,34 @@ class OpenSearchVectorStore:
                 msearch_body.extend([{"index": self.index_name}, knn_query])
             
             # 2. Prepare Keyword Search (if weight > 0)
-            # ENHANCED: Add phrase matching with high boost to prioritize exact phrase matches
+            # ENHANCED: Add phrase matching with very high boost to prioritize exact phrase matches
             if keyword_weight > 0:
                 should_clauses = [
-                    # Exact phrase match - HIGHEST priority (boost 5x)
+                    # Exact phrase match - HIGHEST priority (boost 10x)
+                    {
+                        "match_phrase": {
+                            "text": {
+                                "query": query,
+                                "boost": 10.0,
+                                "slop": 1  # Strict: only 1 word between phrase terms
+                            }
+                        }
+                    },
+                    # Phrase match with more flexibility (boost 5x)
                     {
                         "match_phrase": {
                             "text": {
                                 "query": query,
                                 "boost": 5.0,
-                                "slop": 2  # Allow 2 words between phrase terms
+                                "slop": 3  # Allow 3 words between phrase terms
                             }
                         }
                     },
-                    # Standard multi-match for individual terms
+                    # Standard multi-match for individual terms (lower boost)
                     {
                         "multi_match": {
                             "query": query,
-                            "fields": ["text^2", "metadata.text_english^1.5", "metadata.source"],
+                            "fields": ["text^1.5", "metadata.text_english^1.0", "metadata.source^0.5"],
                             "type": "best_fields",
                             "fuzziness": "AUTO"
                         }
