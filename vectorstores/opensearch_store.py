@@ -1337,8 +1337,48 @@ class OpenSearchMultiIndexManager:
                 seen.add(content_hash)
                 unique_results.append(doc)
         
-        # GLOBAL RE-RANKING: Sort by relevance score (descending)
-        # Use _opensearch_score from hybrid search, or default to 0
+        # GLOBAL RE-RANKING: Sort by PHRASE MATCH + relevance score
+        # CRITICAL FIX: When RRF scores are similar, prioritize exact phrase matches
+        import re
+        
+        def get_phrase_match_score(doc: Document, query_text: str) -> float:
+            """
+            Calculate phrase match score for re-ranking.
+            Exact phrase matches get highest score, partial matches get lower.
+            """
+            content = (doc.page_content or '').lower()
+            query_lower = query_text.lower()
+            
+            # Extract meaningful phrases (2+ words) from query
+            words = re.findall(r'\b\w+\b', query_lower)
+            stop_words = {'what', 'is', 'the', 'a', 'an', 'of', 'in', 'for', 'to', 'and', 'or', 'how', 'why', 'when', 'where', 'which'}
+            content_words = [w for w in words if w not in stop_words and len(w) > 2]
+            
+            score = 0.0
+            
+            # Check for exact full query phrase match (highest priority)
+            clean_query = ' '.join(content_words)
+            if clean_query and clean_query in content:
+                score += 10.0
+                logger.debug(f"Exact phrase match found: '{clean_query}'")
+            
+            # Check for 2-word phrase matches
+            for i in range(len(content_words) - 1):
+                phrase = f"{content_words[i]} {content_words[i+1]}"
+                if phrase in content:
+                    score += 3.0
+                # Check with 1-word gap (e.g., "leave policy" matches "leave the policy")
+                pattern = rf'\b{re.escape(content_words[i])}\b\s+\w*\s*\b{re.escape(content_words[i+1])}\b'
+                if re.search(pattern, content):
+                    score += 1.5
+            
+            # Check individual keyword matches (lower priority)
+            for word in content_words:
+                if re.search(rf'\b{re.escape(word)}\b', content):
+                    score += 0.5
+            
+            return score
+        
         def get_relevance_score(doc: Document) -> float:
             """Extract relevance score from document metadata."""
             metadata = doc.metadata or {}
@@ -1349,15 +1389,30 @@ class OpenSearchMultiIndexManager:
                 return float(metadata["_score"])
             return 0.0
         
-        # Sort by relevance score (highest first)
-        unique_results.sort(key=get_relevance_score, reverse=True)
+        # Calculate phrase match scores for all results
+        for doc in unique_results:
+            phrase_score = get_phrase_match_score(doc, query)
+            doc.metadata['_phrase_match_score'] = phrase_score
+        
+        # Sort by: (1) phrase match score (primary), (2) relevance score (secondary)
+        # This ensures documents with exact phrase matches rank higher
+        unique_results.sort(
+            key=lambda doc: (
+                doc.metadata.get('_phrase_match_score', 0),
+                get_relevance_score(doc)
+            ),
+            reverse=True
+        )
         
         logger.info(f"🔄 Global re-ranking: {len(unique_results)} unique results from {len(index_names)} indexes, returning top {k}")
         
         # Log top results for debugging
         if unique_results:
-            top_scores = [f"{get_relevance_score(doc):.4f}" for doc in unique_results[:min(5, len(unique_results))]]
-            logger.debug(f"Top {len(top_scores)} scores after global re-ranking: {top_scores}")
+            top_info = [(f"phrase={doc.metadata.get('_phrase_match_score', 0):.1f}", 
+                        f"score={get_relevance_score(doc):.4f}",
+                        doc.metadata.get('source', 'Unknown')[:20]) 
+                       for doc in unique_results[:min(5, len(unique_results))]]
+            logger.info(f"🔄 Top {len(top_info)} after phrase-aware re-ranking: {top_info}")
         
         return unique_results[:k]
     
