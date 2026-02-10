@@ -1,0 +1,494 @@
+{
+  "test_timestamp": "2026-01-09T18:58:12.842396",
+  "documents": {
+    "EM10, degasing.pdf": {
+      "file_name": "EM10, degasing.pdf",
+      "file_path": "/home/senarios/Desktop/aris/docs/testing/clientSpanishDocs/EM10, degasing.pdf",
+      "file_size_bytes": 208403,
+      "file_size_mb": 0.2,
+      "document_type": {
+        "type": "text",
+        "is_image_heavy": false
+      },
+      "parsers": {
+        "pymupdf": {
+          "parser": "pymupdf",
+          "success": true,
+          "text_length": 2014,
+          "pages": 2,
+          "images_detected": true,
+          "image_count": 1,
+          "extracted_images": [
+            {
+              "page": 1,
+              "image_number": 1,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 1",
+              "has_ocr": true
+            }
+          ],
+          "extraction_percentage": 1.0,
+          "processing_time": 0.5027773380279541,
+          "error": null,
+          "sample_text": "--- Page 1 ---\n<!-- image -->\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\nDesde la pantalla, EM10, se pueden ajustar los siguientes parámetros:\n•\nComo vemos, tenemos límites, entre –15 y –3.\nSi necesitamos quitar el aire en bolsa, debemos tender el valor set a –15, cuanto más \ncerca de  –15, más avanzarán las barras y más aire sacarán.\n○\nSi por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set \na –3, para acortar el recorrido de las barras y saquen menos aire.\n○\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras \nmanualmente.\nAjustando las barras manualmente:\n•\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las \nbarras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo \nque el aire en las demás bolsas podría aumentar.\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no \ncho..."
+        },
+        "docling": {
+          "parser": "docling",
+          "success": true,
+          "text_length": 1967,
+          "pages": 2,
+          "images_detected": true,
+          "image_count": 1,
+          "extracted_images": [
+            {
+              "page": 1,
+              "image_number": 1,
+              "ocr_text_length": 1785,
+              "ocr_text_preview": "- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cu...",
+              "has_ocr": true
+            }
+          ],
+          "extraction_percentage": 0.488,
+          "processing_time": 43.581451416015625,
+          "error": null,
+          "sample_text": "--- Page 1 ---\n## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n<!-- image -->\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·\n\n--- Page 2 ---\n\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre q..."
+        },
+        "ocrmypdf": {
+          "parser": "ocrmypdf",
+          "success": false,
+          "text_length": 0,
+          "pages": 0,
+          "images_detected": false,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 0.0021309852600097656,
+          "error": "OCRmyPDF or Tesseract not available. Install with: sudo apt-get install tesseract-ocr && pip install ocrmypdf",
+          "sample_text": ""
+        }
+      },
+      "best_parser": "pymupdf",
+      "image_analysis": {
+        "pymupdf": {
+          "total_images": 1,
+          "images_with_ocr": 1,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 15.0,
+          "ocr_coverage_percentage": 100.0
+        },
+        "docling": {
+          "total_images": 1,
+          "images_with_ocr": 1,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 1785.0,
+          "ocr_coverage_percentage": 100.0
+        },
+        "ocrmypdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        }
+      }
+    },
+    "EM11, top seal.pdf": {
+      "file_name": "EM11, top seal.pdf",
+      "file_path": "/home/senarios/Desktop/aris/docs/testing/clientSpanishDocs/EM11, top seal.pdf",
+      "file_size_bytes": 1537048,
+      "file_size_mb": 1.47,
+      "document_type": {
+        "type": "mixed",
+        "is_image_heavy": true
+      },
+      "parsers": {
+        "pymupdf": {
+          "parser": "pymupdf",
+          "success": true,
+          "text_length": 7783,
+          "pages": 14,
+          "images_detected": true,
+          "image_count": 20,
+          "extracted_images": [
+            {
+              "page": 1,
+              "image_number": 1,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 1",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 2,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 1",
+              "has_ocr": true
+            },
+            {
+              "page": 2,
+              "image_number": 3,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 2",
+              "has_ocr": true
+            },
+            {
+              "page": 2,
+              "image_number": 4,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 2",
+              "has_ocr": true
+            },
+            {
+              "page": 2,
+              "image_number": 5,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 2",
+              "has_ocr": true
+            },
+            {
+              "page": 2,
+              "image_number": 6,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 2",
+              "has_ocr": true
+            },
+            {
+              "page": 3,
+              "image_number": 7,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 3",
+              "has_ocr": true
+            },
+            {
+              "page": 3,
+              "image_number": 8,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 3",
+              "has_ocr": true
+            },
+            {
+              "page": 4,
+              "image_number": 9,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 4",
+              "has_ocr": true
+            },
+            {
+              "page": 4,
+              "image_number": 10,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 4",
+              "has_ocr": true
+            }
+          ],
+          "extraction_percentage": 1.0,
+          "processing_time": 0.5013294219970703,
+          "error": null,
+          "sample_text": "--- Page 1 ---\n<!-- image -->\nAsunto\nNGV: Borrador Instrucciones limpieza counterpart Top Seal\nDe\nRubiella Rosell, Ignacio\nPara\nPuente Otin, Rodolfo; Moreno Gonzalez, Aitor; Perez Betran, Alberto\nInstruccio\nnLimpieza...\nCC\nLacueva Marco, Victor; Saturque Otin, Jose Manuel; Manero Castillo, Israel\nEnviado\nlunes, 17 de octubre de 2022 11:25\nDatos adjuntos\nInstruccio\nnLimpieza...\nOs adjuntamos borrador de las instrucciones para una correcta limpieza del conjunto de “gomas \nrojas” de la Top Seal en la NGV para que compartáis con vuestros equipos.\nComo sabéis, el principal problema que se tiene es la acumulación de residuos en el interior del \nconjunto que impiden un deslizamiento libre de las partes.\nEstamos buscando un sistema de limpieza más rápido y eficaz ya que parece que el tema de los \ngoteos no parece tener solución a corto plazo.\nOs mantendremos informados.\nSaludos,\nIgnacio.\nIgnacio Rubiella Rosell\nMaintenance Engineer\nBieffe Medital S.A. – Baxter Healthcare Corporation\nCtra Biesc..."
+        },
+        "docling": {
+          "parser": "docling",
+          "success": true,
+          "text_length": 38991,
+          "pages": 14,
+          "images_detected": true,
+          "image_count": 6,
+          "extracted_images": [
+            {
+              "page": 1,
+              "image_number": 1,
+              "ocr_text_length": 338,
+              "ocr_text_preview": "| Asunto         | NGV: Borrador Instrucciones limpieza counterpart Top Seal                                   |\n|----------------|---------------------------------------------------------------------...",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 2,
+              "ocr_text_length": 1231,
+              "ocr_text_preview": "| Para           | Puente Otin, Rodolfo; Moreno Gonzalez, Aitor; Perez Betran, Alberto Instruccio nLimpieza... |\n| CC             | Lacueva Marco, Victor; Saturque Otin, Jose Manuel; Manero Castillo, ...",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 3,
+              "ocr_text_length": 193,
+              "ocr_text_preview": "miércoles, 26 de octubre de 2022\n\n| Asunto         | Ropex Tools                                                                                                                                |",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 4,
+              "ocr_text_length": 959,
+              "ocr_text_preview": "|----------------|--------------------------------------------------------------------------------------------------------------------------------------------|\n| De             | Faifer, Davide       ...",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 5,
+              "ocr_text_length": 131,
+              "ocr_text_preview": "## Hi Team,\n\nRegarding the Ropex tools please find attached the manual, in particular from page 47 you can fine all the Fault Code.",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 6,
+              "ocr_text_length": 10000,
+              "ocr_text_preview": "| NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are outpu...",
+              "has_ocr": true
+            }
+          ],
+          "extraction_percentage": 1.0,
+          "processing_time": 343.95396637916565,
+          "error": null,
+          "sample_text": "--- Page 1 ---\n## NGV: Borrador Instrucciones limpieza counterpart Top Seal\n\nmiércoles, 26 de octubre de 2022\n\n9:53\n\n<!-- image -->\n| Asunto         | NGV: Borrador Instrucciones limpieza counterpart Top Seal                                   |\n|----------------|---------------------------------------------------------------------------------------------|\n| De             | Rubiella Rosell, Ignacio                                                                    |\n<!-- image -->\n| Para           | Puente Otin, Rodolfo; Moreno Gonzalez, Aitor; Perez Betran, Alberto Instruccio nLimpieza... |\n| CC             | Lacueva Marco, Victor; Saturque Otin, Jose Manuel; Manero Castillo, Israel                  |\n| Enviado        | lunes, 17 de octubre de 2022 11:25                                                          |\n| Datos adjuntos | Instruccio nLimpieza...                                                                     |\n\nOs adjuntamos borrador de las instrucciones para una correcta..."
+        },
+        "ocrmypdf": {
+          "parser": "ocrmypdf",
+          "success": false,
+          "text_length": 0,
+          "pages": 0,
+          "images_detected": false,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 0.0011570453643798828,
+          "error": "OCRmyPDF or Tesseract not available. Install with: sudo apt-get install tesseract-ocr && pip install ocrmypdf",
+          "sample_text": ""
+        }
+      },
+      "best_parser": "docling",
+      "image_analysis": {
+        "pymupdf": {
+          "total_images": 20,
+          "images_with_ocr": 10,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 15.0,
+          "ocr_coverage_percentage": 50.0
+        },
+        "docling": {
+          "total_images": 6,
+          "images_with_ocr": 6,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 2142.0,
+          "ocr_coverage_percentage": 100.0
+        },
+        "ocrmypdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        }
+      }
+    },
+    "VUORMAR.pdf": {
+      "file_name": "VUORMAR.pdf",
+      "file_path": "/home/senarios/Desktop/aris/docs/testing/clientSpanishDocs/VUORMAR.pdf",
+      "file_size_bytes": 735441,
+      "file_size_mb": 0.7,
+      "document_type": {
+        "type": "mixed",
+        "is_image_heavy": true
+      },
+      "parsers": {
+        "pymupdf": {
+          "parser": "pymupdf",
+          "success": true,
+          "text_length": 3646,
+          "pages": 10,
+          "images_detected": true,
+          "image_count": 13,
+          "extracted_images": [
+            {
+              "page": 2,
+              "image_number": 1,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 2",
+              "has_ocr": true
+            },
+            {
+              "page": 3,
+              "image_number": 2,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 3",
+              "has_ocr": true
+            },
+            {
+              "page": 3,
+              "image_number": 3,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 3",
+              "has_ocr": true
+            },
+            {
+              "page": 3,
+              "image_number": 4,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 3",
+              "has_ocr": true
+            },
+            {
+              "page": 3,
+              "image_number": 5,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 3",
+              "has_ocr": true
+            },
+            {
+              "page": 4,
+              "image_number": 6,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 4",
+              "has_ocr": true
+            },
+            {
+              "page": 4,
+              "image_number": 7,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 4",
+              "has_ocr": true
+            },
+            {
+              "page": 5,
+              "image_number": 8,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 5",
+              "has_ocr": true
+            },
+            {
+              "page": 5,
+              "image_number": 9,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 5",
+              "has_ocr": true
+            },
+            {
+              "page": 8,
+              "image_number": 10,
+              "ocr_text_length": 15,
+              "ocr_text_preview": "Image on page 8",
+              "has_ocr": true
+            }
+          ],
+          "extraction_percentage": 1.0,
+          "processing_time": 0.5027003288269043,
+          "error": null,
+          "sample_text": "--- Page 1 ---\nsup\nBax$su01\nLogin\nmartes, 25 de octubre de 2022\n7:39\n   \nVUORMAR Page 1\n   \n\n\n--- Page 2 ---\n<!-- image -->\nESSASAPA01: Ordenador físico en armario de la cargadora para generar datos de Audit Trail. \nVNC:\n10.109.65.182\nbaxter01\nSesión:\n.\\software\nBaxter01+\nÓ\nisadmin2\nBieffe01\n\\\\iniciar sesión en el ordenador y dejarlo bloqueado \"lock\" para que la sesión siga en marcha y \npued realizar las copias automaticamente. \nFicha de mantenimiento del sistema vuormar:\nFO-VUO-01\nESSASAPA01\nmiércoles, 21 de mayo de 2025\n12:38\n   \nVUORMAR Page 2\n   \n\n\n--- Page 3 ---\n<!-- image -->\nEnel caso de que queramos cambiar las esponjas de las campanas de las vourmars, se debe cambiar \nel parámetro del SETPPOINT de la máquina al máximo valor permitido , siendo este \"45\".\nDeberemos iniciar sesión con una cuenta de \"SUPERVISOR\", una vez iniciada la sesión podremos \ncambiar el valor. Dicho parámetro se encuentra en la pagina \"P_EM01_02_VacBox_Setup\" \n1º Cambiamos el valor de apertura de la campana..."
+        },
+        "docling": {
+          "parser": "docling",
+          "success": true,
+          "text_length": 4334,
+          "pages": 10,
+          "images_detected": true,
+          "image_count": 4,
+          "extracted_images": [
+            {
+              "page": 1,
+              "image_number": 1,
+              "ocr_text_length": 1128,
+              "ocr_text_preview": "- Abrir la puerta del armario eléctrico. 1.\n- Quitar la tensión del módulo Phoenix amarillo, desconectando esta ficha SIN ESTIRAR DE LOS CABLES , con cuidado con un destornillador pequeño haciendo poc...",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 2,
+              "ocr_text_length": 50,
+              "ocr_text_preview": "- Presionar botón 2s. ·\n- Dejar sin nada delante ·",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 3,
+              "ocr_text_length": 55,
+              "ocr_text_preview": "- Presionar botón ·\n- Poner bolsa ·\n- Presionar botón ·",
+              "has_ocr": true
+            },
+            {
+              "page": 1,
+              "image_number": 4,
+              "ocr_text_length": 1360,
+              "ocr_text_preview": "| Trifase, classe 400V   | A2150 A4004/A4007   | [AX-FIM2100-RE (100A) AXFIM3005-RE(5A)   |\n\n--- Page 9 ---\n|------------------------|---------------------|------------------------------------------|\n...",
+              "has_ocr": true
+            }
+          ],
+          "extraction_percentage": 0.2137,
+          "processing_time": 114.8487663269043,
+          "error": null,
+          "sample_text": "--- Page 1 ---\n## Login\n\n## sup Bax$su01\n\n## ESSASAPA01\n\nESSASAPA01: Ordenador físico en armario de la cargadora para generar datos de Audit Trail.\n\nVNC:\n\n10.109.65.182\n\nbaxter01\n\n--- Page 2 ---\n\nSesión:\n\n.\\software\n\nBaxter01+\n\nÓ\n\nisadmin2\n\nBieffe01\n\n\n--- Page 3 ---\n\\\\iniciar sesión en el ordenador y dejarlo bloqueado \"lock\" para que la sesión siga en marcha y pued realizar las copias automaticamente.\n\nFicha de mantenimiento del sistema vuormar:\n\nFO-VUO-01\n\n## Máxima apertura campana en manual\n\nmiércoles, 6 de marzo de 2024 14:15\n\nEnel caso de que queramos cambiar las esponjas de las campanas de las vourmars, se debe cambiar el parámetro del SETPPOINT de la máquina al máximo valor permitido , siendo este \"45\".\n\nDeberemos iniciar sesión con una cuenta de \"SUPERVISOR\", una vez iniciada la sesión podremos cambiar el valor. Dicho parámetro se encuentra en la pagina \" P_EM01_02_VacBox_Setup \"\n\n--- Page 4 ---\n\n1º Cambiamos el valor de apertura de la campana de 32 a 45\n\n2º Pulsamos sobre el b..."
+        },
+        "ocrmypdf": {
+          "parser": "ocrmypdf",
+          "success": false,
+          "text_length": 0,
+          "pages": 0,
+          "images_detected": false,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 0.009046554565429688,
+          "error": "OCRmyPDF or Tesseract not available. Install with: sudo apt-get install tesseract-ocr && pip install ocrmypdf",
+          "sample_text": ""
+        }
+      },
+      "best_parser": "docling",
+      "image_analysis": {
+        "pymupdf": {
+          "total_images": 13,
+          "images_with_ocr": 10,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 15.0,
+          "ocr_coverage_percentage": 76.92307692307693
+        },
+        "docling": {
+          "total_images": 4,
+          "images_with_ocr": 4,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 648.25,
+          "ocr_coverage_percentage": 100.0
+        },
+        "ocrmypdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        }
+      }
+    }
+  },
+  "summary": {
+    "total_documents": 3,
+    "parser_comparison": {
+      "pymupdf": {
+        "total_text_extracted": 13443,
+        "total_images_detected": 34,
+        "total_images_with_ocr": 21,
+        "successful_parses": 3,
+        "failed_parses": 0,
+        "total_processing_time": 1.5068070888519287
+      },
+      "docling": {
+        "total_text_extracted": 45292,
+        "total_images_detected": 11,
+        "total_images_with_ocr": 11,
+        "successful_parses": 3,
+        "failed_parses": 0,
+        "total_processing_time": 502.38418412208557
+      },
+      "ocrmypdf": {
+        "total_text_extracted": 0,
+        "total_images_detected": 0,
+        "total_images_with_ocr": 0,
+        "successful_parses": 0,
+        "failed_parses": 3,
+        "total_processing_time": 0
+      }
+    },
+    "overall_best_parser": "docling",
+    "image_extraction_summary": {},
+    "recommendations": [
+      "Use docling for best text extraction on these documents"
+    ]
+  }
+}

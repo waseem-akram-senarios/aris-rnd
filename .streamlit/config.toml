@@ -1,0 +1,15 @@
+[server]
+# Disable file watcher to avoid inotify limit issues
+fileWatcherType = "none"
+# Increase timeout for long document processing (Docling can take 5-20 minutes)
+runOnSave = false
+maxUploadSize = 100
+maxMessageSize = 100
+enableXsrfProtection = false
+
+[runner]
+# Allow long-running operations (document processing)
+# Disable fast reruns to allow long document processing to complete
+fastReruns = false
+# Increase timeout for script execution
+magicEnabled = false

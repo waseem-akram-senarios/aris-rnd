@@ -1,0 +1,544 @@
+{
+  "test_timestamp": "2026-01-16T16:32:26.880917",
+  "ingestion_server": "http://44.221.84.58:8501",
+  "gateway_server": "http://44.221.84.58:8500",
+  "documents": {},
+  "parsers": {
+    "pymupdf": {
+      "EM11, top seal.pdf": {
+        "parser": "pymupdf",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "pymupdf",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 2.3533334732055664,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "e0334c9f-5cf6-4c49-b65a-bd67f498872b",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 323,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "pymupdf",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "pymupdf",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 1.915569543838501,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "6844bc7c-f6d3-40ed-b534-3ee25fba542a",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 419,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "VUORMAR.pdf": {
+        "parser": "pymupdf",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "pymupdf",
+          "file": "VUORMAR.pdf",
+          "upload_time": 1.8848097324371338,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "19d500ff-39ba-45b6-9af1-bda04aecec51",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 264,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      }
+    },
+    "docling": {
+      "EM11, top seal.pdf": {
+        "parser": "docling",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "docling",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 3.9404029846191406,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "8b2306a8-5c63-4e38-98b9-596d3a76d2cd",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 311,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "docling",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "docling",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 1.6964638233184814,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "c19c7cc7-871d-49c8-aade-9bfd685fee24",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 429,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "VUORMAR.pdf": {
+        "parser": "docling",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "docling",
+          "file": "VUORMAR.pdf",
+          "upload_time": 2.026824712753296,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "ece43ee5-b9de-43c7-92c1-258e0aaeb1dd",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 202,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      }
+    },
+    "ocrmypdf": {
+      "EM11, top seal.pdf": {
+        "parser": "ocrmypdf",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "ocrmypdf",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 2.4573352336883545,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "8b2306a8-5c63-4e38-98b9-596d3a76d2cd",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 328,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "ocrmypdf",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "ocrmypdf",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 1.7456767559051514,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "8c961d8a-bffc-429d-8ef1-32300504ddce",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 210,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "VUORMAR.pdf": {
+        "parser": "ocrmypdf",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "ocrmypdf",
+          "file": "VUORMAR.pdf",
+          "upload_time": 2.320432186126709,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "8c110b9f-1763-40df-8067-c79fafe82e05",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 239,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      }
+    },
+    "textract": {
+      "EM11, top seal.pdf": {
+        "parser": "textract",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "textract",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 2.554011583328247,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "8b2306a8-5c63-4e38-98b9-596d3a76d2cd",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 319,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "textract",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "textract",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 1.9404258728027344,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "d9850029-83af-40d7-b85f-bba4608413f2",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 214,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "VUORMAR.pdf": {
+        "parser": "textract",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "textract",
+          "file": "VUORMAR.pdf",
+          "upload_time": 7.554149150848389,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "8c110b9f-1763-40df-8067-c79fafe82e05",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 284,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      }
+    },
+    "llama-scan": {
+      "EM11, top seal.pdf": {
+        "parser": "llama-scan",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "llama-scan",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 17.61425518989563,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "013903b7-f922-404c-8b2d-2681a60aae89",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 391,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "llama-scan",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "llama-scan",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 1.696479320526123,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "3a197b24-c70d-4d93-bbc8-34fff343b1f7",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 347,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      },
+      "VUORMAR.pdf": {
+        "parser": "llama-scan",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "llama-scan",
+          "file": "VUORMAR.pdf",
+          "upload_time": 4.232071161270142,
+          "processing_time": 0.0,
+          "success": true,
+          "error": null,
+          "document_id": "16c6a712-fdab-4c37-b2cb-27cf995d783f",
+          "metadata": {
+            "parser_used": null,
+            "pages": null,
+            "chunks_created": 0,
+            "tokens_extracted": 0,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 0.0,
+            "text_length": 0,
+            "confidence": 0
+          }
+        },
+        "query_test": {
+          "success": true,
+          "answer_length": 309,
+          "citations_count": 0,
+          "num_chunks_used": 0
+        },
+        "overall_status": "failed"
+      }
+    }
+  },
+  "summary": {
+    "total_tests": 15,
+    "successful_tests": 0,
+    "failed_tests": 15,
+    "success_rate": 0.0,
+    "working_combinations": [],
+    "failed_combinations": [
+      "pymupdf on EM11, top seal.pdf",
+      "pymupdf on EM10, degasing.pdf",
+      "pymupdf on VUORMAR.pdf",
+      "docling on EM11, top seal.pdf",
+      "docling on EM10, degasing.pdf",
+      "docling on VUORMAR.pdf",
+      "ocrmypdf on EM11, top seal.pdf",
+      "ocrmypdf on EM10, degasing.pdf",
+      "ocrmypdf on VUORMAR.pdf",
+      "textract on EM11, top seal.pdf",
+      "textract on EM10, degasing.pdf",
+      "textract on VUORMAR.pdf",
+      "llama-scan on EM11, top seal.pdf",
+      "llama-scan on EM10, degasing.pdf",
+      "llama-scan on VUORMAR.pdf"
+    ],
+    "parsers_tested": [
+      "pymupdf",
+      "docling",
+      "ocrmypdf",
+      "textract",
+      "llama-scan"
+    ]
+  }
+}

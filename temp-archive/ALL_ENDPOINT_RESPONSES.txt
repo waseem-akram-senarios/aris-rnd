@@ -1,0 +1,323 @@
+
+================================================================================
+  ARIS RAG API - ALL ENDPOINT RESPONSES
+================================================================================
+Server: http://44.221.84.58:8500
+
+
+================================================================================
+  1. Health Check - GET http://44.221.84.58:8500/health
+================================================================================
+
+📊 Status Code: 200
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:33:06 GMT', 'server': 'uvicorn', 'content-length': '20', 'content-type': 'application/json'}
+
+📄 Response Body (JSON):
+{
+  "status": "healthy"
+}
+
+================================================================================
+  2. Root Endpoint - GET http://44.221.84.58:8500/
+================================================================================
+
+📊 Status Code: 200
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:33:07 GMT', 'server': 'uvicorn', 'content-length': '59', 'content-type': 'application/json'}
+
+📄 Response Body (JSON):
+{
+  "message": "ARIS RAG API",
+  "version": "1.0.0",
+  "docs": "/docs"
+}
+
+================================================================================
+  3. List Documents - GET http://44.221.84.58:8500/documents
+================================================================================
+
+📊 Status Code: 200
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:33:07 GMT', 'server': 'uvicorn', 'content-length': '592', 'content-type': 'application/json'}
+
+📄 Response Body (JSON):
+{
+  "documents": [
+    {
+      "document_id": null,
+      "document_name": "test_document.pdf",
+      "status": "success",
+      "chunks_created": 10,
+      "tokens_extracted": 0,
+      "parser_used": null,
+      "processing_time": 0.0,
+      "extraction_percentage": 0.0,
+      "images_detected": false,
+      "image_count": 0,
+      "pages": null,
+      "error": null
+    },
+    {
+      "document_id": "073d8d94-0572-417a-9014-117c75834957",
+      "document_name": "FL10.11 SPECIFIC8 (1).pdf",
+      "status": "success",
+      "chunks_created": 47,
+      "tokens_extracted": 23478,
+      "parser_used": "docling",
+      "processing_time": 87.67596554756165,
+      "extraction_percentage": 1.0,
+      "images_detected": true,
+      "image_count": 13,
+      "pages": 49,
+      "error": null
+    }
+  ],
+  "total": 2
+}
+
+================================================================================
+  4. Upload Document - POST /documents
+================================================================================
+
+📊 Status Code: 201
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:33:08 GMT', 'server': 'uvicorn', 'content-length': '314', 'content-type': 'application/json'}
+
+📄 Response Body (JSON):
+{
+  "document_id": "2690e144-0fa5-47e5-a752-a9f676febc6a",
+  "document_name": "FL10.11 SPECIFIC8 (1).pdf",
+  "status": "success",
+  "chunks_created": 47,
+  "tokens_extracted": 23478,
+  "parser_used": "docling",
+  "processing_time": 80.54363226890564,
+  "extraction_percentage": 1.0,
+  "images_detected": true,
+  "image_count": 13,
+  "pages": 49,
+  "error": null
+}
+
+================================================================================
+  5. Query Documents - POST http://44.221.84.58:8500/query
+================================================================================
+
+📊 Status Code: 200
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:34:35 GMT', 'server': 'uvicorn', 'content-length': '31145', 'content-type': 'application/json'}
+
+📄 Response Body (JSON):
+{
+  "answer": "The document is a compilation of various technical specifications, user manuals, and FAQs related to different products and systems. It includes:\n\n1. **Model X-90 Polymer Enclosure Specifications**: This section details the materials, dimensions, and tolerances for the Model X-90 Enclosure, designed to protect the Series 3 control board. It emphasizes the enclosure's IP65 ingress protection and structural integrity within a temperature range of 0°C to 50°C. The materials include polycarbonate for the main body and silicone rubber for gaskets, with stainless steel fasteners.\n\n2. **Intelligent Compute Advisor FAQ**: This part outlines the technical design and functionalities of the Intelligent Compute Advisor, which uses a FastAPI backend to handle JSON-RPC and REST interfaces. It describes the compute recommendation algorithm that analyzes data from multiple cloud providers to suggest cost-effective options. Future expansions include Kubernetes extensions for deployment and monitoring.\n\n3. **2023 Audi A6 Owner's Manual**: The manual provides an introduction to the Audi A6, highlighting its advanced technology and premium features. It includes safety warnings about chemical exposure and offers tips for efficient and environmentally friendly driving.\n\n4. **Hands-On Large Language Models by Jay Alammar**: This book offers a comprehensive introduction to large language models (LLMs), covering their history, architecture, and applications. It emphasizes an intuition-first approach to learning, using visual aids to explain concepts and differentiate between representation and generative models.\n\n5. **X1000-SL Industrial Air Compressor Specifications**: This section describes the X1000-SL air compressor, highlighting its high performance, energy efficiency, and durability. It includes technical specifications such as power supply, motor power, and operating conditions, along with features like a digital control system and vibration dampening.\n\n6. **FL10.11 SPECIFIC8 Document**: This document includes a detailed task schedule for production processes, tool reorder sheets, and maintenance instructions. It specifies tasks to be performed before and after the end of business (EOB) and fill/pack operations.\n\nOverall, the document provides detailed technical and operational information across various domains, including manufacturing, computing, automotive, and industrial equipment.",
+  "sources": [
+    "1763080529_1740003655_x1000_sl_industrial_air_compressor (4).pdf",
+    "1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf",
+    "2023-audi-a6-13.pdf",
+    "FL10.11 SPECIFIC8 (2).pdf",
+    "_Intelligent Compute Advisor — FAQ.pdf",
+    "_OceanofPDF.com_Hands-On_Large_Language_Models_-_Jay_Alammar.pdf"
+  ],
+  "citations": [
+    {
+      "id": 1,
+      "source": "1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf",
+      "page": 3,
+      "snippet": "## Product: Model X-90 High-Density Polymer Enclosure\n\n## 1. General Overview\n\nThis document specifies the materials, dimensions, and tolerances required for the manufacture of the Model X-90 Enclosure, a protective casing intended for the Series 3 control board. The enclosure must provide reliable ingress protection ($\\text{IP65}$) and maintain structural integrity under standard operating conditions ($0^\\circ \\text{C}$ to $50^\\circ \\text{C}$).\n\n## 2....",
+      "full_text": "## Product: Model X-90 High-Density Polymer Enclosure\n\n## 1. General Overview\n\nThis document specifies the materials, dimensions, and tolerances required for the manufacture of the Model X-90 Enclosure, a protective casing intended for the Series 3 control board. The enclosure must provide reliable ingress protection ($\\text{IP65}$) and maintain structural integrity under standard operating conditions ($0^\\circ \\text{C}$ to $50^\\circ \\text{C}$).\n\n## 2. Material Specifications\n\n## ComponentMaterialSpecificationNotesMain Body\n\n(Housing)Polycarbonate (PC)$\\text{UL94-VO}$ Rated, $\\text{UV}$StabilizedColor: $\\text{RAL 7035}$ (Light Grey)Gasket (Seal)Silicone Rubber$\\text{Shore Hardness A 50} \\pm 5$Must meet $\\text{IP65}$ rating standards FastenersStainless Steel$\\text{ASTM A240, Type 304}$Required for lid attachment (See Section 4)3. Dimensional Tolerances\n\nAll dimensions refer to the primary engineering drawing DRW-X90-001 Rev B.\n\n- Overall Dimensions: $150.00 \\text{mm}",
+      "source_location": "Page 3",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 2,
+      "source": "_Intelligent Compute Advisor — FAQ.pdf",
+      "page": 1,
+      "snippet": "...Architecture diagram\n\n## Intelligent Compute Advisor - FAQ\n\n## 1. FastAPI as MCP Server\n\nWe will use a single FastAPI backend that exposes both REST and MCP interfaces.\n\n- The /mcp endpoint will handle JSON-RPC calls ( initialize , tools/list , tools/call ).\n\n- Through this, the AI agent can dynamically discover and execute tools such as recommend_compute .\n- The same business logic will also be available through a REST endpoint /recommend for internal or dashboard use.... ... size=Size(width",
+      "full_text": "--- Page 1 ---\n## Intelligent Compute Advisor - Technical Design overview\n\n## 2. Sequence Digram\n\n## 3. Architecture diagram\n\n## Intelligent Compute Advisor - FAQ\n\n## 1. FastAPI as MCP Server\n\nWe will use a single FastAPI backend that exposes both REST and MCP interfaces.\n\n- The /mcp endpoint will handle JSON-RPC calls ( initialize , tools/list , tools/call ).\n\n--- Page 2 ---\n- Through this, the AI agent can dynamically discover and execute tools such as recommend_compute .\n- The same business logic will also be available through a REST endpoint /recommend for internal or dashboard use.\n- Authentication will use JWT tokens, with rate limits and full request logging for security and traceability.\n\n## Request Flow:\n\nAI Agent → /mcp (JSON-RPC) → Advisor Core → PostgreSQL / Redis → Top-K Recommendations\n\n## 2. Compute Recommendation Algorithm\n\nThe system will analyze compute pricing and performance data from multiple cloud providers (AWS, Azure, GCP, Vultr, Contabo) to suggest the most efficient and cost-effective option for each workload.\n\n## Inputs:\n\n--- Page 3 ---\n\nWorkload type, framework, version, GPU/VRAM, vCPUs, memory, region, latency tier, budget, SLA, and spot-tolerance options.\n\n## Process:\n\n1. Filter out SKUs that do not meet hardware, framework, or region constraints.\n2. Calculate total cost (base price, egress cost, and spot risk), performance score, and latency.\n3. Apply weighted scoring and Pareto optimization to find the most balanced options.\n\n## Outputs:\n\nThe API will return the top 3-5 recommended compute options including provider, region, SKU, hourly cost, overall score (0-100), and a short explanation.\n\n\n--- Page 4 ---\n## 3. Kubernetes Extension (Future)\n\nThe architecture is modular, allowing new features to be added without redesign. Future endpoints will include:\n\n- /kube/deploy\n- /kube/status\n- /kube/logs\n- /kube/exec\n\nThese will also be available as MCP tools ( k8s_deploy , k8s_status , etc.) that the AI agent can discover and use dynamically.\n\nAccess control will be managed using standard Kubernetes RBAC and OPA/Gatekeeper policies.\n\n\n--- Page 5 ---\n## 4. Performance and Caching Strategy (&lt;200 ms Target)\n\nTo ensure fast responses even with thousands of pricing records:\n\n- PostgreSQL will host all provider and performance data, using a material",
+      "source_location": "Page 1",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 3,
+      "source": "_OceanofPDF.com_Hands-On_Large_Language_Models_-_Jay_Alammar.pdf",
+      "page": 274,
+      "snippet": "...Name column. This Name column allows us to quickly get a feeling of what the topic is about as it shows the four keywords that best represent it.\n\n## NOTE\n\nYou might also have noticed that the very first topic is labeled -1. That topic contains all documents that could not be fitted within a topic and are considered outliers. This is a result of the clustering algorithm, HDBSCAN, which does not force all points to be clustered. To remove outliers, we could either use a non-outlier algorithm lik...",
+      "full_text": " previously defined models topic_model = BERTopic( embedding_model=embedding_model, umap_model=umap_model, hdbscan_model=hdbscan_model,\n```\n\nverbose= True ).fit(abstracts, embeddings) Let us start by exploring the topics that were created. The get_topic_info() method is useful to get a quick description of the topics that we found:\n\ntopic_model.get_topic_info()\n\n| Topic   | Count   | Name                              |\n\n--- Page 218 ---\n|---------|---------|-----------------------------------|\n| -1      | 14520   | -1_the_of_and_to                  |\n| 0       | 2290    | 0_speech_asr_recognition_end      |\n| 1       | 1403    | 1_medical_clinical_biomedical_pat |\n| 2       | 1156    | 2_sentiment_aspect_analysis_revie |\n| 3       | 986     | 3_translation_nmt_machine_neural  |\n| ...     | ...     | ...                               |\n| 150     | 54      | 150_coherence_discourse_paragrap  |\n| 151     | 54      | 151_prompt_prompts_optimization   |\n\n|   Topic |   Count | Name                              |\n\n--- Page 219 ---\n|---------|---------|-----------------------------------|\n|     152 |      53 | 152_sentence_sts_embeddings_sim   |\n|     153 |      53 | 153_counseling_mental_health_the  |\n|     154 |      50 | 154_backdoor_attacks_attack_trigg |\n\nEach of these topics is represented by several keywords, which are concatenated with a '_' in the Name column. This Name column allows us to quickly get a feeling of what the topic is about as it shows the four keywords that best represent it.\n\n## NOTE\n\nYou might also have noticed that the very first topic is labeled -1. That topic contains all documents that could not be fitted within a topic and are considered outliers. This is a result of the clustering algorithm, HDBSCAN, which does not force all points to be clustered. To remove outliers, we could either use a non-outlier algorithm like k-means or use BERTopic's reduce_outliers() function to reassign the outliers to topics.\n\n\n--- Page 220 ---\nWe can inspect individual topics and explore which keywords best represent them with the get_topic function. For example, topic 0 contains the\n\n## following keywords:\n\n```\ntopic_model.get_topic(0)\n```\n\n```\n[('speech', 0.028177697715245358), ('asr', 0.018971184497453525), ('recognition', 0.013457745472471012), ('end', 0.00980445092749381), ('acoustic', 0.009452082794507863), ('speaker', 0.0068822647060204885), ('audio', 0.006807649923681604), ('the', 0.0063343444687017645), ('error', 0.006320144717019838), ('automatic', 0.006290216996043161)]\n```\n\n--- Page 221 ---\n\nFor example, topic 0 contains the keywords 'speech,' 'asr,' and 'recognition.' Based on these keywords, it seems that the topic is about automatic speech recognition (ASR).\n\nWe can use the find_topics() function to search for specific topics based",
+      "source_location": "Page 274",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 4,
+      "source": "_OceanofPDF.com_Hands-On_Large_Language_Models_-_Jay_Alammar.pdf",
+      "page": 5,
+      "snippet": "...The pace of development in the Language AI field is incredibly fast and frustration can build trying to keep up with the latest technologies. Instead, we focus on the fundamentals of LLMs and intend to provide a fun and easy learning process. To achieve this intuition-first philosophy we liberally make use of visual language. Illustrations will help give a visual identity to major concepts and processes involved in the learning process of LLMs. 1 With our illustrative method of storytelling, we want...",
+      "full_text": " your responsibility to ensure that your use thereof complies with such licenses and/or rights. 978-1-098-15096-9 [LSI]\n\nOceanofPDF.com\n\n\n--- Page 5 ---\n## Preface\n\nLarge language models (LLMs) have had a profound and far-reaching impact on the world. By enabling machines to better understand and generate human-like language, LLMs have opened new possibilities in the field of AI and impacted entire industries. This book provides a comprehensive and highly visual introduction to the world of LLMs, covering both the conceptual foundations and practical applications. From word representations that preceded deep learning to the cutting-edge (at the time of this writing) Transformer architecture, we will explore the history and evolution of LLMs. We delve into the inner workings of LLMs, exploring their architectures, training methods, and fine-tuning techniques. We also examine various applications of LLMs in text classification, clustering, topic modeling, chatbots, search engines, and more. With its unique blend of intuition-building, applications, and illustrative to explore the exciting world of LLMs. Whether you are a beginner or an style, we hope that this book provides the ideal foundation for those looking expert, we invite you to join us on this journey to start building with LLMs.\n\n## An Intuition-First Philosophy\n\nThe main goal of this book is to provide an intuition into the field of LLMs. The pace of development in the Language AI field is incredibly fast and frustration can build trying to keep up with the latest technologies. Instead, we focus on the fundamentals of LLMs and intend to provide a fun and easy learning process. To achieve this intuition-first philosophy we liberally make use of visual language. Illustrations will help give a visual identity to major concepts and processes involved in the learning process of LLMs. 1 With our illustrative method of storytelling, we want to take you on a journey to this exciting and potentially world-changing field. Throughout the book, we make a clear distinction between representation and generative language models. Representation models are LLMs that do not generate text but are commonly used for task-specific use cases, like classification, whereas generation models are LLMs that generate text, like GPT models. Although generative models are typically the first thing that comes to mind when thinking about LLMs, there is still much use for representation models. We are also loosely using the word 'large' in large language models and often elect to simply call them language models as size descriptions are often rather arbitrary and not always indicative of capability.\n\n## Prerequisites\n\nThis book assumes that you have some experience programming in Python and are familiar with the fundamentals of machine learning. The focus will be on building a strong intuition rather than deriving mathematical equations. As such, illustrations combined with hands-on examples will drive the examples and learning through this book. This book assumes no prior knowledge of popular deep learning frameworks such as PyTorch or TensorFlow nor any prior knowledge of generative modeling. If you are not familiar with Python, a great place to start is Learn Python, where you will find many tutorials on the basics of the language. To further ease the learning process, we made all the code available on Google Colab, a platform where you can run all of the code without the need to install anything locally.\n\n--- Page 6 ---\n\n## Book Structure\n\nThe book is broadly divided into three parts. They are illustrated in Figure P-1 to give you a full view of the book. Note that each chapter",
+      "source_location": "Page 5",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 5,
+      "source": "FL10.11 SPECIFIC8 (2).pdf",
+      "page": 44,
+      "snippet": "...up.                                 |\n| DAY   | FOB          | Change over Fill/Pack to new batch.                                                                                                                 |\n| DAY   | FOB          | Verify and Document operator zone clearance.                                                                                                        |\n\n| DAY   | FOB          | Verify previous batch SPC is closed out....",
+      "full_text": " | Time         | Task to be Performed                                                                                                                                |\n|-------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|\n| DAY   | Prior to EOB | Determine Bag lead needed.                                                                                                                          |\n| DAY   | Prior to EOB | Get sample cart. Stage at machine (prior to 1800).                                                                                                  |\n| DAY   | Prior to EOB | Get new batch type box and stage at the machine (prior to 1800) along with die gloves and charged drill with extension/chuck. Attain a die box key. |\n| DAY   | Prior to EOB | Get BOM, Barcode setup sheet, Barcode scanner and 'First Imprints' from the batch that is ending for imprint verification (prior to 1800).          |\n| DAY   | Prior to EOB | Sign last imprints.                                                                                                                                 |\n| DAY   | Prior to EOB | Place signed imprints (Last and First), BOMand Barcode setup sheet in red batch folder.                                                             |\n| DAY   | Prior to EOB | Turn on Batch Change Light.                                                                                                                         |\n| DAY   | Prior to EOB | Chain off printer area.                                                                                                                             |\n| DAY   | Prior to EOB | Remove old type and install new type.                                                                                                               |\n| DAY   | Prior to EOB | Clear 2199 printer area.                                                                                                                            |\n| DAY   | Prior to EOB | Document clearance and Print area operator zone clearance.                                                                                          |\n| DAY   | Prior to EOB | Pull first imprints from 2199. Verify/ sign imprint and imprint verification sheet.                                                                 |\n| DAY   | Prior to EOB | Once all production has ended pull EOB samples.                                                                                                     |\n| DAY   | At EOB       | Verify imprints present and all documents in batch folder. Place batch fold on F belt for pouching side to pick up.                                 |\n| DAY   | FOB          | Change over Fill/Pack to new batch.                                                                                                                 |\n| DAY   | FOB          | Verify and Document operator zone clearance.                                                                                                        |\n\n--- Page 35 ---\n| DAY   | FOB          | Verify previous batch SPC is closed out.                                                                                                            |\n| DAY   | FOB          | Perform Line clearance for new batch.                                                                                                               |\n| Night | Prior to EOB | Get all material partial and cyclohex information and document materials into new batch fill/pack.                                                  |\n| Night | At FOB       | PerformFOB flush per Filling 4 Addendum when",
+      "source_location": "Page 44",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 6,
+      "source": "FL10.11 SPECIFIC8 (2).pdf",
+      "page": 39,
+      "snippet": "...on Line 11\n\nEFFECTIVE DATE: 04/24/18\n\n## Print 'DWH :\n\nEFFECTIVE DATE: 04/24/18\n\n## Print 'DWH :\n\n<!-- image -->\nFL10.11 SPECIFIC8\n\nEFFECTIVE DATE: 04/24/18\n\n## Print 'DWH :\n\nFor Information Only-May Be Discarded                                      Document Owner: Nikki Buchanan\n\nPARENT: FILL LINES 10 &amp; 11 SPECIFIC 1 Copy Posted on Line 11\n\nPAGE 34 OF 49\n\nEFFECTIVE DATE: 04/24/18\n\nPrint 'DWH :\n\n<!-- image -->\nTool Re order Sheet -· Drawer 1 Quantity: 65300077- Wire Stripper ___ 65300081- Sn...",
+      "full_text": "arded                                      Document Owner: Nikki Buchanan\n\n1 Copy Posted on Line 11\n\nEFFECTIVE DATE: 04/24/18\n\n## Print 'DWH :\n\nEFFECTIVE DATE: 04/24/18\n\n## Print 'DWH :\n\n<!-- image -->\nFL10.11 SPECIFIC8\n\nEFFECTIVE DATE: 04/24/18\n\n--- Page 39 ---\n\n## Print 'DWH :\n\nFor Information Only-May Be Discarded                                      Document Owner: Nikki Buchanan\n\nPARENT: FILL LINES 10 &amp; 11 SPECIFIC 1 Copy Posted on Line 11\n\nPAGE 34 OF 49\n\nEFFECTIVE DATE: 04/24/18\n\nPrint 'DWH :\n\n<!-- image -->\nTool Re order Sheet -· Drawer 1 Quantity: 65300077- Wire Stripper ___ 65300081- Snips ___ 65300082- 7/16'' Socket ___ 65300083- 5/8'' Socket ___ 65300084- ½'' Socket ___ 65300128- 9/16'' Socket ___ 65300129- ¾'' Socket ___ 65300130- 11/16'' Socket ___ 65300132- Ratchet ___ 65300134- Extension ___ 78901053- Tube Cutter ___ 86893209- Spare Blade ___ 86893573- V-Bar ___ · Drawer 3 Quantity: 65300122- 8MM   Wrench ___ 65300123- 9MM   Wrench ___ 65300124- 10MM Wrench ___ 65300125- 11MM Wrench ___ 65300126- 12MM Wrench ___ 65300127- 13MM Wrench ___ 65300106- 14MM Wrench ___ 65300107- 15MM Wrench ___ 65300108- 16MM Wrench ___ 65300109- 17MM Wrench ___ 65300110- 18MM Wrench ___ 86893571- Micron Screen Check ___  Drawer  4 Quantity:\n\n· Drawer 2 Quantity: 65300048- 1/16\" SS ALLEN WRENCH ___ 65300049- 5/64\" SS ALLEN WRENCH ___ 65300050- 3/32\" SS ALLEN WRENCH ___ 65300051- 7/64\" SS ALLEN WRENCH ___ 653000",
+      "source_location": "Page 39",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 7,
+      "source": "1762860333_1762273725_model_x90_polymer_enclosure_specs.pdf",
+      "page": null,
+      "snippet": "A sample of $5\\%$ of each batch must undergo a water ingress test to confirm the $\\text{IP65}$ rating is met.\n- Visual Inspection: All finished units must be visually inspected for warpage, sinks\n\n<!-- image -->",
+      "full_text": " A sample of $5\\%$ of each batch must undergo a water ingress test to confirm the $\\text{IP65}$ rating is met.\n- Visual Inspection: All finished units must be visually inspected for warpage, sinks\n\n<!-- image -->",
+      "source_location": "Text content",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 8,
+      "source": "2023-audi-a6-13.pdf",
+      "page": 1,
+      "snippet": "## O w n e r ' s M a n u a l 2 0 2 3 A 6\n\n## F o r e w o r d\n\nT h a n k y o u f o r c h oo s i n g a n A u d i -w e v a l u e y o u r t r u s t i n u s .\n\nY o u r n e w A u d i w i ll a ll o w y o u t o e x p e r i e n c e t h e b e s t i n g r o u n d b r e a k i n g t e c h n o l o g y a n d p r e m i u m q u a l i t y e q u i p m e n t t h a t a v e h i c l e h a s t o o ff e r ....",
+      "full_text": "## O w n e r ' s M a n u a l 2 0 2 3 A 6\n\n## F o r e w o r d\n\nT h a n k y o u f o r c h oo s i n g a n A u d i -w e v a l u e y o u r t r u s t i n u s .\n\nY o u r n e w A u d i w i ll a ll o w y o u t o e x p e r i e n c e t h e b e s t i n g r o u n d b r e a k i n g t e c h n o l o g y a n d p r e m i u m q u a l i t y e q u i p m e n t t h a t a v e h i c l e h a s t o o ff e r . A u d i r e c o mm e n d s t h a t y o u r e a d y o u r O w n e r ' s M a n u a l t h o r o u g h l y s o t h a t y o u q u i c k l y b e c o m e a c q u a i n t e d w i t h y o u r A u d i a n d m a k e u s e o f a ll o f i t s f e a t u r e s .\n\nI n a dd i t i o n t o e x p l a i n i n g h o w t h e d i ff e r e n t f e a t u r e s w o r k , t h e r e a r e m a n y u s e f u l t i p s a n d i n f o r m a t i o n c o n c e r n i n g y o u r s a f e t y , h o w t o c a r e f o r y o u r v e h i c l e , a n d h o w t o m a i n t a i n y o u r v e h i c l e ' s v a l u e . A u d i a l s o g i v e s y o u u s e f u l t i p s a n d i n f o r m a t i o n o n h o w t o d r i v e y o u r v e h i c l e m o r e e ff i c i e n t l y a n d i n a n e n v i r o n -m e n t a ll y -f r i e n d l y m a nn e r .\n\nA u d i h o p e s y o u e n j o y d r i v i n g y o u r v e h i c l e a n d w i s h e s y o u s a f e a n d p l e a s a n t m o t o r i n g .\n\n## W a r N i n G\n\nO p e r a t i n g , s e r v i c i n g a n d m a i n t a i n i n g a p a ss e n g e r v e h i c l e o r o ff -h i g h w a y m o t o r v e h i c l e c a n e x p o s e y o u t o c h e m i c a l s i n c l u d -i n g e n g i n e e x h a u s t , c a r b o n m o n o x i d e , p h t h a l a t e s , a n d l e a d , w h i c h a r e k n o w n t o t h e S t a t e o f C a l i f o r n i a t o c a u s e c a n c e r a n d b i r t h d e f e c t s o r o t h e r r e p r o d u c t i v e h a r m . T o m i n i m i z e e x p o -s u r e , a v o i d b r e a t h i n g e x h a u s t , d o n o t i d l e t h e e n g i n e e x c e p t a s n e c e ss a r y , s e r v i c e y o u r v e h i c l e i n a w e ll -v e n t i l a t e d a r e a a n d w e a r g l o v e s o r w a s h y o u r h a n d s f r e q u e n t l y w h e n s e r v i c i n g y o u r v e h i c l e . F o r m o r e i n f o r m a t i o n g o t o www . P 6 5 W a r n i n g s . c a . g o v / p a ss e n g e r -v e h i c l e .\n\n## T a b l e o f c o n t e n t s\n\n| A b o u t t h i s O w n e r ' s M a n u a l ......          |     | V a l e t p a r k i n g ...                                                     | 5 1     |\n|-------------------------------------------------------------|-----|---------------------------------------------------------------------------------|---------|\n|                                                             |     | G a r a g e d oo r o p e n e r                                                  | S I     |\n| S u mm a r y ...                                            |     |                                                                                 |         |\n| Q u i c k a cc e ss ...                                     |     | L i g h t s a n d .                                                             | S 4     |\n| C o c k p i t                                               | aaa | E x t e r i o r l i g h t i n g                                                 | 5 4     |\n| I n d i c a t o r l i g h t s o v e r v i e w               | N   | I n t e r i o r l i g h t i n g .                                               | s 9     |\n| ...........                                                 |     |                                                                                 | 6 0     |\n| D i s p l a y a n d o p e r a t i o n                       |     | W i n d s h i e l d w i p e r s .                                               | 6 2     |\n| I n s t r u m e n t c l u s t e r ...                       |     | D i g i t a l c o m p a ss                                                      | 6 5     |\n| I n s t r u m e n t c l u s t e r o v e r v i e w .         |",
+      "source_location": "Page 1",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 9,
+      "source": "2023-audi-a6-13.pdf",
+      "page": 25,
+      "snippet": "p l a y e d o n t h e u pp e r s e c t i o n o f t h e s c r ee n @ ) . D e p e n d i n g o n t h e c o n t e x t , w o r d s u gg e s t i o n s m a y b e g i v e n b a s e d o n t h e c h a r a c t e r s t h a t h a v e b ee n e n t e r e d @ a n d a r e s u l t s l i s t m a y b e s h o w n @ ) .\n\n## O p e n i n g t e x t i n p u t\n\n- » T a p i n s i d e t h e i n p u t f i e l d @ ) ....",
+      "full_text": " p l a y e d o n t h e u pp e r s e c t i o n o f t h e s c r ee n @ ) . D e p e n d i n g o n t h e c o n t e x t , w o r d s u gg e s t i o n s m a y b e g i v e n b a s e d o n t h e c h a r a c t e r s t h a t h a v e b ee n e n t e r e d @ a n d a r e s u l t s l i s t m a y b e s h o w n @ ) .\n\n## O p e n i n g t e x t i n p u t\n\n- » T a p i n s i d e t h e i n p u t f i e l d @ ) .\n\n## S w i t c h i n g i n p u t l a n g u a g e s\n\nR e q u i r e m e n t : m u l t i p l e i n p u t l a n g u a g e s m u s t b e d e f i n e d i n t h e MM I © p a g e 2 6 .\n\n- » T o s w i t c h b e t w ee n t h e d e f i n e d i n p u t l a n g u a g e s , p r e ss t h e b u tt o n @ ) .\n\n## S w i t c h i n g t h e i n p u t m e t h o d s\n\n- » T o s w i t c h b e t w ee n h a n d w r i t i n g i n p u t o r t h e o n -s c r ee n k e y b o a r d , p r e ss t h e b u tt o n @ % ) .\n\n## E n t e r i n g t e x t\n\n- &gt; A pp l i e s t o : h a n d w r i t i n g i n p u t : T o e n t e r t e x t , s i m p l y w r i t e i n t h e i n p u t a r e a u s i n g o n e f i n g e r © . Y o u c a n w r i t e t h e s e p a r a t e c h a r a c t e r s n e x t t o e a c h o t h e r o r o n e o n t o p o f t h e o t h e r w i t h -\n\n» I n c e r t a i n c o u n t r i e s .\n\n- o u t h a v i n g t o m o v e y o u r f i n g e r o v e r a f t e r w r i t -i n g a c h a r a c t e r . W h e n y o u e n d t h e e n t r y , t h e w r i t i n g i s i n t e r p r e t e d b y t h e s y s t e m .\n- &gt; A pp l i e s t o : t h e o n -s c r ee n k e y b o a r d : T o e n t e r t e x t , p r e ss t h e b u tt o n s o n t h e k e y b o a r d . D e -p e n d i n g o n t h e u s a g e c o n t e x t , y o u m a y a l s o b e a b l e t o s w i p e o v e r t h e l e tt e r s ! )\n- &gt; A pp l i e s t o : t h e o n -s c r ee n k e y b o a r d w i t h a n i n -p u t l a n g u a g e t h a t u s e s a cc e n t e d c h a r a c t e r s : T o e n t e r a cc e n t e d c h a r a c t e r s ( s u c h a s 4 , ¢ , f i , 6 ) , p r e ss a n d h o l d a c h a r a c t e r t h a t h a s a cc e n t e d v e r s i o n s a v a i l a b l e a n d s e l e c t t h e d e s i r e d a c -c e n t e d c h a r a c t e r .\n- &gt; T o s e l e c t a l o c a t i o n i n t h e t e x t i n p u t , p r e ss o n t h e d e s i r e d l o c a t i o n i n t h e i n p u t f i e l d . Y o u c a n c o n t r o l t h e l o c a t i o n m o r e a cc u r a t e l y u s i n g t h e s l i d e r i n t h e d i s p l a y © .\n- &gt; A pp l i e s t o : h a n d w r i t i n g i n p u t : T o e n t e r a s p a c e , d r a g a l i n e f r o m l e f t t o r i g h t i n t h e i n p u t s e c -t i o n © .\n- » T o d e l e t e i n d i v i d u a l c h a r a c t e r s , p r e ss J @ ) , o r\n- &gt; T o d e l e t e m u l t i p l e c h a r a c t e r s , p r e ss a n d h o l d a e .\n- &gt; A pp l i e s t o : h a n d w r i t i n g i n p u t : D r a g a l i n e f r o m r i g h t t o l e f t i n t h e i n p u t s e c t i o n © .\n- &gt; T o d e l e t e a ll c h a r a c t e r s a t a s p e c i f i c l o c a t i o n , p r e ss a n d h o l d &lt; 1 @ a n d d r",
+      "source_location": "Page 25",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    }
+  ],
+  "num_chunks_used": 12,
+  "response_time": 21.397531032562256,
+  "context_tokens": 18702,
+  "response_tokens": 439,
+  "total_tokens": 19141
+}
+
+================================================================================
+  6. Query with document_id filter - POST http://44.221.84.58:8500/query
+================================================================================
+
+📊 Status Code: 200
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:34:57 GMT', 'server': 'uvicorn', 'content-length': '12112', 'content-type': 'application/json'}
+
+📄 Response Body (JSON):
+{
+  "answer": "The context provided includes an \"IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)\" section, which is the primary source for answering questions about images, drawers, tools, or part numbers. However, the specific question \"test query\" does not provide enough detail to identify what specific information is being sought. \n\nIf you have a specific question about the content of the images, such as the location of a particular tool or part number, please provide more details so I can assist you accurately using the OCR text extracted from the images.",
+  "sources": [
+    "FL10.11 SPECIFIC8 (1).pdf"
+  ],
+  "citations": [
+    {
+      "id": 1,
+      "source": "FL10.11 SPECIFIC8 (1).pdf",
+      "page": 18,
+      "snippet": "...-  Get measuring Rod from Vat, (# on Rod should match # on surge tank) rinse it off and place it on the Filter Cart.\n-  Approximately twenty minutes prior to batch change, take the new filters off water and stage them where they will be installed.\n\n## (Filter Test)\n\n-  Set up filter test site as instructed in the filter certification training.\n-  Get measuring rod from Vat, (# on Rod should match # on surge tank) rinse it off and place it on the filter cart.\n\n## After Batch Change\n\n-  Go inside and enter the appropriate flushes, tank hook up and filters into fill pack....",
+      "full_text": ". Cycle stop the machine and depress the E-stop. Remove the set of bags (a pattern of 5) that are past the fill station (close clamps) for FOB imprints, check and sign.\n-  Help install / remove flush manifolds and hookup air inject lines as needed.\n-  Go to LPF04 and assist with the imprint process as listed above for LPF02.\n-  Be available to perform 2 nd verification on FOB imprints as needed.\n-  Turn batch change light off when first bags from new batch reach the pouching side.\n\nFOR INFORMATION ONLY - MAY BE DISCARDED\n\n1Copy - LPF03 Attached to clipboard\n\nPARENT: FILL LINES 10 &amp; 11 SPECIFIC\n\nDOCUMENT OWNER:  N. BUCHANAN\n\nFL10.11 SPECIFIC8\n\nEFFECTIVE DATE: 04/24/18\n\n\n--- Page 15 ---\nPrint 'DWH :\n\n## Line 10 'Fill Side' Batch Change Standard Work\n\n## Tank Room\n\n## External\n\n-  Verify the Walkie-Talkie's are working and can be used to communicate between the Tank Room and LPF Room. If Walkie-Talkie's are not available, Face-to-Face Communications must be conducted.\n\n## Prior to Batch Change\n\n## ( Filter Change )\n\n-  Put pre-filter on water and verify all filter tags match paperwork (per SOP).\n-  Place check mark on old filter tags to indicate that they are USED FILTERS.\n-  Get measuring Rod from Vat, (# on Rod should match # on surge tank) rinse it off and place it on the Filter Cart.\n-  Approximately twenty minutes prior to batch change, take the new filters off water and stage them where they will be installed.\n\n## (Filter Test)\n\n-  Set up filter test site as instructed in the filter certification training.\n-  Get measuring rod from Vat, (# on Rod should match # on surge tank) rinse it off and place it on the filter cart.\n\n--- Page 16 ---\n\n## After Batch Change\n\n-  Go inside and enter the appropriate flushes, tank hook up and filters into fill pack.\n-  Fill out Pre-production Solution Transmission System Cleaning Record (NC-FL-029) and give to dry side along with the Truck cards.\n-  Update the filter expiration time and date per SOP, located inside LPF room above the desk.\n",
+      "source_location": "Page 18",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 2,
+      "source": "FL10.11 SPECIFIC8 (1).pdf",
+      "page": 31,
+      "snippet": "...#3 and Filter #4 on outlet side (inlet still covered with whirl packs), then complete the connection for the inlet side once the surge tank flush has been completed and drained by the Night shift Tank Room Handler. |\n| Night | At FOB               | Test Filters from the previous batch.                                                                                                                                                                                                 |\n\nPARENT: FILL LINES 10 &amp; 11 SPECIFIC\n\nFL10....",
+      "full_text": " connection to the surge tank until production has stopped from the previous batch and the surge tank heel has been measured and drained.              |\n| Night | At EOB               | Day shift Tank Room Handler will shut off pumps, measure and open to drain. Remaining filters may be removed from the STS at this time.                                                                                               |\n| Night | At FOB               | Complete the final connection between Filter #2 and surge tank.                                                                                                                                                                       |\n| Night | At FOB               | Install Filter #3 and Filter #4 on outlet side (inlet still covered with whirl packs), then complete the connection for the inlet side once the surge tank flush has been completed and drained by the Night shift Tank Room Handler. |\n| Night | At FOB               | Test Filters from the previous batch.                                                                                                                                                                                                 |\n\n--- Page 27 ---\n\nPARENT: FILL LINES 10 &amp; 11 SPECIFIC\n\nFL10.11 SPECIFIC8 EFFECTIVE DATE: 04/24/18\n\n## LEAD/TANKROOM HANDLER\n\n## Batch Change with Sanitization Standard Work\n\n| Time         | Task to be Performed                                                                                                                         |\n|--------------|----------------------------------------------------------------------------------------------------------------------------------------------|\n| Prior to EOB | Connect all DWhoses and attach to the DWwater drops for sanitization.                                                                        |\n| Prior to EOB | Pick up set up sheet and batch folder information.                                                                                           |\n| Prior to EOB | Sign in new dies. Verify Type retainers, stamps, sort paperwork, batch documentation. Place barcode setup sheets and BOM with each type box. |\n| Prior to EOB | Clear manual printer 2199.                                                                                                                   |\n| Prior to EOB | Sign imprint for 2199 (Printer setup prior to EOB).                                                                                          |\n| Prior to EOB | Perform tank unhook to begin running out of Surge tank to allow surge to be mostly consumed by machine clear out time (18:00).               |\n| Prior to EOB | Document unhook in Fill/pack system.                                                                                                         |\n| At EOB       | Monitor Surge tank until time for machines to be cleared out/ Do not let surge tank run dry.                                                 |\n| At EOB       | Signal line to clear out (As close to 18:00 as possible).                                                                                    |\n| At EOB       | Once production has stopped, pull EOB samples.                                                                                               |\n| At EOB       | Once samples are obtained and documented, measure surge tank heel and open to drain.                                                         |\n| At E",
+      "source_location": "Page 31",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    },
+    {
+      "id": 3,
+      "source": "FL10.11 SPECIFIC8 (1).pdf",
+      "page": 30,
+      "snippet": "....                                                                                                                              |\n| DAY   | After Tank Unhook    | Remove Filter #1 and Filter #2. Place whirl pack on the inlet piping to the surge tank. Test removed Filters.                                                                                                                         |\n| Night | After Tank Unhook    | As old filters are removed, install new Filter #1 and #2....",
+      "full_text": " has ended pull EOB samples.                                                                                                     |\n| DAY   | At EOB       | Verify imprints present and all documents in batch folder. Place batch fold on F belt for pouching side to pick up.                                 |\n| DAY   | At EOB       | Change over Fill/Pack to new batch.                                                                                                                 |\n\n--- Page 26 ---\n| DAY   | At EOB       | Verify previous batch SPC is closed out.                                                                                                            |\n| Night | Prior to EOB | Get all material partial and cyclohex information and document materials into new batch fill/pack.                                                  |\n| Night | At FOB       | Perform FOB flush per Filling 4 Addendum when signaled by Tank Room Handler.                                                                        |\n| Night | At FOB       | Printing on Multi-up may begin.                                                                                                                     |\n| Night | At FOB       | Pull FOB samples from manual nozzles.                                                                                                               |\n\nPARENT: FILL LINES 10 &amp; 11 SPECIFIC\n\nFL10.11 SPECIFIC8 EFFECTIVE DATE: 04/24/18\n\n## Line 11 - Tank Room Prep Batch Change Standard Work\n\n(Prep-All Night Shift Supervisors/Asst. Supervisors/PT's/ Handlers must be garbed and on the line at 18:50. Begins when last tank is unhooked and running out of surge)\n\n|       | Time                 | Task to be Performed                                                                                                                                                                                                                  |\n|-------|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| DAY   | Prior to Tank Unhook | Have new batch filters DWflushed with whirl packs on ends and ready staged on cart or by their location.                                                                                                                              |\n| DAY   | After Tank Unhook    | Remove Filter #1 and Filter #2. Place whirl pack on the inlet piping to the surge tank. Test removed Filters.                                                                                                                         |\n| Night | After Tank Unhook    | As old filters are removed, install new Filter #1 and #2. Do not make the final connection to the surge tank until production has stopped from the previous batch and the surge tank heel has been measured and drained.              |\n| Night | At EOB               | Day shift Tank Room Handler will shut off pumps, measure and open to drain. Remaining filters may be removed from the STS at this time.                                                                                               |\n| Night | At FOB               | Complete the final connection between Filter #2 and surge tank.                                                                                                                                                                       |\n| Night | At FOB               | Install Filter #",
+      "source_location": "Page 30",
+      "content_type": "text",
+      "image_ref": null,
+      "image_info": null
+    }
+  ],
+  "num_chunks_used": 3,
+  "response_time": 3.811464786529541,
+  "context_tokens": 3679,
+  "response_tokens": 107,
+  "total_tokens": 3786
+}
+
+================================================================================
+  7. Query Images (Get All) - POST http://44.221.84.58:8500/query/images
+================================================================================
+
+📊 Status Code: 200
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:34:57 GMT', 'server': 'uvicorn', 'content-length': '23', 'content-type': 'application/json'}
+
+📄 Response Body (JSON):
+{
+  "images": [],
+  "total": 0
+}
+
+================================================================================
+  8. Query Images (Semantic Search) - POST http://44.221.84.58:8500/query/images
+================================================================================
+
+📊 Status Code: 200
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:35:03 GMT', 'server': 'uvicorn', 'content-length': '23', 'content-type': 'application/json'}
+
+📄 Response Body (JSON):
+{
+  "images": [],
+  "total": 0
+}
+
+================================================================================
+  9. Delete Document - DELETE http://44.221.84.58:8500/documents/2690e144-0fa5-47e5-a752-a9f676febc6a
+================================================================================
+
+📊 Status Code: 204
+📋 Headers: {'date': 'Thu, 18 Dec 2025 13:35:03 GMT', 'server': 'uvicorn', 'content-type': 'application/json'}
+
+📄 Response Body (Text):
+
+
+================================================================================
+  SUMMARY
+================================================================================
+
+✅ All endpoint responses displayed above
+💾 Full responses saved to: ALL_ENDPOINT_RESPONSES.json
+
+📊 Total endpoints tested: 9

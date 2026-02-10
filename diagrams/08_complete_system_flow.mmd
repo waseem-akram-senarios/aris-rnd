@@ -1,0 +1,69 @@
+graph TB
+    subgraph UserActions["User Actions"]
+        Upload["Upload Documents"]
+        Query["Ask Questions"]
+        ViewMetrics["View Metrics"]
+        UseTokenCounter["Use Token Counter"]
+    end
+    
+    subgraph DocProcessing["Document Processing"]
+        Process["Process Documents"]
+        Parse["Parse with Parser"]
+        Chunk["Token-aware Chunking"]
+        Embed["Create Embeddings"]
+        Index["Index in FAISS"]
+    end
+    
+    subgraph QueryProcessing["Query Processing"]
+        Retrieve["Retrieve Chunks"]
+        Build["Build Context"]
+        Generate["Generate Answer"]
+    end
+    
+    subgraph TokenManagement["Token Management"]
+        CountDoc["Count Document Tokens"]
+        CountQuery["Count Query Tokens"]
+        Track["Track Token Usage"]
+        Analyze["Analyze Token Patterns"]
+    end
+    
+    subgraph MetricsDisplay["Metrics & Display"]
+        Collect["Metrics Collector"]
+        Display["UI Display"]
+        Charts["Token Charts"]
+    end
+    
+    Upload --> Process
+    Process --> Parse
+    Parse --> Chunk
+    Chunk --> CountDoc
+    CountDoc --> Embed
+    Embed --> Index
+    Index --> Track
+    
+    Query --> Retrieve
+    Retrieve --> Build
+    Build --> CountQuery
+    CountQuery --> Generate
+    Generate --> CountQuery
+    CountQuery --> Track
+    
+    UseTokenCounter --> CountDoc
+    
+    Track --> Collect
+    Collect --> Analyze
+    Analyze --> Display
+    Display --> Charts
+    
+    ViewMetrics --> Display
+    
+    style CountDoc fill:#fff9c4
+    style CountQuery fill:#fff9c4
+    style Track fill:#f3e5f5
+    style Analyze fill:#f3e5f5
+    style Charts fill:#e1f5ff
+
+
+
+
+

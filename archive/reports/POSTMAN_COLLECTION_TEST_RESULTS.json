@@ -1,0 +1,26 @@
+{
+  "timestamp": "2025-12-30T17:40:36.213291",
+  "server": "http://44.221.84.58:8500",
+  "results": {
+    "health": true,
+    "root": true,
+    "list_documents": true,
+    "upload": false,
+    "query_basic": true,
+    "query_specific": false,
+    "query_images": false,
+    "query_enhanced": true,
+    "get_all_images": false,
+    "search_images": false,
+    "search_images_specific": false,
+    "search_tools": false,
+    "search_part_numbers": false,
+    "delete": false
+  },
+  "summary": {
+    "total": 14,
+    "passed": 5,
+    "failed": 9,
+    "success_rate": "35.7%"
+  }
+}

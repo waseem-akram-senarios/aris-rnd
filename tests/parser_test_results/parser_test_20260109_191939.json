@@ -1,0 +1,400 @@
+{
+  "test_timestamp": "2026-01-09T19:18:15.968356",
+  "server_url": "http://44.221.84.58:8500",
+  "parsers": {
+    "docling": {
+      "parser": "docling",
+      "test_file": "EM10, degasing.pdf",
+      "upload": {
+        "success": true,
+        "data": {
+          "document_id": "7d61b436-8001-4973-98db-645520e48876",
+          "document_name": "EM10, degasing.pdf",
+          "status": "processing",
+          "language": "eng",
+          "chunks_created": 0,
+          "tokens_extracted": 0,
+          "parser_used": null,
+          "processing_time": 0.0,
+          "extraction_percentage": 0.0,
+          "images_detected": false,
+          "image_count": 0,
+          "pages": null,
+          "error": null,
+          "text_chunks_stored": 0,
+          "images_stored": 0,
+          "text_index": "aris-rag-index",
+          "images_index": "aris-rag-images-index",
+          "text_storage_status": "pending",
+          "images_storage_status": "pending",
+          "file_hash": null,
+          "upload_metadata": null,
+          "pdf_metadata": null,
+          "processing_metadata": null,
+          "ocr_quality_metrics": null,
+          "version_info": null
+        },
+        "upload_time": 1.5423381328582764
+      },
+      "processing": {
+        "success": true,
+        "data": {
+          "document_id": "7d61b436-8001-4973-98db-645520e48876",
+          "document_name": "EM10, degasing.pdf",
+          "status": "success",
+          "language": "spa",
+          "chunks_created": 4,
+          "tokens_extracted": 1084,
+          "parser_used": "docling",
+          "processing_time": 6.080060958862305,
+          "extraction_percentage": 0.488,
+          "images_detected": true,
+          "image_count": 1,
+          "pages": 2,
+          "error": null,
+          "text_chunks_stored": 0,
+          "images_stored": 1,
+          "text_index": "aris-doc-7d61b436-8001-4973-98db-645520e48876",
+          "images_index": "aris-rag-images-index",
+          "text_storage_status": "pending",
+          "images_storage_status": "pending",
+          "file_hash": null,
+          "upload_metadata": null,
+          "pdf_metadata": null,
+          "processing_metadata": null,
+          "ocr_quality_metrics": null,
+          "version_info": {
+            "version_history": [
+              {
+                "version": 1,
+                "updated_at": "2026-01-09T14:18:17.863553",
+                "changes": [
+                  "parser_used changed from None to docling",
+                  "chunks_created changed from None to 4",
+                  "images_stored changed from None to 1"
+                ]
+              }
+            ],
+            "version": 2
+          }
+        }
+      },
+      "document_details": {
+        "document_id": "7d61b436-8001-4973-98db-645520e48876",
+        "document_name": "EM10, degasing.pdf",
+        "status": "success",
+        "language": "spa",
+        "chunks_created": 4,
+        "tokens_extracted": 1084,
+        "parser_used": "docling",
+        "processing_time": 6.080060958862305,
+        "extraction_percentage": 0.488,
+        "images_detected": true,
+        "image_count": 1,
+        "pages": 2,
+        "error": null,
+        "text_chunks_stored": 0,
+        "images_stored": 1,
+        "text_index": "aris-doc-7d61b436-8001-4973-98db-645520e48876",
+        "images_index": "aris-rag-images-index",
+        "text_storage_status": "pending",
+        "images_storage_status": "pending",
+        "file_hash": null,
+        "upload_metadata": null,
+        "pdf_metadata": null,
+        "processing_metadata": null,
+        "ocr_quality_metrics": null,
+        "version_info": {
+          "version_history": [
+            {
+              "version": 1,
+              "updated_at": "2026-01-09T14:18:17.863553",
+              "changes": [
+                "parser_used changed from None to docling",
+                "chunks_created changed from None to 4",
+                "images_stored changed from None to 1"
+              ]
+            }
+          ],
+          "version": 2
+        }
+      },
+      "images": {
+        "count": 15,
+        "with_ocr": 15
+      },
+      "query_test": {
+        "success": true,
+        "answer_length": 1310,
+        "citations": 2
+      },
+      "overall_status": "success"
+    },
+    "ocrmypdf": {
+      "parser": "ocrmypdf",
+      "test_file": "EM10, degasing.pdf",
+      "upload": {
+        "success": true,
+        "data": {
+          "document_id": "de623b16-23a8-49ce-b019-cc5cca404dd1",
+          "document_name": "EM10, degasing.pdf",
+          "status": "processing",
+          "language": "eng",
+          "chunks_created": 0,
+          "tokens_extracted": 0,
+          "parser_used": null,
+          "processing_time": 0.0,
+          "extraction_percentage": 0.0,
+          "images_detected": false,
+          "image_count": 0,
+          "pages": null,
+          "error": null,
+          "text_chunks_stored": 0,
+          "images_stored": 0,
+          "text_index": "aris-rag-index",
+          "images_index": "aris-rag-images-index",
+          "text_storage_status": "pending",
+          "images_storage_status": "pending",
+          "file_hash": null,
+          "upload_metadata": null,
+          "pdf_metadata": null,
+          "processing_metadata": null,
+          "ocr_quality_metrics": null,
+          "version_info": null
+        },
+        "upload_time": 1.5834224224090576
+      },
+      "processing": {
+        "success": true,
+        "data": {
+          "document_id": "de623b16-23a8-49ce-b019-cc5cca404dd1",
+          "document_name": "EM10, degasing.pdf",
+          "status": "success",
+          "language": "spa",
+          "chunks_created": 4,
+          "tokens_extracted": 1144,
+          "parser_used": "ocrmypdf",
+          "processing_time": 3.115400552749634,
+          "extraction_percentage": 1.0,
+          "images_detected": true,
+          "image_count": 1,
+          "pages": 2,
+          "error": null,
+          "text_chunks_stored": 0,
+          "images_stored": 1,
+          "text_index": "aris-doc-de623b16-23a8-49ce-b019-cc5cca404dd1",
+          "images_index": "aris-rag-images-index",
+          "text_storage_status": "pending",
+          "images_storage_status": "pending",
+          "file_hash": null,
+          "upload_metadata": null,
+          "pdf_metadata": null,
+          "processing_metadata": null,
+          "ocr_quality_metrics": null,
+          "version_info": {
+            "version_history": [
+              {
+                "version": 1,
+                "updated_at": "2026-01-09T14:18:45.797626",
+                "changes": [
+                  "parser_used changed from None to ocrmypdf",
+                  "chunks_created changed from None to 4",
+                  "images_stored changed from None to 1"
+                ]
+              }
+            ],
+            "version": 2
+          }
+        }
+      },
+      "document_details": {
+        "document_id": "de623b16-23a8-49ce-b019-cc5cca404dd1",
+        "document_name": "EM10, degasing.pdf",
+        "status": "success",
+        "language": "spa",
+        "chunks_created": 4,
+        "tokens_extracted": 1144,
+        "parser_used": "ocrmypdf",
+        "processing_time": 3.115400552749634,
+        "extraction_percentage": 1.0,
+        "images_detected": true,
+        "image_count": 1,
+        "pages": 2,
+        "error": null,
+        "text_chunks_stored": 0,
+        "images_stored": 1,
+        "text_index": "aris-doc-de623b16-23a8-49ce-b019-cc5cca404dd1",
+        "images_index": "aris-rag-images-index",
+        "text_storage_status": "pending",
+        "images_storage_status": "pending",
+        "file_hash": null,
+        "upload_metadata": null,
+        "pdf_metadata": null,
+        "processing_metadata": null,
+        "ocr_quality_metrics": null,
+        "version_info": {
+          "version_history": [
+            {
+              "version": 1,
+              "updated_at": "2026-01-09T14:18:45.797626",
+              "changes": [
+                "parser_used changed from None to ocrmypdf",
+                "chunks_created changed from None to 4",
+                "images_stored changed from None to 1"
+              ]
+            }
+          ],
+          "version": 2
+        }
+      },
+      "images": {
+        "count": 20,
+        "with_ocr": 20
+      },
+      "query_test": {
+        "success": true,
+        "answer_length": 1744,
+        "citations": 2
+      },
+      "overall_status": "success"
+    },
+    "pymupdf": {
+      "parser": "pymupdf",
+      "test_file": "EM10, degasing.pdf",
+      "upload": {
+        "success": true,
+        "data": {
+          "document_id": "e45a37f0-8961-40de-a753-1aa532528183",
+          "document_name": "EM10, degasing.pdf",
+          "status": "processing",
+          "language": "eng",
+          "chunks_created": 0,
+          "tokens_extracted": 0,
+          "parser_used": null,
+          "processing_time": 0.0,
+          "extraction_percentage": 0.0,
+          "images_detected": false,
+          "image_count": 0,
+          "pages": null,
+          "error": null,
+          "text_chunks_stored": 0,
+          "images_stored": 0,
+          "text_index": "aris-rag-index",
+          "images_index": "aris-rag-images-index",
+          "text_storage_status": "pending",
+          "images_storage_status": "pending",
+          "file_hash": null,
+          "upload_metadata": null,
+          "pdf_metadata": null,
+          "processing_metadata": null,
+          "ocr_quality_metrics": null,
+          "version_info": null
+        },
+        "upload_time": 1.5583338737487793
+      },
+      "processing": {
+        "success": true,
+        "data": {
+          "document_id": "e45a37f0-8961-40de-a753-1aa532528183",
+          "document_name": "EM10, degasing.pdf",
+          "status": "success",
+          "language": "spa",
+          "chunks_created": 4,
+          "tokens_extracted": 1144,
+          "parser_used": "pymupdf",
+          "processing_time": 3.324873447418213,
+          "extraction_percentage": 1.0,
+          "images_detected": true,
+          "image_count": 1,
+          "pages": 2,
+          "error": null,
+          "text_chunks_stored": 0,
+          "images_stored": 1,
+          "text_index": "aris-doc-e45a37f0-8961-40de-a753-1aa532528183",
+          "images_index": "aris-rag-images-index",
+          "text_storage_status": "pending",
+          "images_storage_status": "pending",
+          "file_hash": null,
+          "upload_metadata": null,
+          "pdf_metadata": null,
+          "processing_metadata": null,
+          "ocr_quality_metrics": null,
+          "version_info": {
+            "version_history": [
+              {
+                "version": 1,
+                "updated_at": "2026-01-09T14:19:11.819976",
+                "changes": [
+                  "parser_used changed from None to pymupdf",
+                  "chunks_created changed from None to 4",
+                  "images_stored changed from None to 1"
+                ]
+              }
+            ],
+            "version": 2
+          }
+        }
+      },
+      "document_details": {
+        "document_id": "e45a37f0-8961-40de-a753-1aa532528183",
+        "document_name": "EM10, degasing.pdf",
+        "status": "success",
+        "language": "spa",
+        "chunks_created": 4,
+        "tokens_extracted": 1144,
+        "parser_used": "pymupdf",
+        "processing_time": 3.324873447418213,
+        "extraction_percentage": 1.0,
+        "images_detected": true,
+        "image_count": 1,
+        "pages": 2,
+        "error": null,
+        "text_chunks_stored": 0,
+        "images_stored": 1,
+        "text_index": "aris-doc-e45a37f0-8961-40de-a753-1aa532528183",
+        "images_index": "aris-rag-images-index",
+        "text_storage_status": "pending",
+        "images_storage_status": "pending",
+        "file_hash": null,
+        "upload_metadata": null,
+        "pdf_metadata": null,
+        "processing_metadata": null,
+        "ocr_quality_metrics": null,
+        "version_info": {
+          "version_history": [
+            {
+              "version": 1,
+              "updated_at": "2026-01-09T14:19:11.819976",
+              "changes": [
+                "parser_used changed from None to pymupdf",
+                "chunks_created changed from None to 4",
+                "images_stored changed from None to 1"
+              ]
+            }
+          ],
+          "version": 2
+        }
+      },
+      "images": {
+        "count": 25,
+        "with_ocr": 25
+      },
+      "query_test": {
+        "success": true,
+        "answer_length": 1785,
+        "citations": 2
+      },
+      "overall_status": "success"
+    }
+  },
+  "summary": {
+    "total_parsers": 3,
+    "working_parsers": [
+      "docling",
+      "ocrmypdf",
+      "pymupdf"
+    ],
+    "failed_parsers": [],
+    "success_rate": 100.0
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "health": {
+    "status": 200,
+    "success": true,
+    "data": {
+      "status": "healthy"
+    }
+  },
+  "root": {
+    "status": 200,
+    "success": true,
+    "data": {
+      "message": "ARIS RAG API",
+      "version": "1.0.0",
+      "docs": "/docs"
+    }
+  },
+  "list_documents": {
+    "status": 200,
+    "success": true,
+    "data": {
+      "documents": [
+        {
+          "document_id": null,
+          "document_name": "test_document.pdf",
+          "status": "success",
+          "chunks_created": 10,
+          "tokens_extracted": 0,
+          "parser_used": null,
+          "processing_time": 0.0,
+          "extraction_percentage": 0.0,
+          "images_detected": false,
+          "image_count": 0,
+          "pages": null,
+          "error": null
+        }
+      ],
+      "total": 1
+    }
+  },
+  "upload_document": {
+    "status": 201,
+    "success": true,
+    "data": {
+      "document_id": "2f34e981-e1ec-4d51-a774-3afaff455138",
+      "document_name": "test_endpoint_verification.txt",
+      "status": "failed",
+      "chunks_created": 0,
+      "tokens_extracted": 0,
+      "parser_used": null,
+      "processing_time": 0.34725332260131836,
+      "extraction_percentage": 0.0,
+      "images_detected": false,
+      "image_count": 0,
+      "pages": 0,
+      "error": "Parser error: No parser available for file type: txt"
+    }
+  },
+  "query": {
+    "status": 200,
+    "success": true,
+    "data": {
+      "answer": "No documents have been uploaded yet. Please upload documents first.",
+      "sources": [],
+      "citations": [],
+      "num_chunks_used": 0,
+      "response_time": 0.0,
+      "context_tokens": 0,
+      "response_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  "query_with_doc_id": {
+    "status": 200,
+    "success": true,
+    "data": {
+      "answer": "No documents have been uploaded yet. Please upload documents first.",
+      "sources": [],
+      "citations": [],
+      "num_chunks_used": 0,
+      "response_time": 0.0,
+      "context_tokens": 0,
+      "response_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  "query_images_all": {
+    "status": 200,
+    "success": true,
+    "data": {
+      "images": [],
+      "total": 0
+    }
+  },
+  "query_images_search": {
+    "status": 200,
+    "success": true,
+    "data": {
+      "images": [],
+      "total": 0
+    }
+  },
+  "delete_document": {
+    "status": 204,
+    "success": true,
+    "text": ""
+  }
+}

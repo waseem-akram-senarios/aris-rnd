@@ -1,0 +1,184 @@
+{
+  "document": "FL10.11 SPECIFIC8 (1).pdf",
+  "timestamp": "20251216_114153",
+  "pages": 49,
+  "images_detected": 22,
+  "markers_inserted": 13,
+  "marker_coverage_pct": 59.09090909090909,
+  "total_text_chars": 105895,
+  "images_with_content": 13,
+  "total_ocr_chars": 105667,
+  "mallet_found": false,
+  "mallet_in_marked_images": 0,
+  "images": [
+    {
+      "image_number": 1,
+      "ocr_text_length": 596,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": false,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 2,
+      "ocr_text_length": 596,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": false,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 3,
+      "ocr_text_length": 596,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": false,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 4,
+      "ocr_text_length": 2586,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": true,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 5,
+      "ocr_text_length": 84798,
+      "has_part_numbers": true,
+      "has_drawer_refs": false,
+      "has_tool_names": true,
+      "tools_found": [
+        "extension"
+      ],
+      "part_numbers": [
+        "39000"
+      ],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 6,
+      "ocr_text_length": 305,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": false,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 7,
+      "ocr_text_length": 1558,
+      "has_part_numbers": true,
+      "has_drawer_refs": true,
+      "has_tool_names": true,
+      "tools_found": [
+        "wrench",
+        "socket",
+        "ratchet",
+        "extension",
+        "allen",
+        "snips",
+        "cutter"
+      ],
+      "part_numbers": [
+        "65300128",
+        "65300134",
+        "65300084",
+        "65300077",
+        "65300132",
+        "65300124",
+        "65300122",
+        "65300109",
+        "65300091",
+        "65300053",
+        "65300049",
+        "65300058",
+        "78900102",
+        "78901053",
+        "65300129",
+        "65300107",
+        "65300090",
+        "65300048",
+        "86893209",
+        "65300081"
+      ],
+      "drawer_refs": [
+        "1",
+        "2",
+        "5",
+        "4",
+        "3"
+      ]
+    },
+    {
+      "image_number": 8,
+      "ocr_text_length": 132,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": true,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 9,
+      "ocr_text_length": 8138,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": false,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 10,
+      "ocr_text_length": 410,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": false,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 11,
+      "ocr_text_length": 663,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": false,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 12,
+      "ocr_text_length": 1362,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": false,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    },
+    {
+      "image_number": 13,
+      "ocr_text_length": 3927,
+      "has_part_numbers": false,
+      "has_drawer_refs": false,
+      "has_tool_names": true,
+      "tools_found": [],
+      "part_numbers": [],
+      "drawer_refs": []
+    }
+  ]
+}

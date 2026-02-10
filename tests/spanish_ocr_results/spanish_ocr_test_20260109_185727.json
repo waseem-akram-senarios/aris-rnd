@@ -1,0 +1,264 @@
+{
+  "test_timestamp": "2026-01-09T18:48:05.109930",
+  "documents": {
+    "EM10, degasing.pdf": {
+      "file_name": "EM10, degasing.pdf",
+      "file_path": "/home/senarios/Desktop/aris/docs/testing/clientSpanishDocs/EM10, degasing.pdf",
+      "file_size_bytes": 208403,
+      "file_size_mb": 0.2,
+      "document_type": {
+        "type": "text",
+        "is_image_heavy": false
+      },
+      "parsers": {
+        "pymupdf": {
+          "parser": "pymupdf",
+          "success": true,
+          "text_length": 2014,
+          "pages": 2,
+          "images_detected": true,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 0.5415322780609131,
+          "error": "'ParsedDocument' object has no attribute 'extracted_images'",
+          "sample_text": ""
+        },
+        "docling": {
+          "parser": "docling",
+          "success": true,
+          "text_length": 1967,
+          "pages": 2,
+          "images_detected": true,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 84.69995021820068,
+          "error": "'ParsedDocument' object has no attribute 'extracted_images'",
+          "sample_text": ""
+        },
+        "ocrmypdf": {
+          "parser": "ocrmypdf",
+          "success": false,
+          "text_length": 0,
+          "pages": 0,
+          "images_detected": false,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 0.024959564208984375,
+          "error": "OCRmyPDF or Tesseract not available. Install with: sudo apt-get install tesseract-ocr && pip install ocrmypdf",
+          "sample_text": ""
+        }
+      },
+      "best_parser": "pymupdf",
+      "image_analysis": {
+        "pymupdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        },
+        "docling": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        },
+        "ocrmypdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        }
+      }
+    },
+    "EM11, top seal.pdf": {
+      "file_name": "EM11, top seal.pdf",
+      "file_path": "/home/senarios/Desktop/aris/docs/testing/clientSpanishDocs/EM11, top seal.pdf",
+      "file_size_bytes": 1537048,
+      "file_size_mb": 1.47,
+      "document_type": {
+        "type": "mixed",
+        "is_image_heavy": true
+      },
+      "parsers": {
+        "pymupdf": {
+          "parser": "pymupdf",
+          "success": true,
+          "text_length": 7783,
+          "pages": 14,
+          "images_detected": true,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 1.0261108875274658,
+          "error": "'ParsedDocument' object has no attribute 'extracted_images'",
+          "sample_text": ""
+        },
+        "docling": {
+          "parser": "docling",
+          "success": true,
+          "text_length": 38991,
+          "pages": 14,
+          "images_detected": true,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 351.0673761367798,
+          "error": "'ParsedDocument' object has no attribute 'extracted_images'",
+          "sample_text": ""
+        },
+        "ocrmypdf": {
+          "parser": "ocrmypdf",
+          "success": false,
+          "text_length": 0,
+          "pages": 0,
+          "images_detected": false,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 0.002725362777709961,
+          "error": "OCRmyPDF or Tesseract not available. Install with: sudo apt-get install tesseract-ocr && pip install ocrmypdf",
+          "sample_text": ""
+        }
+      },
+      "best_parser": "docling",
+      "image_analysis": {
+        "pymupdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        },
+        "docling": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        },
+        "ocrmypdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        }
+      }
+    },
+    "VUORMAR.pdf": {
+      "file_name": "VUORMAR.pdf",
+      "file_path": "/home/senarios/Desktop/aris/docs/testing/clientSpanishDocs/VUORMAR.pdf",
+      "file_size_bytes": 735441,
+      "file_size_mb": 0.7,
+      "document_type": {
+        "type": "mixed",
+        "is_image_heavy": true
+      },
+      "parsers": {
+        "pymupdf": {
+          "parser": "pymupdf",
+          "success": true,
+          "text_length": 3646,
+          "pages": 10,
+          "images_detected": true,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 0.5047788619995117,
+          "error": "'ParsedDocument' object has no attribute 'extracted_images'",
+          "sample_text": ""
+        },
+        "docling": {
+          "parser": "docling",
+          "success": true,
+          "text_length": 4334,
+          "pages": 10,
+          "images_detected": true,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 123.18066930770874,
+          "error": "'ParsedDocument' object has no attribute 'extracted_images'",
+          "sample_text": ""
+        },
+        "ocrmypdf": {
+          "parser": "ocrmypdf",
+          "success": false,
+          "text_length": 0,
+          "pages": 0,
+          "images_detected": false,
+          "image_count": 0,
+          "extracted_images": [],
+          "extraction_percentage": 0.0,
+          "processing_time": 0.0015897750854492188,
+          "error": "OCRmyPDF or Tesseract not available. Install with: sudo apt-get install tesseract-ocr && pip install ocrmypdf",
+          "sample_text": ""
+        }
+      },
+      "best_parser": "docling",
+      "image_analysis": {
+        "pymupdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        },
+        "docling": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        },
+        "ocrmypdf": {
+          "total_images": 0,
+          "images_with_ocr": 0,
+          "images_without_ocr": 0,
+          "avg_ocr_text_length": 0,
+          "ocr_coverage_percentage": 0.0
+        }
+      }
+    }
+  },
+  "summary": {
+    "total_documents": 3,
+    "parser_comparison": {
+      "pymupdf": {
+        "total_text_extracted": 13443,
+        "total_images_detected": 0,
+        "total_images_with_ocr": 0,
+        "successful_parses": 3,
+        "failed_parses": 0,
+        "total_processing_time": 2.0724220275878906
+      },
+      "docling": {
+        "total_text_extracted": 45292,
+        "total_images_detected": 0,
+        "total_images_with_ocr": 0,
+        "successful_parses": 3,
+        "failed_parses": 0,
+        "total_processing_time": 558.9479956626892
+      },
+      "ocrmypdf": {
+        "total_text_extracted": 0,
+        "total_images_detected": 0,
+        "total_images_with_ocr": 0,
+        "successful_parses": 0,
+        "failed_parses": 3,
+        "total_processing_time": 0
+      }
+    },
+    "overall_best_parser": "docling",
+    "image_extraction_summary": {},
+    "recommendations": [
+      "Use docling for best text extraction on these documents"
+    ]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "timestamp": "2025-12-17 18:38:25",
+  "issues_found": 3,
+  "issues": [
+    {
+      "type": "image_extraction",
+      "message": "Images detected but image_count is 0",
+      "severity": "high"
+    },
+    {
+      "type": "image_storage",
+      "message": "No image storage logs found after upload",
+      "severity": "high"
+    },
+    {
+      "type": "no_images",
+      "message": "No images found for document c20a912d-c42a-424d-91c4-1bebe9ee4d5b",
+      "severity": "medium"
+    }
+  ],
+  "fixes_applied": [],
+  "recommendations": [
+    {
+      "priority": "high",
+      "issue": "Image extraction not working",
+      "fix": "Verify Docling parser extracts images into extracted_images format",
+      "files": [
+        "parsers/docling_parser.py"
+      ],
+      "methods": [
+        "_extract_individual_images()"
+      ]
+    },
+    {
+      "priority": "high",
+      "issue": "Image storage not working",
+      "fix": "Verify OpenSearch connection and storage method",
+      "files": [
+        "ingestion/document_processor.py"
+      ],
+      "methods": [
+        "_store_images_in_opensearch()"
+      ]
+    }
+  ]
+}

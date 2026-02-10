@@ -1,0 +1,142 @@
+Subject: Re: OpenSearch Permissions Request - Index Details and Purpose
+
+Good day,
+
+Thank you for your response. Let me provide details about the indices we need and the purpose.
+
+## Project Purpose: RAG (Retrieval-Augmented Generation) System
+
+I'm building a RAG system for document question-answering. The system:
+1. Processes documents (PDFs, Word docs, etc.) and extracts text
+2. Splits documents into chunks (typically 256-512 tokens each)
+3. Generates vector embeddings for each chunk using OpenAI embeddings
+4. Stores these embeddings in OpenSearch for semantic search
+5. When users ask questions, the system searches for relevant document chunks and uses them to generate accurate answers
+
+## Index Requirements
+
+### Index Name
+- **Default index name:** `aris-rag-index`
+- **Alternative:** We can use any index name you prefer or provide
+
+### Index Structure
+The index will store:
+- **Document chunks** (text segments from processed documents)
+- **Vector embeddings** (1536-dimensional vectors from OpenAI's text-embedding-3-small model)
+- **Metadata** (source document name, chunk index, timestamps, etc.)
+
+### Index Configuration
+The index needs to support:
+- **Vector similarity search** (k-NN search for finding similar document chunks)
+- **Standard text fields** (for metadata and document content)
+- **Dynamic mapping** (to accommodate various document types)
+
+### Typical Index Mapping Structure
+```json
+{
+  "mappings": {
+    "properties": {
+      "text": {
+        "type": "text"
+      },
+      "vector": {
+        "type": "knn_vector",
+        "dimension": 1536,
+        "method": {
+          "name": "hnsw",
+          "space_type": "cosinesimil",
+          "engine": "nmslib"
+        }
+      },
+      "metadata": {
+        "type": "object",
+        "properties": {
+          "source": {"type": "keyword"},
+          "chunk_index": {"type": "integer"},
+          "page": {"type": "integer"}
+        }
+      }
+    }
+  }
+}
+```
+
+## Data Volume Estimates
+
+- **Typical document:** 10-50 chunks per document
+- **Chunk size:** ~384 tokens average (configurable)
+- **Embedding dimension:** 1536 (OpenAI text-embedding-3-small)
+- **Storage per chunk:** ~6-10 KB (including metadata)
+- **Example:** 100 documents ≈ 2,000-5,000 chunks ≈ 12-50 MB
+
+## Operations We Need
+
+### Required Permissions:
+1. **cluster:monitor/main** - Basic cluster access (currently blocking all operations)
+2. **indices:admin/get** - Check if index exists, get index info
+3. **indices:admin/create** - Create the index if it doesn't exist (or you can create it for us)
+4. **indices:data/write/index** - Write document chunks with embeddings
+5. **indices:data/write/bulk** - Bulk write operations (for efficiency)
+6. **indices:data/read/search** - Search for similar document chunks (k-NN search)
+7. **indices:data/read/get** - Retrieve specific documents
+
+## Options
+
+### Option 1: We Create the Index (Preferred)
+- We create `aris-rag-index` with proper vector search configuration
+- Requires: `indices:admin/create` permission
+
+### Option 2: You Create the Index (Alternative)
+- You create the index with vector search support
+- We only need write/read/search permissions
+- We can provide exact index mapping if needed
+
+### Option 3: Use Existing Index (If Compatible)
+- If you have an existing index that supports:
+  - Vector fields (knn_vector type)
+  - Text fields
+  - Metadata fields
+- We can use that index instead
+
+## Current Status
+
+✅ **What works:**
+- AWS API access (can list/describe domains)
+- HTTP API access (as you mentioned)
+- Connection to OpenSearch endpoint
+
+❌ **What's blocking:**
+- `cluster:monitor/main` - Cannot authenticate/connect to OpenSearch cluster
+- Without this, we cannot test or use any other permissions
+
+## My Details
+
+- **IAM User:** WaseemOS
+- **IAM ARN:** arn:aws:iam::975049910508:user/WaseemOS
+- **OpenSearch Domain:** intelycx-os-dev
+- **Region:** us-east-2
+- **Endpoint:** https://search-intelycx-os-dev-avu6r2aoemtqc3gaojwzvmaj4u.us-east-2.es.amazonaws.com
+
+## Next Steps
+
+1. **Grant `cluster:monitor/main` permission** (critical - blocks everything else)
+2. **Choose one:**
+   - Grant `indices:admin/create` so we can create the index, OR
+   - Create the index for us and grant write/read/search permissions
+3. **Grant data operation permissions** (write/index, read/search)
+
+I'm happy to:
+- Provide the exact index mapping configuration
+- Use a different index name if preferred
+- Work with an existing index if it supports vector search
+- Test with a smaller dataset first
+
+Please let me know which option you prefer, and I can provide more specific details.
+
+Thank you for your assistance!
+
+Best regards,
+Waseem
+
+
+

@@ -1,0 +1,115 @@
+
+[96m[1m================================================================================[0m
+[96m[1mImage Endpoints Accuracy Test[0m
+[96m[1mTesting with: FL10.11 SPECIFIC8 (1).pdf[0m
+[96m[1m================================================================================[0m
+
+[96mℹ️  INFO: API Base URL: http://44.221.84.58:8500[0m
+
+[94m================================================================================[0m
+[94m[1mTEST: 1. Upload Document for Image Testing[0m
+[94m================================================================================[0m
+[92m✅ PASS: Document uploaded: 41b4cd7d-0b34-4a64-8deb-ab02fb96937c[0m
+[96mℹ️  INFO: Document name: FL10.11 SPECIFIC8 (1).pdf[0m
+[96mℹ️  INFO: Status: success[0m
+[96mℹ️  INFO: Chunks created: 47[0m
+[96mℹ️  INFO: Pages: 49[0m
+[96mℹ️  INFO: Images detected: True[0m
+[96mℹ️  INFO: Waiting 5 seconds for document processing...[0m
+
+[94m================================================================================[0m
+[94m[1mTEST: 2. Get Document Images: 41b4cd7d-0b34-4a64-8deb-ab02fb96937c[0m
+[94m================================================================================[0m
+[92m✅ PASS: Found 100 images for document[0m
+[96mℹ️  INFO: Document: FL10.11 SPECIFIC8 (1).pdf[0m
+[96mℹ️  INFO: 
+--- Image 1 Details ---[0m
+[96mℹ️  INFO:   OCR preview: | FILLING HANDLER - General Standard Work &Information    | FILLING HANDLER - General Standard Work ...[0m
+[92m✅ PASS:   OCR text appears meaningful (596 chars)[0m
+[92m✅ PASS: Image 1 data is complete and accurate[0m
+[96mℹ️  INFO: 
+--- Image 2 Details ---[0m
+[96mℹ️  INFO:   OCR preview: | Line 10 Batch Change Standard Work                      | LPF3&4                                  ...[0m
+[92m✅ PASS:   OCR text appears meaningful (596 chars)[0m
+[92m✅ PASS: Image 2 data is complete and accurate[0m
+[96mℹ️  INFO: 
+--- Image 3 Details ---[0m
+[96mℹ️  INFO:   OCR preview: | Line 11 Batch Change Standard Work                      | Lead / Tank Room Handler                ...[0m
+[92m✅ PASS:   OCR text appears meaningful (596 chars)[0m
+[92m✅ PASS: Image 3 data is complete and accurate[0m
+[96mℹ️  INFO: 
+--- Image 4 Details ---[0m
+[96mℹ️  INFO:   OCR preview: FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+
+--- Page 39 ---
+
+## Print 'DWH :
+
+For Information Only-...[0m
+[92m✅ PASS:   OCR text appears meaningful (305 chars)[0m
+[92m✅ PASS: Image 4 data is complete and accurate[0m
+[96mℹ️  INFO: 
+--- Image 5 Details ---[0m
+[96mℹ️  INFO:   OCR preview: Week: ____________
+
+|       | Monday   | Tuesday   | Wednesday   | Thursday   | Friday   | Saturday ...[0m
+[92m✅ PASS:   OCR text appears meaningful (8138 chars)[0m
+[92m✅ PASS: Image 5 data is complete and accurate[0m
+
+[94m================================================================================[0m
+[94m[1mTEST: 3. Query Images with Semantic Search[0m
+[94m================================================================================[0m
+[96mℹ️  INFO: 
+Query: 'Find images with text or diagrams'[0m
+[93m⚠️  WARN: No images found for query: 'Find images with text or diagrams'[0m
+[96mℹ️  INFO: 
+Query: 'Show me images with part numbers'[0m
+[93m⚠️  WARN: No images found for query: 'Show me images with part numbers'[0m
+[96mℹ️  INFO: 
+Query: 'Find images with technical specifications'[0m
+[93m⚠️  WARN: No images found for query: 'Find images with technical specifications'[0m
+[96mℹ️  INFO: 
+Query: 'Images with drawings or schematics'[0m
+[93m⚠️  WARN: No images found for query: 'Images with drawings or schematics'[0m
+
+[94m================================================================================[0m
+[94m[1mTEST: 4. Query Images with Source Filter: FL10.11 SPECIFIC8 (1).pdf[0m
+[94m================================================================================[0m
+[93m⚠️  WARN: No images found for source: FL10.11 SPECIFIC8 (1).pdf[0m
+
+[94m================================================================================[0m
+[94m[1mTEST: 5. Get Single Image by ID: 5b87d323-70c9-40c8-bde7-49248afac789[0m
+[94m================================================================================[0m
+[92m✅ PASS: Image retrieved: 5b87d323-70c9-40c8-bde7-49248afac789[0m
+[96mℹ️  INFO: Fields present: ✅ image_id, ✅ source, ✅ image_number, ✅ ocr_text (596 chars)[0m
+[96mℹ️  INFO: OCR text preview: | FILLING HANDLER - General Standard Work &Information    | FILLING HANDLER - General Standard Work &Information                            | FILLING HANDLER - General Standard Work &Information   |
+|...[0m
+
+[94m================================================================================[0m
+[94m[1mTEST: 6. Test OCR Text Accuracy[0m
+[94m================================================================================[0m
+[96mℹ️  INFO: Testing OCR accuracy for 100 images...[0m
+[96mℹ️  INFO: 
+OCR Accuracy Summary:[0m
+[96mℹ️  INFO:   Images with text: 100/100 (100%)[0m
+[96mℹ️  INFO:   Images with meaningful text (>20 chars): 98/100 (98%)[0m
+[96mℹ️  INFO:   Images with metadata: 0/100 (0%)[0m
+[96mℹ️  INFO:   Images with page info: 100/100 (100%)[0m
+[92m✅ PASS: OCR text accuracy is good[0m
+
+[96m================================================================================[0m
+[96m[1mTest Summary[0m
+[96m================================================================================[0m
+[92m✅ Passed: 9[0m
+[91m❌ Failed: 0[0m
+[93m⚠️  Warnings: 5[0m
+[96m📸 Images Found: 100[0m
+[96m🔍 Images Tested: 5[0m
+[96m================================================================================[0m
+
+[92m[1m================================================================================[0m
+[92m[1m🎉 ALL IMAGE TESTS PASSED![0m
+[92m[1m================================================================================[0m
+

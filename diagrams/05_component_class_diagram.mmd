@@ -1,0 +1,81 @@
+classDiagram
+    class StreamlitUI {
+        +process_uploaded_files()
+        +display_metrics()
+        +handle_query()
+        +display_token_counter()
+        +show_token_analysis()
+        -session_state
+    }
+    
+    class DocumentProcessor {
+        +process_document()
+        +process_document_batch()
+        -rag_system: RAGSystem
+        -processing_state
+    }
+    
+    class RAGSystem {
+        +add_documents_incremental()
+        +query_with_rag()
+        +process_documents()
+        +count_tokens()
+        -vectorstore: FAISS
+        -embeddings: OpenAIEmbeddings
+        -text_splitter: TokenTextSplitter
+        -total_tokens: int
+    }
+    
+    class TokenTextSplitter {
+        +split_text(text: str) List[str]
+        +split_documents(docs) List[Document]
+        +count_tokens(text: str) int
+        -encoding: TikToken
+        -chunk_size: int = 384
+        -chunk_overlap: int = 75
+    }
+    
+    class MetricsCollector {
+        +record_processing()
+        +record_query()
+        +get_all_metrics()
+        +get_token_statistics()
+        -processing_metrics: List
+        -query_metrics: List
+        -token_distribution: Dict
+    }
+    
+    class QueryMetrics {
+        +question: str
+        +context_tokens: int
+        +response_tokens: int
+        +total_tokens: int
+        +chunks_used: int
+    }
+    
+    class ProcessingMetrics {
+        +tokens_extracted: int
+        +chunks_created: int
+        +token_distribution: Dict
+    }
+    
+    class ParsedDocument {
+        +text: str
+        +metadata: Dict
+        +pages: int
+        +confidence: float
+    }
+    
+    StreamlitUI --> DocumentProcessor
+    StreamlitUI --> RAGSystem
+    DocumentProcessor --> RAGSystem
+    RAGSystem --> TokenTextSplitter
+    RAGSystem --> MetricsCollector
+    MetricsCollector --> QueryMetrics
+    MetricsCollector --> ProcessingMetrics
+    DocumentProcessor --> ParsedDocument
+
+
+
+
+

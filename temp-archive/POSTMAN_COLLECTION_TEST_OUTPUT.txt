@@ -1,0 +1,114 @@
+
+======================================================================
+  TEST: 1. Health Check
+======================================================================
+✅ PASS: Health check returned 200
+   {'status': 'healthy'}
+
+======================================================================
+  TEST: 2. Root - API Info
+======================================================================
+✅ PASS: Root endpoint returned 200
+   {'message': 'ARIS RAG API', 'version': '1.0.0', 'docs': '/docs'}
+
+======================================================================
+  TEST: 3. List All Documents
+======================================================================
+✅ PASS: Retrieved 3 documents
+   Total: 3
+
+======================================================================
+  TEST: 4. Upload Document
+======================================================================
+✅ PASS: Document uploaded: FL10.11 SPECIFIC8 (1).pdf
+   ID: 0104ddcb-484a-4bd2-8bea-dd092de82372, Images: 13, Chunks: 47
+   ⏳ Waiting 10 seconds for processing...
+
+======================================================================
+  TEST: 5. Delete Document (will test later)
+======================================================================
+
+======================================================================
+  TEST: 6. Query Documents (Basic)
+======================================================================
+✅ PASS: Query successful
+   Answer: 545 chars, Citations: 6
+
+======================================================================
+  TEST: 7. Query Specific Document
+======================================================================
+✅ PASS: Query successful
+   Answer: 1637 chars, Citations: 3
+
+======================================================================
+  TEST: 8. Query with Image Questions
+======================================================================
+✅ PASS: Query successful
+   Answer: 417 chars, Image citations: 2
+
+======================================================================
+  TEST: 9. Query with Enhanced Parameters
+======================================================================
+✅ PASS: Query successful
+   Answer: 1250 chars, Citations: 6
+
+======================================================================
+  TEST: 10. Get All Images from Document
+======================================================================
+✅ PASS: Retrieved 50 images
+   First image OCR length: 1431 chars
+
+======================================================================
+  TEST: 11. Search Images by Content
+======================================================================
+✅ PASS: Search successful
+   Found 0 matching images
+
+======================================================================
+  TEST: 12. Search Images in Specific Document
+======================================================================
+✅ PASS: Search successful
+   Found 0 matching images in FL10.11 SPECIFIC8 (1).pdf
+
+======================================================================
+  TEST: 13. Search for Specific Tools
+======================================================================
+✅ PASS: Search successful
+   Found 0 images with tools
+
+======================================================================
+  TEST: 14. Search for Part Numbers
+======================================================================
+✅ PASS: Search successful
+   Found 0 images with part numbers
+
+======================================================================
+  TEST: 15. Delete Document (Cleanup)
+======================================================================
+✅ PASS: Delete returned 204
+   Document deleted successfully
+
+======================================================================
+  TEST SUMMARY
+======================================================================
+✅ PASS: health
+✅ PASS: root
+✅ PASS: list_documents
+✅ PASS: upload
+✅ PASS: query_basic
+✅ PASS: query_specific
+✅ PASS: query_images
+✅ PASS: query_enhanced
+✅ PASS: get_all_images
+✅ PASS: search_images
+✅ PASS: search_images_specific
+✅ PASS: search_tools
+✅ PASS: search_part_numbers
+✅ PASS: delete
+
+Total: 14/14 tests passed
+Success rate: 100.0%
+
+💾 Results saved to: POSTMAN_COLLECTION_TEST_RESULTS.json
+
+✅ ALL POSTMAN COLLECTION ENDPOINTS WORKING!

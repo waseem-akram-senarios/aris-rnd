@@ -1,0 +1,42 @@
+Subject: Server Status Report - ARIS RAG Application
+
+Dear Team,
+
+Please find the current status of the ARIS RAG application server below.
+
+===================================================================
+APPLICATION STATUS
+===================================================================
+
+Application URL: http://35.175.133.235/
+
+Please test the application by clicking the URL above or copying it into your browser.
+
+===================================================================
+HOW TO TEST
+===================================================================
+
+1. Open your web browser
+2. Go to: http://35.175.133.235/
+3. You should see the ARIS RAG application interface
+4. If you see an error or "This site can't be reached", the server is down
+
+===================================================================
+STATUS MEANING
+===================================================================
+
+✅ OPERATIONAL: Application is working normally - you can use it
+⚠️  PARTIALLY WORKING: Server is running but may have issues
+❌ NOT WORKING: Server is down - please contact administrator
+
+===================================================================
+
+If you encounter any issues accessing the application, please reply to this email.
+
+Best regards,
+System Administrator
+
+---
+Report generated automatically. For detailed status, see attached report.
+
+

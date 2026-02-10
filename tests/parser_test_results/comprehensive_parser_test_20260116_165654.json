@@ -1,0 +1,485 @@
+{
+  "test_timestamp": "2026-01-16T16:48:05.260558",
+  "ingestion_server": "http://44.221.84.58:8501",
+  "gateway_server": "http://44.221.84.58:8500",
+  "documents": {},
+  "parsers": {
+    "pymupdf": {
+      "EM11, top seal.pdf": {
+        "parser": "pymupdf",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "pymupdf",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 7.836130142211914,
+          "processing_time": 5.578633546829224,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "pymupdf",
+            "pages": 0,
+            "chunks_created": 196,
+            "tokens_extracted": 34468,
+            "extraction_percentage": 1.0,
+            "images_detected": true,
+            "image_count": 20,
+            "images_stored": 0,
+            "processing_time": 5.578633546829224,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "pymupdf",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "pymupdf",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 5.016800403594971,
+          "processing_time": 3.2672066688537598,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "pymupdf",
+            "pages": 0,
+            "chunks_created": 4,
+            "tokens_extracted": 1172,
+            "extraction_percentage": 1.0,
+            "images_detected": true,
+            "image_count": 1,
+            "images_stored": 0,
+            "processing_time": 3.2672066688537598,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      },
+      "VUORMAR.pdf": {
+        "parser": "pymupdf",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "pymupdf",
+          "file": "VUORMAR.pdf",
+          "upload_time": 7.096172332763672,
+          "processing_time": 4.679525375366211,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "pymupdf",
+            "pages": 0,
+            "chunks_created": 100,
+            "tokens_extracted": 12300,
+            "extraction_percentage": 1.0,
+            "images_detected": true,
+            "image_count": 13,
+            "images_stored": 0,
+            "processing_time": 4.679525375366211,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      }
+    },
+    "docling": {
+      "EM11, top seal.pdf": {
+        "parser": "docling",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "docling",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 40.1411509513855,
+          "processing_time": 35.84710955619812,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "docling",
+            "pages": 0,
+            "chunks_created": 238,
+            "tokens_extracted": 63700,
+            "extraction_percentage": 0.98,
+            "images_detected": true,
+            "image_count": 6,
+            "images_stored": 0,
+            "processing_time": 35.84710955619812,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "docling",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "docling",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 7.679340124130249,
+          "processing_time": 5.902076721191406,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "docling",
+            "pages": 0,
+            "chunks_created": 4,
+            "tokens_extracted": 1084,
+            "extraction_percentage": 0.488,
+            "images_detected": true,
+            "image_count": 1,
+            "images_stored": 0,
+            "processing_time": 5.902076721191406,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      },
+      "VUORMAR.pdf": {
+        "parser": "docling",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "docling",
+          "file": "VUORMAR.pdf",
+          "upload_time": 21.047045946121216,
+          "processing_time": 18.922512531280518,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "docling",
+            "pages": 0,
+            "chunks_created": 100,
+            "tokens_extracted": 11480,
+            "extraction_percentage": 0.18605,
+            "images_detected": true,
+            "image_count": 4,
+            "images_stored": 0,
+            "processing_time": 18.922512531280518,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      }
+    },
+    "ocrmypdf": {
+      "EM11, top seal.pdf": {
+        "parser": "ocrmypdf",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "ocrmypdf",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 32.990110635757446,
+          "processing_time": 29.90576934814453,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "ocrmypdf",
+            "pages": 0,
+            "chunks_created": 266,
+            "tokens_extracted": 74592,
+            "extraction_percentage": 1.0,
+            "images_detected": true,
+            "image_count": 14,
+            "images_stored": 0,
+            "processing_time": 29.90576934814453,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "ocrmypdf",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "ocrmypdf",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 17.208683967590332,
+          "processing_time": 15.337841272354126,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "ocrmypdf",
+            "pages": 0,
+            "chunks_created": 6,
+            "tokens_extracted": 1800,
+            "extraction_percentage": 1.0,
+            "images_detected": true,
+            "image_count": 2,
+            "images_stored": 0,
+            "processing_time": 15.337841272354126,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      },
+      "VUORMAR.pdf": {
+        "parser": "ocrmypdf",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "ocrmypdf",
+          "file": "VUORMAR.pdf",
+          "upload_time": 28.488261938095093,
+          "processing_time": 26.21764302253723,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "ocrmypdf",
+            "pages": 0,
+            "chunks_created": 100,
+            "tokens_extracted": 15550,
+            "extraction_percentage": 0.8822,
+            "images_detected": true,
+            "image_count": 10,
+            "images_stored": 0,
+            "processing_time": 26.21764302253723,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      }
+    },
+    "textract": {
+      "EM11, top seal.pdf": {
+        "parser": "textract",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "textract",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 37.97034573554993,
+          "processing_time": 35.770625591278076,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "docling",
+            "pages": 0,
+            "chunks_created": 238,
+            "tokens_extracted": 63700,
+            "extraction_percentage": 0.98,
+            "images_detected": true,
+            "image_count": 6,
+            "images_stored": 0,
+            "processing_time": 35.770625591278076,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "textract",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "textract",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 7.814860105514526,
+          "processing_time": 6.077017068862915,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "docling",
+            "pages": 0,
+            "chunks_created": 4,
+            "tokens_extracted": 1084,
+            "extraction_percentage": 0.488,
+            "images_detected": true,
+            "image_count": 1,
+            "images_stored": 0,
+            "processing_time": 6.077017068862915,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      },
+      "VUORMAR.pdf": {
+        "parser": "textract",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "textract",
+          "file": "VUORMAR.pdf",
+          "upload_time": 23.542282581329346,
+          "processing_time": 19.600478172302246,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "docling",
+            "pages": 0,
+            "chunks_created": 100,
+            "tokens_extracted": 11480,
+            "extraction_percentage": 0.18605,
+            "images_detected": true,
+            "image_count": 4,
+            "images_stored": 0,
+            "processing_time": 19.600478172302246,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "success"
+      }
+    },
+    "llama-scan": {
+      "EM11, top seal.pdf": {
+        "parser": "llama-scan",
+        "document": "EM11, top seal.pdf",
+        "upload_result": {
+          "parser": "llama-scan",
+          "file": "EM11, top seal.pdf",
+          "upload_time": 138.81654834747314,
+          "processing_time": 136.60225749015808,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "llamascan",
+            "pages": 0,
+            "chunks_created": 1,
+            "tokens_extracted": 83,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 136.60225749015808,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "failed"
+      },
+      "EM10, degasing.pdf": {
+        "parser": "llama-scan",
+        "document": "EM10, degasing.pdf",
+        "upload_result": {
+          "parser": "llama-scan",
+          "file": "EM10, degasing.pdf",
+          "upload_time": 22.740446090698242,
+          "processing_time": 21.046605587005615,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "llamascan",
+            "pages": 0,
+            "chunks_created": 1,
+            "tokens_extracted": 11,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 21.046605587005615,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "failed"
+      },
+      "VUORMAR.pdf": {
+        "parser": "llama-scan",
+        "document": "VUORMAR.pdf",
+        "upload_result": {
+          "parser": "llama-scan",
+          "file": "VUORMAR.pdf",
+          "upload_time": 99.86110877990723,
+          "processing_time": 97.94361281394958,
+          "success": true,
+          "error": "'NoneType' object is not subscriptable",
+          "document_id": null,
+          "metadata": {
+            "parser_used": "llamascan",
+            "pages": 0,
+            "chunks_created": 1,
+            "tokens_extracted": 59,
+            "extraction_percentage": 0.0,
+            "images_detected": false,
+            "image_count": 0,
+            "images_stored": 0,
+            "processing_time": 97.94361281394958,
+            "text_length": 0,
+            "confidence": 0.0,
+            "status": "success"
+          }
+        },
+        "query_test": null,
+        "overall_status": "failed"
+      }
+    }
+  },
+  "summary": {
+    "total_tests": 15,
+    "successful_tests": 12,
+    "failed_tests": 3,
+    "success_rate": 80.0,
+    "working_combinations": [
+      "pymupdf on EM11, top seal.pdf",
+      "pymupdf on EM10, degasing.pdf",
+      "pymupdf on VUORMAR.pdf",
+      "docling on EM11, top seal.pdf",
+      "docling on EM10, degasing.pdf",
+      "docling on VUORMAR.pdf",
+      "ocrmypdf on EM11, top seal.pdf",
+      "ocrmypdf on EM10, degasing.pdf",
+      "ocrmypdf on VUORMAR.pdf",
+      "textract on EM11, top seal.pdf",
+      "textract on EM10, degasing.pdf",
+      "textract on VUORMAR.pdf"
+    ],
+    "failed_combinations": [
+      "llama-scan on EM11, top seal.pdf",
+      "llama-scan on EM10, degasing.pdf",
+      "llama-scan on VUORMAR.pdf"
+    ],
+    "parsers_tested": [
+      "pymupdf",
+      "docling",
+      "ocrmypdf",
+      "textract",
+      "llama-scan"
+    ]
+  }
+}

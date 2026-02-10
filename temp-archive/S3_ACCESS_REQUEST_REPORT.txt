@@ -1,0 +1,75 @@
+================================================================================
+S3 ACCESS REQUEST REPORT
+================================================================================
+
+Generated: 2025-12-19 21:30:12
+
+================================================================================
+ERROR DETAILS
+================================================================================
+
+Error Code: AccessDenied
+Error Message: User: arn:aws:iam::975049910508:user/WaseemOS is not authorized to perform: s3:ListAllMyBuckets because no permissions boundary allows the s3:ListAllMyBuckets action
+
+IAM User ARN: arn:aws:iam::975049910508:user/WaseemOS
+AWS Account ID: 975049910508
+IAM Username: WaseemOS
+
+
+================================================================================
+PERMISSION REQUEST
+================================================================================
+
+Please grant S3 access permissions to IAM user: WaseemOS
+Account ID: 975049910508
+IAM User ARN: arn:aws:iam::975049910508:user/WaseemOS
+
+REQUIRED PERMISSIONS:
+---------------------
+1. s3:ListAllMyBuckets
+2. s3:CreateBucket
+3. s3:ListBucket
+4. s3:GetObject
+5. s3:PutObject
+6. s3:DeleteObject
+7. s3:DeleteBucket (Optional)
+
+RECOMMENDED IAM POLICY:
+----------------------
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:DeleteBucket"
+      ],
+      "Resource": "arn:aws:s3:::*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::*/*"
+    }
+  ]
+}
+
+================================================================================
+FULL ERROR MESSAGE
+================================================================================
+
+An error occurred (AccessDenied) when calling the ListBuckets operation: User: arn:aws:iam::975049910508:user/WaseemOS is not authorized to perform: s3:ListAllMyBuckets because no permissions boundary allows the s3:ListAllMyBuckets action

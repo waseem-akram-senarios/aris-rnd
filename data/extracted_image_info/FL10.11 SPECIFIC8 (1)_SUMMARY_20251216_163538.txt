@@ -1,0 +1,58 @@
+======================================================================
+DOCLING IMAGE EXTRACTION & RAG PROCESSING SUMMARY
+======================================================================
+
+DOCLING EXTRACTION:
+----------------------------------------------------------------------
+Document: FL10.11 SPECIFIC8 (1).pdf
+Pages: 49
+Images Detected: 22
+Image Markers Inserted: 13
+Marker Coverage: 59.1%
+Total Text Extracted: 105,895 characters
+Images with OCR Content: 13
+Total OCR Characters: 105,667
+
+======================================================================
+HOW RAG SYSTEM PROCESSES THIS:
+----------------------------------------------------------------------
+1. Docling extracts text and inserts <!-- image --> markers
+2. RAG system finds chunks with <!-- image --> markers
+3. RAG extracts OCR text after each marker
+4. RAG creates image_content_map: (source, image_num) -> content
+5. RAG adds Image Content section to LLM context
+6. LLM searches Image Content section for answers
+
+======================================================================
+IMAGE CONTENT MAP STRUCTURE (as RAG creates it):
+----------------------------------------------------------------------
+
+(source, 1):
+  OCR Text Length: 596 chars
+  Preview: | FILLING HANDLER - General Standard Work &Information    | FILLING HANDLER - General Standard Work &Information                            | FILLING ...
+
+(source, 2):
+  OCR Text Length: 596 chars
+  Preview: | Line 10 Batch Change Standard Work                      | LPF3&4                                                                          | p. 5-7  ...
+
+(source, 3):
+  OCR Text Length: 596 chars
+  Preview: | Line 11 Batch Change Standard Work                      | Lead / Tank Room Handler                                                        | p. 11   ...
+
+(source, 4):
+  OCR Text Length: 2,586 chars
+  Preview: | Line 11 Batch Change Standard Work                      | RPF 1 and 2 Handler                                                             | p. 14   ...
+
+(source, 5):
+  OCR Text Length: 84,798 chars
+  Preview: | Tool Re-order Sheet                                     | Tool Re-order Sheet                                                             | p. 34   ...
+
+======================================================================
+SEARCH FOR 'MALLET':
+----------------------------------------------------------------------
+❌ 'mallet' NOT found in marked image sections
+❌ 'mallet' NOT found anywhere in extracted text
+   Possible reasons:
+   - OCR didn't recognize it
+   - It's in one of the 9 images without markers
+   - Image quality too low for OCR

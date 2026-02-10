@@ -1,0 +1,189 @@
+services:
+  # Ingestion Service - Handles document processing and indexing
+  ingestion:
+    build: .
+    image: aris-microservice:latest
+    container_name: aris-ingestion
+    env_file:
+      - .env
+    environment:
+      - SERVICE_TYPE=ingestion
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-opensearch}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - AWS_OPENSEARCH_DOMAIN=${AWS_OPENSEARCH_DOMAIN:-}
+      - AWS_OPENSEARCH_INDEX=${AWS_OPENSEARCH_INDEX:-}
+      - AWS_OPENSEARCH_ACCESS_KEY_ID=${AWS_OPENSEARCH_ACCESS_KEY_ID:-}
+      - AWS_OPENSEARCH_SECRET_ACCESS_KEY=${AWS_OPENSEARCH_SECRET_ACCESS_KEY:-}
+      - AWS_OPENSEARCH_REGION=${AWS_OPENSEARCH_REGION:-us-east-2}
+      # Ollama/LlamaScan configuration - connects to host machine's Ollama server
+      - OLLAMA_SERVER_URL=http://host.docker.internal:11434
+      - LLAMA_SCAN_MODEL=${LLAMA_SCAN_MODEL:-llava:latest}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./storage:/app/storage
+      - ./data:/app/data
+      - ./vectorstore:/app/vectorstore
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8501/health | grep -q 'healthy' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Retrieval Service - Handles queries and vector store interactions
+  retrieval:
+    image: aris-microservice:latest
+    container_name: aris-retrieval
+    env_file:
+      - .env
+    environment:
+      - SERVICE_TYPE=retrieval
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-opensearch}
+      - AWS_OPENSEARCH_DOMAIN=${AWS_OPENSEARCH_DOMAIN:-}
+      - AWS_OPENSEARCH_INDEX=${AWS_OPENSEARCH_INDEX:-}
+      - AWS_OPENSEARCH_ACCESS_KEY_ID=${AWS_OPENSEARCH_ACCESS_KEY_ID:-}
+      - AWS_OPENSEARCH_SECRET_ACCESS_KEY=${AWS_OPENSEARCH_SECRET_ACCESS_KEY:-}
+      - AWS_OPENSEARCH_REGION=${AWS_OPENSEARCH_REGION:-us-east-2}
+    ports:
+      - "8502:8502"
+    volumes:
+      - ./vectorstore:/app/vectorstore
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8502/health | grep -q 'healthy' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Gateway Service - API Gateway and Orchestrator
+  gateway:
+    image: aris-microservice:latest
+    container_name: aris-gateway
+    env_file:
+      - .env
+    environment:
+      - SERVICE_TYPE=gateway
+      - INGESTION_SERVICE_URL=http://ingestion:8501
+      - RETRIEVAL_SERVICE_URL=http://retrieval:8502
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    ports:
+      - "8500:8500"
+    volumes:
+      - ./storage:/app/storage
+      - ./vectorstore:/app/vectorstore
+      - ./logs:/app/logs
+    depends_on:
+      ingestion:
+        condition: service_healthy
+      retrieval:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8500/health | grep -q 'healthy' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Streamlit UI - Main Interface
+  ui:
+    image: aris-microservice:latest
+    container_name: aris-ui
+    env_file:
+      - .env
+    environment:
+      - SERVICE_TYPE=ui
+      - GATEWAY_URL=http://gateway:8500
+      - INGESTION_SERVICE_URL=http://ingestion:8501
+      - RETRIEVAL_SERVICE_URL=http://retrieval:8502
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-opensearch}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_OPENSEARCH_DOMAIN=${AWS_OPENSEARCH_DOMAIN:-}
+      - AWS_OPENSEARCH_INDEX=${AWS_OPENSEARCH_INDEX:-}
+      - AWS_OPENSEARCH_ACCESS_KEY_ID=${AWS_OPENSEARCH_ACCESS_KEY_ID:-}
+      - AWS_OPENSEARCH_SECRET_ACCESS_KEY=${AWS_OPENSEARCH_SECRET_ACCESS_KEY:-}
+      - AWS_OPENSEARCH_REGION=${AWS_OPENSEARCH_REGION:-us-east-2}
+    ports:
+      - "80:80"
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+      - ./vectorstore:/app/vectorstore
+      - ./logs:/app/logs
+    depends_on:
+      gateway:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:80/_stcore/health | grep -q 'ok' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MCP Server - Model Context Protocol interface for AI agents
+  mcp:
+    image: aris-microservice:latest
+    container_name: aris-mcp
+    env_file:
+      - .env
+    environment:
+      - SERVICE_TYPE=mcp
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-opensearch}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - AWS_OPENSEARCH_DOMAIN=${AWS_OPENSEARCH_DOMAIN:-}
+      - AWS_OPENSEARCH_INDEX=${AWS_OPENSEARCH_INDEX:-}
+      - AWS_OPENSEARCH_ACCESS_KEY_ID=${AWS_OPENSEARCH_ACCESS_KEY_ID:-}
+      - AWS_OPENSEARCH_SECRET_ACCESS_KEY=${AWS_OPENSEARCH_SECRET_ACCESS_KEY:-}
+      - AWS_OPENSEARCH_REGION=${AWS_OPENSEARCH_REGION:-us-east-2}
+      # MCP Server Configuration
+      - MCP_SERVER_PORT=8503
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_TRANSPORT=sse
+      - MCP_MODE=combined
+      # Service URLs for internal communication
+      - INGESTION_SERVICE_URL=http://ingestion:8501
+      - RETRIEVAL_SERVICE_URL=http://retrieval:8502
+      - GATEWAY_URL=http://gateway:8500
+    ports:
+      - "8503:8503"
+    volumes:
+      - ./storage:/app/storage
+      - ./vectorstore:/app/vectorstore
+      - ./logs:/app/logs
+    depends_on:
+      ingestion:
+        condition: service_healthy
+      retrieval:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8503/health | grep -q 'healthy' || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+networks:
+  default:
+    name: aris-network

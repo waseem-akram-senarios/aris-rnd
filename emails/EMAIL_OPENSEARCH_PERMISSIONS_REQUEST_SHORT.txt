@@ -1,0 +1,22 @@
+Subject: OpenSearch Permissions Request - RAG Project
+
+Hi,
+
+I need OpenSearch permissions for my RAG system project. Currently I can only list/describe domains but cannot create indices or perform data operations.
+
+Missing Permissions:
+- cluster:monitor/main
+- indices:admin/create
+- indices:admin/get
+- indices:data/write/index
+- indices:data/read/search
+
+My Details:
+IAM User: WaseemOS
+IAM ARN: arn:aws:iam::975049910508:user/WaseemOS
+Domain: intelycx-os-dev
+
+Please map my IAM user to an OpenSearch role with these permissions. The domain uses FGAC, so I need OpenSearch-level role mapping.
+
+Thanks!
+

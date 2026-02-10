@@ -1,0 +1,36 @@
+ARIS Project Folder Structure
+==============================
+
+Root Directory:
+- Core application files (app.py, rag_system.py, etc.)
+- Configuration files (Dockerfile, docker-compose.yml, etc.)
+- Essential scripts (start.sh)
+
+Documentation:
+- docs/ - Main documentation and guides
+- docs/status/ - Status reports and test results
+- docs/implementation/ - Implementation summaries
+- docs/deployment/ - Deployment guides
+- docs/testing/ - Testing documentation
+
+Code:
+- api/ - FastAPI application
+- config/ - Configuration
+- ingestion/ - Document processing
+- parsers/ - PDF parsers
+- vectorstores/ - Vector store implementations
+- metrics/ - Metrics collection
+- storage/ - Storage layer
+- utils/ - Utilities
+
+Scripts:
+- scripts/ - All utility scripts
+
+Tests:
+- tests/ - Test suite
+
+Other:
+- logs/ - Application logs
+- reports/ - Test reports
+- samples/ - Sample documents
+- diagrams/ - Architecture diagrams

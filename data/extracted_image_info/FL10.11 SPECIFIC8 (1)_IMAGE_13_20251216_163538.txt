@@ -1,0 +1,77 @@
+IMAGE 13 - OCR CONTENT EXTRACTED BY DOCLING
+======================================================================
+
+Length: 3,927 characters
+
+FULL OCR TEXT:
+----------------------------------------------------------------------
+Supervisor: __________________ Print 'DWH :
+
+Date/Shift: ___________________
+
+| To achieve 6S Level '2' we must comply with each of the following items.                                                 | YES   | NO   |
+|--------------------------------------------------------------------------------------------------------------------------|-------|------|
+| 1. All scrap containers are labeled and in their designated area.                                                        |       |      |
+| 2. All water hoses are labeled, disconnected and hung on hose rack. (N/A at Batch Change)                                |       |      |
+| 3. All desks, Machine HMI's and LPF cleaning stations contain only designated items and are free of clutter.             |       |      |
+| 4. All safety guards are in place.                                                                                       |       |      |
+| 5. All catch pans/bins are in place and drain hoses are directed to drain.                                               |       |      |
+| 6. All alcohol bottles are labeled and contain the red color.                                                            |       |      |
+
+--- Page 49 ---
+| 7. All buggies, carts, ladders are in their designated areas.                                                            |       |      |
+| 8. Line tool box and setup boxes contain only designated items.                                                          |       |      |
+| 9. Floor, tops of equipment and fillstation cleaning tray (LPFs) is clear of trash, excessive closures and broken parts. |       |      |
+
+Score = Pass/ Fail
+
+Document Owner:  N. Buchanan For Information Only - May Be Discard
+
+FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+FOB/Shift checks
+
+## All quality checks have been performed and entered for period:
+
+- 1)  0700-0900
+
+- 2) 0900-1100
+
+- 3) 1100-0100
+
+- 4) 0100-0300
+
+- 5) 0300-0500
+
+6) 0500-0700
+
+FOR INFORMATION ONLY - MAY BE DISCARDED AFTER USE DOCUMENT OWNER:  SHEILA JONES
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+
+## LPF and RPF
+
+## Maintenance, Flush and Sampling Notification
+
+During daily production unscheduled maintenance activities or scheduled preventative maintenance may occur. It is the responsibility of the production handler/ production tech. (PT) to assure that the appropriate machine flush, sampling and follow-up testing is performed per appropriate procedure in each instance. If maintenance is performed by a mechanic then the production handler or PT should be notified of the activities prior to restart of the equipment. To aide in this process Communication Placards must be placed at the load stations of each affected piece of equipment when these activities occur. The following will give a general outline for placard use. Any additional situations that may occur should directed to the line supervisor or delegate.
+
+-  40 Micron Mesh Screen Preventive Maintenance (PM) is scheduled to be performed : Once production has finished on the piece of equipment the placard 'Stop. BFL Flush and Samples Required' should be placed at the designated location at the load station.
+-  Monthly Machine Maintnenace (PM) is scheduled to be performed : Once production has finished on the piece of equipment the placard 'Stop. Maintenance of Equipment Performed. Follow-up Testing Required'.
+-  Unscheduled maintenance (emergency maintenance) or equipment adjustments : At the time is equipment is cycle stopped or cleared of units the placard 'Stop. Maintenance of Equipment Performed. Follow-up Testing Required'.
+
+At the completion of machine flush, sampling and/or follow-up testing the placard will be removed and placed at the designated placard storage area for each machine.
+
+PARENT: FILL LINES 10 &amp; 11 SPECIFIC
+
+FL10.11 SPECIFIC8
+
+EFFECTIVE DATE: 04/24/18
+----------------------------------------------------------------------

@@ -1,0 +1,147 @@
+# Environment variables and secrets
+.env
+.env.*
+.env.local
+.env.*.local
+*.env
+*.env.*
+secrets/
+secrets.yaml
+secrets.yml
+config.ini
+config.local.ini
+
+# API Keys and Credentials
+*_key*
+*_keys*
+*_secret*
+*_secrets*
+*_token*
+*_tokens*
+*_credential*
+*_credentials*
+*_password*
+*_passwords*
+credentials.json
+credentials.yaml
+credentials.yml
+api_keys.txt
+tokens.txt
+
+# AWS Credentials
+.aws/
+aws-credentials
+aws_config
+*.pem
+ec2_*.pem
+*_pk.pem
+*_private_key*
+*_access_key*
+
+# SSH and Server files
+connect_server.sh
+ssh_config
+*_server*.sh
+*server*.sh
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+known_hosts
+authorized_keys
+
+# Security keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.jks
+*.keystore
+*.truststore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+.settings/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+.cache/
+
+# Vector stores (can be large)
+vectorstore/
+*.faiss
+*.pkl
+*.index
+
+# Test files and outputs
+test_outputs/
+test_results/
+*.test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation with sensitive info
+*_sensitive.md
+*_private.md
+*_internal.md
+
+# Large binary / upload data
+data/uploads/
+models/cache/
+
+# Temp report files at root level
+curl_err.txt
+curl_out.txt
+*.Zone.Identifier

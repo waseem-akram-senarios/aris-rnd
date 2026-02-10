@@ -1,0 +1,143 @@
+2025-12-16 16:36:16,029 - INFO - Docling: Starting conversion of FL10.11 SPECIFIC8 (1).pdf (1.55 MB)
+2025-12-16 16:36:16,030 - INFO - Docling: File size: 1.55 MB | Estimated pages: 1 | Estimated time: 5-15 minutes
+2025-12-16 16:36:16,031 - INFO - Docling: Progress updates every 15 seconds
+2025-12-16 16:36:16,032 - INFO - Docling: [Phase 1/4] Initializing DocumentConverter with OCR enabled...
+2025-12-16 16:36:16,033 - INFO - Docling: Processing in background thread (no timeout - will process completely)...
+2025-12-16 16:36:16,035 - INFO - Docling: File size: 1.55 MB | Estimated time: 5-15 minutes | Estimated pages: 1
+2025-12-16 16:36:16,039 - INFO - Docling: Waiting for conversion result (max timeout: 30 minutes)...
+2025-12-16 16:36:16,044 - WARNING - Docling: ⚠️  OCR models directory not found
+2025-12-16 16:36:16,045 - WARNING - Docling: Install models with: docling download-models
+2025-12-16 16:36:16,046 - WARNING - Docling: OCR may still work if models are installed elsewhere or auto-downloaded
+2025-12-16 16:36:16,101 - INFO - Docling: ✅ Using default DocumentConverter (OCR enabled by default)
+2025-12-16 16:36:16,102 - INFO - Docling: OCR will automatically process images in the document
+2025-12-16 16:36:16,102 - INFO - Docling: [Phase 2/4] DocumentConverter initialized with OCR, starting conversion...
+2025-12-16 16:36:16,102 - INFO - Docling: OCR will process images in the document (this may take time)...
+2025-12-16 16:36:16,102 - INFO - Docling: [Phase 2/4] Converting file: FL10.11 SPECIFIC8 (1).pdf
+2025-12-16 16:36:16,127 - INFO - detected formats: [<InputFormat.PDF: 'pdf'>]
+2025-12-16 16:36:16,369 - INFO - Going to convert document batch...
+2025-12-16 16:36:16,371 - INFO - Initializing pipeline for StandardPdfPipeline with options hash e15bc6f248154cc62f8db15ef18a8ab7
+2025-12-16 16:36:16,436 - INFO - Loading plugin 'docling_defaults'
+2025-12-16 16:36:16,445 - INFO - Registered picture descriptions: ['vlm', 'api']
+2025-12-16 16:36:16,510 - INFO - Loading plugin 'docling_defaults'
+2025-12-16 16:36:16,539 - INFO - Registered ocr engines: ['auto', 'easyocr', 'ocrmac', 'rapidocr', 'tesserocr', 'tesseract']
+2025-12-16 16:36:19,792 - INFO - Accelerator device: 'cpu'
+[32m[INFO] 2025-12-16 16:36:20,558 [RapidOCR] base.py:22: Using engine_name: onnxruntime[0m
+[32m[INFO] 2025-12-16 16:36:20,644 [RapidOCR] download_file.py:60: File exists and is valid: /home/senarios/.local/lib/python3.10/site-packages/rapidocr/models/ch_PP-OCRv4_det_infer.onnx[0m
+[32m[INFO] 2025-12-16 16:36:20,646 [RapidOCR] main.py:53: Using /home/senarios/.local/lib/python3.10/site-packages/rapidocr/models/ch_PP-OCRv4_det_infer.onnx[0m
+[32m[INFO] 2025-12-16 16:36:21,189 [RapidOCR] base.py:22: Using engine_name: onnxruntime[0m
+[32m[INFO] 2025-12-16 16:36:21,209 [RapidOCR] download_file.py:60: File exists and is valid: /home/senarios/.local/lib/python3.10/site-packages/rapidocr/models/ch_ppocr_mobile_v2.0_cls_infer.onnx[0m
+[32m[INFO] 2025-12-16 16:36:21,211 [RapidOCR] main.py:53: Using /home/senarios/.local/lib/python3.10/site-packages/rapidocr/models/ch_ppocr_mobile_v2.0_cls_infer.onnx[0m
+[32m[INFO] 2025-12-16 16:36:21,400 [RapidOCR] base.py:22: Using engine_name: onnxruntime[0m
+[32m[INFO] 2025-12-16 16:36:21,515 [RapidOCR] download_file.py:60: File exists and is valid: /home/senarios/.local/lib/python3.10/site-packages/rapidocr/models/ch_PP-OCRv4_rec_infer.onnx[0m
+[32m[INFO] 2025-12-16 16:36:21,517 [RapidOCR] main.py:53: Using /home/senarios/.local/lib/python3.10/site-packages/rapidocr/models/ch_PP-OCRv4_rec_infer.onnx[0m
+2025-12-16 16:36:22,123 - INFO - Auto OCR model selected rapidocr with onnxruntime.
+2025-12-16 16:36:22,176 - INFO - Loading plugin 'docling_defaults'
+2025-12-16 16:36:22,216 - INFO - Registered layout engines: ['docling_layout_default', 'docling_experimental_table_crops_layout']
+2025-12-16 16:36:22,241 - INFO - Accelerator device: 'cpu'
+2025-12-16 16:36:28,573 - INFO - Loading plugin 'docling_defaults'
+2025-12-16 16:36:28,583 - INFO - Registered table structure engines: ['docling_tableformer']
+2025-12-16 16:36:28,952 - INFO - Accelerator device: 'cpu'
+2025-12-16 16:36:31,056 - INFO - Docling: [Initializing DocumentConverter] Progress: ~75% | Elapsed: 0m 15s | ~0m 4s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:36:31,872 - INFO - Processing document FL10.11 SPECIFIC8 (1).pdf
+2025-12-16 16:36:46,078 - INFO - Docling: [Analyzing document structure] Progress: ~95% (processing final pages...) | Elapsed: 0m 30s | ~0m 1s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:37:01,094 - INFO - Docling: [Analyzing document structure] Progress: ~95% (processing final pages...) | Elapsed: 0m 45s | ~0m 2s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:37:16,112 - INFO - Docling: [Analyzing document structure] Progress: ~95% (processing final pages...) | Elapsed: 1m 0s | ~0m 3s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:37:31,130 - INFO - Docling: [Analyzing document structure] Progress: ~95% (processing final pages...) | Elapsed: 1m 15s | ~0m 3s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:37:46,145 - INFO - Docling: [Analyzing document structure] Progress: ~95% (processing final pages...) | Elapsed: 1m 30s | ~0m 4s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:38:01,167 - INFO - Docling: [Analyzing document structure] Progress: ~95% (processing final pages...) | Elapsed: 1m 45s | ~0m 5s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:38:16,185 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 2m 0s | ~0m 6s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:38:31,202 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 2m 15s | ~0m 7s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:38:46,223 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 2m 30s | ~0m 7s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:39:00,290 - WARNING - RapidOCR returned empty result!
+2025-12-16 16:39:01,239 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 2m 45s | ~0m 8s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:39:12,257 - WARNING - RapidOCR returned empty result!
+2025-12-16 16:39:16,259 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 3m 0s | ~0m 9s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:39:31,275 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 3m 15s | ~0m 10s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:39:46,293 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 3m 30s | ~0m 11s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:40:01,315 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 3m 45s | ~0m 11s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:40:16,333 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 4m 0s | ~0m 12s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:40:31,351 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 4m 15s | ~0m 13s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:40:46,377 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 4m 30s | ~0m 14s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:41:01,402 - INFO - Docling: [Processing pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 4m 45s | ~0m 15s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:41:16,418 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 5m 0s | ~0m 15s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:41:31,434 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 5m 15s | ~0m 16s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:41:46,455 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 5m 30s | ~0m 17s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:42:01,472 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 5m 45s | ~0m 18s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:42:16,487 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 6m 0s | ~0m 18s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:42:31,506 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 6m 15s | ~0m 19s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:42:46,522 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 6m 30s | ~0m 20s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:43:01,542 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 6m 45s | ~0m 21s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:43:16,563 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 7m 0s | ~0m 22s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:43:31,580 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 7m 15s | ~0m 22s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:43:46,597 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 7m 30s | ~0m 23s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:44:01,615 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 7m 45s | ~0m 24s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:44:16,644 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 8m 0s | ~0m 25s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:44:31,664 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 8m 15s | ~0m 26s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:44:46,682 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 8m 30s | ~0m 26s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:45:01,697 - INFO - Docling: [Processing remaining pages (OCR if needed)] Progress: ~95% (processing final pages...) | Elapsed: 8m 45s | ~0m 27s remaining | File: 1.6MB | Estimated pages: 1
+2025-12-16 16:45:12,705 - INFO - Finished converting document FL10.11 SPECIFIC8 (1).pdf in 536.60 sec.
+2025-12-16 16:45:12,706 - INFO - Docling: [Phase 3/4] Conversion completed, accessing document...
+2025-12-16 16:45:12,706 - INFO - Docling: OCR processing complete - extracting text from converted document...
+2025-12-16 16:45:12,706 - INFO - Docling: [Phase 4/4] Document accessed successfully, pages: 49
+2025-12-16 16:45:13,567 - INFO - Docling: Document conversion successful - result received
+2025-12-16 16:45:13,567 - INFO - Docling: Document object received, type: <class 'docling_core.types.doc.document.DoclingDocument'>
+2025-12-16 16:45:13,567 - INFO - Docling: ✅ Conversion 100% complete - processing finished
+2025-12-16 16:45:13,568 - INFO - Docling: Extracting text per page for accurate page numbers...
+2025-12-16 16:45:13,568 - INFO - Docling: Document has 49 pages
+2025-12-16 16:45:13,569 - WARNING - Docling: Per-page extraction failed or extracted 0 pages, will use fallback
+2025-12-16 16:45:13,569 - INFO - Docling: Per-page extraction not available, using export_to_text() with fallback page markers...
+2025-12-16 16:45:13,869 - WARNING - Parameter `strict_text` has been deprecated and will be ignored.
+2025-12-16 16:45:13,869 - INFO - Docling: ✅ Text export completed (104,877 characters)
+2025-12-16 16:45:13,870 - INFO - Docling: ✅ Added page markers to text (105,700 characters)
+2025-12-16 16:45:13,871 - INFO - Docling: Extracted 49 pages, 105,700 characters, 12,595 words
+2025-12-16 16:45:13,871 - INFO - Docling: Found 22 pictures in document
+2025-12-16 16:45:13,872 - INFO - Docling: ✅ Images detected via: doc.pictures (22 pictures)
+2025-12-16 16:45:13,872 - INFO - Docling: ✅ OCR appears successful - extracted 105,700 characters from images
+2025-12-16 16:45:13,872 - INFO - Docling: Images detected (22) but no markers in text, inserting markers...
+2025-12-16 16:45:13,927 - INFO - Docling: Inserted 13/22 image markers (59.1% coverage)
+2025-12-16 16:45:13,927 - WARNING - Docling: ⚠️  Only 13/22 markers inserted. Some image content may not be marked.
+2025-12-16 16:45:13,927 - INFO - Docling: ✅ Inserted image markers in extracted text
+2025-12-16 16:45:13,928 - WARNING - Docling: ⚠️  Marker validation: 13/22 markers (59.1% coverage) - some images may not be marked
+
+======================================================================
+Extracting Image Information from Docling
+File: FL10.11 SPECIFIC8 (1).pdf
+Output: extracted_image_info/
+======================================================================
+
+Step 1: Parsing with Docling...
+✅ Parsed: 49 pages, 22 images, 105,895 chars
+✅ Saved full text: FL10.11 SPECIFIC8 (1)_FULL_TEXT_20251216_163538.txt
+
+Step 2: Extracting image content...
+   Image 1: 596 chars
+   Image 2: 596 chars
+   Image 3: 596 chars
+   Image 4: 2,586 chars
+   Image 5: 84,798 chars
+
+Step 3: Simulating RAG processing...
+✅ Saved RAG processing info: FL10.11 SPECIFIC8 (1)_RAG_PROCESSING_20251216_163538.json
+✅ Saved summary report: FL10.11 SPECIFIC8 (1)_SUMMARY_20251216_163538.txt
+
+======================================================================
+EXTRACTION COMPLETE
+======================================================================
+📁 Files saved to: extracted_image_info/
+   ✅ Full text: FL10.11 SPECIFIC8 (1)_FULL_TEXT_20251216_163538.txt
+   ✅ Individual images: FL10.11 SPECIFIC8 (1)_IMAGE_XX_20251216_163538.txt
+   ✅ RAG processing: FL10.11 SPECIFIC8 (1)_RAG_PROCESSING_20251216_163538.json
+   ✅ Summary report: FL10.11 SPECIFIC8 (1)_SUMMARY_20251216_163538.txt
+
+📊 Statistics:
+   Images detected: 22
+   Markers inserted: 13 (59.1%)
+   Images with content: 13
+   Total OCR chars: 105,667
+
+🔍 'Mallet' Status:
+   ❌ Not found in extracted text
+
+💡 To view the extracted information:
+   cat extracted_image_info/FL10.11 SPECIFIC8 (1)_SUMMARY_20251216_163538.txt
+   cat extracted_image_info/FL10.11 SPECIFIC8 (1)_FULL_TEXT_20251216_163538.txt | grep -i mallet

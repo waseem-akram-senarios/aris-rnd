@@ -1,0 +1,1405 @@
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 1OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 FILLING HANDLER -General Standard Work & Information
+Line 10 Batch Change Standard 
+WorkLPF 1 & 2 p. 2-4
+LPF 3 & 4 p. 5-7
+Tank Room p. 8-9
+Tank Mixing p. 10
+Line 11 Batch Change Standard 
+WorkLead /Tank Room Handle rp. 11
+Night Lead/Tank Room Handler p. 12
+LPF 5, 6 and 7 Handler p. 13
+RPF 1 and 2 Handler p. 14
+DAY Shift LPF/RPF Operator &  Day Shift Manual Belt Operators p. 15
+Manual Belt Handler p. 16
+Tank Room Prep p. 17
+Line 11 Batch Change with 
+Sanitization Standard WorkLead / Tank Room Handler p. 18
+Night Lead/Tank Room Handler p. 19
+LPF 5, 6 and 7 Handler p. 20
+RPF 1 and 2 Handler p. 21
+Day Shift LPF/RPF Operator &  DAY Shift Manual Belt Operatorsp. 22
+Night Manual Belt Handler p. 23
+Manual Belt Handler p. 24
+Tank Room Prep p. 25
+Line 10 Tool Crib Std. Work p. 26
+Line 11 Tool Crib Std. Work p. 27 -33
+Tool Re -order Sheet p. 34
+Tool Shift Verification p. 35
+Line 10 Parts Kanban p. 36
+Enhanced Closure Go/No Go Gauge Standard Work p. 37 -38
+Solution Pump Lockou t Std. Work p. 39
+Rework % Reduction p. 40
+Cyclohex Dispensing p. 41
+Line 11 Piping Verification Talley Sheet p. 42 -43
+Line 10 6S Walk -around p. 44
+Line 11 6S Scorecard p. 45
+FOB Shift Checks p. 46
+LPF and RPF –Maintenance, Flush & Sampling Notifi cation p. 47
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 2OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 10 “Fill Side” Batch Change Standard Work
+LPF01
+External
+Verify imprint station is setup with old batch BOM, setup sheet, imprint board and / or calibrated ruler.
+Get heat resistant gloves, drill and drill extension for imprint station.
+Get type box for LPF once the new batch BOM / setup sheet has been locked in box.
+Get barcode cords plugged in and ready (only if changing codes).
+Get manifolds and assure tubing is in good working condition.
+Keep rework bin cleaned out.  
+The handler tha t performs the last tank change of the batch will call the Che m Lab and notify them that we are in 
+our last tank, (this is an Opti -Lab requirement). 
+The handler that performs the last quality check of the batch will close old batch out in SPC system.  
+Perform  FOB checks and document in fill / pack.
+Internal
+Cycle stop machine, turn accumulator off, use clear machine function and let machine clear out until last pattern 
+of bags are above nozzles or at end of barcode station. Cycle stop machine, use clear m achine function in Imprint 
+Mode. Cycle stop / E -stop LPF after removing the last pattern of unfilled printed bags from end of LPF conveyor 
+which will be used as EOB imprints.
+Handlers obtain EOB imprints, check and sign.
+Place BOM / setup sheets & EOB impr ints in old batch folder (after last imprints are pulled and signed).
+Move the fill station downhill away from barcode station if applicable, to get LPF ready to flush.
+Remove old type from the die plate and lock it up in the type removed side of the type box. Once the old type is 
+locked up, unlock the type to be ins talled side of the box.
+Proceed to the unload station between LPF02 & LPF03. Line Clearance can begin when all handlers are present. 
+Maintain proper interval during clearance. Perform line clear ance on LPF02 & LPF01. Document clearance in Fill 
+/ Pack.
+As soon as the Clearance is complete, disengage E -Stops and push machine reset to clear all fault messages. On 
+the HMI screen “select” clear machine, mode of operation -automatic, accumulator on, imp rint mode enabled than 
+“select” clear entire machine. Run mach ine (8 cycles) until printed, unfilled bags are one cycle past the fill station. 
+Cycle stop the machine and depress the E -Stop. Remove the set of bags that are past the fill station (close clamp s) 
+for FOB Imprints, check and sign if acceptable.
+Install manifold / verify air inject air lines are removed (manual nozzle also).
+Perfor m FOB flush if not previously performed (for FOB flush, machines must be flushed in sequence). Ensure 
+flush gets docum ented in fill/pack.
+Remove flush manifold and hook up air inje ct air lines (manual nozzle also).
+When all machines have completed the flush, start LPF and pull FOB samples while belt is running, place in 
+sample cart.
+Operators
+Operators help handler obtain EOB imprints.
+Operators remove used hot stamp and barcode foil (used hot stamp foil is placed on foil cart and used barcode foil 
+is placed in trash).
+Verify reject bins are empty and rejects are cut.
+Take filling and pouching trash to appropriate pouching side door.
+Perfor m Zone Clearance.
+FOR INFORMATION ONLY –MAY BE DISCARDED DOCUMENT OWNER:  N. BUCHANAN
+1Copy –LPF01 Attached to clipboard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 3OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 10 “Fill Side” Batch Change Standard Work
+LPF02
+External
+Verify imprint station is setup with old batch BOM, setup sheet, imprint board and / or calibrated ruler.
+Get heat resistant gloves, drill and drill extension for imprint station.
+Get type box for LPF once the new batch BOM / setup sheet has been locked in box.
+Get barcode cords plugged in and ready (only if changing codes).
+Get manifolds and assure tubing is in good working condition.
+Get sample cart for LPF01 / LPF02.
+Keep rework bin cleaned out.  
+The handler that performs the last tank c hange of the batch will call the Chem Lab and notify them that we a re in 
+our last tank, (this is an Opti -Lab requirement).  
+The handler that performs the last quality check of the batch will close old batch out in SPC system.
+Perfor m FOB checks and document in fill / pack.
+Internal
+Cycle stop machine, turn accumulator of f, use clear machine function and let machine clear out until last pattern is 
+above nozzles or at end of barcode station. Cycle stop machine, use clear machine function in Imprint Mode. 
+Cycle stop / E -stop LPF after removing the last pattern of unfilled pr inted bags from end of LPF conveyor which 
+will be used as EOB imprints.
+Handlers obtain EOB imprints, check and sign.
+Place BOM / setup sheets & EOB imprints in old batch folder (after last imprints are pulled and signed).
+Move fill station downhill away f rom barcode station if applicable, to get machine ready to flush.
+Remove old type from the die plate and lock it up in the type removed side of the type box. Once the old type is 
+locked up, unlock the type to be installed side of the box.
+Proceed to the un load station between LPF02 & LPF03. Line Clearance can begin when all handlers are present. 
+Maintain proper interval during clearance. Perform line clearance on LPF02 & LPF01. Document clearance in Fill 
+/ Pack.
+As soon as the Clearance is complete, disenga ge E-Stops and push machine reset to clear all fault messages. On 
+the HMI screen “select” clear machine, mode of operation -automatic, accumulator on, imprint mode enabled than 
+“select” clea r entire machine. Run machine (8 cycles) until printed, unfilled ba gs are one cycle past the fill station. 
+Cycle stop the machine and depress the E -Stop. Remove the set of bags that are past the fill station (close clamps) 
+for FOB Imprints, check and sign if acceptable.
+Install manifold / verify air inject air lines are r emoved.
+Perfor m FOB flush if not previously performed (for FOB flush, machines must be flushed in sequence). Ensure 
+flush gets documented in fill/pack.
+Remove flush manifold and hook up air inject air lines.
+When all machines have completed the flush, star t LPF and pull FOB samples while belt is running, place in 
+sample cart.
+Operators
+Operators help handler obtain EOB imprints.
+Operators remove used hot stamp and barcode foil (used hot stamp foil is placed on foil cart and used barcode foil 
+is placed in tr ash).
+Verify reject bins are empty and rejects are cut.
+Take filling and pouching trash to appropriate pouching side door.
+Perfor m Zone Clearance.
+FOR INFORMATION ONLY –MAY BE DISCARDED DOCUMENT OWNER:  N. BUCHANAN
+1Copy –LPF02 Attached to clipboard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 4OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 10 “Fill Side” Batch Change Standard Work
+LPF01 / LPF02 Helper
+External
+Get Walkie -Talkie’s and drill extensions from office, have available for batch change.
+Get new cleaning papers and ticket pouches ready for new batch.
+Get paperwork for new batch fr om dry side.
+Get type boxes ready with new BOM and setup sheets. Verify type is secure in type retainers. Lock paperwork up 
+inside the type to be installed side of the box.
+Lock any additional paperwork up inside the big die plate cabinet.
+Verify that the SPC has been closed out after the last qualit y check of the batch is completed.
+Document all “partial” closure totes, barcode foil, hot stamp foil and bag closets in the material consumption 
+portion of fill/pack.
+Get old batch folder ready. Verify that the following items are in/or ready to be placed in the batch folder. 
+(Previous days cleaning forms, major maintenance, bag, closure and foil tickets, FOB imprints and any 
+adjustment imprints).
+If Opti -Lab is operational, verify that the Chem Lab was notified when the last tank of the batch was started.
+If applicable, ensure new air inject for manual nozzle is ready to be installed at batch change.
+Clean top of LPF01/02 sample cabinet with alcohol. Place the tagged bags that are going to be used for EOB 
+samples on top of the cabinet.
+Internal
+Use Walkie -Talkies to communicate with person in tank room, (i.e., samples pulled, clear machines out, put flush 
+manifolds on, flush machines, etc). 
+Enter any remaining bag scrap into fill/pack and help remove scrap / tra sh from wet side.
+Spray gloves and manual noz zle with alcohol. Pull EOB samples after all machines have cleared out. Verify 
+samples in fill/pack prior to filter time expiring if applicable.
+Prepare manual nozzle for flushing, (switch nozzle to off position , remove air inject line, change air inject if 
+applicable and place flush pipe under nozzle).
+Remove the air inject lines from nozzles on LPF02.
+Remove the air inject lines from nozzles on LPF01.
+Place EOB imprints and any other batch specific documents in the batch folder. Hand the batch folder out to the 
+dry side.
+Start with LPF02, insert the new batch type retainers into the die plate, rethread black foil, go to HMI screen and 
+“select” batch change selection, “select” enter new batch mode than “select” O K, (verify that the counters reset to 
+zero).
+Reprogram the barcode information only if the Code is changing.
+Go to LPF01 and perform the same steps as stated for LPF02.
+As soon as the clearance on LPF02 is complete, push machine reset to clear all fault me ssages. On the HMI 
+screen “select” clear mach ine, mode of operation -automatic, accumulator on, imprint mode enabled than “select” 
+clear entire machine. Run machine (8 cycles) until printed, unfilled bags are one cycle past the fill station. Cycle 
+stop the machine and depress the E -stop. Remove the set of bags (a pattern of 5) that are past the fill station (close 
+clamps) for FOB imprints, check and sign.
+Help install / remove flush manifolds and hookup air inject lines as needed.
+Go to LPF01 and assist with the imprint process as listed above for LPF0 2.
+Be available to perform 2ndverification on FOB imprints as needed . 
+FOR INFORMATION ONLY –MAY BE DISCARDED DOCUMENT OWNER:  N. BUCHANAN
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 5OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 1Copy –LPF01 Attached to clipboard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 6OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 10 “Fill Side” Batch Chang e Standard Work
+LPF03
+External
+Verify imprint station is setup with old batch BOM, setup sheet, imprint board and / or calibrated ruler.
+Get heat resistant gloves, drill and drill extension for imprint station.
+Get type box for LPF once the new batch BOM / setup sheet has been locked in box.
+Get barcode cords plugged in and ready (only if changing codes).
+Get manifolds and assure tubing is in good working condition.
+Get sample cart for LPF03 / LPF04.
+Keep rework bin cleaned out.  
+The handler that performs the last tank c hange of the batch will call the Chem Lab and notify them that we are in 
+our last tank, (this is an Opti -Lab requirement). 
+The handler that performs the last quality check of the batch will close old batch out in SPC system.  
+Perfor m FOB c hecks and document in fill / pack.
+Internal
+Cycle stop machine, turn accumulator off, use clear machine function and let machine clear out until last pattern 
+of bags are above nozzles or at end of barcode station. Cycle stop machine, use clear machine func tion in imprint
+mode. Cycle stop / E -stop LPF after removing the last pattern of unfilled printed bags from end of LPF conveyor 
+which will be used as EOB imprints.
+Handlers obtain EOB imprints, check and sign.
+Place BOM / setup sheets & EOB imprints in old batch folder (after last imprints are pulled and signed).
+Move the fill station downhill away from barcode station if applicable, to get LPF ready to flush.
+Remove old type from the die plate and lock it up in the type removed side of the type box. Once t he old type is 
+locked up, unlock the type to be installed side of the box.
+Proceed to the unload station between LPF02 & LPF03. Line Clearance can begin when all handlers are present. 
+Maintain proper interval during clearance. Perform line clearance on LPF 03 & LPF04. Document clearance in Fill 
+/ Pack.
+As soon as the Clearance is complete, disengage E -Stops and push machine reset to clear all fault messages. On 
+the HMI screen “select” clear machine, mode of operation -automatic, accumulator on, imprint mode e nabled than 
+“select” clear entire machine. Run machine (8 cycles) until printed, unfilled bags are one cycle past the fill station. 
+Cycle stop the machine and depress the E -stop. Remove the set of bags that are past the fill station (close clamps) 
+for FOB Imprints, check and sign if acceptable.
+Install manifold / verify air inject air lines are removed.
+Perfor m FOB flush if not previously performed (for FOB flush, machines must be flushed in sequence). Ensure 
+flush gets documented in fill/pack.
+Remove flush manifold and h ook up air inject air lines.
+When all machines have completed the flush, start LPF and pull FOB samples while belt is running, place in 
+sample cart.
+Operators
+Operators help handler obtain EOB imprints.
+Operators remove used hot stamp and ba rcode foil (used hot stamp foil is placed on foil cart and used barcode foil 
+is placed in trash).
+Verify reject bins are empty and rejects are cut.
+Take filling and pouching trash to appropriate pouching side door.
+Perfor m Zone Clearance.
+FOR INFORMATION ONLY –MAY BE DISCARDED DOCUMENT OWNER:  N. BUCHANAN
+1Copy –LPF03 Attached to clipboard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 7OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 10 “Fill Side” Batch Change Standard Work
+LPF04
+External
+Verify imprint station is setup with old batch BOM, setup sheet, imprint board and / or calibrated ruler .
+Get heat resistant gloves, drill and drill extension for imprint station.
+Get type box for LPF once the new batch BOM / setup sheet has been locked in box.
+Get barcode cords plugged in and ready (only if changing codes).
+Get manifolds and assure tubing i s in good working condition.
+Keep rework bin cleaned out.  
+The Handler that performs the last tank change of the batch will call the Che m Lab and notify them that we are in 
+our last tank, (this is an Opti -Lab requirement). 
+The Handler that performs the l ast quality check of the batch will close old batch out in SPC system.  
+Perfor m FOB checks and document in fill / pack.
+Internal
+Cycle stop machine, turn accumulator off, use clear machine function and let machine clear out until last pattern 
+of bags are above nozzles or at end of barcode station. Cycle stop machine, use clear machine function in imprint 
+mode. Cycle stop / E -stop LPF after removing the last pattern of unfilled printed bags from end of LPF conveyor 
+which will be used as EOB imprints.
+Handle rs obtain EOB imprints, check and sign.
+Place BOM / setup sheets & EOB imprints in old batch folder (after last imprints are pulled and signed).
+Move the fill station downhill away from barcode station if applicable, to get LPF ready to flush.
+Remove old t ype from the die plate and lock it up in the type removed side of the type box. Once the old type is 
+locked up, unlock the type to be ins talled side of the box.
+Proceed to the unload station between LPF02 & LPF03. Line Clearance can begin when all handlers are present. 
+Maintain proper interval during clearance. Perform line clearance on LPF03 & LPF04. Document clearance in Fill 
+/ Pack.
+As soon as the Clearance is complete, disengage E -Stops and push machine reset to clear all fault messages. On 
+the HMI scre en “select” clear machine, mode of operation -automatic, accumulator on, imprint mode enabled than 
+“select” clear entire machine. Run mach ine (8 cycles) until printed, unfilled bags are one cycle past the fill station. 
+Cycle stop the machine and depress the E-stop. Remove the set of bags that are past the fill station (close clamps) 
+for FOB imprints, check and sign if acceptable.
+Install manifold / verify air inject air lines are removed.
+Perfor m FOB flush if not previously performed (for FOB flush, machines must be flushed in sequence). Ensure 
+flush gets documented in fill/pack.
+Remove flush manifold and hook up air inject air lines.
+When al l machines have completed the flush, start LPF and pull FOB samples while belt is running, place in 
+sample cart.
+Operat ors
+Operators help handler obtain EOB imprints.
+Operators remove used hot stamp and barcode foil (used hot stamp foil is placed on foil cart and used barcode foil 
+is placed in trash).
+Verify reject bins are empty and rejects are cut.
+Take filling and pouch ing trash to appropriate pouching side door.
+Perfor m Zone Clearance.
+FOR INFORMATION ONLY –MAY BE DISCARDED DOCUMENT OWNER:  N. BUCHANAN
+1Copy –LPF03 Attached to clipboard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 8OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 10 “Fill Side” Batch Change Standard Work
+LPF03 / LPF04 Helper
+Internal
+Turn batch change light on (located in material exchange room) when we start filling out of the surge 
+tank.
+Take old batch boards down / put new batch boards up. Place o ld batch boards in batch fo lder. 
+Enter any  remaining bag scrap into fill/pack and help remo ve scrap / trash from wet side.
+Change over fill/pack between LPF03 & LPF04 to new batch.
+Verify Group Clearances are being performed.
+Enter verifying Group Clearances into fill/pack under new batch.
+Remove the ai r inject lines fro m nozzl es on LPF04.
+Push used fo il cart to dirty  side of material exchange room floor. 
+Remove the ai r inject lines from  nozzl es on LPF03.
+Start wi th LPF03, insert the new batch ty pe retainers into the die plate, rethread black foil, go to HMI 
+screen and “select” batch change sele ction, “select” enter new batch mode than “select” OK, (verify that 
+the counters reset to zero).
+Reprogram  the barcode informat ion only if the Code is changing.
+Go to LPF04 and perform the same steps as stated for LPF02.
+As soon as the clearance on LPF03 i s complete, push machine reset to clear all fault messages. On the 
+HMI screen “select” clear machine, mode of operation -automatic, accumulator on, imprint mode 
+enabled than “select” clear ent ire machine. Run machine (8 cy cles) unt il printed, unfilled bags are one 
+cycle past the fill station. Cy cle stop the m achine and depress the E -stop. Remove the set of bags (a 
+pattern of 5) that are past the fill station (close clamps) for FOB imprints, check and sign.
+Help install  / remove flush manifo lds and hookup air inject lines as needed.
+Go to LPF04 and assist with the imprint process as listed above for LPF02.
+Be available to perform 2ndverificat ion on FOB imprints as needed. 
+Turn batch change light off when first b ags fro m new batch reach the pouching side.
+FOR INFORMATION ONLY –MAY BE DISCARDED DOCUMENT OWNER:  N. BUCHANAN
+1Copy –LPF03 Attached to clipboard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 9OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 10 “Fill Side” Batch Change Standard Work
+Tank Room
+External
+Verify the Walkie -Talkie’s are working and can be used to communicate between t he Tank Room 
+and LPF Room . If Walkie -Talkie’s are not available, Face -to-Face Communicat ions must be 
+conducted.
+Prior to Batch Change     
+(Filter Change )
+Put pre -filter on water and verify all filter tags match paperwork (per SOP).
+Place check mark on old filter tags to indicate that they  are USED FILTERS.
+Get m easuring Rod from Vat, (# on Rod should match # on surge tank) rinse it off and place it on the 
+Filter Cart.
+Approximately  twent y minutes prior to batch change, take the new filters off water and sta ge them 
+where they  will be installed.
+(Filter Test)
+Set up filter test site as instructed in the filter certificat ion training.
+Get m easuring rod from Vat, (# on Rod should match # on surge tank) rinse it off and place it on the 
+filter cart. 
+After Batch C hange
+Go inside and enter the appropriate flushes, tank hook up and filters into fill pack.
+Fill out Pre -production Solut ion Transmissio n System  Cleaning Rec ord (NC -FL-029) and give to dry  
+side al ong wi th the Truck cards.
+Update the filter expirat ion time and date per SOP, located inside LPF room above the desk.  
+Place used Filt ers on water. 
+Rinse off Measuring Rod and place it back in Vat.
+Clean up Filter Test Si te.
+Internal
+Turn off the Supply  Pump and Cl ose Tank Valve (if dumping solution).
+Close and Lock Header Box than uncap pipe leading into Header Box.
+Notify  inside Handler when y ou start running the solut ion out of the Surge Tank.
+Go to mixing and sig n for unhooking the tank. If dumping so lution from mix tank, use Radar or 
+measuring Rod to determi ne the am ount of sol ution rem aining in the mix tank. 
+Pick up new batch fo lder and return to the tank room. (If batch fo lder is not ready at this t ime, pick 
+up pri or to print ing addressograph ticket).
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 10OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Internal Cont. 
+If dumping solut ion, open tank and drain. If dumping 5,000 Liters or more, monitor to make sure 
+solution does not back up into fill rooms.
+Moni tor sol ution level in surge tank. When the solution reaches the holes in the side of the bell, notify  
+the inside to clear out the LPF’s.  If wal kie-talkie is not available, notify the inside to clear out when 
+solution reaches the top of the bell.
+If testing filters, take off cartridge filter and put on water per SOP. If replacing filters, remove the old 
+prefilter and cartri dge fil ter and install  new fil ters as l ong as y ou are not hooked to the surge tank.
+When samples have been pu lled, turn off discharge pumps and verify  the am ount of  solution left in 
+the surge tank and drain.
+Go inside and enter tank unhook and EOB solut ion loss in fill pack (mix tank, surge tank and piping).
+Enter any  remaining scrap if necessary  than change fill/pack over to new batch.
+Once on new batch, select fill po int setup than select new tank which will print y our addressograph 
+ticket.
+Return to the tank room, Verify surge tank i s empty , hang measuring rod i nside surge tank and close 
+surge tank valve.
+Test and reinstall cartridge filter or remove old mult iplate filters and install new mult iplate filters.
+Reconnect cartridge filter to surge tank (make sure all hoke valves ar e open).
+Have second person verify tank hook up. Perform tank valve flush and cap off tank valve per SOP.
+Open tank valve and header box. Record time in use on prefilter and cartridge filter tags per SOP.
+Turn supply pump on and do surge tank flush per SO P. Drain surge tank and remove measuring rod.
+Verify surge tank is empt y, close and l ock lid, cl ose surge tank valve and start refilling surge tank.
+Record time in use on new mult iplate filter tags per SOP. Once solut ion is coming through the hoke 
+valves, close valves half way  before turning on di scharge pumps.
+Once so lution starts coming through hoke valves notify inside to put manifo lds on LPF’s.  
+Once surge tank is about half full notify inside to flush machines.
+FOR INFORMATION ONLY –MAY BE DISCARDE D DOCUMENT OWNER:  N. BUCHANAN
+1Copy –LPF01 Attached to clipboard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 11OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 BatchChangeTank Mixing Standard Work for L10 
+Night Shift
+1.Determine how fast the line is running by taking the starting volume of the current tank, allowing the tank run for 
+10 minutes and then recording end volume of that tank. 
+2.Subtract the starting volume from the end volume then divide 10. This will give you the speed at which the line is 
+running. (Example: (20,000 -17,000) L /10 min = 300 L/min)
+3.Repeat this process several times to determine the average speed the line is running.
+4.Average times are typically about 300 -350 L/min. 
+5.Divide the tank volumes by this number to determine how many minutes the current tanks mixed will last. 
+(Example: 39000/300= 130 minutes). 
+6.Determine what next tank volumes need to be mixed in order to allow the second to last tank of the batch to be 
+completed by 0030. 
+7.The second to last tank being empty at 0030 will give mixing adequate time to finish filling and mixing the first 
+tank of the nex t batch (It takes mixing at least 1.5 hours to mix the first tank). Batch Change normally begins 
+between 02:00 and 02:30. 
+8.Recalculate the next tank volumes while second tank is being run to determine if new volumes are needed due to 
+downtime. The third/f ourth tank may need to be adjusted if the line has been down long enough.
+9.Call mixing when the last tank change is performed or when the tank is completely empty after dumping (This is 
+referring to the second to last tank of the current batch).
+10.Remember that the Cafeteria Service lasts from 01:00 -03:00; Batch Change has to begin early enough before 
+03:00 to give the operators a chance to eat.
+11.Excessive downtime can affect when the second to last tank is empty. Be sure to have the tank empty and ready 
+formixing by 00:30; 01:00 at the latest. If more than 4200 L are to be dumped, call wastewater (776 -6262) to 
+deter mine if that amount of solution waste treatment can handle.
+FOR INFORMATION ONLY –MAY BE DISCARDED DOCUMENT OWNER:  N. BUCHANAN
+1Copy –LPF01 Attached to clipboard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 12OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 LEAD/TANKROOM HANDLER
+Batch Change Standard Work
+Time Task to be Performed
+Prior to EOB Pick up set up sheet and batch folder informat ion.
+Prior to EOBSign in new di es. Verify Ty pe retainer stam ps, sort paperwork, batch 
+docum entati on. Pl ace barcode setup sheets and BOM with each ty pe box.
+Prior to EOB Clear m anual  printer 2199.
+Prior to EOB Sign imprint for 2199 (Printer setup prior to EOB).
+Prior to EOBPerform  tank unhook to begin running out of Surge tank to allow su rge to be 
+mostly consumed by machine clear out time (18:53).
+Prior to EOB Docum ent unhook in Fill/pack system.
+Prior to EOBMoni tor Surge tank unt il time for machines to be cleared out/ Do not let surge 
+tank run dry .
+At EOB Signal line to cl ear out (As close to 18:53 as possible).
+At EOB
+Once production has stopped, pull EOB samples.
+At EOBOnce samples are obtained and documented, measure surge tank heel and open 
+to drain.
+At EOB
+Docum ent Surge tank heel.
+At EOB
+Measure mix tank heel/return key  to m ixing and open to drain.
+At EOB
+Docum ent Mix tank heel.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 13OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 11 -Night Lead/ Tank Room  Handler
+Batch Change Standard Work(Fill Side -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on the line at 18:55)
+Time Task to be P erformed
+Prior to EOBVerify release of new batch tank, select tank, perform fill point setup 
+and print sample tags for new batch.
+At FOB Tag sam ple bags to be used for SP1 (tank room  samples).
+At FOBTank Room Handler and additional handler must verify the Tank 
+Hook Up.
+At FOBOnce old batch unhook has been performed and old filters removed:
+Perform tank valve flush
+Install cap at header box 
+Flush SP1 and pull SP1 samples
+At FOBOnce new filters are installed prior to the surge and surge tank has 
+been drained from  old solution then:
+Install surge tank measuring rod
+Perform flush through Filter #1 / Filter #2 and document
+Perform appropriate surge tank flush per Filling 3H and drain
+At FOB Verify Filters #3 and #4 are installed downstream  of surge tan k. 
+At FOB Begin filling surge tank with solution for FOB flush.
+At FOB Notify Machine Handlers to install flush manifolds.
+At FOB Once surge is filled flush through Filter #3 / Filter #4 and document.
+At FOBOnce surge tank has filled up then signal l ine to begin FOB flush per 
+Fill 4 Addendum .
+At FOBAssure entire line has flushed the required am ount of solution per 
+Filling 4 Addendum.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 14OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 11 -LPF 5, 6 and 7 Handler Batch Change Standard Work
+(Fill Side -All Night Shift Supervisors/Asst. Superviso rs/PT’s/ Handlers must be garbed and on the line at 18:55)
+Time Task to be Performed
+DAY Prior to EOBHave manifo lds at m achines, inspect for missing/ damaged tubing and correct 
+(prior to 1853).
+DAY Prior to EOB Get sample cart. Stage at machine (prior to 1853).
+DAY Prior to EOBGet new batch ty pe box and stage at the machine (prior to 1853) along wit h die 
+gloves and charged drill wit h extensio n/chuck. Attain a die box key .
+DAY Prior to EOBGet BOM, Barcode setup sheet, Barcode scanner and 'First Impri nts' fro m the batch 
+that is ending for imprint verificat ion.
+DAY At EOBTo cl ear out m achine: 
+Disable accumulator. 
+Clear m achine button. 
+Once last pattern passes fill station then re -enable the accumulator to allow 
+another bag pattern to load. 
+Once th is pattern reaches the fill station (all other units in the machine 
+shoul d have been offloaded), then cycle stop and e -stop. 
+Assure only 1 complete pattern is pulled at a time. 
+DAY At EOB Sign last imprints.
+DAY At EOBPlace signed imprints (Last and F irst), BOM and Barcode setup sheet in red batch 
+folder.
+DAY At EOB Remove ol d type and install new ty pe.
+Night FOBBegin lin e clearance as soon as old ty pe is rem oved and l ocked in box. (Shoul d be 
+no later than 19:00).
+DAY At EOB Change over Fill/Pack t o new batch.
+DAY At EOB Verify and Document operator zone clearance. 
+DAY At EOB Verify previous batch SPC is closed out.
+Night FOB Pull First Imprints. Sign Imprint and Imprint verification form.
+Night FOBAfter acceptable first imprint is obtained or when Tank Room  Handler announces -
+install manifo ld on m achine and crack open drain valve on manifo ld, verify air 
+inject lines removed.
+Night FOB Tank Room  Handler will signal to FOB flush per Filling 4 Addendum.
+Night FOBAfter flush co mplete close hoke valve, remove manifo ld and reconnect air injector 
+lines.
+Night FOB If imprints not completed at this time cont inue with First Imprint process.
+Night FOBIf Im print process com plete and ent ire line has completed FOB flushes then 
+perform  FOB sampling.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 15OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 11 -RPF 1 and 2 Handler Batch Change Standard Work
+(Fill Side -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handler s must be garbed and on the line at 18:55)
+Time Task to be Performed
+DAYPrior to 
+EOBHave manifo lds at m achines, inspect for mi ssing/ dam aged parts and correct (prior 
+to 1853).
+DAYPrior to 
+EOB Get sample cart. Stage at machine (prior to 1853).
+DAYPrior to 
+EOBGet new batch ty pe box and stage at the machine (prior to 1853) along wit h die 
+gloves and charged drill wit h extensio n/chuck. Attain a die box key .
+DAYPrior to 
+EOBGet BOM, Barcode setup sheet, Barcode scanner and 'First Imprints' fro m the bat ch 
+that is ending for imprint verificat ion.
+DAY At EOBTo cl ear out m achine: 
+Assure only 1 complete pattern is pulled at a time.
+DAY At EOB Sign last imprints.
+DAY At EOBPlace signed imprints (Last and First), BOM and Barcode setup sheet in red batch 
+folder.
+DAY At EOB Remove ol d type and install new ty pe.
+Night FOBBegin line clearance as soon as old ty pe is rem oved and l ocked in box. (Should be 
+no later than 19:00).
+DAY At EOB Change over Fill/Pack to new batch.
+DAY At EOB Verify and Document op erator zone clearance.
+DAY At EOB Verify previous batch SPC is closed out.
+Night FOB Pull First Imprints. Sign Imprint and Impri nt verification form.
+Night FOBAfter acceptable first imprint is obtained or when Tank Room Handler announces -
+install manifo lds on m achine and crack open drain valve on fill manifo ld, verify air 
+inject lines removed.
+Night FOB Tank Room  Handler will si gnal to FOB flush per Filling 4 Addendum.
+Night FOBAfter flush co mplete close hoke valve, remove manifo lds and reconnect air injector 
+lines.
+Night FOB If imprints not completed at this time cont inue with First Imprint process.
+Night FOBIf Im print proc ess complete and ent ire line has completed FOB flushes then 
+perform  FOB sampling.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 16OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 11 -DAY Shift LPF/RPF Operator
+Batch Change Standard Work
+Time Task  to be Performed
+At EOBPerform zone clearance of assigned machine/area. Remove any units 
+and pla ce in discard bin and remove batch board sheets and discard 
+into trash or place in batch folder.
+At EOBCut all units in the discard bin. Communicate the number of units cut 
+to the material handler for documentation.
+At EOBRem ove cut scrap/trash and pla ce out the door to pouch side at A or E 
+belt(Once door bar in place, door cannot be opened to pass out scrap).
+At EOBVerify handler has completed i mprints then rem ove both the barcode 
+foil and the black foil from the machine/printer.
+At EOB Rem ove air i nject lines.
+Line 11 -DAY Shift Manual Belt Operators
+Batch Change Standard Work
+Prior to EOBOnce printed bag count is achieved clear out printer. Leave last 
+pattern of printed bags for handler's imprints. Advance and remove 
+the black and white used foil. Perform clearance of printer area 
+removed all printed bags and used foil from the area.
+At EOBRem ove cyclohex wick applicators from  nozzle area and place on 
+rack. (Leave 1 applicator for sample nozzle).
+At EOB Disconnect air injector lines.
+At EO BPerform clearance of nozzle area and remove all trash and bag scrap 
+through E belt d oor.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 17OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 11 -Manual Belt Handler Batch Change Standard Work(Fill Side -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on the line at 18:55)
+Time Task  to be Performed
+DAY Prior to EOB Determine bag lead needed.
+DAY
+Prior to EOB Get sam ple cart. Stage at m achine (prior to 1800).
+DAY
+Prior to EOBGet new batch type box and stage at the m achine (prior to 1800) 
+along with die gloves and charged drill with extension/chuck. 
+Attain a die box key.
+DAY
+Prior to EOBGet BOM, B arcode setup sheet, Barcode scanner and 'First 
+Imprints' from the batch that is ending for imprint verification 
+(prior to 1800).
+DAY Prior to EOB Sign last imprints.
+DAY
+Prior to EOBPlace signed imprints (Last and First), BOM and Barcode setup 
+sheet in red batch folder.
+DAY Prior to EOB Turn on Batch Change Light.
+DAY Prior to EOB Chain off printer area.
+DAY Prior to EOB Rem ove old type and install new type.
+DAY Prior to EOB Clear 2199 printer area.
+DAY Prior to EOB Document clearance and Print area operator zone clearance.
+DAY
+Prior to EOBPull first imprints from 2199. Verify/ sign imprint and imprint 
+verification sheet.
+DAY At EOB Once all production has ended pull EOB samples.
+DAY
+At EOBVerify imprints present and all documents in batch folder. Place 
+batch fold on F belt for pouching side to pick up.
+DAYAt EOB Change over Fill/Pack to new batch.
+DAY At EOB Verify previous batch SPC is closed out.
+Night
+Prior to EOBGet all material partial and cyclohex information and document 
+materials in to new batch fill/pack.
+Night
+At FOB Perform FOB flush per Filling 4 Addendum when signaled by 
+Tank Room Handler.
+Night
+At FOB Printing on Multi -up may begin.
+Night
+At FOB Pull FOB samples from manual nozzles.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 18OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 11 -Tank Room  Prep Batch Change Standard Work
+(Prep -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on the line at 18:50. Begins when 
+last tank is unhooked and running ou t of surge)
+Time Task to be Performed
+DAY Prior to 
+Tank 
+UnhookHave new batch filter s DW flushed with whirl packs on ends and ready 
+staged on cart or by their location.
+DAY After Tank 
+UnhookRemove Filter #1 and Filter #2. Place whirl pack on the inlet piping to 
+the surge tank. Test removed Filters.
+Night
+After Tank 
+UnhookAs old filters are removed, install new Filter #1 and #2. Do not make 
+the final connection to the surge tank until production has stopped 
+from the previous batch and the surge tank he el has been measured 
+and drained.
+Night
+At EOBDay shift Tank Room Handler will shut off pumps, measure and open 
+to drain. Remaining filters may be removed from the STS at this time.
+Night
+At FOB Complete the final connection between Filter #2 and surge tank.
+Night
+At FOBInstall Filter #3 and Filter #4 on outlet side (inlet still covered with 
+whirl packs), then complete the connection for the inlet side once the 
+surge tank flush has been completed and drained by the Night shift 
+Tank Room Handler.
+Night
+At FOB Test Filters from the previous batch.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 19OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 LEAD/TANKROOM HANDLER
+Batch Change with Sanitization Standard Work
+Time Task to be Performed
+Prior to EOB Connect all DW hoses and attach to the DW water drops for sanit ization.
+Prior to EOB Pick up set up sheet and batch fo lder informat ion.
+Prior to EOBSign in new di es. Verify Ty pe retainers, stam ps, sort paperwork, batch 
+docum entati on. Pl ace barcode setup sheets and BOM with each ty pe box.
+Prior to EOB Clear m anual  printer 2199.
+Prior to EOB Sign imprint for 2199 (Printer setup prior to EOB).
+Prior to EOBPerform  tank unhook to beg in running out of Surge tank to allow surge to be 
+mostly consumed by machine clear out time (18:00).
+Prior to EOB Docum ent unhook in Fill/pack system.
+At EOBMoni tor Su rge tank unt il time for machines to be cleared out/ Do not let surge 
+tank run dry .
+At EOB Signal line to cl ear out (As cl ose to 18:00 as possible).
+At EOB
+Once production has stopped, pull EOB samples.
+At EOB
+Once samples are obtained and documented, me asure surge tank heel and open 
+to drain.
+At EOB
+Docum ent Surge tank heel.
+At EOB
+Measure mix tank heel/obtain both key s from mixing for sanit ization and open 
+tank to drain.
+At EOB
+Docum ent Mix tank heel.
+FOB
+Once Day shift Prep has heated water loops, document Start and End times on 
+NCCL039 for Fill machines and DW drops/hoses.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 20OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Night Lead/Tank Room Handler
+Batch Change with Sanitization Standard Work
+(Fill Side -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on 
+the line at 18:55)
+Time Task to be Performed
+Prior to EOBVerify release of new batch tank , select tank, perform  fill po int setup and print 
+sample tags for new batch.
+At FOB Tag sam ple bags to be used for SP1 (tank room samples).
+At FOB Tank Room  Handler and additional handler m ust verify the Tank Hook Up.
+At FOBOnce sanit ization has been com pleted and sanit izatio n filters, hoke valve caps 
+and gray  hose have been remo ved:
+Perform  tank valve flush
+Install cap at header box 
+Flush SP1 and pull SP1 samples
+AtFOBOnce new filters are installed prior to the surge and surge tank has been drained
+of sanitization water then:
+Install surge tank measuring rod
+Perform  flush through Filter #1 / Filter #2 and document
+Perform  appropri ate surge tank flush per Filling 3H and drain
+At FOB Verify Filters #3 and #4 are installed downstream of surge tank. 
+At FOB Begin filling surge tank with so lution for FOB flush.
+At FOB Notify  Machine Handlers to install flush manifolds.
+At FOB Once surge is filled flush through Filter #3 / Filter #4 and document.
+At FOBOnce surge tank has filled up then signal line t o begin FOB flush per Fill 4 
+Addendum.
+At FOBAssure entire line has flushed the required amount of solut ion per Filling 4 
+Addendum.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 21OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 LPF 5, 6 and 7 Handler Batch Chan ge with Sanitization Standard Work
+(Fill Side -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on 
+the line at 18:55)
+Time Task to be Performed
+DAY Prior to EOBHave manifo lds at m achines, inspect for missing/ damaged tubing and correct 
+(prior to 18:00).
+DAY Prior to EOB Get sample cart. Stage at machine (pr ior to 18:00).
+DAY Prior to EOBGet new batch ty pe box and stage at the machine (prior to 18:00) along wit h die 
+gloves and charged drill wit h extensio n/chuck. Attain a d ie box key .
+DAY Prior to EOBGet BOM, Barcode setup sheet, Barcode scanner and First Imprints fro m the batch 
+that is ending for imprint verificat ion.
+DAY At EOBClear out m achine when notified. To clear out machine: 
+Disable accumulator. 
+Clear m achine b utton. 
+Once last pattern passes fill station then re -enable the accumulator to allow 
+another bag pattern to load. 
+Once this pattern reaches the fill station (all other units in the machine 
+shoul d have been offloaded), then cycle stop and e -stop. 
+Assure only 1 complete pattern is pulled at a time. 
+DAY At EOB Sign last imprints.
+DAY At EOBPlace signed imprints (Last and First), BOM and Barcode setup sheet in red batch 
+folder.
+DAY At EOB Remove ol d type and install new ty pe.
+DAY FOB Change over Fill/P ack to new batch.
+DAY FOB Verify and Document operator zone clearance. 
+DAY FOB Verify previous batch SPC is closed out.
+DAY FOB Perform  Line clearance for new batch.
+DAY FOBInstall manifo ld for sanit ization. Crack open bleed valve on fill manifo ld. B egin 
+sanitization when signaled by  Tank Room  Handler.
+Night FOB At the complet ion of sanit ization, rem ove flush manifo ld.
+Night FOB Pull First Imprints. Sign Imprint and Imprint verification form.
+Night FOBAfter acceptable first imprint is obtained or when Tank Room  Handler announces -
+install manifo ld on m achine and crack open drain val ve on m anifo ld, verify air 
+inject lines removed.
+Night FOB Tank Room  Handler will signal to FOB flush per Filling 4 Addendum.
+Night FOBAfter flush co mplete close hoke valve, remove manifo ld and reconnect air injector 
+lines.
+Night FOB If imprints not completed at this time cont inue with First Imprint process.
+Night FOBIf Im print process com plete and ent ire line has completed FOB flushes then 
+perform  FOB sampling.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 22OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 RPF 1 and 2 Handler Batch Change with Sanitization Standard Work
+(Fill Side -All Night Shi ft Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on the line at 18:55)
+Time Task to be Performed
+DAY Prior to EOBHave manifo lds at m achines, inspect for missing/ damaged parts and correct (prior 
+to 18:00).
+DAY Prior to EOB Get sample cart. Stage at machine (prior to 18:00).
+DAY Prior to EOBGet new batch ty pe box and stage at the machine (prior to 18:00) along wit h die 
+gloves and charged drill wit h extensio n/chuck. Attain a die box key .
+DAY Prior to EOBGet BOM, Barcode setup sheet, Barcode scanner and 'First Imprints' fro m the batch 
+that is ending for imprint verificat ion.
+DAY At EOBClear out m achine when notified by  Tank Room  Handler 
+Assure only 1 com plete pattern is pulled at a time. 
+DAY At EOB Sign last imprints.
+DAY At EOBPlace signed imprints (Last and First), BOM and Barcode setup sheet in red batch 
+folder.
+DAY FOB Remove ol d type and install new ty pe.
+DAY FOB Change over Fill/Pack to new batch.
+DAY FOB Verify and Document operator zone clearance.
+DAY FOB Verify previ ous batch SPC i s closed out.
+DAY FOB Perform  Line clearance for new batch.
+DAY FOBInstall manifo ld for sanit ization. Crack open bleed valve on fill manifo ld. Begin 
+sanitization when signaled by  Tank Room  Handler.
+Night FOB At the complet ion of sanit ization, rem ove flush manifo ld.
+Night FOB Pull First Imprints. Sign Imprint and Imprint verification form.
+Night FOBAfter acceptable first imprint is obtained or when Ta nk Room  Handler announces -
+install manifo lds on m achine and crack open drain valve on fill manifo ld, verify air 
+inject lines removed.
+Night FOB Tank Room  Handler will signal to FOB flush per Filling 4 Addendum.
+Night FOBAfter flush co mplete close hoke v alve, rem ove manifo lds and reconnect air injector 
+lines.
+Night FOB If imprints not completed at this time cont inue with First Imprint process.
+Night FOBIf Im print process com plete and ent ire line has completed FOB flushes then 
+perform  FOB sampling.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 23OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 DAY Shift LPF/RPF Operator
+Batch Change with Sanitization Standard Work
+Time Task to b e Performed
+At EOBPerform  zone cl earance of assi gned m achine/area. Rem ove any uni ts and pl ace in discard bin 
+and remove batch board sheets and discard into trash or pla ce in batch fol der.
+At EOBCut all units in the discard bin. Co mmunicate the number of unit s cut to the material handler for 
+docum entati on.
+At EOBRemove cut scrap/trash and place out the door to pouch side at A or E belt(Once door bar in 
+place, door can not be opened to pass out scrap).
+At EOBVerify handler has co mpleted imprints then r emove both the barcode foil and the black foil from 
+the machine/printer.
+At EOB Remove ai r inject lines.
+DAY Shift Manual Belt Operators
+Batch Change with Sanitizatio n Standard Work
+Prior to EOBOnce printed bag count is achieved clear out printer. Leave last pattern of printed bags for 
+handler's imprints. Advance and remove the black and white used fo il. Perform clearance of 
+printer area removed all printed bags and used fo il from the area.
+At EOBRemove cy clohex wi ck applicators from  nozzle area and place on rack. (Leave 1 applicator for 
+sample nozzle).
+At EOB Disconnect ai r injector lines.
+At EOB Perform  clearance of nozzle area and remo ve all trash and bag scrap through E bel t door.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 24OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Night Manual Belt Handler
+Batch Change with Sanitization Standard Work
+(Fill Side -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on the line at 18:55)
+Time Task to be Performed
+Prior to EOBGetall materi al parti al and cycl ohex inform ation and docum ent into fill/pack 
+materi als.
+At FOB Perform  FOB flush per Filling 4 Addendum when signaled by Tank Room 
+Handler.
+At FOB Print ing on Mult i-up m ay begin -Notify operators to print.
+At FOB Pull FOB samples from  manual nozzl es.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 25OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Manual Belt Handler Batch Change with Sanitization Standard Work
+(Fill Side -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on the line at 18:55)
+Time Task to be Performed
+DAYPrior to EOB Determine Bag lead needed.
+DAY
+Prior to EOB Get sample cart. Stage at machine (prior to 1800).
+DAY
+Prior to EOBGet new batch ty pe box and stage at the machine (prior to 1800) along wit h die 
+gloves and charged drill wit h extensio n/chuck. Attain a die box key.
+DAY
+Prior to EOBGet BOM, Barcode setup sheet, Barcode scanner and 'First Imprints' fro m the batch 
+that is ending for imprint verificat ion (prior to 1800).
+DAYPrior to EOB Sign last imprints.
+DAY
+Prior to EOBPlace signed imprints (Last and First ), BOM and Barcode setup sheet in red batch 
+folder.
+DAYPrior to EOB Turn on Batch Ch ange Light.
+DAY Prior to EOB Chain o ff printer area.
+DAYPrior to EOB Remove ol d type and install new ty pe.
+DAYPrior to EOB Clear 2199 printer area.
+DAY Prior to EOB Docum ent cl earance and Print area operator zone clearance.
+DAY
+Prior to EOB Pull first imprints from 2199. Verify/ sign imprint and imprint verificat ion sheet.
+DAYPrior to EOB Once all production has ended pull EOB samples.
+DAY
+At EOBVerify imprints present and all documents in batch fo lder. Place batch fo ld on F belt 
+for pouching sid e to pi ck up.
+DAY FOB
+Change over Fill/Pack to new batch.
+DAY FOB
+Verify and Document operator zone clearance.
+DAY FOB
+Verify previous batch SPC is closed out.
+DAYFOB Perform  Line clearance for new batch.
+Night
+Prior to EOBGet all material partial and cyclo hex informat ion and docum ent m aterials into new 
+batch fill/pack.
+Night
+At FOB Perform  FOB flush per Filling 4 Addendum when signaled by Tank Room Handler.
+Nigh t
+At FOB Print ing on Mult i-up m ay begin.
+Night
+At FOB Pull FOB samples fro m manual n ozzles.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 26OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Tank  Room  Prep Batch Change with Sanitization Standard Work
+(Prep -All Night Shift Supervisors/Asst. Supervisors/PT’s/ Handlers must be garbed and on the line at 18:50. Begins when 
+last tank is unhooked and running out of surge)
+Time Task to be Performed
+DAY
+Prior to Tank UnhookHave the following items staged and ready following tank unhook:
+Have sanitization filters DW flushed with whirl packs on ends.
+Have 3 caps with hoke valves.
+Connect gray hose to DW drop.
+Disconnect filters for new batch from DW and place whirl packs on the inlets and 
+outlets.
+Obtain NCFL029 form from the fill line to document ambient flush.
+DAY
+After Tank Unhook After tank is unhooked d isconnect Mix Tank 21 and connect to gray hose.
+DAY
+Prior to Sanitization Disconnect pipe from Mix Tank 22 and place cap with hoke valve on end directed at drain. 
+DAY
+After Tank UnhookRem ove Filter #1 and Filter #2. Place whirl pack on the inlet piping to the surge tank. Install 
+sanitization pipe on inlet side only.
+DAY
+Prior to Saniti zation Install caps with hoke valves on header box openings.
+DAY
+Prior to SanitizationTank Room Handler will shut off pumps, measure surge tank and drain. Remaining fil ters may 
+be removed at this time.
+DAY
+Prior to Sanitization Complete the connection between the supply pump and the surge tank.
+DAY
+Prior to SanitizationBegin 6 min. ambient flush into the surge tank with the drain valve open (Document Start time 
+on NCF L029). Bump pump on/off 2 times. At the completion document end time. 
+DAY
+Prior to S anitizationWhile performing the ambient flush install sanitization filters #3 and #4 on outlet side only with 
+inlet side covered by whirl packs. At the completion of the ambient flush begin heating the loop 
+and complete connections.
+DAY
+During SanitizationAfter all connections completed begin filling surge to overflow with hot water. 30 min 
+sanitization with filters in line required (Tank Room Handler will document).
+DAY
+After Sanitization Rem oved filters will be tested by Night shift after water has co oled.
+DAY
+During Sanitization Complete 30 minute DW sanitization of tank room drops for midweek requirement.
+DAY
+After SanitizationAssure sanitization has been complet ed by pouch side, fill side and tank room drops prior 
+turning loop back to cool.
+Night
+After SanitizationAfter sanitization open surge tank to drain and remove the following:
+Hoke valve caps
+Gray  hose
+Piping between the supply pump and the surge tank
+Filters used for sanitization
+Night
+After Tank Unhook Reconnect pipes to Mix tanks. 
+Night
+At EOB Install new Filter #1 and Filter #2.
+Night
+At FOBInstall Filter #3 and Filter #4 on outlet side (inlet still covered with whirl packs), then complete 
+the con nection for the inlet side once the surge tank flush has been completed and drained by 
+the Night shift Tank Room Handler.
+Night
+At FOB Test Filters from sanitization and the previous batch.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 27OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Lines 10 / 11 Filling Tool Crib
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 28OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 
+Ref:  L10/11 Spec. Filling Handler           Module 3         Effective Date:  0 8/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 10
+Ref:  L10/11 Spec. Filling Handler           Module 3         Effective Date :  08/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 10LINE 10 –DRAWER #1
+Snips
+Wire stripper
+Tube Cutter
+Spare BladeNozzle Guide Gauge
+V-Bar
+V-bar
+V-bar
+V-barExtensionRatchet
+9/16
+7/163/4
+11/16
+5/81/2
+2mm8mm 7mm 6mm 5mm
+4.5mm 4mm 3.5mm 3mm 2.5mm1.5mm
+7/32 1/49/32 5/16 3/8
+3/16 5/32 5/32 5/325/32 5/32
+9/64 1/8 7/643/32 5/64 1/16Set up T ools
+V-Post V-PostV-Post V-Post
+5/32’’ T3/16’’TLine 10 –Drawer #2
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 29OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Ref:  L10/11 Spec. Filling Handler           Module 3        Effective Date:  0 8/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Cop y Posted on Line 10
+Ref:  L10/11 Spec. Filling Handler           Module 3         Effective Date:  0 8/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 10
+90° Snap Ring90° Snap Ring 90° Snap Ring
+180° Snap Ring
+180° Snap RingSm. C hannelLg Phillips
+Lg Flat -head
+Sm. Phillips
+Sm. Flat -head
+180° Snap RingLg. ChannelLine 10 –Drawer #4Line 10 –Drawer #3
+17mm
+15mm18mm
+16mm
+8mm11mm12mm
+10mm
+9mm
+13mm14m m
+Micron Screen Check
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 30OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Ref:  L10/11 Spec. Filling Handler           Module 3         Effective Date:  0 8/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 10
+Ref:  L10/11 Spec. Filling Handler            Module 3        Effective Date:  08/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 10
+5/8
+1/25/8
+9/16
+7/32 1/211/323/8
+5/16
+1/4
+7/16 5/8
+5/87/16Line 10 –Drawer #5
+13/16
+7/8
+15/16
+1
+1   1/8
+5/83/4 11/165/8 5/8
+5/81   1/4Line 10 –Drawer #6
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 31OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 
+Ref:  L10/11 Spec. Filling Handler           Module 3        Effective Date:  08/18/17
+For Informa tion Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 10
+Ref:  L10/11 Spec. Filling Handler           Module 3         Effective Date:  08/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 11
+                                                                                
+SS  ChannelSS Hammer PickAir Chuck Extra 
+TipBevel
+Adj Wrench
+PryBar
+MalletLine 10 –Drawer #7
+Snips
+Wire stripper
+Tube Cutter
+Spare BladeNozzle Guide Gauge
+V-Bar
+V-bar
+V-barExtension
+9/16
+7/163/4
+11/16
+5/81/2RatchetLine 11 –Drawer #1
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 32OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Ref:  L10/11 Spec. Filling Handler           Module 3         Effective Date:  08/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 11
+Ref:  L10/11 Spec. Filling Handler           Module 3        Effective Date:  08/18/17
+For Information O nly-May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 11
+Line 11 –Drawer #2
+2mm8mm 7mm 6mm 5mm
+4.5mm 4mm 3.5mm 3mm 2.5mm 1.5mm
+7/32 1/4 9/32 5/16 3/8
+3/16 5/32 5/32 5/325/32 5/32
+9/64 1/8 7/64 3/325/64 1/16Set up T ools
+V-Post V-Post V-Post
+5/32’’ T3/16’’T
+Line 11 –Drawer #3
+17mm
+15mm18mm
+16mm
+8mm11mm12mm
+10mm
+9mm
+13mm14mm
+Micron Screen Check
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 33OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Ref:  L10/11 Spec. Filling Handler           Module 3         Effective Date:  08/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 11
+Ref:  L10/11 Spec. Filling Handler           Module 3        Effective Date:  08/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 11
+90° Snap Ring90° Snap Ring90° Snap Ring
+180° Snap Ring
+180° Snap RingSm. ChannelLg Phillips
+Lg Flat -head
+Sm. Phillips
+Sm. 
+Flat-head
+Lg. ChannelLine 11 –Drawer #4
+5/83/87/16
+1/4
+7/32
+5/8
+5/85/8
+9/165/8
+5/8
+1/2
+1/2
+7/165/8
+11/32
+5/16Line 11 –Drawer #5
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 34OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 
+Ref:  L10/11 Spec. Filling Handler           Module 3         Effective Date:  0 8/18/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 11
+Ref:  L10/11 Spec. Filling Handler           Module 3        Effective Date:  08/1 8/17
+For Information Only -May Be Discarded                                      Document Owner: Nikki Buchanan
+1 Copy Posted on Line 1113/16
+7/8
+15/16
+1
+1   1/8
+5/83/4 11/165/8 5/8
+5/81   1/4Line 11 –Drawer #6
+Line 11 –Drawer #7
+SS  Channel SS Hammer PickAir Chuck Extra 
+TipBevel
+Adj Wrench
+Pry Bar
+Mallet
+Nozzle Nut Wrench
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 35OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Tool Re order Sheet -
+•Drawer 1 Quantity:
+65300077 -Wire Stripper              ___
+65300081 -Snips ___
+65300082 -7/16’’ Socket ___
+65300083 -5/8’’ Socket ___
+65300084 -½’’ Socket ___
+65300128 -9/16’’ Socket ___
+65300129 -¾’’ Socket ___
+65300130 -11/16’’ Socket ___
+65300132 -Ratchet ___
+65300134 -Extension ___
+78901053 -Tube Cutter ___
+86893209 -Spare B lade ___
+86893573 -V-Bar ___
+•Drawer 2 Quantity:
+65300048 -1/16" SS ALLEN WRENCH ___
+65300049 -5/64" SS ALLEN WRENCH ___
+65300050 -3/32" SS ALLEN WRENCH ___
+65300051 -7/64" SS ALLEN WRENCH ___
+65300052 -1/8" SS ALLEN WRENCH ___
+65300053 -9/64" SS ALLEN WRENCH ___
+65300054 -5/32" SS ALLEN WRENCH ___
+65300055 -3/16" SS ALLEN WRENCH ___
+65300056 -7/32" SS ALLEN WRENCH ___
+65300057 -1/4" SS ALLEN WRENCH ___
+65300058 -9/32" SS ALLEN WRENCH ___•Drawer 3 Quantity:
+65300122 -8MM   Wrench ___
+65300123 -9MM   Wrench ___
+65300124 -10MM Wrench ___
+65300125 -11MM Wrench ___
+65300126 -12MM Wrench ___
+65300127 -13MM Wrench ___
+65300106 -14MM Wrench ___
+65300107 -15MM Wrench ___
+65300108 -16MM Wrench ___
+65300109 -17MM Wrench ___
+65300110 -18MM Wrench ___
+86893571 -Micron Screen C heck ___ 
+Drawer  4 Quantity:
+78900101 -180° Snap Ring ___
+78900102 -90°   Snap Ring ___
+65300085 -Small Phillips ___
+65300086 -Large Phillips ___
+65300087 -Small Flat -head ___
+65300088 -Large Flat -head ___
+65300076 -Large Channel Locks ___
+65300 133-Small Channel Locks ___
+•Drawer 5 & 6 Quantity:
+65300089 -1” Wrench ___
+65300090 -1-1/4” Wrench ___
+65300091 -1-1/8” Wrench ___
+Approval:   Line 10/11 Supv:_____________________
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 36OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Tool Shift Verification
+Week: ____________
+Monday Tuesday Wednesday Thursday Friday Saturday Sunday
+Day
+Night
+**Sign in Each block at end of shift to verify all tools are in proper location
+For Information Only                                             Return Completed Form to Tim Marini –May B e Discarded After Review
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 37OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 10 Parts Kanban Standard Work
+The parts Kanban has b een provided to allow easier access to replacem ent parts that are the most commonly used 
+on LPFs. This will enable Mechanics and PT/ Handlers to avoid downtime associated with searching for parts. This 
+Kanban has been clearly labeled with part nam es and numbers and organized such that parts can be found, used, and 
+replaced easily. Handler has been assigned days of the week that they are responsible for checking the Kanban parts 
+cabinet and restocking. It is the responsibility of that PT/SR handler to check for needed parts and replace as 
+needed.
+Saturdays:   5thand 7thwill check and replace parts as needed.
+Wednesdays: 6thand 8thwill check and replace parts as needed. 
+All Shifts are responsible to receive parts from  South Maintenance
+For Information Only -May Be Discarded                                                      Document Owner: Cathy Holloway
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 38OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 1 Copy Posted in L10 Material Exchange Room
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 39OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Go/No Go Gauge for M anual Machines Enhanced Closure Tubing
+On Fill Lines 10 and 11, there are LPFs, RPFs, and Manual Fill Machines. On these machines, there are 
+enhanced closure feeder bowls and tubing runs from the feeder bowl to the plugging station. The manual 
+machines us e tubing stock #655 -00-107 which has an inner diameter of 0.380”. The LPFs and RPFs use 
+tubing stock #655 -00-080 with an inner diameter of 0.375”. Because the ID for both types o f tubing is so 
+similar and both tubes are clear in co lor, it is very  easy  to m ix up the two. A go/no go gauge has been 
+made to improve this problem.
+The gauge is labeled wit h the “Manual EC Tubing”
+How to Use:
+Whenever y ou are repl acing tubing on an enhanced closure feeder bowl, select what y ou believe to be the 
+correct tubin g from the m aterial  exchange room .
+Place the gauge in to the enhanced closure tubing. 
+If the gauge fits easily, y ou have the m anual machine enhanced closure tubing.
+If you have to struggl e to fit the gauge in to the tubing, or it will not fit at a ll, you have LPF/RPF 
+enhanced closure tubing.
+End of Gauge
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 40OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 
+If your first tubing choi ce doesn’t m atch the m achine that y ou want to put i t on, test another roll of tubing 
+until you find the correct one.  
+*Note: If this gauge is ever lost or damaged, it will be set up as a stock item and can be found in the stock 
+room . 
+End of Gauge
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 41OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Lock out for Solution Pump Standard Work
+Description: To allow the Solut ion Transmissio n System  to be safely opened when a break in fill line 
+occurs behind the shut off valve or the break affects the shut off valve itself. 
+This is not a lockout procedure to be used for ma king any kind of electrical repairs. Lockout 
+/Tagout per plant safety procedures should be followed and lockout/ tagout should be performed by 
+authorized individuals only .
+When to Lockout Pump: The pum p shoul d be l ocked out any time so lution cannot be shut off with a 
+divert valve or cutoff valve that is a part of the Solution Transmissio n System  or for pum p repai rs. 
+Why: Solution pump lockout is performed to prevent the solution pump from being accidentally  turned 
+back on while the so lution transmissio n system  is open.
+How:
+1.Stop the solut ion pum p by pressing the red stop button located on the control panel that houses the 
+tank controls.
+2.Place the switch located at the pump plug receptacle to the OFF position.
+3.Once the switch is in the OFF posit ion, place a l ock on the swi tch assuring the lock is closed 
+completely. (Locks can be attained from the Maintenance Department).
+4.The so lution line can now be safely opened. Alwa ys follow correct procedures in the applicable 
+Standard Operating Procedure for the ty pe of break in fill line that is performed. Reference the 
+applicable SOP for solut ion flushes and sampling required.
+5.Once repairs are completed and the solut ion line is closed, the person who placed the lock on the 
+switch m ay now rem ove the l ock and turn the switch back to the ON posit ion and restart the 
+solution pum p.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 42OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Standard Work for Rework %  Reduction
+1.Record at start of shift the filling, plugging, and rework percentages on LPF/RPF Report Worksheet
+2.Continue to record data approximat ely every  2 hours (i .e. Quali ty Check).
+3.If any filling, plugging, and/or rework percentages are not moving toward the goal of filling / plugging 
+at or above 99% and rewo rk at 3.00%, notify Line Supervisor and/or Maintenance immediately.
+4.If percentages continue to not meet goal notify Line Supervisor and they will notify Maintenance 
+Supervisor and Manufacturing Superintendent. 
+5.During the shift, if the filling, plugging, and/or rework percentage does not drive a favorable 
+movement toward goal the issue wi ll be escalated to the Shift Superintendent/Focus Force Team.
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 43OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Cyclohex Dispensing Standard Work
+PPE 
+Available
+At Point Of 
+Use
+Pump 
+Drum 
+Before 
+DispensingEmployee 
+wearing PPE and 
+properly 
+dispensing 
+cyclohex
+FOR INFORMATION ONLY -MAY BE DISCARDED                                                                                             DOCUMENT OWNER: TIM MARINI
+1 COPY POSTED IN SOUTH GARB ROOM
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 44OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Line 11 Piping Verification Talley Sheet                                                             
+Mix Tank to Surge Tank A-B B-C
+Totals
+Surge Tank to Filter Leg 1 (P1) I-Z (3') Z-(P1 In) (3') (P1 Out) -N (2') R-S (3') S-X (3')
+Totals
+Surge Tank to Filter Leg 2 (P1) I-Z (3') Z-(P1 In) (3') (P1 Out) -O (2') P-W (3')
+Totals
+Filter Leg 1: LPF5, LPF7 & 
+Manual Filler E -beltLPF5
+U-LPF5 (2’)
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 45OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Total
+LPF7  S -Y (2’) Y-LPF7 (1.5’)
+Total
+Manual Belt
+X-Filler E (1.5’)
+Total
+Filter Leg 2: LPF6, RPF2 & 
+RPF1LPF6
+Q-V (2') V-LPF6 (1.5')
+Total
+RPF2
+T-RPF2 (2’)
+Total
+RPF1
+W-RPF1 (2’)
+Tota l
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 46OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 LINE 10 FILLSIDE –6S DAILY SCORECARD
+Fill Date________________ Shift___________
+Document Owner:  T. MARINI                   For Information Only –May Be Disca rded
+3 Copies Posted on Fill Side Line 10
+LINE 11 FILLSIDE –6S DAILY SCORECARDYES NO
+1.  All alcohol bottles are labeled and contain red color code
+2.  All scrap containers are labeled and in designated area per diagra m.
+3.  All empty totes and lids are stored in designated area.
+4.  Water hose is in designated area, hung and drained properly.
+5.  All quality check gauges and scanners are in designated area.
+6.  Floor is clear of dropped bags, barcode/black foil, p aper towels, etc.
+7.  All LPF squeegees are present and in designated area.
+8.  All desks are neat and only contain line specific ite ms.
+9.  All buggies and c arts are in designated area.
+10. Bag room is orderly and all ite ms are stored in designated areas.
+11. Check all doors for free operation. Check all door pins (hinges) for signs of wear, rust and 
+debris.
+Score:  Goal 90% (# of Yes Items ÷10 X 10 0)
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 47OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 Supervisor: __________________ Date/Shift: ___________________
+To achieve 6S Level “2” we must comply with each of the following items. YES NO
+1. All scrap containers are labeled and in their designated area.
+2. All water hoses are labeled, disconnected and hung on hose rack.
+(N/A at Batch Change)
+3. All desks, Machine HMI’s and LPF c leaning stations contain only designated items and 
+are free of clutter.
+4. All safe ty guards are in place.
+5. All catch pans/bins are in place and drain hoses are directed to drain.
+6. All alcohol bottles are labeled and contain the red color.
+7. All buggies, carts, ladders are in their designated areas.
+8. Line tool box and setup boxes contain only designated ite ms.
+9. Floor, tops of equipment and fillstation cleaning tray (LPFs) is clear of trash, excessive 
+closures and broken parts.
+Score = Pass/ Fail
+Document Owner:  N. Buchanan For Infor mation Only –May Be Discard
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 48OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 FOB/Shift checks 
+All quality checks have been performed and entered 
+for period:
+1)  0700 -0900
+2) 0900 -1100
+3) 1100 -0100
+4) 0100 -0300
+5) 0300 -0500
+6) 0500 -0700                                                                                                                      
+                                                                                   
+FOR INFORMATION ONLY –MAY BE DISCARDED AFTER USE
+DOCUMENT OWNER:  SHEILA JONES
+Print 'DWH:
+
+PARENT: FILL LINES 10 & 11 SPECIFIC          PAGE 49OF 49 FL10.11 SPECIFIC8                  
+EFFECTIVE DATE: 04/24/18 LPF and RPF
+Maintenance, Flush and Sampling Notification
+During daily production unscheduled maintenance activit ies or scheduled preventative maintenance may  
+occur. It is the responsibilit y of theproducti on handl er/ producti on tech. (PT) to assure that the appropriate 
+machine flush, sampling and fo llow-up testing is performed per appropriate procedure in each instance. If 
+maintenance is performed by  a mechanic then the production handler or PT should be notified o f the activit ies 
+prior to restart of the equipment. To aide in this process Communicat ion Placards m ust be pl aced at the load 
+stations of  each affected pi ece of equipment when these activit ies occur. The fo llowing will give a general 
+outline for placard us e. Any addit ional situations that may  occur shoul d directed to the line supervisor or 
+delegate.
+40 Micron Mesh Screen Preventive Maintenance (PM) is scheduled to be performed : Once 
+producti on has finished on the piece of equipment the placard “Stop. BFL Fl ush and Sam ples 
+Requi red” shoul d be placed at the designated locatio n at the load stat ion.
+Monthly Machine Maintnenace (PM) is scheduled to be performed : Once producti on has finished 
+on the pi ece of  equi pment the pl acard “Stop. Maintenance of Equipment Per formed. Foll ow-up 
+Testing Required”.
+Unscheduled maintenance (emergency maintenance) or equipment adjustments : At the time is 
+equipment is cycle stopped or cleared of unit s the pl acard “Stop. Maintenance of Equipment 
+Perform ed. Foll ow-up Testing Required”.
+At the complet ion of machine flush, sampling and/or fo llow-up testing the placard wil l be removed and placed 
+at the desi gnated placard storage area for each machine.
+Print 'DWH:

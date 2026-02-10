@@ -1,0 +1,1403 @@
+{
+  "test_timestamp": "2026-01-09T19:19:47.847460",
+  "server_url": "http://44.221.84.58:8500",
+  "documents": {
+    "EM10, degasing.pdf": {
+      "document_name": "EM10, degasing.pdf",
+      "file_exists": true,
+      "upload_result": null,
+      "document_details": {
+        "document_id": "63743874-b9fd-418e-a21b-dd30e57617f6",
+        "document_name": "EM10, degasing.pdf",
+        "status": "success",
+        "language": "spa",
+        "chunks_created": 4,
+        "tokens_extracted": 1084,
+        "parser_used": "docling",
+        "processing_time": 11.022082805633545,
+        "extraction_percentage": 0.488,
+        "images_detected": true,
+        "image_count": 0,
+        "pages": 2,
+        "error": null,
+        "text_chunks_stored": 0,
+        "images_stored": 0,
+        "text_index": "aris-doc-63743874-b9fd-418e-a21b-dd30e57617f6",
+        "images_index": "aris-rag-images-index",
+        "text_storage_status": "pending",
+        "images_storage_status": "pending",
+        "file_hash": null,
+        "upload_metadata": null,
+        "pdf_metadata": null,
+        "processing_metadata": null,
+        "ocr_quality_metrics": null,
+        "version_info": {
+          "version_history": [
+            {
+              "version": 1,
+              "updated_at": "2026-01-09T14:01:18.026980",
+              "changes": [
+                "parser_used changed from None to docling",
+                "chunks_created changed from None to 4"
+              ]
+            }
+          ],
+          "version": 2
+        }
+      },
+      "images": [
+        {
+          "image_id": "a3808774-9860-4982-8dc0-ac347a2fd583",
+          "source": "EM10, degasing.pdf",
+          "image_number": 1,
+          "page": 2,
+          "ocr_text": "Se debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "2bec00f2-290e-48f5-ae01-bef51244d8d3",
+          "source": "EM10, degasing.pdf",
+          "image_number": 2,
+          "page": 1,
+          "ocr_text": "## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "1ef14fa1-0983-44de-a811-edda82172852",
+          "source": "EM10, degasing.pdf",
+          "image_number": 3,
+          "page": 1,
+          "ocr_text": "## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "cfc62842-929e-4556-8c2f-9a5bf68e534d",
+          "source": "EM10, degasing.pdf",
+          "image_number": 4,
+          "page": 1,
+          "ocr_text": "- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·\n\n--- Page 2 ---\n\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "50a6a04c-3b7f-4df6-b6aa-e6748f4ba92b",
+          "source": "EM10, degasing.pdf",
+          "image_number": 5,
+          "page": 2,
+          "ocr_text": "Se debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "80d91d40-82d4-4a75-8e52-b3b4fd07c923",
+          "source": "EM10, degasing.pdf",
+          "image_number": 6,
+          "page": 1,
+          "ocr_text": "## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "36d2b6b3-5f28-4bc1-ae88-44b3f0107bcf",
+          "source": "EM10, degasing.pdf",
+          "image_number": 7,
+          "page": 2,
+          "ocr_text": "Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire \nen bolsa.\n○\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan \nsalpicaduras, tener especial cuidado con este paso.\nSi deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta \nesté menos aire podrá quitar y más aire quedará en la bolsa.\n○\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" \nen la bolsa. \n   \nEM10, degasing Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "d24f9df2-8f36-4ee2-a250-a77ad4210c1f",
+          "source": "EM10, degasing.pdf",
+          "image_number": 8,
+          "page": 1,
+          "ocr_text": "Image on page 1",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "614e65f0-be6b-4dc3-b37f-bc398a4fbbde",
+          "source": "EM10, degasing.pdf",
+          "image_number": 9,
+          "page": 2,
+          "ocr_text": "Se debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "a90128d7-70e4-4e53-bd1e-cf1db7c01b64",
+          "source": "EM10, degasing.pdf",
+          "image_number": 10,
+          "page": 1,
+          "ocr_text": "Si se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\nDesde la pantalla, EM10, se pueden ajustar los siguientes parámetros:\n•\nComo vemos, tenemos límites, entre –15 y –3.\nSi necesitamos quitar el aire en bolsa, debemos tender el valor set a –15, cuanto más \ncerca de  –15, más avanzarán las barras y más aire sacarán.\n○\nSi por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set \na –3, para acortar el recorrido de las barras y saquen menos aire.\n○\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras \nmanualmente.\nAjustando las barras manualmente:\n•\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las \nbarras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo \nque el aire en las demás bolsas podría aumentar.\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no \nchoquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla \nfijándose si la barra grande llega a su posición establecida (-11). \nSe pueden ajustar de la siguiente manera:\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. \nPrestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona \ncorrectamente el sistema.\nAjuste aire en bolsa\nmartes, 25 de octubre de 2022\n7:33\n   \nEM10, degasing Page 1",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "e8d58337-8d00-4d92-8872-4cac2f01aecb",
+          "source": "EM10, degasing.pdf",
+          "image_number": 11,
+          "page": 1,
+          "ocr_text": "Si se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\nDesde la pantalla, EM10, se pueden ajustar los siguientes parámetros:\n•\nComo vemos, tenemos límites, entre –15 y –3.\nSi necesitamos quitar el aire en bolsa, debemos tender el valor set a –15, cuanto más \ncerca de  –15, más avanzarán las barras y más aire sacarán.\n○\nSi por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set \na –3, para acortar el recorrido de las barras y saquen menos aire.\n○\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras \nmanualmente.\nAjustando las barras manualmente:\n•\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las \nbarras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo \nque el aire en las demás bolsas podría aumentar.\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no \nchoquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla \nfijándose si la barra grande llega a su posición establecida (-11). \nSe pueden ajustar de la siguiente manera:\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. \nPrestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona \ncorrectamente el sistema.\nAjuste aire en bolsa\nmartes, 25 de octubre de 2022\n7:33\n   \nEM10, degasing Page 1",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "96768db9-1d0c-4f26-bf88-5a723e50626e",
+          "source": "EM10, degasing.pdf",
+          "image_number": 12,
+          "page": 1,
+          "ocr_text": "## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "795b722b-82e9-4ac6-b32f-0e8de93f5fbe",
+          "source": "EM10, degasing.pdf",
+          "image_number": 13,
+          "page": 1,
+          "ocr_text": "## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "645b26cd-1cb1-4fdc-af45-059abc8d6f81",
+          "source": "EM10, degasing.pdf",
+          "image_number": 14,
+          "page": 1,
+          "ocr_text": "Si se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\nDesde la pantalla, EM10, se pueden ajustar los siguientes parámetros:\n•\nComo vemos, tenemos límites, entre –15 y –3.\nSi necesitamos quitar el aire en bolsa, debemos tender el valor set a –15, cuanto más \ncerca de  –15, más avanzarán las barras y más aire sacarán.\n○\nSi por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set \na –3, para acortar el recorrido de las barras y saquen menos aire.\n○\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras \nmanualmente.\nAjustando las barras manualmente:\n•\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las \nbarras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo \nque el aire en las demás bolsas podría aumentar.\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no \nchoquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla \nfijándose si la barra grande llega a su posición establecida (-11). \nSe pueden ajustar de la siguiente manera:\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. \nPrestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona \ncorrectamente el sistema.\nAjuste aire en bolsa\nmartes, 25 de octubre de 2022\n7:33\n   \nEM10, degasing Page 1",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "48261d4d-59d2-4759-977c-959739505056",
+          "source": "EM10, degasing.pdf",
+          "image_number": 15,
+          "page": 1,
+          "ocr_text": "Si se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\nDesde la pantalla, EM10, se pueden ajustar los siguientes parámetros:\n•\nComo vemos, tenemos límites, entre –15 y –3.\nSi necesitamos quitar el aire en bolsa, debemos tender el valor set a –15, cuanto más \ncerca de  –15, más avanzarán las barras y más aire sacarán.\n○\nSi por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set \na –3, para acortar el recorrido de las barras y saquen menos aire.\n○\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras \nmanualmente.\nAjustando las barras manualmente:\n•\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las \nbarras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo \nque el aire en las demás bolsas podría aumentar.\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no \nchoquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla \nfijándose si la barra grande llega a su posición establecida (-11). \nSe pueden ajustar de la siguiente manera:\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. \nPrestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona \ncorrectamente el sistema.\nAjuste aire en bolsa\nmartes, 25 de octubre de 2022\n7:33\n   \nEM10, degasing Page 1",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "0c2a6d1d-332a-4e49-85c4-79a049664037",
+          "source": "EM10, degasing.pdf",
+          "image_number": 16,
+          "page": 2,
+          "ocr_text": "Se debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "c2638764-594b-4524-b065-9d4a410912fe",
+          "source": "EM10, degasing.pdf",
+          "image_number": 17,
+          "page": 2,
+          "ocr_text": "Se debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "b23adaad-54be-4b01-99a6-101b5f4431e4",
+          "source": "EM10, degasing.pdf",
+          "image_number": 18,
+          "page": 2,
+          "ocr_text": "Se debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "0a1b74ec-4f4e-4f90-8c40-3c2068ed1206",
+          "source": "EM10, degasing.pdf",
+          "image_number": 19,
+          "page": 2,
+          "ocr_text": "Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire \nen bolsa.\n○\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan \nsalpicaduras, tener especial cuidado con este paso.\nSi deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta \nesté menos aire podrá quitar y más aire quedará en la bolsa.\n○\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" \nen la bolsa. \n   \nEM10, degasing Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "216d9eb8-3276-4766-ab7b-01e73e01967c",
+          "source": "EM10, degasing.pdf",
+          "image_number": 20,
+          "page": 2,
+          "ocr_text": "Se debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "f21aa0de-85ad-4400-9b7a-a6d0a9fb4dbc",
+          "source": "EM10, degasing.pdf",
+          "image_number": 21,
+          "page": 2,
+          "ocr_text": "Se debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "30af6f31-b118-4ae7-81d4-220604223a3a",
+          "source": "EM10, degasing.pdf",
+          "image_number": 22,
+          "page": 1,
+          "ocr_text": "## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "23f57cd3-d78e-4834-97dd-0ed28ef40953",
+          "source": "EM10, degasing.pdf",
+          "image_number": 23,
+          "page": 1,
+          "ocr_text": "- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·\n\n--- Page 2 ---\n\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "d27132ca-6d7e-4e80-88d2-e4d1a93a2962",
+          "source": "EM10, degasing.pdf",
+          "image_number": 24,
+          "page": 1,
+          "ocr_text": "- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·\n\n--- Page 2 ---\n\nSe debe tener mucho CUIDADO con el ajuste manual, ya que se puede dar el caso de que las barras individuales, al avanzar, choquen con la barra general y la desplace hacia atrás, por lo que el aire en las demás bolsas podría aumentar.\n\nSiempre que se haga una modificación manual de la posición de las barras, comprobar que no choquen y cambie la posición de la barra grande, ya sea con un trend, o desde pantalla fijándose si la barra grande llega a su posición establecida ( -11).\n\nSe pueden ajustar de la siguiente manera:\n\nAflojando los 4 tornillos de cada barra permite su movimiento en vertical. Prestar atención a las marcas con rotulador que hay en las barras, a esas medidas funciona correctamente el sistema.\n\n- Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire en bolsa. ○\n\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan salpicaduras, tener especial cuidado con este paso.\n\n- Si deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta esté menos aire podrá quitar y más aire quedará en la bolsa. ○\n\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" en la bolsa.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "4400853d-4506-4ed0-ae77-2ee44171e73d",
+          "source": "EM10, degasing.pdf",
+          "image_number": 25,
+          "page": 1,
+          "ocr_text": "## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "1503cba0-cc16-466f-9547-3cfc72a499b8",
+          "source": "EM10, degasing.pdf",
+          "image_number": 26,
+          "page": 1,
+          "ocr_text": "## Ajuste aire en bolsa\n\nmartes, 25 de octubre de 2022 7:33\n\nSi se desea subir o bajar el nivel de aire en bolsa, se puede proceder de varias maneras:\n\n- Desde la pantalla , EM10, se pueden ajustar los siguientes parámetros: ·\n\nComo vemos, tenemos límites, entre 15 y -3.\n\n- Si necesitamos quitar el aire en bolsa, debemos tender el valor set a -15, cuanto más cerca de -15, más avanzarán las barras y más aire sacarán. ○\n- Si por el contrario necesitamos aumentar el nivel de aire, debemos tender el valor set a -3, para acortar el recorrido de las barras y saquen menos aire. ○\n\nSi no podemos hacer nada más con los parámetros, podemos ajustar las barras manualmente.\n\n- Ajustando las barras manualmente: ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "bdce23fe-4605-4edc-b635-ab56faafc3f3",
+          "source": "EM10, degasing.pdf",
+          "image_number": 27,
+          "page": 1,
+          "ocr_text": "Image on page 1",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "cf27f7f6-fded-4805-ba4b-c1215c6cb9b6",
+          "source": "EM10, degasing.pdf",
+          "image_number": 28,
+          "page": 2,
+          "ocr_text": "Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire \nen bolsa.\n○\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan \nsalpicaduras, tener especial cuidado con este paso.\nSi deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta \nesté menos aire podrá quitar y más aire quedará en la bolsa.\n○\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" \nen la bolsa. \n   \nEM10, degasing Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "f0919cde-c70f-49c5-8062-df02c5889f6e",
+          "source": "EM10, degasing.pdf",
+          "image_number": 29,
+          "page": 2,
+          "ocr_text": "Si deseamos quitar el aire, tendremos que bajar la barra, cuanto más baja, menos aire \nen bolsa.\n○\nCuidado, si bajamos la barra demasiado, corremos el riesgo de que se produzcan \nsalpicaduras, tener especial cuidado con este paso.\nSi deseamos aumentar el aire en bolsa, tendremos que subir la barra, cuanto más alta \nesté menos aire podrá quitar y más aire quedará en la bolsa.\n○\nPrestar atención a las bolsas después de estas modificaciones, ya que podrían salir \"pellizcos\" \nen la bolsa. \n   \nEM10, degasing Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        }
+      ],
+      "image_analysis": {
+        "total_images": 29,
+        "images_with_ocr": 29,
+        "total_ocr_length": 28565,
+        "avg_ocr_length": 985.0,
+        "ocr_coverage": 100.0
+      },
+      "query_tests": [
+        {
+          "query": "¿Cuáles son los pasos del proceso?",
+          "success": true,
+          "answer_length": 1473,
+          "num_citations": 2,
+          "sources": [
+            "EM10, degasing.pdf"
+          ]
+        },
+        {
+          "query": "What are the main specifications?",
+          "success": true,
+          "answer_length": 1477,
+          "num_citations": 2,
+          "sources": [
+            "EM10, degasing.pdf"
+          ]
+        },
+        {
+          "query": "Describe the equipment shown in the images",
+          "success": true,
+          "answer_length": 192,
+          "num_citations": 0,
+          "sources": []
+        }
+      ],
+      "issues": []
+    },
+    "EM11, top seal.pdf": {
+      "document_name": "EM11, top seal.pdf",
+      "file_exists": true,
+      "upload_result": null,
+      "document_details": {
+        "document_id": "4da38850-7c98-472b-beb5-643a0793a5a8",
+        "document_name": "EM11, top seal.pdf",
+        "status": "success",
+        "language": "spa",
+        "chunks_created": 252,
+        "tokens_extracted": 67200,
+        "parser_used": "docling",
+        "processing_time": 50.53790831565857,
+        "extraction_percentage": 1.0,
+        "images_detected": true,
+        "image_count": 0,
+        "pages": 14,
+        "error": null,
+        "text_chunks_stored": 0,
+        "images_stored": 0,
+        "text_index": "aris-doc-4da38850-7c98-472b-beb5-643a0793a5a8",
+        "images_index": "aris-rag-images-index",
+        "text_storage_status": "pending",
+        "images_storage_status": "pending",
+        "file_hash": null,
+        "upload_metadata": null,
+        "pdf_metadata": null,
+        "processing_metadata": null,
+        "ocr_quality_metrics": null,
+        "version_info": {
+          "version_history": [
+            {
+              "version": 1,
+              "updated_at": "2026-01-09T14:02:05.211601",
+              "changes": [
+                "parser_used changed from None to docling",
+                "chunks_created changed from None to 252"
+              ]
+            }
+          ],
+          "version": 2
+        }
+      },
+      "images": [
+        {
+          "image_id": "75650812-871b-40e9-ba0c-6ae172a94047",
+          "source": "EM11, top seal.pdf",
+          "image_number": 1,
+          "page": 1,
+          "ocr_text": "| Asunto         | NGV: Borrador Instrucciones limpieza counterpart Top Seal                                   |\n|----------------|---------------------------------------------------------------------------------------------|\n| De             | Rubiella Rosell, Ignacio                                                                    |",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "9c188b3c-69be-4027-8fe0-4b73c5c15d0a",
+          "source": "EM11, top seal.pdf",
+          "image_number": 2,
+          "page": 1,
+          "ocr_text": "| Para           | Puente Otin, Rodolfo; Moreno Gonzalez, Aitor; Perez Betran, Alberto Instruccio nLimpieza... |\n| CC             | Lacueva Marco, Victor; Saturque Otin, Jose Manuel; Manero Castillo, Israel                  |\n| Enviado        | lunes, 17 de octubre de 2022 11:25                                                          |\n| Datos adjuntos | Instruccio nLimpieza...                                                                     |\n\nOs adjuntamos borrador de las instrucciones para una correcta limpieza del conjunto de 'gomas rojas' de la Top Seal en la NGV para que compartáis con vuestros equipos.\n\nComo sabéis, el principal problema que se tiene es la acumulación de residuos en el interior del conjunto que impiden un deslizamiento libre de las partes.\n\n--- Page 2 ---\n\nEstamos buscando un sistema de limpieza más rápido y eficaz ya que parece que el tema de los goteos no parece tener solución a corto plazo.\n\nOs mantendremos informados.\n\nSaludos,\n\nIgnacio.\n\n## Ignacio Rubiella Rosell\n\nMaintenance Engineer Bieffe Medital S.A. -Baxter Healthcare Corporation Ctra Biescas s/n, 22666 Senegüe -Sabiñanigo, Huesca, Spain T + 34 974 483 007\n\nignacio_rubiella_rosell@baxter.com\n\n## Ropex Tools\n\n\n--- Page 3 ---",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [
+              "22666"
+            ],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "b3c225f5-707a-4e1a-a137-eefc5fdc10d1",
+          "source": "EM11, top seal.pdf",
+          "image_number": 3,
+          "page": 1,
+          "ocr_text": "| Asunto         | NGV: Borrador Instrucciones limpieza counterpart Top Seal                                   |\n|----------------|---------------------------------------------------------------------------------------------|\n| De             | Rubiella Rosell, Ignacio                                                                    |",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "ed18ddd0-b458-4700-9d4a-e35459046ace",
+          "source": "EM11, top seal.pdf",
+          "image_number": 4,
+          "page": 1,
+          "ocr_text": "|----------------|--------------------------------------------------------------------------------------------------------------------------------------------|\n| De             | Faifer, Davide                                                                                                                             |\n| Para           | Sasal Royan, Oscar; Gimenez Morlans, Jose Carlos; Puente Otin, Rodolfo; Perez Betran, Alberto; Lacueva Marco, Victor; Bonis Sarasa, Samuel |\n| CC             | Yagüe Bravo, Alberto; Pedroli, Paolo; Casartelli, Fabio                                                                                    |\n| Enviado        | viernes, 30 de septiembre de 2022 12:41                                                                                                    |\n| Datos adjuntos | Ropex_UP T-6010                                                                                                                            |",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "13ef7ad4-c56c-4fe3-8b3d-450328673d50",
+          "source": "EM11, top seal.pdf",
+          "image_number": 5,
+          "page": 1,
+          "ocr_text": "## Hi Team,\n\nRegarding the Ropex tools please find attached the manual, in particular from page 47 you can fine all the Fault Code.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "19cfcd06-88e5-42c2-82ee-0ff225ae33e9",
+          "source": "EM11, top seal.pdf",
+          "image_number": 6,
+          "page": 1,
+          "ocr_text": "miércoles, 26 de octubre de 2022\n\n| Asunto         | Ropex Tools                                                                                                                                |",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "ef66cd05-52de-4bb9-bb86-b2328cb274d2",
+          "source": "EM11, top seal.pdf",
+          "image_number": 7,
+          "page": 1,
+          "ocr_text": "|----------------|--------------------------------------------------------------------------------------------------------------------------------------------|\n| De             | Faifer, Davide                                                                                                                             |\n| Para           | Sasal Royan, Oscar; Gimenez Morlans, Jose Carlos; Puente Otin, Rodolfo; Perez Betran, Alberto; Lacueva Marco, Victor; Bonis Sarasa, Samuel |\n| CC             | Yagüe Bravo, Alberto; Pedroli, Paolo; Casartelli, Fabio                                                                                    |\n| Enviado        | viernes, 30 de septiembre de 2022 12:41                                                                                                    |\n| Datos adjuntos | Ropex_UP T-6010                                                                                                                            |",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "10b8bb3f-6816-4c39-a7d8-50abb1b85a67",
+          "source": "EM11, top seal.pdf",
+          "image_number": 8,
+          "page": 1,
+          "ocr_text": "| NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   |\n|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|\n| Error code                                                                                                                                               | Act. val. voltage output [V]                                                                                                                             | Cause                                                                                                                                                    | started for first time Action if machine                                                                                                                 | Actionif machine heating eloment not already operated, changed                                                                                           |\n\n--- Page 4 ---\n| 101                                                                                                                                                      | 0.66                                                                                                                                                     | No current signal                                                                                                                                        | Fault area ①                                                                                                                                             | Fault area ①                                                                                                                                             |\n| 102                                                                                                                                                      | 1.33                                                                                                                                                     | No voltage signal                                                                                                                                        | Fault area ③                                                                                                                                             | Fault area ③                                                                                                                                             |\n| 103                                                                                                                                                      | 2.00                                                                                                                                                     | Nocurrent/voltagesignals                                                                                                                                 | Fault area ②                                                                                                                                             | Fault areas ②@                                                                                                                                           |\n| 107                                                                                                                                                      | 2.66                                                                                                                                                     | Temperature step, down                                                                                                                                   | Fault areas ④③ (*loose contact\")                                                                                                                         | Fault areas ④③ (\"loose contact\")                                                                                                                         |\n| 108                                                                                                                                                      | 2.66                                                                                                                                                     | Temperature step.up                                                                                                                                      | Fault areas ④③ (*loose contact\")                                                                                                                         | Fault areas ④③ (\"loose contact\")                                                                                                                         |\n| 307 308 309 310                                                                                                                                          | 2.66                                                                                                                                                     | Temperature too high/ low (section 8.7.11)                                                                                                               |                                                                                                                                                          |                                                                                                                                                          |\n\nIf you have a problem with a Ropex tool check on the HMI the fault code first:\n\nToday, for example, the fault code was 901, based on the Ropex manual it is:\n\n|     | section 8.7.10)               |                |               |\n|-----|-------------------------------|----------------|---------------|\n| 901 | No line voltage / sync signal | Section 8.2    | Section 8.2   |\n| 913 | Triac defective               | Replace device | Replacedevice |\n| 914 |                               |                |               |\n\n\n--- Page 5 ---\nBased on this I checked the electrical cabinet and a thermal was off and a module in alarm:\n\nPlease share with the maintenance team.\n\nRegards Davide\n\n## Baxter\n\nDavide Faifer Sup.Projects Baxter Campocologno Engineering Li Geri 117A / 7744 Campocologno / Switzerland T +41.81.8392170  / M +41.78.7232995 Tie-Line 263-2178 davide_faifer@baxter.com\n\n## Ropex Cleaning procedure\n\nmiércoles, 26 de octubre de 2022 10:00\n\n| Asunto   | Ropex Cleaning procedure                                        |\n|----------|-----------------------------------------------------------------|\n| De       | Faifer, Davide                                                  |\n\n--- Page 6 ---\n| Para     | Sasal Royan, Oscar; Perez Betran, Alberto; Puente Otin, Rodolfo |\n| CC       | Cerezuela Cases, Carla                                          |\n| Enviado  | viernes, 30 de septiembre de 2022 10:09                         |\n\n## Cleaningof UPTheatsealingtools\n\nDeposits which originate either from the film itself or from its treatment with printing ink, lubricant etc. can fom on theheatinglayersurfaceofUPTsealingtools.\n\nTheheating layersurfacecanbecleanedin the followingways:\n\n- 1.Theheating layer surface canbe cleaned with an organic solvent, which must be capable of partially dissolving\n\nOT:\n\n- 2.If the contamination or the built-up deposits cover a large area, the heating layer surface can be cleaned using a commercially avallable cleaning pad Scotch-Brite CF-HP S-UFN from the manufacturer 3M (Art.No. 07448).For persistent contamination the rougher cleaning padScotch-Brite CF-SR A-VFNfrom the manuforthepersistentcontamination as an intenseusagecan causedamageof theheating layersurface.Forthe final cleaning use the softer cleaning pad_Scotch-Brite CF-HP S-UFN\"again.\n\nThe heating layer surface must not be cleaned with a hard object (e.g.a knife,screwdriver,steel wool,or metal scourer)in order toprevent damage both to the surface itself and also to the UPT heatsealingtool!\n\n--- Page 7 ---\n\n## Baxter\n\nDavide Faifer Sup.Projects Baxter Campocologno Engineering Li Geri 117A / 7744 Campocologno / Switzerland T +41.81.8392170  / M +41.78.7232995 Tie-Line 263-2178 davide_faifer@baxter.com to theUPTsealing tools.\n\n## Ropex Hanger Hole.\n\nlunes, 10 de octubre de 2022 9:55\n\nDescarta bolsas por fallo en la estación EM11, problemas con el anillo.\n\nSe abre la estación y se observa que la Ropex tiene restos de plástico en dos de los anillos y suciedad e",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [
+              "8392170",
+              "7232995",
+              "07448"
+            ],
+            "tools_found": [
+              "screwdriver"
+            ],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "e7216c6e-73d8-46e3-a75e-3b23514b26bc",
+          "source": "EM11, top seal.pdf",
+          "image_number": 9,
+          "page": 1,
+          "ocr_text": "miércoles, 26 de octubre de 2022\n\n| Asunto         | Ropex Tools                                                                                                                                |",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "e67bd34b-244c-4975-ac4a-778879135b83",
+          "source": "EM11, top seal.pdf",
+          "image_number": 10,
+          "page": 1,
+          "ocr_text": "## Hi Team,\n\nRegarding the Ropex tools please find attached the manual, in particular from page 47 you can fine all the Fault Code.",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "16992b19-4d49-436d-acb3-d1b47dcb6105",
+          "source": "EM11, top seal.pdf",
+          "image_number": 11,
+          "page": 1,
+          "ocr_text": "| NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   | NOTE:The errormessages shown here are output as faults(constant error voltage at actual value output. alarm LED lit continuously,alarmrelay energized)   |\n|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|\n| Error code                                                                                                                                               | Act. val. voltage output [V]                                                                                                                             | Cause                                                                                                                                                    | started for first time Action if machine                                                                                                                 | Actionif machine heating eloment not already operated, changed                                                                                           |\n\n--- Page 4 ---\n| 101                                                                                                                                                      | 0.66                                                                                                                                                     | No current signal                                                                                                                                        | Fault area ①                                                                                                                                             | Fault area ①                                                                                                                                             |\n| 102                                                                                                                                                      | 1.33                                                                                                                                                     | No voltage signal                                                                                                                                        | Fault area ③                                                                                                                                             | Fault area ③                                                                                                                                             |\n| 103                                                                                                                                                      | 2.00                                                                                                                                                     | Nocurrent/voltagesignals                                                                                                                                 | Fault area ②                                                                                                                                             | Fault areas ②@                                                                                                                                           |\n| 107                                                                                                                                                      | 2.66                                                                                                                                                     | Temperature step, down                                                                                                                                   | Fault areas ④③ (*loose contact\")                                                                                                                         | Fault areas ④③ (\"loose contact\")                                                                                                                         |\n| 108                                                                                                                                                      | 2.66                                                                                                                                                     | Temperature step.up                                                                                                                                      | Fault areas ④③ (*loose contact\")                                                                                                                         | Fault areas ④③ (\"loose contact\")                                                                                                                         |\n| 307 308 309 310                                                                                                                                          | 2.66                                                                                                                                                     | Temperature too high/ low (section 8.7.11)                                                                                                               |                                                                                                                                                          |                                                                                                                                                          |\n\nIf you have a problem with a Ropex tool check on the HMI the fault code first:\n\nToday, for example, the fault code was 901, based on the Ropex manual it is:\n\n|     | section 8.7.10)               |                |               |\n|-----|-------------------------------|----------------|---------------|\n| 901 | No line voltage / sync signal | Section 8.2    | Section 8.2   |\n| 913 | Triac defective               | Replace device | Replacedevice |\n| 914 |                               |                |               |\n\n\n--- Page 5 ---\nBased on this I checked the electrical cabinet and a thermal was off and a module in alarm:\n\nPlease share with the maintenance team.\n\nRegards Davide\n\n## Baxter\n\nDavide Faifer Sup.Projects Baxter Campocologno Engineering Li Geri 117A / 7744 Campocologno / Switzerland T +41.81.8392170  / M +41.78.7232995 Tie-Line 263-2178 davide_faifer@baxter.com\n\n## Ropex Cleaning procedure\n\nmiércoles, 26 de octubre de 2022 10:00\n\n| Asunto   | Ropex Cleaning procedure                                        |\n|----------|-----------------------------------------------------------------|\n| De       | Faifer, Davide                                                  |\n\n--- Page 6 ---\n| Para     | Sasal Royan, Oscar; Perez Betran, Alberto; Puente Otin, Rodolfo |\n| CC       | Cerezuela Cases, Carla                                          |\n| Enviado  | viernes, 30 de septiembre de 2022 10:09                         |\n\n## Cleaningof UPTheatsealingtools\n\nDeposits which originate either from the film itself or from its treatment with printing ink, lubricant etc. can fom on theheatinglayersurfaceofUPTsealingtools.\n\nTheheating layersurfacecanbecleanedin the followingways:\n\n- 1.Theheating layer surface canbe cleaned with an organic solvent, which must be capable of partially dissolving\n\nOT:\n\n- 2.If the contamination or the built-up deposits cover a large area, the heating layer surface can be cleaned using a commercially avallable cleaning pad Scotch-Brite CF-HP S-UFN from the manufacturer 3M (Art.No. 07448).For persistent contamination the rougher cleaning padScotch-Brite CF-SR A-VFNfrom the manuforthepersistentcontamination as an intenseusagecan causedamageof theheating layersurface.Forthe final cleaning use the softer cleaning pad_Scotch-Brite CF-HP S-UFN\"again.\n\nThe heating layer surface must not be cleaned with a hard object (e.g.a knife,screwdriver,steel wool,or metal scourer)in order toprevent damage both to the surface itself and also to the UPT heatsealingtool!\n\n--- Page 7 ---\n\n## Baxter\n\nDavide Faifer Sup.Projects Baxter Campocologno Engineering Li Geri 117A / 7744 Campocologno / Switzerland T +41.81.8392170  / M +41.78.7232995 Tie-Line 263-2178 davide_faifer@baxter.com to theUPTsealing tools.\n\n## Ropex Hanger Hole.\n\nlunes, 10 de octubre de 2022 9:55\n\nDescarta bolsas por fallo en la estación EM11, problemas con el anillo.\n\nSe abre la estación y se observa que la Ropex tiene restos de plástico en dos de los anillos y suciedad e",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [
+              "8392170",
+              "7232995",
+              "07448"
+            ],
+            "tools_found": [
+              "screwdriver"
+            ],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "bd5afc21-43d4-440b-8d46-4e75e93b1fc6",
+          "source": "EM11, top seal.pdf",
+          "image_number": 12,
+          "page": 1,
+          "ocr_text": "| Para           | Puente Otin, Rodolfo; Moreno Gonzalez, Aitor; Perez Betran, Alberto Instruccio nLimpieza... |\n| CC             | Lacueva Marco, Victor; Saturque Otin, Jose Manuel; Manero Castillo, Israel                  |\n| Enviado        | lunes, 17 de octubre de 2022 11:25                                                          |\n| Datos adjuntos | Instruccio nLimpieza...                                                                     |\n\nOs adjuntamos borrador de las instrucciones para una correcta limpieza del conjunto de 'gomas rojas' de la Top Seal en la NGV para que compartáis con vuestros equipos.\n\nComo sabéis, el principal problema que se tiene es la acumulación de residuos en el interior del conjunto que impiden un deslizamiento libre de las partes.\n\n--- Page 2 ---\n\nEstamos buscando un sistema de limpieza más rápido y eficaz ya que parece que el tema de los goteos no parece tener solución a corto plazo.\n\nOs mantendremos informados.\n\nSaludos,\n\nIgnacio.\n\n## Ignacio Rubiella Rosell\n\nMaintenance Engineer Bieffe Medital S.A. -Baxter Healthcare Corporation Ctra Biescas s/n, 22666 Senegüe -Sabiñanigo, Huesca, Spain T + 34 974 483 007\n\nignacio_rubiella_rosell@baxter.com\n\n## Ropex Tools\n\n\n--- Page 3 ---",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [
+              "22666"
+            ],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        }
+      ],
+      "image_analysis": {
+        "total_images": 12,
+        "images_with_ocr": 12,
+        "total_ocr_length": 25704,
+        "avg_ocr_length": 2142.0,
+        "ocr_coverage": 100.0
+      },
+      "query_tests": [
+        {
+          "query": "¿Cuáles son los pasos del proceso?",
+          "success": true,
+          "answer_length": 1174,
+          "num_citations": 1,
+          "sources": [
+            "EM11, top seal.pdf"
+          ]
+        },
+        {
+          "query": "What are the main specifications?",
+          "success": true,
+          "answer_length": 192,
+          "num_citations": 0,
+          "sources": []
+        },
+        {
+          "query": "Describe the equipment shown in the images",
+          "success": true,
+          "answer_length": 1864,
+          "num_citations": 5,
+          "sources": [
+            "EM11, top seal.pdf"
+          ]
+        }
+      ],
+      "issues": []
+    },
+    "VUORMAR.pdf": {
+      "document_name": "VUORMAR.pdf",
+      "file_exists": true,
+      "upload_result": null,
+      "document_details": {
+        "document_id": "56e69fbc-578a-44b1-adeb-62e9facb37ef",
+        "document_name": "VUORMAR.pdf",
+        "status": "success",
+        "language": "eng",
+        "chunks_created": 100,
+        "tokens_extracted": 11800,
+        "parser_used": "ocrmypdf",
+        "processing_time": 8.10327672958374,
+        "extraction_percentage": 0.7102,
+        "images_detected": true,
+        "image_count": 0,
+        "pages": null,
+        "error": null,
+        "text_chunks_stored": 0,
+        "images_stored": 0,
+        "text_index": "aris-rag-index",
+        "images_index": "aris-rag-images-index",
+        "text_storage_status": "pending",
+        "images_storage_status": "pending",
+        "file_hash": null,
+        "upload_metadata": null,
+        "pdf_metadata": null,
+        "processing_metadata": null,
+        "ocr_quality_metrics": null,
+        "version_info": null
+      },
+      "images": [
+        {
+          "image_id": "b5f4e179-a388-4c6a-82c5-b4c9ecee9c91",
+          "source": "VUORMAR.pdf",
+          "image_number": 1,
+          "page": 2,
+          "ocr_text": "Image on page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "8457b463-c750-48b0-a988-bc0b57c35680",
+          "source": "VUORMAR.pdf",
+          "image_number": 2,
+          "page": 3,
+          "ocr_text": "Image on page 3",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "6e703189-ffea-4e23-bbc4-455f3d9db5c1",
+          "source": "VUORMAR.pdf",
+          "image_number": 3,
+          "page": 2,
+          "ocr_text": "ESSASAPA01: Ordenador físico en armario de la cargadora para generar datos de Audit Trail. \nVNC:\n10.109.65.182\nbaxter01\nSesión:\n.\\software\nBaxter01+\nÓ\nisadmin2\nBieffe01\n\\\\iniciar sesión en el ordenador y dejarlo bloqueado \"lock\" para que la sesión siga en marcha y \npued realizar las copias automaticamente. \nFicha de mantenimiento del sistema vuormar:\nFO-VUO-01\nESSASAPA01\nmiércoles, 21 de mayo de 2025\n12:38\n   \nVUORMAR Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "82e6c568-9752-475a-a0a4-06d6436b09b8",
+          "source": "VUORMAR.pdf",
+          "image_number": 4,
+          "page": 5,
+          "ocr_text": "Image on page 5",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "f03524a9-287e-4469-be47-8b6e8a5bd5fc",
+          "source": "VUORMAR.pdf",
+          "image_number": 5,
+          "page": 3,
+          "ocr_text": "Image on page 3",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "a36b5d2b-f531-4ff5-b519-ee832afb1eb3",
+          "source": "VUORMAR.pdf",
+          "image_number": 6,
+          "page": 4,
+          "ocr_text": "Image on page 4",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "f809ce14-ea87-4457-bc2f-ce70f26ccddc",
+          "source": "VUORMAR.pdf",
+          "image_number": 7,
+          "page": 8,
+          "ocr_text": "Image on page 8",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "bbfcec1b-82d7-40e6-8538-23c30aa5ca53",
+          "source": "VUORMAR.pdf",
+          "image_number": 8,
+          "page": 7,
+          "ocr_text": "0 0039 04 42 57 00 37\nmattia_stellini@vuormar.it\nmattia_stellini@vuormar.it\nIntra Automation SL\n963 96 10 08\ng.garay@dexis-iberica.com\na.rueda@dexis-iberica.com\nContacto Vuormar \njueves, 02 de marzo de 2023\n9:18\n   \nVUORMAR Page 7",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "ce4c31b4-af8d-442a-ab9b-7627c622728a",
+          "source": "VUORMAR.pdf",
+          "image_number": 9,
+          "page": 3,
+          "ocr_text": "Image on page 3",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "3d9dde76-0b30-47b0-9554-60a76136c434",
+          "source": "VUORMAR.pdf",
+          "image_number": 10,
+          "page": 3,
+          "ocr_text": "Image on page 3",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "649bccd0-a3e7-4d05-a074-710626485da4",
+          "source": "VUORMAR.pdf",
+          "image_number": 11,
+          "page": 4,
+          "ocr_text": "Image on page 4",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "42385c66-93b4-4921-aa71-bfc775508b5e",
+          "source": "VUORMAR.pdf",
+          "image_number": 12,
+          "page": 8,
+          "ocr_text": "Image on page 8",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "4a6a5878-8e80-47df-af46-45a664d769d7",
+          "source": "VUORMAR.pdf",
+          "image_number": 13,
+          "page": 10,
+          "ocr_text": "Image on page 10",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "adcc0e4b-cd39-4ece-b55f-d683d881a162",
+          "source": "VUORMAR.pdf",
+          "image_number": 14,
+          "page": 10,
+          "ocr_text": "Image on page 10",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "9938ca01-e3d1-47f0-842f-29821b25cbd3",
+          "source": "VUORMAR.pdf",
+          "image_number": 15,
+          "page": 7,
+          "ocr_text": "0 0039 04 42 57 00 37\nmattia_stellini@vuormar.it\nmattia_stellini@vuormar.it\nIntra Automation SL\n963 96 10 08\ng.garay@dexis-iberica.com\na.rueda@dexis-iberica.com\nContacto Vuormar \njueves, 02 de marzo de 2023\n9:18\n   \nVUORMAR Page 7",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "ac5656a0-9cc5-438c-9bbd-f95aeb9807f1",
+          "source": "VUORMAR.pdf",
+          "image_number": 16,
+          "page": 7,
+          "ocr_text": "0 0039 04 42 57 00 37\nmattia_stellini@vuormar.it\nmattia_stellini@vuormar.it\nIntra Automation SL\n963 96 10 08\ng.garay@dexis-iberica.com\na.rueda@dexis-iberica.com\nContacto Vuormar \njueves, 02 de marzo de 2023\n9:18\n   \nVUORMAR Page 7",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "9d7dd762-105b-49e7-addb-d6d3f923d4b6",
+          "source": "VUORMAR.pdf",
+          "image_number": 17,
+          "page": 7,
+          "ocr_text": "0 0039 04 42 57 00 37\nmattia_stellini@vuormar.it\nmattia_stellini@vuormar.it\nIntra Automation SL\n963 96 10 08\ng.garay@dexis-iberica.com\na.rueda@dexis-iberica.com\nContacto Vuormar \njueves, 02 de marzo de 2023\n9:18\n   \nVUORMAR Page 7",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "0267d7c2-4974-4df7-83a4-8a269c3a3d2b",
+          "source": "VUORMAR.pdf",
+          "image_number": 18,
+          "page": 3,
+          "ocr_text": "Image on page 3",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "14830cd5-13c9-4a05-9e42-a29321ae3369",
+          "source": "VUORMAR.pdf",
+          "image_number": 19,
+          "page": 1,
+          "ocr_text": "- Abrir la puerta del armario eléctrico. 1.\n- Quitar la tensión del módulo Phoenix amarillo, desconectando esta ficha SIN ESTIRAR DE LOS CABLES , con cuidado con un destornillador pequeño haciendo poca palanca, sale bien: 2.\n- Volverla a conectar. 3.\n- Rearmar. 4.\n\n\n--- Page 6 ---\n## Cinta salida. Mototambores.\n\nlunes, 30 de enero de 2023 11:54\n\nFigure6:Powersupplyschematic\n\nThe number of devices you can daisy chain depends on the application, the wire size and the power supply.\n\n## Tarjeta mototambor cinta salida.\n\nmiércoles, 01 de marzo de 2023 8:25\n\n## \\\\essafileprint01\\infocentro\\CONTROL_VERSIONES_SOFTWARE\\SISTEMAS\\20 ENVASADO \\CAMARA_BLANCA\\VUORMAR\\VUOR-17\\MotorPower (cinta salida )\n\n--- Page 7 ---\n\nAquí tenemos el software con las instrucciones para conectarse y configurar la tarjeta.\n\n## Contacto Vuormar\n\njueves, 02 de marzo de 2023 9:18\n\n0 0039 04 42 57 00 37\n\nmattia_stellini@vuormar.it mattia_stellini@vuormar.it\n\nIntra Automation SL\n\n\n--- Page 8 ---\n963 96 10 08 g.garay@dexis-iberica.com a.rueda@dexis-iberica.com\n\nOriginales V12 con cinta Varpe: a011: 50,31 a012: 5.0\n\nFotocélula salida bolsa, si falla:",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "d20fb121-084c-4755-b18f-68b3363c884c",
+          "source": "VUORMAR.pdf",
+          "image_number": 20,
+          "page": 1,
+          "ocr_text": "- Presionar botón 2s. ·\n- Dejar sin nada delante ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "4ad3ff02-1f33-498a-ae24-2dd3a6e527e4",
+          "source": "VUORMAR.pdf",
+          "image_number": 21,
+          "page": 1,
+          "ocr_text": "- Presionar botón ·\n- Poner bolsa ·\n- Presionar botón ·",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "9e9fbc19-7ea8-40b7-b538-c9711d4bbd7e",
+          "source": "VUORMAR.pdf",
+          "image_number": 22,
+          "page": 2,
+          "ocr_text": "Image on page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "431f6b20-d351-4397-9d79-23a0ee5e5971",
+          "source": "VUORMAR.pdf",
+          "image_number": 23,
+          "page": 10,
+          "ocr_text": "Image on page 10",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "352a86c6-47fd-43c2-a1bc-2066a9ffdde6",
+          "source": "VUORMAR.pdf",
+          "image_number": 24,
+          "page": 5,
+          "ocr_text": "Image on page 5",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "8deb4b32-3c7b-4706-bec0-96ae675d97f7",
+          "source": "VUORMAR.pdf",
+          "image_number": 25,
+          "page": 5,
+          "ocr_text": "Image on page 5",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "d2179f52-82ce-4e83-a285-821e2f977f15",
+          "source": "VUORMAR.pdf",
+          "image_number": 26,
+          "page": 7,
+          "ocr_text": "0 0039 04 42 57 00 37\nmattia_stellini@vuormar.it\nmattia_stellini@vuormar.it\nIntra Automation SL\n963 96 10 08\ng.garay@dexis-iberica.com\na.rueda@dexis-iberica.com\nContacto Vuormar \njueves, 02 de marzo de 2023\n9:18\n   \nVUORMAR Page 7",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "e3b56fbf-f27b-4f31-8b23-6678f46db71f",
+          "source": "VUORMAR.pdf",
+          "image_number": 27,
+          "page": 2,
+          "ocr_text": "ESSASAPA01: Ordenador físico en armario de la cargadora para generar datos de Audit Trail. \nVNC:\n10.109.65.182\nbaxter01\nSesión:\n.\\software\nBaxter01+\nÓ\nisadmin2\nBieffe01\n\\\\iniciar sesión en el ordenador y dejarlo bloqueado \"lock\" para que la sesión siga en marcha y \npued realizar las copias automaticamente. \nFicha de mantenimiento del sistema vuormar:\nFO-VUO-01\nESSASAPA01\nmiércoles, 21 de mayo de 2025\n12:38\n   \nVUORMAR Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "f1b048e0-a8f3-4d9b-bbf5-a6578c37155a",
+          "source": "VUORMAR.pdf",
+          "image_number": 28,
+          "page": 2,
+          "ocr_text": "ESSASAPA01: Ordenador físico en armario de la cargadora para generar datos de Audit Trail. \nVNC:\n10.109.65.182\nbaxter01\nSesión:\n.\\software\nBaxter01+\nÓ\nisadmin2\nBieffe01\n\\\\iniciar sesión en el ordenador y dejarlo bloqueado \"lock\" para que la sesión siga en marcha y \npued realizar las copias automaticamente. \nFicha de mantenimiento del sistema vuormar:\nFO-VUO-01\nESSASAPA01\nmiércoles, 21 de mayo de 2025\n12:38\n   \nVUORMAR Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "85c2cb23-6c88-4783-a5b7-b2f04508534f",
+          "source": "VUORMAR.pdf",
+          "image_number": 29,
+          "page": 3,
+          "ocr_text": "Image on page 3",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "40ef1407-65a3-42aa-9183-cfbf7688e7c7",
+          "source": "VUORMAR.pdf",
+          "image_number": 30,
+          "page": 3,
+          "ocr_text": "Image on page 3",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "2dafe882-3825-4b63-9f5a-8bfe07fb4bbe",
+          "source": "VUORMAR.pdf",
+          "image_number": 31,
+          "page": 4,
+          "ocr_text": "Image on page 4",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "2a34b1ec-0531-4394-a534-684fb7b0ae88",
+          "source": "VUORMAR.pdf",
+          "image_number": 32,
+          "page": 5,
+          "ocr_text": "Image on page 5",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "5cf9ff83-bcbd-498d-8254-3d737bb4457c",
+          "source": "VUORMAR.pdf",
+          "image_number": 33,
+          "page": 8,
+          "ocr_text": "Image on page 8",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "0b6ba0d4-ea64-434d-8fa7-e8c2a0e010e8",
+          "source": "VUORMAR.pdf",
+          "image_number": 34,
+          "page": 10,
+          "ocr_text": "Image on page 10",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "88050a6e-c9ec-4cde-a770-366016d815c6",
+          "source": "VUORMAR.pdf",
+          "image_number": 35,
+          "page": 3,
+          "ocr_text": "Image on page 3",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "18dac404-dfc3-4398-9fd0-52c2082710dc",
+          "source": "VUORMAR.pdf",
+          "image_number": 36,
+          "page": 4,
+          "ocr_text": "Image on page 4",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "87cd7f52-b1da-40cf-8b78-89b7dc815ddc",
+          "source": "VUORMAR.pdf",
+          "image_number": 37,
+          "page": 8,
+          "ocr_text": "Image on page 8",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "7e73dbd8-2a1b-48a1-8cd6-a69623651aa0",
+          "source": "VUORMAR.pdf",
+          "image_number": 38,
+          "page": 1,
+          "ocr_text": "| Trifase, classe 400V   | A2150 A4004/A4007   | [AX-FIM2100-RE (100A) AXFIM3005-RE(5A)   |\n\n--- Page 9 ---\n|------------------------|---------------------|------------------------------------------|\n| Trifase, classe 400V   | A4015/A4022/A4030   | AX-FIM3010-RE(10A)                       |\n| Trifase, classe 400V   | A4040               | AX-FIM3014-RE (14A)                      |\n| Trifase, classe 400V   | A4055/A4075         | AX-FIM3030-RE (23A)                      |\n| Trifase, classe 400V   | A4110/A4150         | AX-FIM3050-RE (50A)                      |\n\n|                           | C026:05          |\n|---------------------------|------------------|\n| H003: potencia motor, Kw. | C036:00, cambiar |\n| H023: I nominal, A.       | F002: 1,5s       |\n|                           | F003: 1,5s       |\n\n## Vuormar 11: Vuormar 12: 800ms Vuormar 21 Vuormar 22\n\n--- Page 10 ---\n\n## Desbobinador Apagado\n\nlunes, 5 de junio de 2023\n\n11:37\n\nAl cambiar la bobina habían dejado el seleccionador en la posición central (tiene que estar en cerrado para trabajar)\n\n|          | CUC        |    |                           |\n|----------|------------|----|---------------------------|\n| 11:13:14 | 05/06/2023 | EU | AL.68DesbobinadorApaqado  |\n| 11:05:00 | 05/06/2023 | E  | AL.68 DesbobinadorApaqado |\n| 11:04:10 | 05/06/2023 | EU | AL.60Drive Desbobinador   |",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "dedda57f-f537-4509-9f80-120d4315beb0",
+          "source": "VUORMAR.pdf",
+          "image_number": 39,
+          "page": 2,
+          "ocr_text": "ESSASAPA01: Ordenador físico en armario de la cargadora para generar datos de Audit Trail. \nVNC:\n10.109.65.182\nbaxter01\nSesión:\n.\\software\nBaxter01+\nÓ\nisadmin2\nBieffe01\n\\\\iniciar sesión en el ordenador y dejarlo bloqueado \"lock\" para que la sesión siga en marcha y \npued realizar las copias automaticamente. \nFicha de mantenimiento del sistema vuormar:\nFO-VUO-01\nESSASAPA01\nmiércoles, 21 de mayo de 2025\n12:38\n   \nVUORMAR Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        },
+        {
+          "image_id": "47c8b7bd-0965-4255-a02b-f7955ff2babe",
+          "source": "VUORMAR.pdf",
+          "image_number": 40,
+          "page": 2,
+          "ocr_text": "ESSASAPA01: Ordenador físico en armario de la cargadora para generar datos de Audit Trail. \nVNC:\n10.109.65.182\nbaxter01\nSesión:\n.\\software\nBaxter01+\nÓ\nisadmin2\nBieffe01\n\\\\iniciar sesión en el ordenador y dejarlo bloqueado \"lock\" para que la sesión siga en marcha y \npued realizar las copias automaticamente. \nFicha de mantenimiento del sistema vuormar:\nFO-VUO-01\nESSASAPA01\nmiércoles, 21 de mayo de 2025\n12:38\n   \nVUORMAR Page 2",
+          "metadata": {
+            "drawer_references": [],
+            "part_numbers": [],
+            "tools_found": [],
+            "has_structured_content": false
+          },
+          "score": null
+        }
+      ],
+      "image_analysis": {
+        "total_images": 40,
+        "images_with_ocr": 40,
+        "total_ocr_length": 6277,
+        "avg_ocr_length": 156.925,
+        "ocr_coverage": 100.0
+      },
+      "query_tests": [
+        {
+          "query": "¿Cuáles son los pasos del proceso?",
+          "success": true,
+          "answer_length": 232,
+          "num_citations": 0,
+          "sources": []
+        },
+        {
+          "query": "What are the main specifications?",
+          "success": true,
+          "answer_length": 345,
+          "num_citations": 0,
+          "sources": []
+        },
+        {
+          "query": "Describe the equipment shown in the images",
+          "success": true,
+          "answer_length": 1149,
+          "num_citations": 0,
+          "sources": []
+        }
+      ],
+      "issues": []
+    }
+  },
+  "summary": {
+    "total_documents": 3,
+    "documents_with_issues": 0,
+    "total_chunks": 356,
+    "total_images": 81,
+    "images_with_ocr": 81,
+    "overall_ocr_coverage": 100.0,
+    "all_issues": []
+  },
+  "server_health": {
+    "healthy": true,
+    "data": {
+      "status": "healthy",
+      "message": "ARIS RAG System API Gateway is operational",
+      "service": "gateway",
+      "registry_accessible": true,
+      "registry_document_count": 10,
+      "index_map_accessible": true
+    }
+  }
+}
