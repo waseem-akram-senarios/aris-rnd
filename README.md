@@ -33,7 +33,7 @@ Ingest documents, run semantic search, and get AI-generated answers — all expo
 
           ┌──────────────────────────────────┐
           │       MCP Server (:8503)         │
-          │  18 tools for AI-agent access    │
+          │  5 consolidated tools            │
           │  SSE + HTTP REST (FastMCP)       │
           └──────────────────────────────────┘
 ```
@@ -45,7 +45,7 @@ Ingest documents, run semantic search, and get AI-generated answers — all expo
 | **Gateway**   | 8500 | API gateway & orchestrator. Routes requests, manages document registry, coordinates sync between services. |
 | **Ingestion** | 8501 | Document processing pipeline. Parses (Docling, PyMuPDF, LlamaScan, OCRmyPDF, Textract), chunks, embeds, and indexes into OpenSearch. |
 | **Retrieval** | 8502 | Query engine. Semantic/hybrid search, FlashRank reranking, image retrieval, and LLM answer generation. |
-| **MCP**       | 8503 | Model Context Protocol server. Exposes 18 tools so AI agents (Claude, Cursor, etc.) can ingest, search, and manage RAG documents. |
+| **MCP**       | 8503 | Model Context Protocol server. Exposes 5 consolidated tools so AI agents (Claude, Cursor, etc.) can ingest, search, and manage RAG documents. |
 | **UI**        | 80   | Streamlit web interface. Document Q&A, Admin Management, and MCP Client dashboards. |
 
 All five services run from a **single Docker image** (`aris-microservice:latest`); the `SERVICE_TYPE` environment variable selects which service starts via the entrypoint script.
@@ -186,15 +186,15 @@ Handles all query logic with a refactored mixin-based architecture:
 
 ### MCP Server (`:8503`)
 
-Exposes 18 tools via the Model Context Protocol (SSE transport) so AI agents can operate on the RAG system:
+Exposes 5 consolidated tools (all 18 functionalities) via the Model Context Protocol:
 
-| Category         | Tools                                                                 |
+| Tool             | Purpose                                                              |
 |------------------|-----------------------------------------------------------------------|
-| **Search**       | `rag_quick_query`, `rag_research_query`, `rag_search`                |
-| **Documents**    | `rag_ingest`, `rag_upload_document`, `rag_list_documents`, `rag_get_document`, `rag_update_document`, `rag_delete_document` |
-| **Indexes**      | `rag_list_indexes`, `rag_get_index_info`, `rag_delete_index`         |
-| **Chunks**       | `rag_list_chunks`, `rag_get_chunk`, `rag_create_chunk`, `rag_update_chunk`, `rag_delete_chunk` |
-| **System**       | `rag_get_stats`                                                      |
+| **rag_query**    | Search with `mode`: quick \| research \| search                      |
+| **rag_documents** | Document CRUD with `action`: list \| get \| create \| update \| delete |
+| **rag_indexes**  | Index management with `action`: list \| info \| delete                |
+| **rag_chunks**   | Chunk CRUD with `action`: list \| get \| create \| update \| delete  |
+| **rag_stats**    | System statistics                                                    |
 
 **Connect from Claude Desktop / Cursor:**
 ```json

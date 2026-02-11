@@ -1,11 +1,10 @@
 """
 MCP Client - Complete Interface for ARIS RAG MCP Server
-All 18 MCP tools exposed through a premium Glassmorphism UI.
+5 consolidated MCP tools exposed through a premium Glassmorphism UI.
 
 Tool categories:
-- Query:      rag_quick_query, rag_research_query, rag_search
-- Documents:  rag_ingest, rag_upload_document, rag_list_documents,
-              rag_get_document, rag_update_document, rag_delete_document
+- Query:      rag_query (mode: quick|research|search)
+- Documents:  rag_documents (action: list|get|create|update|delete)
 - Indexes:    rag_list_indexes, rag_get_index_info, rag_delete_index
 - Chunks:     rag_list_chunks, rag_get_chunk, rag_create_chunk,
               rag_update_chunk, rag_delete_chunk
@@ -242,7 +241,7 @@ def _confidence_icon(c):
 st.markdown("""
 <div class="mcp-header">
     <h1>🔌 MCP Client</h1>
-    <p>Complete management interface for ARIS RAG MCP Server — 18 tools</p>
+    <p>Complete management interface for ARIS RAG MCP Server — 5 tools</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -368,7 +367,7 @@ with tab_search:
 
                     with st.expander("📊 Accuracy Info"):
                         st.json(ai)
-                    _log_history("rag_search", {"query": query[:50], "k": k},
+                    _log_history("rag_query", {"query": query[:50], "k": k, "mode": "search"},
                                  result_count=result.get("total_results", 0), elapsed=elapsed)
                 else:
                     st.error(f"❌ {result.get('error', 'Unknown error')}")
@@ -436,7 +435,7 @@ with tab_ingest:
                         cc.metric("Pages", result.get("pages_extracted","N/A"))
                         cd.metric("Time", f"{el:.1f}s")
                         with st.expander("📋 Full Response"): st.json(result)
-                        _log_history("rag_upload_document", {"filename": uploaded_file.name}, result, el)
+                        _log_history("rag_documents", {"action": "create", "filename": uploaded_file.name}, result, el)
                     else:
                         st.error(f"❌ {result.get('error', result.get('message','Unknown'))}")
             else:
@@ -450,7 +449,7 @@ with tab_ingest:
                         ca.metric("Doc ID", result.get("document_id","?")[:12]+"...")
                         cb.metric("Chunks", result.get("chunks_created",0))
                         cc.metric("Time", f"{el:.1f}s")
-                        _log_history("rag_ingest", {"content_len": len(content)}, result, el)
+                        _log_history("rag_documents", {"action": "create", "content_len": len(content)}, result, el)
                     else:
                         st.error(f"❌ {result.get('error', result.get('message','Unknown'))}")
 
@@ -504,7 +503,7 @@ with tab_docs:
                                 r = mcp_update_document(did, updates)
                                 if r.get("success"):
                                     st.success("Updated!")
-                                    _log_history("rag_update_document", {"id": did[:12], **updates})
+                                    _log_history("rag_documents", {"action": "update", "id": did[:12], **updates})
                                 else:
                                     st.error(r.get("error", "Failed"))
                             else:
@@ -515,7 +514,7 @@ with tab_docs:
                             r = mcp_delete_document(did)
                             if r.get("success"):
                                 st.success(f"Deleted: {dname}")
-                                _log_history("rag_delete_document", {"id": did[:12], "name": dname})
+                                _log_history("rag_documents", {"action": "delete", "id": did[:12], "name": dname})
                                 st.rerun()
                             else:
                                 st.error(r.get("error", "Failed"))
@@ -561,7 +560,7 @@ with tab_indexes:
                                 r = mcp_delete_index(name)
                                 if r.get("success"):
                                     st.success(f"Deleted: {name}")
-                                    _log_history("rag_delete_index", {"index": name})
+                                    _log_history("rag_indexes", {"action": "delete", "index": name})
                                     st.rerun()
                                 else:
                                     st.error(r.get("error", "Failed"))
@@ -644,7 +643,7 @@ with tab_chunks:
                     result = mcp_create_chunk(idx_name, body)
                     if result.get("success"):
                         st.success(f"✅ Created chunk: `{result.get('chunk_id','?')}`")
-                        _log_history("rag_create_chunk", {"index": idx_name, "text": ch_text[:50]})
+                        _log_history("rag_chunks", {"action": "create", "index": idx_name, "text": ch_text[:50]})
                     else:
                         st.error(result.get("error", "Failed"))
 
@@ -667,7 +666,7 @@ with tab_chunks:
                     result = mcp_update_chunk(idx_name, cid, body)
                     if result.get("success"):
                         st.success(f"✅ Updated chunk `{cid[:20]}...`")
-                        _log_history("rag_update_chunk", {"chunk_id": cid[:20], **body})
+                        _log_history("rag_chunks", {"action": "update", "chunk_id": cid[:20], **body})
                     else:
                         st.error(result.get("error", "Failed"))
                 else:
@@ -680,7 +679,7 @@ with tab_chunks:
                 result = mcp_delete_chunk(idx_name, cid)
                 if result.get("success"):
                     st.success(f"✅ Deleted chunk `{cid[:20]}...`")
-                    _log_history("rag_delete_chunk", {"index": idx_name, "chunk_id": cid[:20]})
+                    _log_history("rag_chunks", {"action": "delete", "index": idx_name, "chunk_id": cid[:20]})
                 else:
                     st.error(result.get("error", "Failed"))
             st.markdown('</div>', unsafe_allow_html=True)
@@ -753,12 +752,9 @@ with tab_history:
             st.session_state.mcp_history = []
             st.rerun()
 
-        icons = {"rag_ingest":"📥", "rag_upload_document":"📤", "rag_search":"🔍",
-                 "rag_list_documents":"📄", "rag_get_document":"📋",
-                 "rag_update_document":"💾", "rag_delete_document":"🗑️",
-                 "rag_list_indexes":"🗂️", "rag_delete_index":"🗑️",
-                 "rag_create_chunk":"➕", "rag_update_chunk":"💾",
-                 "rag_delete_chunk":"🗑️", "rag_get_stats":"📊"}
+        icons = {"rag_query":"🔍", "rag_documents":"📄",
+                 "rag_indexes":"🗂️", "rag_chunks":"🧩",
+                 "rag_stats":"📊"}
 
         for i, entry in enumerate(reversed(st.session_state.mcp_history)):
             icon = icons.get(entry["tool"], "🔧")
@@ -785,7 +781,7 @@ with tab_history:
 st.divider()
 st.markdown(f"""
 <div style="text-align:center; color:#64748b; font-size:.82rem;">
-    <p>🔌 MCP Client for ARIS RAG System — 18 tools across 5 categories</p>
+    <p>🔌 MCP Client for ARIS RAG System — 5 consolidated tools</p>
     <p>Server: <code>{MCP_SERVER_URL}</code></p>
 </div>
 """, unsafe_allow_html=True)
