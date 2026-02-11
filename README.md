@@ -428,5 +428,6 @@ MCP → Ingestion + Retrieval
 ---
 
 **Last Updated:** February 2026  
-**Repository:** [intelycx/intelycx-aris](https://bitbucket.org/intelycx/intelycx-aris)  
-**Branch:** `feature/rag-mcp`
+
+**Repositories:**
+- [GitHub](https://github.com/waseem-akram-senarios/aris-rnd) · [Bitbucket](https://bitbucket.org/intelycx/intelycx-aris)
