@@ -260,7 +260,9 @@ aris/
 │   ├── deploy-microservices.sh      # Server deployment (rsync + docker)
 │   ├── start_microservices.sh       # Local startup (all services)
 │   ├── docker_entrypoint.sh         # Container entrypoint (SERVICE_TYPE routing)
-│   └── install_parser_dependencies.sh
+│   ├── install_parser_dependencies.sh
+│   ├── bitbucket/                   # Bitbucket setup & access scripts
+│   └── testing/                     # Manual test & verification scripts
 │
 ├── tests/
 │   ├── unit/             # Unit tests

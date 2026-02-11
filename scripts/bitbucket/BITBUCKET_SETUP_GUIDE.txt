@@ -1,0 +1,211 @@
+BITBUCKET GIT SETUP COMPLETE GUIDE
+=================================
+
+🎯 STATUS: You can login to Bitbucket via UI, but Git access needs setup
+
+🔍 CURRENT ISSUE:
+- SSH key authentication failing
+- HTTPS connectivity timing out
+- Need to configure Git for Bitbucket access
+
+=====================================================================
+SOLUTION 1: FIX SSH KEY SETUP (RECOMMENDED)
+=====================================================================
+
+🔑 YOUR SSH PUBLIC KEY:
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24qSXO1n87m6ACx7rOiNo53oEkEK9pxaCZRRMy/n8a waseem@aidevlab.com
+
+📋 STEP-BY-STEP SSH SETUP:
+
+1. COPY SSH KEY:
+   cat ~/.ssh/id_ed25519.pub | xclip -sel clip
+
+2. GO TO BITBUCKET:
+   https://bitbucket.org
+
+3. NAVIGATE TO SETTINGS:
+   - Click profile picture (top right)
+   - Click "Settings"
+   - Click "SSH Keys" (left menu)
+
+4. ADD SSH KEY:
+   - Click "Add key"
+   - Label: "Development Machine"
+   - Key: [Paste the SSH key from above]
+   - Click "Add key"
+
+5. VERIFY KEY ADDED:
+   - Check the key appears in the list
+   - Status should show "Active"
+
+6. TEST CONNECTION:
+   ssh -T git@bitbucket.org
+
+🔧 TROUBLESHOOTING SSH:
+❌ If "Permission denied":
+   - SSH key not added correctly to Bitbucket
+   - Copy key again (ensure no extra spaces)
+   - Try removing and re-adding the key
+
+❌ If "Host key verification failed":
+   - This is normal for first connection
+   - Type "yes" when prompted
+
+✅ SUCCESS MESSAGE SHOULD BE:
+"logged in as waseem-akram-senarios"
+"You can use git to connect to Bitbucket"
+
+=====================================================================
+SOLUTION 2: USE HTTPS ACCESS (ALTERNATIVE)
+=====================================================================
+
+📋 HTTPS SETUP STEPS:
+
+1. CREATE APP PASSWORD (RECOMMENDED):
+   - Go to Bitbucket Settings → App Passwords
+   - Click "Create app password"
+   - Label: "Git Access"
+   - Permissions: Repositories (Read/Write)
+   - Copy the generated password
+
+2. SETUP GIT CREDENTIALS:
+   git config --global credential.helper store
+
+3. ADD BITBUCKET REMOTE:
+   # Replace YOUR_USERNAME with your Bitbucket username
+   git remote add bitbucket https://YOUR_USERNAME@bitbucket.org/YOUR_USERNAME/aris.git
+
+4. TEST CONNECTION:
+   git fetch bitbucket
+   # Git will prompt for username and password
+   # Use your Bitbucket username and app password
+
+🔧 HTTPS COMMANDS:
+# Add remote
+git remote add bitbucket https://waseem-akram-senarios@bitbucket.org/waseem-akram-senarios/aris.git
+
+# Push to Bitbucket
+git push -u bitbucket main
+
+# Pull from Bitbucket
+git pull bitbucket main
+
+=====================================================================
+SOLUTION 3: CHECK NETWORK CONNECTIVITY
+=====================================================================
+
+🔍 TEST BASIC CONNECTIVITY:
+
+1. PING BITBUCKET:
+   ping bitbucket.org
+
+2. CURL BITBUCKET:
+   curl -I https://bitbucket.org
+
+3. CHECK FIREWALL:
+   # Ensure port 22 (SSH) and 443 (HTTPS) are open
+
+4. TRY DIFFERENT NETWORK:
+   # Try from different network if possible
+
+=====================================================================
+QUICK START COMMANDS
+=====================================================================
+
+🚀 ONCE SSH KEY IS ADDED TO BITBUCKET:
+
+# Test SSH connection
+ssh -T git@bitbucket.org
+
+# Add Bitbucket remote
+git remote add bitbucket git@bitbucket.org:waseem-akram-senarios/aris.git
+
+# Push to Bitbucket
+git push -u bitbucket main
+
+# Verify remotes
+git remote -v
+
+🚀 IF USING HTTPS:
+
+# Setup credentials
+git config --global credential.helper store
+
+# Add HTTPS remote
+git remote add bitbucket https://waseem-akram-senarios@bitbucket.org/waseem-akram-senarios/aris.git
+
+# Push (will prompt for credentials)
+git push -u bitbucket main
+
+=====================================================================
+CURRENT GIT STATUS
+=====================================================================
+
+📋 YOUR CURRENT REMOTES:
+origin      https://github.com/waseem-akram-senarios/aris-rnd.git
+intelycx    https://github.com/waseem-intelycx/aris-rnd.git
+
+📋 MISSING:
+- No Bitbucket remote configured
+- No Bitbucket authentication setup
+
+📋 READY:
+- SSH key generated: ~/.ssh/id_ed25519.pub
+- SSH key loaded in agent
+- Git installed and configured
+
+=====================================================================
+RECOMMENDATION
+=====================================================================
+
+🎯 PRIMARY APPROACH: Fix SSH Key Setup
+- Most secure and convenient
+- One-time setup
+- No password prompts
+
+🔄 BACKUP APPROACH: Use HTTPS with App Password
+- Works if SSH continues to fail
+- Requires app password setup
+- Git will cache credentials
+
+=====================================================================
+NEXT STEPS
+=====================================================================
+
+1. TRY SSH SETUP FIRST:
+   - Add SSH key to Bitbucket (Solution 1)
+   - Test connection
+   - Add remote and push
+
+2. IF SSH FAILS:
+   - Use HTTPS approach (Solution 2)
+   - Create app password
+   - Setup credentials and push
+
+3. VERIFY SUCCESS:
+   - Check git remote -v
+   - Test git fetch bitbucket
+   - Push a test commit
+
+=====================================================================
+SUPPORT
+=====================================================================
+
+🔧 COMMON ISSUES:
+- SSH key not copied correctly
+- Extra spaces in SSH key
+- Wrong Bitbucket account
+- Network connectivity issues
+- Firewall blocking connections
+
+📞 GET HELP:
+- Check Bitbucket documentation
+- Verify SSH key in Bitbucket settings
+- Test with different network
+- Try both SSH and HTTPS approaches
+
+=====================================================================
+Generated: 2026-02-05
+For: ARIS Project
+User: waseem@aidevlab.com
+=====================================================================
