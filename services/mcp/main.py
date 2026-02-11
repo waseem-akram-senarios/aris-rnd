@@ -60,19 +60,18 @@ mcp = FastMCP(
 This server provides professional-grade RAG (Retrieval Augmented Generation) tools
 with complete Create, Read, Update, Delete capabilities.
 
-5 CONSOLIDATED TOOLS (all 18 functionalities covered):
+4 CONSOLIDATED TOOLS (all 18 functionalities covered):
 
 1. rag_query - Search with mode: "quick"|"research"|"search"
-2. rag_documents - CRUD with action: "list"|"get"|"create"|"update"|"delete"
+2. rag_documents - Document & Chunk CRUD with action: "list"|"get"|"create"|"update"|"delete"|"list_chunks"|"get_chunk"|"create_chunk"|"update_chunk"|"delete_chunk"
 3. rag_indexes - Manage indexes with action: "list"|"info"|"delete"
-4. rag_chunks - CRUD chunks with action: "list"|"get"|"create"|"update"|"delete"
-5. rag_stats - System statistics
+4. rag_stats - System statistics
 """
 )
 
 
 # ============================================================================
-# MCP TOOLS (5 consolidated tools - all 18 functionalities covered)
+# MCP TOOLS (4 consolidated tools - all 18 functionalities covered)
 # ============================================================================
 
 @mcp.tool()
@@ -112,13 +111,33 @@ def rag_documents(
     document_name: Optional[str] = None,
     status: Optional[str] = None,
     language: Optional[str] = None,
+    index_name: Optional[str] = None,
+    chunk_id: Optional[str] = None,
+    text: Optional[str] = None,
+    source: str = "manual_entry",
+    page: Optional[int] = None,
+    offset: int = 0,
+    limit: int = 20,
     metadata: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Document CRUD: action="list"|"get"|"create"|"update"|"delete".
-    create: use content (text or s3://uri) OR file_content+filename (base64 for binary).
-    get/update/delete: require document_id. update: optional document_name, status, language, metadata.
+    Document & Chunk CRUD — unified tool.
+
+    DOCUMENT actions (no index_name needed):
+      action="list"   — list all documents
+      action="get"    — get document details (document_id required)
+      action="create" — ingest text/S3 via content, OR upload binary via file_content+filename
+      action="update" — update document metadata (document_id required; optional document_name, status, language, metadata)
+      action="delete" — delete a document (document_id required)
+
+    CHUNK actions (index_name required):
+      action="list_chunks"   — list chunks in an index (optional source, offset, limit)
+      action="get_chunk"     — get a single chunk (chunk_id required)
+      action="create_chunk"  — create a chunk (text required; optional source, page, metadata)
+      action="update_chunk"  — update a chunk (chunk_id required; optional text, page, metadata)
+      action="delete_chunk"  — delete a chunk (chunk_id required)
     """
+    # ---- Document actions ----
     if action == "list":
         return mcp_engine.list_documents()
     if action == "get":
@@ -146,7 +165,32 @@ def rag_documents(
         if content:
             return mcp_engine.ingest(content, metadata)
         return {"success": False, "error": "For create use content (text or s3://uri) OR file_content+filename"}
-    return {"success": False, "error": f"Unknown action: {action}. Use: list, get, create, update, delete"}
+
+    # ---- Chunk actions (require index_name) ----
+    if action in ("list_chunks", "get_chunk", "create_chunk", "update_chunk", "delete_chunk"):
+        if not index_name:
+            return {"success": False, "error": f"index_name required for action={action}"}
+
+    if action == "list_chunks":
+        return mcp_engine.list_chunks(index_name, source=source, offset=offset, limit=limit)
+    if action == "get_chunk":
+        if not chunk_id:
+            return {"success": False, "error": "chunk_id required for action=get_chunk"}
+        return mcp_engine.get_chunk(index_name, chunk_id)
+    if action == "delete_chunk":
+        if not chunk_id:
+            return {"success": False, "error": "chunk_id required for action=delete_chunk"}
+        return mcp_engine.delete_chunk(index_name, chunk_id)
+    if action == "create_chunk":
+        if not text:
+            return {"success": False, "error": "text required for action=create_chunk"}
+        return mcp_engine.create_chunk(index_name, text, source=source, page=page, metadata=metadata)
+    if action == "update_chunk":
+        if not chunk_id:
+            return {"success": False, "error": "chunk_id required for action=update_chunk"}
+        return mcp_engine.update_chunk(index_name, chunk_id, text=text, page=page, metadata=metadata)
+
+    return {"success": False, "error": f"Unknown action: {action}. Use: list, get, create, update, delete, list_chunks, get_chunk, create_chunk, update_chunk, delete_chunk"}
 
 
 @mcp.tool()
@@ -170,44 +214,6 @@ def rag_indexes(
 
 
 @mcp.tool()
-def rag_chunks(
-    action: str,
-    index_name: str,
-    chunk_id: Optional[str] = None,
-    text: Optional[str] = None,
-    source: str = "manual_entry",
-    page: Optional[int] = None,
-    offset: int = 0,
-    limit: int = 20,
-    metadata: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    """
-    Chunk CRUD: action="list"|"get"|"create"|"update"|"delete".
-    index_name required. For get/update/delete: chunk_id. For create: text. For update: optional text, page, metadata.
-    list: optional source, offset (default 0), limit (default 20).
-    """
-    if action == "list":
-        return mcp_engine.list_chunks(index_name, source=source, offset=offset, limit=limit)
-    if action == "get":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=get"}
-        return mcp_engine.get_chunk(index_name, chunk_id)
-    if action == "delete":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=delete"}
-        return mcp_engine.delete_chunk(index_name, chunk_id)
-    if action == "create":
-        if not text:
-            return {"success": False, "error": "text required for action=create"}
-        return mcp_engine.create_chunk(index_name, text, source=source, page=page, metadata=metadata)
-    if action == "update":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=update"}
-        return mcp_engine.update_chunk(index_name, chunk_id, text=text, page=page, metadata=metadata)
-    return {"success": False, "error": f"Unknown action: {action}. Use: list, get, create, update, delete"}
-
-
-@mcp.tool()
 def rag_stats() -> Dict[str, Any]:
     """Get system statistics: documents, chunks, indexes, costs."""
     return mcp_engine.get_stats()
@@ -222,7 +228,7 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("🚀 Starting MCP Microservice...")
     logger.info(f"   Server: {mcp.name}")
-    logger.info(f"   Tools: 5 MCP tools (rag_query, rag_documents, rag_indexes, rag_chunks, rag_stats)")
+    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
     yield
     logger.info("👋 Shutting down MCP Microservice...")
 
@@ -238,9 +244,8 @@ app = FastAPI(
     ## MCP Tools Available
     
     - **rag_query**: Search (mode: quick|research|search)
-    - **rag_documents**: Document CRUD (action: list|get|create|update|delete)
+    - **rag_documents**: Document & Chunk CRUD (action: list|get|create|update|delete|list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk)
     - **rag_indexes**: Index management (action: list|info|delete)
-    - **rag_chunks**: Chunk CRUD (action: list|get|create|update|delete)
     - **rag_stats**: System statistics
     
     ## Accuracy Features
@@ -282,12 +287,11 @@ async def health_check():
         "server_name": mcp.name,
         "tools": {
             "query": ["rag_query"],
-            "documents": ["rag_documents"],
+            "documents_and_chunks": ["rag_documents"],
             "indexes": ["rag_indexes"],
-            "chunks": ["rag_chunks"],
             "system": ["rag_stats"]
         },
-        "total_tools": 5,
+        "total_tools": 4,
         "accuracy_features": {
             "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
             "reranking": ARISConfig.ENABLE_RERANKING,
@@ -312,24 +316,20 @@ async def service_info():
                 "tools": ["rag_query"],
                 "description": "Search with mode: quick|research|search"
             },
-            "documents": {
+            "documents_and_chunks": {
                 "tools": ["rag_documents"],
-                "description": "Document CRUD: list|get|create|update|delete"
+                "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"
             },
             "indexes": {
                 "tools": ["rag_indexes"],
                 "description": "Index management: list|info|delete"
-            },
-            "chunks": {
-                "tools": ["rag_chunks"],
-                "description": "Chunk CRUD: list|get|create|update|delete"
             },
             "system": {
                 "tools": ["rag_stats"],
                 "description": "System statistics"
             }
         },
-        "total_tools": 5,
+        "total_tools": 4,
         "configuration": {
             "embedding_model": ARISConfig.EMBEDDING_MODEL,
             "chunk_size": ARISConfig.DEFAULT_CHUNK_SIZE,
@@ -350,21 +350,19 @@ async def service_info():
 
 @app.get("/tools")
 async def list_tools():
-    """List all available MCP tools (5 consolidated tools)."""
+    """List all available MCP tools (4 consolidated tools)."""
     return {
-        "total_tools": 5,
+        "total_tools": 4,
         "categories": {
             "query": ["rag_query"],
-            "documents": ["rag_documents"],
+            "documents_and_chunks": ["rag_documents"],
             "indexes": ["rag_indexes"],
-            "chunks": ["rag_chunks"],
             "system": ["rag_stats"]
         },
         "tools": [
             {"name": "rag_query", "category": "query", "description": "Search with mode: quick|research|search"},
-            {"name": "rag_documents", "category": "documents", "description": "Document CRUD: action list|get|create|update|delete"},
+            {"name": "rag_documents", "category": "documents_and_chunks", "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"},
             {"name": "rag_indexes", "category": "indexes", "description": "Index management: action list|info|delete"},
-            {"name": "rag_chunks", "category": "chunks", "description": "Chunk CRUD: action list|get|create|update|delete"},
             {"name": "rag_stats", "category": "system", "description": "System statistics"}
         ]
     }
@@ -580,7 +578,7 @@ def run_combined_server():
     logger.info(f"🚀 Starting Combined MCP + FastAPI Server on {host}:{port}")
     logger.info(f"   MCP SSE endpoint: http://{host}:{port}/sse")
     logger.info(f"   Health endpoint: http://{host}:{port}/health")
-    logger.info(f"   Tools: 5 MCP tools (rag_query, rag_documents, rag_indexes, rag_chunks, rag_stats)")
+    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
     
     # Get the MCP's HTTP app (Starlette-based)
     mcp_http_app = mcp.http_app()
@@ -594,12 +592,11 @@ def run_combined_server():
             "server_name": mcp.name,
             "tools": {
                 "query": ["rag_query"],
-                "documents": ["rag_documents"],
+                "documents_and_chunks": ["rag_documents"],
                 "indexes": ["rag_indexes"],
-                "chunks": ["rag_chunks"],
                 "system": ["rag_stats"]
             },
-            "total_tools": 5,
+            "total_tools": 4,
             "accuracy_features": {
                 "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
                 "reranking": ARISConfig.ENABLE_RERANKING,
@@ -621,24 +618,20 @@ def run_combined_server():
                     "tools": ["rag_query"],
                     "description": "Search with mode: quick|research|search"
                 },
-                "documents": {
+                "documents_and_chunks": {
                     "tools": ["rag_documents"],
-                    "description": "Document CRUD: list|get|create|update|delete"
+                    "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"
                 },
                 "indexes": {
                     "tools": ["rag_indexes"],
                     "description": "Index management: list|info|delete"
-                },
-                "chunks": {
-                    "tools": ["rag_chunks"],
-                    "description": "Chunk CRUD: list|get|create|update|delete"
                 },
                 "system": {
                     "tools": ["rag_stats"],
                     "description": "System statistics"
                 }
             },
-            "total_tools": 5,
+            "total_tools": 4,
             "configuration": {
                 "embedding_model": ARISConfig.EMBEDDING_MODEL,
                 "chunk_size": ARISConfig.DEFAULT_CHUNK_SIZE,
@@ -656,12 +649,11 @@ def run_combined_server():
     # Create tools list handler
     async def tools_handler(request):
         return JSONResponse({
-            "total_tools": 5,
+            "total_tools": 4,
             "tools": [
                 {"name": "rag_query", "category": "query", "description": "Search with mode: quick|research|search"},
-                {"name": "rag_documents", "category": "documents", "description": "Document CRUD: action list|get|create|update|delete"},
+                {"name": "rag_documents", "category": "documents_and_chunks", "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"},
                 {"name": "rag_indexes", "category": "indexes", "description": "Index management: action list|info|delete"},
-                {"name": "rag_chunks", "category": "chunks", "description": "Chunk CRUD: action list|get|create|update|delete"},
                 {"name": "rag_stats", "category": "system", "description": "System statistics"}
             ]
         })
@@ -931,7 +923,7 @@ def run_mcp_only():
     
     logger.info(f"🚀 Starting MCP Server on {host}:{port}")
     logger.info(f"   Transport: {transport}")
-    logger.info(f"   Tools: 5 MCP tools (rag_query, rag_documents, rag_indexes, rag_chunks, rag_stats)")
+    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
     
     if transport == "stdio":
         mcp.run(transport="stdio")

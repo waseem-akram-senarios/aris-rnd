@@ -1,14 +1,12 @@
 """
 MCP Client - Complete Interface for ARIS RAG MCP Server
-5 consolidated MCP tools exposed through a premium Glassmorphism UI.
+4 consolidated MCP tools exposed through a premium Glassmorphism UI.
 
 Tool categories:
 - Query:      rag_query (mode: quick|research|search)
-- Documents:  rag_documents (action: list|get|create|update|delete)
-- Indexes:    rag_list_indexes, rag_get_index_info, rag_delete_index
-- Chunks:     rag_list_chunks, rag_get_chunk, rag_create_chunk,
-              rag_update_chunk, rag_delete_chunk
-- System:     rag_get_stats
+- Documents:  rag_documents (action: list|get|create|update|delete|list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk)
+- Indexes:    rag_indexes (action: list|info|delete)
+- System:     rag_stats
 """
 
 import streamlit as st
@@ -241,7 +239,7 @@ def _confidence_icon(c):
 st.markdown("""
 <div class="mcp-header">
     <h1>🔌 MCP Client</h1>
-    <p>Complete management interface for ARIS RAG MCP Server — 5 tools</p>
+    <p>Complete management interface for ARIS RAG MCP Server — 4 tools</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -264,7 +262,7 @@ with c1:
 with c2:
     st.markdown("""<div class="status-card">
         <h4>🔧 Tool Categories</h4>
-        <div class="value">Query · Documents · Indexes · Chunks · System</div>
+        <div class="value">Query · Documents &amp; Chunks · Indexes · System</div>
     </div>""", unsafe_allow_html=True)
 
 with c3:
@@ -753,8 +751,7 @@ with tab_history:
             st.rerun()
 
         icons = {"rag_query":"🔍", "rag_documents":"📄",
-                 "rag_indexes":"🗂️", "rag_chunks":"🧩",
-                 "rag_stats":"📊"}
+                 "rag_indexes":"🗂️", "rag_stats":"📊"}
 
         for i, entry in enumerate(reversed(st.session_state.mcp_history)):
             icon = icons.get(entry["tool"], "🔧")
@@ -781,7 +778,7 @@ with tab_history:
 st.divider()
 st.markdown(f"""
 <div style="text-align:center; color:#64748b; font-size:.82rem;">
-    <p>🔌 MCP Client for ARIS RAG System — 5 consolidated tools</p>
+    <p>🔌 MCP Client for ARIS RAG System — 4 consolidated tools</p>
     <p>Server: <code>{MCP_SERVER_URL}</code></p>
 </div>
 """, unsafe_allow_html=True)

@@ -33,7 +33,7 @@ def test_mcp_health():
     r = client.get(f"{MCP_URL}/health")
     data = r.json()
     assert data["status"] == "healthy", f"Status is {data['status']}"
-    assert data["total_tools"] == 5, f"Expected 5 tools, got {data['total_tools']}"
+    assert data["total_tools"] == 4, f"Expected 4 tools, got {data['total_tools']}"
 
 def test_list_documents():
     r = client.get(f"{GATEWAY_URL}/documents")
@@ -157,15 +157,15 @@ def test_create_update_delete_chunk():
 
 
 def test_mcp_tools_list():
-    """Verify all 5 consolidated tools are registered via MCP tools/list."""
+    """Verify all 4 consolidated tools are registered via MCP tools/list."""
     r = client.get(f"{MCP_URL}/tools")
     data = r.json()
-    assert data.get("total_tools") == 5, f"Expected 5 tools, got {data.get('total_tools')}"
+    assert data.get("total_tools") == 4, f"Expected 4 tools, got {data.get('total_tools')}"
     tool_names = [t["name"] for t in data.get("tools", [])]
-    expected = ["rag_query", "rag_documents", "rag_indexes", "rag_chunks", "rag_stats"]
+    expected = ["rag_query", "rag_documents", "rag_indexes", "rag_stats"]
     for tool in expected:
         assert tool in tool_names, f"Missing tool: {tool}"
-    print(f"    All 5 tools registered")
+    print(f"    All 4 tools registered")
 
 
 if __name__ == "__main__":
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print()
     
-    test("MCP Health (5 tools)", test_mcp_health)
+    test("MCP Health (4 tools)", test_mcp_health)
     test("MCP Tools List", test_mcp_tools_list)
     test("List Documents", test_list_documents)
     test("Get Document", test_get_document)

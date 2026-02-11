@@ -33,7 +33,7 @@ Ingest documents, run semantic search, and get AI-generated answers — all expo
 
           ┌──────────────────────────────────┐
           │       MCP Server (:8503)         │
-          │  5 consolidated tools            │
+          │  4 consolidated tools            │
           │  SSE + HTTP REST (FastMCP)       │
           └──────────────────────────────────┘
 ```
@@ -45,7 +45,7 @@ Ingest documents, run semantic search, and get AI-generated answers — all expo
 | **Gateway**   | 8500 | API gateway & orchestrator. Routes requests, manages document registry, coordinates sync between services. |
 | **Ingestion** | 8501 | Document processing pipeline. Parses (Docling, PyMuPDF, LlamaScan, OCRmyPDF, Textract), chunks, embeds, and indexes into OpenSearch. |
 | **Retrieval** | 8502 | Query engine. Semantic/hybrid search, FlashRank reranking, image retrieval, and LLM answer generation. |
-| **MCP**       | 8503 | Model Context Protocol server. Exposes 5 consolidated tools so AI agents (Claude, Cursor, etc.) can ingest, search, and manage RAG documents. |
+| **MCP**       | 8503 | Model Context Protocol server. Exposes 4 consolidated tools so AI agents (Claude, Cursor, etc.) can ingest, search, and manage RAG documents. |
 | **UI**        | 80   | Streamlit web interface. Document Q&A, Admin Management, and MCP Client dashboards. |
 
 All five services run from a **single Docker image** (`aris-microservice:latest`); the `SERVICE_TYPE` environment variable selects which service starts via the entrypoint script.
@@ -186,14 +186,13 @@ Handles all query logic with a refactored mixin-based architecture:
 
 ### MCP Server (`:8503`)
 
-Exposes 5 consolidated tools (all 18 functionalities) via the Model Context Protocol:
+Exposes **4 consolidated tools** (all 18 functionalities) via the Model Context Protocol:
 
 | Tool             | Purpose                                                              |
 |------------------|-----------------------------------------------------------------------|
 | **rag_query**    | Search with `mode`: quick \| research \| search                      |
-| **rag_documents** | Document CRUD with `action`: list \| get \| create \| update \| delete |
+| **rag_documents** | Document & Chunk CRUD with `action`: list \| get \| create \| update \| delete \| list_chunks \| get_chunk \| create_chunk \| update_chunk \| delete_chunk |
 | **rag_indexes**  | Index management with `action`: list \| info \| delete                |
-| **rag_chunks**   | Chunk CRUD with `action`: list \| get \| create \| update \| delete  |
 | **rag_stats**    | System statistics                                                    |
 
 **Connect from Claude Desktop / Cursor:**
