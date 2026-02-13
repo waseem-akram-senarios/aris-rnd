@@ -255,6 +255,7 @@ async def query_rag(
                     start_char=src.get("start_char"),
                     end_char=src.get("end_char"),
                     similarity_score=src.get("similarity_score"),
+                    rerank_score=src.get("rerank_score"),
                     similarity_percentage=src.get("similarity_percentage"),
                     chunk_index=src.get("chunk_index"),
                     extraction_method=src.get("extraction_method")
@@ -1189,6 +1190,7 @@ async def query_rag_full(
                     start_char=src.get("start_char"),
                     end_char=src.get("end_char"),
                     similarity_score=src.get("similarity_score"),
+                    rerank_score=src.get("rerank_score"),
                     similarity_percentage=src.get("similarity_percentage"),
                     chunk_index=src.get("chunk_index"),
                     extraction_method=src.get("extraction_method")

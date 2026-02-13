@@ -9,8 +9,10 @@ Endpoints:
 - GET /info - Service information
 - SSE /sse - MCP Server-Sent Events endpoint
 
-MCP Tools:
-- rag_query, rag_documents, rag_indexes, rag_chunks, rag_stats (5 consolidated tools)
+MCP Tools (3):
+- search      — Query documents with quick/research/custom modes
+- documents   — Full document lifecycle: CRUD on docs, chunks, and indexes
+- system_info — System statistics and health metrics
 """
 
 import os
@@ -18,7 +20,6 @@ import sys
 import logging
 import asyncio
 from typing import Optional, Dict, Any
-from contextlib import asynccontextmanager
 from datetime import datetime
 
 # Add project root to path
@@ -26,8 +27,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
@@ -55,420 +54,181 @@ mcp_engine = MCPEngine()
 # Initialize the MCP server
 mcp = FastMCP(
     name="ARIS RAG MCP Server",
-    instructions="""MCP server for ARIS RAG system - full document management with CRUD operations.
+    instructions="""MCP server for the ARIS document management and search system.
 
-This server provides professional-grade RAG (Retrieval Augmented Generation) tools
-with complete Create, Read, Update, Delete capabilities.
+3 tools available:
 
-4 CONSOLIDATED TOOLS (all 18 functionalities covered):
-
-1. rag_query - Search with mode: "quick"|"research"|"search"
-2. rag_documents - Document & Chunk CRUD with action: "list"|"get"|"create"|"update"|"delete"|"list_chunks"|"get_chunk"|"create_chunk"|"update_chunk"|"delete_chunk"
-3. rag_indexes - Manage indexes with action: "list"|"info"|"delete"
-4. rag_stats - System statistics
+1. search      — Find information in documents. Modes: "quick" (fast), "research" (thorough), "search" (custom).
+2. documents   — Full document lifecycle management. Actions for docs (list, get, create, update, delete),
+                  chunks (list_chunks, get_chunk, create_chunk, update_chunk, delete_chunk),
+                  and indexes (list_indexes, index_info, delete_index).
+3. system_info — View system statistics (document counts, query metrics, costs).
 """
 )
 
 
 # ============================================================================
-# MCP TOOLS (4 consolidated tools - all 18 functionalities covered)
+# MCP TOOLS — 3 clean tools
 # ============================================================================
 
 @mcp.tool()
-def rag_query(
+def search(
     query: str,
     mode: str = "search",
     filters: Optional[Dict[str, Any]] = None,
     k: int = 10,
     search_mode: str = "hybrid",
     use_agentic_rag: Optional[bool] = None,
-    include_answer: bool = True
+    include_answer: bool = True,
+    response_language: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Search the RAG system. Use mode to choose speed vs depth.
-    
-    mode: "quick" = fast/simple (gpt-4o-mini), "research" = deep analysis (gpt-4o + agentic),
-          "search" = customizable (default). Other params: filters, k, search_mode, include_answer.
+    Search documents and get AI-generated answers.
+
+    Modes:
+      "quick"    — Fast answer, fewer results (best for simple questions)
+      "research" — Deep analysis with sub-queries (best for complex topics)
+      "search"   — Full control over all parameters (default)
+
+    Filters: {"source": "filename.pdf"} to restrict to a specific document.
+    response_language: "English", "Spanish", etc. Defaults to English.
     """
     if mode == "quick":
         return mcp_engine.search(query=query, filters=filters, k=min(k, 5), search_mode="hybrid",
-                                 use_agentic_rag=False, include_answer=include_answer)
+                                 use_agentic_rag=False, include_answer=include_answer,
+                                 response_language=response_language)
     if mode == "research":
         return mcp_engine.search(query=query, filters=filters, k=max(k, 15), search_mode="hybrid",
-                                use_agentic_rag=True, include_answer=include_answer)
+                                use_agentic_rag=True, include_answer=include_answer,
+                                response_language=response_language)
     uar = use_agentic_rag if use_agentic_rag is not None else True
     return mcp_engine.search(query=query, filters=filters, k=k, search_mode=search_mode,
-                             use_agentic_rag=uar, include_answer=include_answer)
+                             use_agentic_rag=uar, include_answer=include_answer,
+                             response_language=response_language)
 
 
 @mcp.tool()
-def rag_documents(
+def documents(
     action: str,
     document_id: Optional[str] = None,
+    index_name: Optional[str] = None,
+    chunk_id: Optional[str] = None,
     content: Optional[str] = None,
+    text: Optional[str] = None,
     file_content: Optional[str] = None,
     filename: Optional[str] = None,
     document_name: Optional[str] = None,
     status: Optional[str] = None,
     language: Optional[str] = None,
-    index_name: Optional[str] = None,
-    chunk_id: Optional[str] = None,
-    text: Optional[str] = None,
-    source: str = "manual_entry",
+    source: Optional[str] = None,
     page: Optional[int] = None,
     offset: int = 0,
     limit: int = 20,
     metadata: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Document & Chunk CRUD — unified tool.
+    Manage everything about documents: docs, chunks, and indexes.
 
-    DOCUMENT actions (no index_name needed):
-      action="list"   — list all documents
-      action="get"    — get document details (document_id required)
-      action="create" — ingest text/S3 via content, OR upload binary via file_content+filename
-      action="update" — update document metadata (document_id required; optional document_name, status, language, metadata)
-      action="delete" — delete a document (document_id required)
+    Document actions:
+      "list"           — List all documents with status and chunk counts
+      "get"            — Get details of one document (needs document_id)
+      "create"         — Add a document: content (text/s3 uri) OR file_content+filename
+      "update"         — Update document metadata (needs document_id)
+      "delete"         — Remove a document and all its data (needs document_id)
 
-    CHUNK actions (index_name required):
-      action="list_chunks"   — list chunks in an index (optional source, offset, limit)
-      action="get_chunk"     — get a single chunk (chunk_id required)
-      action="create_chunk"  — create a chunk (text required; optional source, page, metadata)
-      action="update_chunk"  — update a chunk (chunk_id required; optional text, page, metadata)
-      action="delete_chunk"  — delete a chunk (chunk_id required)
+    Chunk actions (need index_name):
+      "list_chunks"    — List chunks in an index (optional: source, offset, limit)
+      "get_chunk"      — Get one chunk (needs index_name + chunk_id)
+      "create_chunk"   — Add a chunk (needs index_name + text)
+      "update_chunk"   — Edit a chunk (needs index_name + chunk_id)
+      "delete_chunk"   — Remove a chunk (needs index_name + chunk_id)
+
+    Index actions:
+      "list_indexes"   — List all vector indexes with sizes
+      "index_info"     — Get index details (needs index_name)
+      "delete_index"   — Delete an index and all chunks (needs index_name)
     """
-    # ---- Document actions ----
+    # --- Document actions ---
     if action == "list":
         return mcp_engine.list_documents()
     if action == "get":
         if not document_id:
-            return {"success": False, "error": "document_id required for action=get"}
+            return {"success": False, "error": "document_id is required"}
         return mcp_engine.get_document(document_id)
     if action == "delete":
         if not document_id:
-            return {"success": False, "error": "document_id required for action=delete"}
+            return {"success": False, "error": "document_id is required"}
         return mcp_engine.delete_document(document_id)
     if action == "update":
         if not document_id:
-            return {"success": False, "error": "document_id required for action=update"}
+            return {"success": False, "error": "document_id is required"}
         updates = {}
         if document_name is not None: updates["document_name"] = document_name
         if status is not None: updates["status"] = status
         if language is not None: updates["language"] = language
         if metadata is not None: updates["metadata"] = metadata
         if not updates:
-            return {"success": False, "message": "Provide at least one of: document_name, status, language, metadata"}
+            return {"success": False, "error": "Provide at least one field to update: document_name, status, language, or metadata"}
         return mcp_engine.update_document(document_id, updates)
     if action == "create":
         if file_content and filename:
             return mcp_engine.upload_document(file_content, filename, metadata)
         if content:
             return mcp_engine.ingest(content, metadata)
-        return {"success": False, "error": "For create use content (text or s3://uri) OR file_content+filename"}
+        return {"success": False, "error": "Provide content (text or s3://uri) OR file_content + filename"}
 
-    # ---- Chunk actions (require index_name) ----
-    if action in ("list_chunks", "get_chunk", "create_chunk", "update_chunk", "delete_chunk"):
-        if not index_name:
-            return {"success": False, "error": f"index_name required for action={action}"}
-
+    # --- Chunk actions ---
     if action == "list_chunks":
-        return mcp_engine.list_chunks(index_name, source=source, offset=offset, limit=limit)
+        if not index_name:
+            return {"success": False, "error": "index_name is required"}
+        return mcp_engine.list_chunks(index_name, source=source or "manual_entry", offset=offset, limit=limit)
     if action == "get_chunk":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=get_chunk"}
+        if not index_name or not chunk_id:
+            return {"success": False, "error": "index_name and chunk_id are required"}
         return mcp_engine.get_chunk(index_name, chunk_id)
-    if action == "delete_chunk":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=delete_chunk"}
-        return mcp_engine.delete_chunk(index_name, chunk_id)
     if action == "create_chunk":
+        if not index_name:
+            return {"success": False, "error": "index_name is required"}
         if not text:
-            return {"success": False, "error": "text required for action=create_chunk"}
-        return mcp_engine.create_chunk(index_name, text, source=source, page=page, metadata=metadata)
+            return {"success": False, "error": "text is required to create a chunk"}
+        return mcp_engine.create_chunk(index_name, text, source=source or "manual_entry", page=page, metadata=metadata)
     if action == "update_chunk":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=update_chunk"}
+        if not index_name or not chunk_id:
+            return {"success": False, "error": "index_name and chunk_id are required"}
         return mcp_engine.update_chunk(index_name, chunk_id, text=text, page=page, metadata=metadata)
+    if action == "delete_chunk":
+        if not index_name or not chunk_id:
+            return {"success": False, "error": "index_name and chunk_id are required"}
+        return mcp_engine.delete_chunk(index_name, chunk_id)
 
-    return {"success": False, "error": f"Unknown action: {action}. Use: list, get, create, update, delete, list_chunks, get_chunk, create_chunk, update_chunk, delete_chunk"}
-
-
-@mcp.tool()
-def rag_indexes(
-    action: str = "list",
-    index_name: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Index management: action="list"|"info"|"delete".
-    For info/delete, provide index_name.
-    """
-    if action == "list":
+    # --- Index actions ---
+    if action == "list_indexes":
         return mcp_engine.list_indexes()
-    if not index_name:
-        return {"success": False, "error": "index_name required for action=info or delete"}
-    if action == "info":
+    if action == "index_info":
+        if not index_name:
+            return {"success": False, "error": "index_name is required"}
         return mcp_engine.get_index_info(index_name)
-    if action == "delete":
+    if action == "delete_index":
+        if not index_name:
+            return {"success": False, "error": "index_name is required"}
         return mcp_engine.delete_index(index_name)
-    return {"success": False, "error": f"Unknown action: {action}. Use: list, info, delete"}
+
+    valid = "list, get, create, update, delete, list_chunks, get_chunk, create_chunk, update_chunk, delete_chunk, list_indexes, index_info, delete_index"
+    return {"success": False, "error": f"Unknown action '{action}'. Valid actions: {valid}"}
 
 
 @mcp.tool()
-def rag_stats() -> Dict[str, Any]:
-    """Get system statistics: documents, chunks, indexes, costs."""
+def system_info() -> Dict[str, Any]:
+    """
+    Get system statistics: document counts, chunk counts, query metrics, costs, and language distribution.
+    """
     return mcp_engine.get_stats()
 
 
 # ============================================================================
-# FASTAPI APPLICATION
+# HELPER — sync manager singleton
 # ============================================================================
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan handler."""
-    logger.info("🚀 Starting MCP Microservice...")
-    logger.info(f"   Server: {mcp.name}")
-    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
-    yield
-    logger.info("👋 Shutting down MCP Microservice...")
-
-
-app = FastAPI(
-    title="ARIS RAG MCP Server",
-    description="""
-    **Model Context Protocol (MCP) Server for ARIS RAG System**
-    
-    This microservice provides MCP tools for AI agents to interact with 
-    the ARIS RAG document system.
-    
-    ## MCP Tools Available
-    
-    - **rag_query**: Search (mode: quick|research|search)
-    - **rag_documents**: Document & Chunk CRUD (action: list|get|create|update|delete|list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk)
-    - **rag_indexes**: Index management (action: list|info|delete)
-    - **rag_stats**: System statistics
-    
-    ## Accuracy Features
-    
-    - Hybrid Search (semantic + keyword)
-    - FlashRank Reranking
-    - Agentic RAG Query Decomposition
-    - Confidence Scoring
-    - Cross-language Support
-    
-    ## Endpoints
-    
-    - `GET /health` - Health check
-    - `GET /info` - Service information
-    - `GET /sse` - MCP Server-Sent Events endpoint
-    """,
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for the MCP microservice."""
-    from shared.config.settings import ARISConfig
-    
-    return {
-        "status": "healthy",
-        "service": "mcp",
-        "server_name": mcp.name,
-        "tools": {
-            "query": ["rag_query"],
-            "documents_and_chunks": ["rag_documents"],
-            "indexes": ["rag_indexes"],
-            "system": ["rag_stats"]
-        },
-        "total_tools": 4,
-        "accuracy_features": {
-            "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
-            "reranking": ARISConfig.ENABLE_RERANKING,
-            "agentic_rag": ARISConfig.DEFAULT_USE_AGENTIC_RAG,
-            "auto_translate": ARISConfig.ENABLE_AUTO_TRANSLATE
-        },
-        "timestamp": datetime.now().isoformat()
-    }
-
-
-@app.get("/info")
-async def service_info():
-    """Get detailed information about the MCP service."""
-    from shared.config.settings import ARISConfig
-    
-    return {
-        "service": "ARIS RAG MCP Server",
-        "version": "2.0.0",
-        "description": "Model Context Protocol server with full CRUD operations for document management and search",
-        "tool_categories": {
-            "query": {
-                "tools": ["rag_query"],
-                "description": "Search with mode: quick|research|search"
-            },
-            "documents_and_chunks": {
-                "tools": ["rag_documents"],
-                "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"
-            },
-            "indexes": {
-                "tools": ["rag_indexes"],
-                "description": "Index management: list|info|delete"
-            },
-            "system": {
-                "tools": ["rag_stats"],
-                "description": "System statistics"
-            }
-        },
-        "total_tools": 4,
-        "configuration": {
-            "embedding_model": ARISConfig.EMBEDDING_MODEL,
-            "chunk_size": ARISConfig.DEFAULT_CHUNK_SIZE,
-            "chunk_overlap": ARISConfig.DEFAULT_CHUNK_OVERLAP,
-            "retrieval_k": ARISConfig.DEFAULT_RETRIEVAL_K,
-            "semantic_weight": ARISConfig.DEFAULT_SEMANTIC_WEIGHT,
-            "reranking_enabled": ARISConfig.ENABLE_RERANKING,
-            "agentic_rag_enabled": ARISConfig.DEFAULT_USE_AGENTIC_RAG
-        },
-        "endpoints": {
-            "health": "/health",
-            "info": "/info",
-            "tools": "/tools",
-            "mcp_sse": "/sse"
-        }
-    }
-
-
-@app.get("/tools")
-async def list_tools():
-    """List all available MCP tools (4 consolidated tools)."""
-    return {
-        "total_tools": 4,
-        "categories": {
-            "query": ["rag_query"],
-            "documents_and_chunks": ["rag_documents"],
-            "indexes": ["rag_indexes"],
-            "system": ["rag_stats"]
-        },
-        "tools": [
-            {"name": "rag_query", "category": "query", "description": "Search with mode: quick|research|search"},
-            {"name": "rag_documents", "category": "documents_and_chunks", "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"},
-            {"name": "rag_indexes", "category": "indexes", "description": "Index management: action list|info|delete"},
-            {"name": "rag_stats", "category": "system", "description": "System statistics"}
-        ]
-    }
-
-
-# ============================================================================
-# REST API ENDPOINTS - HTTP interface for Streamlit UI and external clients
-# These mirror the MCP tools so all consumers use the same validated code path.
-# ============================================================================
-
-from pydantic import BaseModel, Field
-from typing import Optional as Opt
-
-
-class SearchRequest(BaseModel):
-    """Request body for /api/search."""
-    query: str
-    filters: Opt[Dict[str, Any]] = None
-    k: int = Field(default=5, ge=1, le=50)
-    search_mode: str = Field(default="hybrid")
-    use_agentic_rag: bool = True
-    include_answer: bool = True
-
-
-class IngestRequest(BaseModel):
-    """Request body for /api/ingest."""
-    content: str
-    metadata: Opt[Dict[str, Any]] = None
-
-
-class UploadRequest(BaseModel):
-    """Request body for /api/upload."""
-    file_content: str  # base64 for binary, plain text for .txt/.md/.html
-    filename: str
-    metadata: Opt[Dict[str, Any]] = None
-
-
-@app.post("/api/search")
-async def api_search(req: SearchRequest):
-    """
-    Search documents via MCP Engine (HTTP wrapper).
-    Used by Streamlit UI and any REST client.
-    """
-    try:
-        result = mcp_engine.search(
-            query=req.query,
-            filters=req.filters,
-            k=req.k,
-            search_mode=req.search_mode,
-            use_agentic_rag=req.use_agentic_rag,
-            include_answer=req.include_answer,
-        )
-        return result
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
-    except Exception as e:
-        logger.error(f"/api/search error: {type(e).__name__}: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/ingest")
-async def api_ingest(req: IngestRequest):
-    """
-    Ingest text/S3-URI content via MCP Engine (HTTP wrapper).
-    Used by Streamlit UI and any REST client.
-    """
-    try:
-        result = mcp_engine.ingest(
-            content=req.content,
-            metadata=req.metadata,
-        )
-        return result
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
-    except Exception as e:
-        logger.error(f"/api/ingest error: {type(e).__name__}: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/upload")
-async def api_upload(req: UploadRequest):
-    """
-    Upload a document via MCP Engine (HTTP wrapper).
-    file_content is base64-encoded for binary files (PDF, DOCX)
-    or plain UTF-8 text for text files (TXT, MD, HTML).
-    Used by Streamlit UI and any REST client.
-    """
-    try:
-        result = mcp_engine.upload_document(
-            file_content=req.file_content,
-            filename=req.filename,
-            metadata=req.metadata,
-        )
-        return result
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
-    except Exception as e:
-        logger.error(f"/api/upload error: {type(e).__name__}: {e}")
-        return {"success": False, "error": str(e)}
-
-
-# ============================================================================
-# SYNC ENDPOINTS - Real-time cross-service synchronization
-# ============================================================================
-
-# Global sync manager for MCP service
 _mcp_sync_manager = None
 
 def get_mcp_sync_manager():
@@ -480,81 +240,50 @@ def get_mcp_sync_manager():
     return _mcp_sync_manager
 
 
-@app.post("/sync/force")
-async def force_sync():
-    """Force full synchronization of MCP service state."""
-    try:
-        sync_mgr = get_mcp_sync_manager()
-        result = sync_mgr.force_full_sync()
-        
-        # Clear cached document registry to force reload with fresh state
-        from services.mcp.engine import _get_cached_document_registry
-        if hasattr(_get_cached_document_registry, '_registry'):
-            del _get_cached_document_registry._registry
-        
-        logger.info("✅ [MCP] Force sync completed, caches cleared")
-        
-        return {
-            "success": True,
-            "message": "MCP sync completed and caches cleared",
-            "result": result
-        }
-    except Exception as e:
-        logger.error(f"[MCP] Force sync failed: {e}")
-        return {"success": False, "error": str(e)}
+# ============================================================================
+# INPUT VALIDATION — shared validators for Starlette handlers
+# ============================================================================
+
+def _validate_search_body(body: dict) -> tuple:
+    """
+    Validate /api/search request body.
+    Returns (cleaned_body, error_message).  error_message is None when valid.
+    """
+    query = (body.get("query") or "").strip()
+    if not query:
+        return None, "query is required and cannot be empty"
+    k = body.get("k", 5)
+    if not isinstance(k, int) or k < 1 or k > 50:
+        return None, "k must be an integer between 1 and 50"
+    search_mode = body.get("search_mode", "hybrid")
+    if search_mode not in ("semantic", "keyword", "hybrid"):
+        return None, f"search_mode must be one of: semantic, keyword, hybrid"
+    body["query"] = query
+    body["k"] = k
+    body["search_mode"] = search_mode
+    return body, None
 
 
-@app.get("/sync/status")
-async def sync_status():
-    """Get current synchronization status for MCP service."""
-    try:
-        sync_mgr = get_mcp_sync_manager()
-        status = sync_mgr.get_sync_status()
-        
-        return {
-            "success": True,
-            "service": "mcp",
-            "status": status
-        }
-    except Exception as e:
-        logger.error(f"[MCP] Sync status failed: {e}")
-        return {"success": False, "error": str(e)}
+def _validate_ingest_body(body: dict) -> tuple:
+    """Validate /api/ingest request body."""
+    content = (body.get("content") or "").strip()
+    if not content:
+        return None, "content is required and cannot be empty"
+    body["content"] = content
+    return body, None
 
 
-@app.post("/sync/check")
-async def check_sync():
-    """Check for changes and sync if needed."""
-    try:
-        sync_mgr = get_mcp_sync_manager()
-        result = sync_mgr.check_and_sync()
-        
-        return {
-            "success": True,
-            "checked": True,
-            "result": result
-        }
-    except Exception as e:
-        logger.error(f"[MCP] Sync check failed: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/sync/instant")
-async def instant_sync():
-    """Perform immediate synchronization without waiting for interval."""
-    try:
-        sync_mgr = get_mcp_sync_manager()
-        result = sync_mgr.instant_sync()
-        
-        logger.info("⚡ [MCP] Instant sync completed")
-        
-        return {
-            "success": True,
-            "message": "Instant sync completed",
-            "result": result
-        }
-    except Exception as e:
-        logger.error(f"[MCP] Instant sync failed: {e}")
-        return {"success": False, "error": str(e)}
+def _validate_upload_body(body: dict) -> tuple:
+    """Validate /api/upload request body."""
+    file_content = (body.get("file_content") or "").strip()
+    filename = (body.get("filename") or "").strip()
+    if not file_content:
+        return None, "file_content is required"
+    if not filename:
+        return None, "filename is required"
+    body["file_content"] = file_content
+    body["filename"] = filename
+    return body, None
 
 
 # ============================================================================
@@ -578,7 +307,7 @@ def run_combined_server():
     logger.info(f"🚀 Starting Combined MCP + FastAPI Server on {host}:{port}")
     logger.info(f"   MCP SSE endpoint: http://{host}:{port}/sse")
     logger.info(f"   Health endpoint: http://{host}:{port}/health")
-    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
+    logger.info(f"   Tools: 3 MCP tools (search, documents, system_info)")
     
     # Get the MCP's HTTP app (Starlette-based)
     mcp_http_app = mcp.http_app()
@@ -590,13 +319,8 @@ def run_combined_server():
             "status": "healthy",
             "service": "mcp",
             "server_name": mcp.name,
-            "tools": {
-                "query": ["rag_query"],
-                "documents_and_chunks": ["rag_documents"],
-                "indexes": ["rag_indexes"],
-                "system": ["rag_stats"]
-            },
-            "total_tools": 4,
+            "tools": ["search", "documents", "system_info"],
+            "total_tools": 3,
             "accuracy_features": {
                 "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
                 "reranking": ARISConfig.ENABLE_RERANKING,
@@ -611,27 +335,14 @@ def run_combined_server():
         from shared.config.settings import ARISConfig
         return JSONResponse({
             "service": "ARIS RAG MCP Server",
-            "version": "2.0.0",
-            "description": "Model Context Protocol server with full CRUD operations for document management and search",
-            "tool_categories": {
-                "query": {
-                    "tools": ["rag_query"],
-                    "description": "Search with mode: quick|research|search"
-                },
-                "documents_and_chunks": {
-                    "tools": ["rag_documents"],
-                    "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"
-                },
-                "indexes": {
-                    "tools": ["rag_indexes"],
-                    "description": "Index management: list|info|delete"
-                },
-                "system": {
-                    "tools": ["rag_stats"],
-                    "description": "System statistics"
-                }
+            "version": "5.0.0",
+            "description": "MCP server for document management and AI-powered search",
+            "tools": {
+                "search": "Search documents with quick/research/custom modes",
+                "documents": "Full document lifecycle: docs, chunks, and indexes (13 actions)",
+                "system_info": "System statistics and health metrics"
             },
-            "total_tools": 4,
+            "total_tools": 3,
             "configuration": {
                 "embedding_model": ARISConfig.EMBEDDING_MODEL,
                 "chunk_size": ARISConfig.DEFAULT_CHUNK_SIZE,
@@ -649,12 +360,11 @@ def run_combined_server():
     # Create tools list handler
     async def tools_handler(request):
         return JSONResponse({
-            "total_tools": 4,
+            "total_tools": 3,
             "tools": [
-                {"name": "rag_query", "category": "query", "description": "Search with mode: quick|research|search"},
-                {"name": "rag_documents", "category": "documents_and_chunks", "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"},
-                {"name": "rag_indexes", "category": "indexes", "description": "Index management: action list|info|delete"},
-                {"name": "rag_stats", "category": "system", "description": "System statistics"}
+                {"name": "search", "description": "Search documents and get AI-generated answers (modes: quick, research, search)"},
+                {"name": "documents", "description": "Full document lifecycle: docs, chunks, and indexes (13 actions)"},
+                {"name": "system_info", "description": "View system statistics (documents, queries, costs)"}
             ]
         })
     
@@ -710,18 +420,23 @@ def run_combined_server():
     # ----------------------------------------------------------------
     # REST API handlers (for Streamlit UI and external REST clients)
     # These mirror the MCP tools so all consumers use the same code path.
+    # Input validation is applied before calling MCPEngine.
     # ----------------------------------------------------------------
     async def api_search_handler(request):
-        """Search documents via MCP Engine."""
+        """Search documents via MCP Engine (validated)."""
         try:
             body = await request.json()
+            body, err = _validate_search_body(body)
+            if err:
+                return JSONResponse({"success": False, "error": err}, status_code=400)
             result = mcp_engine.search(
-                query=body.get("query", ""),
+                query=body["query"],
                 filters=body.get("filters"),
-                k=body.get("k", 5),
-                search_mode=body.get("search_mode", "hybrid"),
+                k=body["k"],
+                search_mode=body["search_mode"],
                 use_agentic_rag=body.get("use_agentic_rag", True),
                 include_answer=body.get("include_answer", True),
+                response_language=body.get("response_language"),
             )
             return JSONResponse(result)
         except ValueError as e:
@@ -731,11 +446,14 @@ def run_combined_server():
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_ingest_handler(request):
-        """Ingest text/S3-URI content via MCP Engine."""
+        """Ingest text/S3-URI content via MCP Engine (validated)."""
         try:
             body = await request.json()
+            body, err = _validate_ingest_body(body)
+            if err:
+                return JSONResponse({"success": False, "error": err}, status_code=400)
             result = mcp_engine.ingest(
-                content=body.get("content", ""),
+                content=body["content"],
                 metadata=body.get("metadata"),
             )
             return JSONResponse(result)
@@ -746,12 +464,15 @@ def run_combined_server():
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_upload_handler(request):
-        """Upload a document via MCP Engine."""
+        """Upload a document via MCP Engine (validated)."""
         try:
             body = await request.json()
+            body, err = _validate_upload_body(body)
+            if err:
+                return JSONResponse({"success": False, "error": err}, status_code=400)
             result = mcp_engine.upload_document(
-                file_content=body.get("file_content", ""),
-                filename=body.get("filename", ""),
+                file_content=body["file_content"],
+                filename=body["filename"],
                 metadata=body.get("metadata"),
             )
             return JSONResponse(result)
@@ -843,12 +564,17 @@ def run_combined_server():
         try:
             idx = request.path_params["index_name"]
             body = await request.json()
+            text = (body.get("text") or "").strip()
+            if not text:
+                return JSONResponse({"success": False, "error": "text is required to create a chunk"}, status_code=400)
             return JSONResponse(mcp_engine.create_chunk(
-                idx, body.get("text", ""),
+                idx, text,
                 source=body.get("source", "manual_entry"),
                 page=body.get("page"),
                 metadata=body.get("metadata"),
             ))
+        except ValueError as e:
+            return JSONResponse({"success": False, "error": str(e)}, status_code=400)
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
@@ -857,12 +583,19 @@ def run_combined_server():
             idx = request.path_params["index_name"]
             cid = request.path_params["chunk_id"]
             body = await request.json()
+            text = body.get("text")
+            page = body.get("page")
+            metadata = body.get("metadata")
+            if text is None and page is None and metadata is None:
+                return JSONResponse({"success": False, "error": "Provide at least one field: text, page, or metadata"}, status_code=400)
             return JSONResponse(mcp_engine.update_chunk(
                 idx, cid,
-                text=body.get("text"),
-                page=body.get("page"),
-                metadata=body.get("metadata"),
+                text=text,
+                page=page,
+                metadata=metadata,
             ))
+        except ValueError as e:
+            return JSONResponse({"success": False, "error": str(e)}, status_code=400)
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
@@ -923,7 +656,7 @@ def run_mcp_only():
     
     logger.info(f"🚀 Starting MCP Server on {host}:{port}")
     logger.info(f"   Transport: {transport}")
-    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
+    logger.info(f"   Tools: 3 MCP tools (search, documents, system_info)")
     
     if transport == "stdio":
         mcp.run(transport="stdio")
@@ -931,27 +664,13 @@ def run_mcp_only():
         mcp.run(transport="sse", host=host, port=port)
 
 
-def run_fastapi_only():
-    """Run only the FastAPI server (without MCP)."""
-    import uvicorn
-    
-    port = int(os.getenv("MCP_SERVER_PORT", "8503"))
-    host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
-    
-    logger.info(f"🌐 Starting FastAPI on {host}:{port}")
-    uvicorn.run(app, host=host, port=port)
-
-
 if __name__ == "__main__":
     # Determine mode from environment
-    # 'combined' (default) - Both FastAPI endpoints + MCP SSE
-    # 'mcp' - MCP server only
-    # 'api' - FastAPI only
+    # 'combined' (default) - REST endpoints + MCP SSE on one port
+    # 'mcp' - MCP server only (SSE/stdio)
     mode = os.getenv("MCP_MODE", "combined")
     
-    if mode == "api":
-        run_fastapi_only()
-    elif mode == "mcp":
+    if mode == "mcp":
         run_mcp_only()
     else:
         run_combined_server()

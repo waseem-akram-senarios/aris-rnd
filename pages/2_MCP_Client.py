@@ -1,12 +1,17 @@
 """
-MCP Client - Complete Interface for ARIS RAG MCP Server
-4 consolidated MCP tools exposed through a premium Glassmorphism UI.
+MCP Client - Complete Interface for ARIS RAG MCP Server v5
+3 MCP tools exposed through a premium Glassmorphism UI.
 
-Tool categories:
-- Query:      rag_query (mode: quick|research|search)
-- Documents:  rag_documents (action: list|get|create|update|delete|list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk)
-- Indexes:    rag_indexes (action: list|info|delete)
-- System:     rag_stats
+Tools:
+- search      — Search documents (quick / research / custom)
+- documents   — Full document lifecycle: docs, chunks, and indexes
+- system_info — System statistics
+
+Improvements v5:
+- Confirmation dialogs on all destructive operations
+- Index dropdown auto-populated in chunk management
+- Persistent execution history (survives page reloads)
+- Consolidated System + Server into a single tab
 """
 
 import streamlit as st
@@ -129,12 +134,43 @@ st.markdown("""
 # ============================================================================
 # SESSION STATE
 # ============================================================================
+_HISTORY_FILE = os.path.join(_PROJECT_ROOT, "data", "mcp_history.json")
+
+def _load_persistent_history() -> list:
+    """Load execution history from disk (survives page reloads)."""
+    try:
+        if os.path.exists(_HISTORY_FILE):
+            with open(_HISTORY_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def _save_persistent_history(history: list):
+    """Persist execution history to disk (keep last 200 entries)."""
+    try:
+        os.makedirs(os.path.dirname(_HISTORY_FILE), exist_ok=True)
+        with open(_HISTORY_FILE, "w") as f:
+            json.dump(history[-200:], f, indent=2, default=str)
+    except Exception:
+        pass
+
+
 for key, default in [
-    ("mcp_results", []), ("mcp_history", []),
+    ("mcp_results", []),
     ("pending_search_query", None),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
+
+# Load persistent history on first run
+if "mcp_history" not in st.session_state:
+    st.session_state.mcp_history = _load_persistent_history()
+
+# Confirmation state for delete dialogs
+if "confirm_delete" not in st.session_state:
+    st.session_state.confirm_delete = {}
 
 # ============================================================================
 # MCP SERVER URL
@@ -213,18 +249,28 @@ def mcp_delete_chunk(idx, cid): return _delete(f"/api/indexes/{idx}/chunks/{cid}
 
 
 def check_mcp_server_health():
-    try:
-        r = requests.get(f"{MCP_SERVER_URL}/health", timeout=5)
-        return r.json() if r.status_code == 200 else None
-    except Exception:
-        return None
+    """Check MCP server health with retry logic for startup race conditions."""
+    for attempt in range(3):
+        try:
+            r = requests.get(f"{MCP_SERVER_URL}/health", timeout=5)
+            if r.status_code == 200:
+                return r.json()
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(1)  # Brief pause between retries
+            else:
+                # Log on final failure only (avoids noisy logs during normal startup)
+                print(f"MCP Health check failed: {e}")
+    return None
 
 
 def _log_history(tool, inp, result=None, elapsed=0, **extra):
-    st.session_state.mcp_history.append({
+    entry = {
         "tool": tool, "timestamp": datetime.now().isoformat(),
         "input": inp, "result": result, "elapsed": elapsed, **extra
-    })
+    }
+    st.session_state.mcp_history.append(entry)
+    _save_persistent_history(st.session_state.mcp_history)
 
 
 def _confidence_icon(c):
@@ -239,7 +285,7 @@ def _confidence_icon(c):
 st.markdown("""
 <div class="mcp-header">
     <h1>🔌 MCP Client</h1>
-    <p>Complete management interface for ARIS RAG MCP Server — 4 tools</p>
+    <p>Document management &amp; AI-powered search — 3 tools</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -248,7 +294,7 @@ c1, c2, c3 = st.columns(3)
 with c1:
     health = check_mcp_server_health()
     if health:
-        total = health.get("total_tools", 18)
+        total = health.get("total_tools", 5)
         st.markdown(f"""<div class="status-card connected">
             <h4>📡 MCP Server</h4>
             <div class="value success">✓ Connected — {total} tools</div>
@@ -261,8 +307,8 @@ with c1:
 
 with c2:
     st.markdown("""<div class="status-card">
-        <h4>🔧 Tool Categories</h4>
-        <div class="value">Query · Documents &amp; Chunks · Indexes · System</div>
+        <h4>🔧 Tools</h4>
+        <div class="value">Search · Documents · System Info</div>
     </div>""", unsafe_allow_html=True)
 
 with c3:
@@ -281,9 +327,9 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================================
 # TABS
 # ============================================================================
-tab_search, tab_ingest, tab_docs, tab_indexes, tab_chunks, tab_system, tab_history = st.tabs([
+tab_search, tab_ingest, tab_docs, tab_system, tab_history = st.tabs([
     "🔍 Search", "📥 Add Documents", "📄 Documents",
-    "🗂️ Indexes", "🧩 Chunks", "📊 System", "📜 History"
+    "📊 System & Server", "📜 History"
 ])
 
 # ============================================================================
@@ -365,7 +411,7 @@ with tab_search:
 
                     with st.expander("📊 Accuracy Info"):
                         st.json(ai)
-                    _log_history("rag_query", {"query": query[:50], "k": k, "mode": "search"},
+                    _log_history("search", {"query": query[:50], "k": k, "mode": "search"},
                                  result_count=result.get("total_results", 0), elapsed=elapsed)
                 else:
                     st.error(f"❌ {result.get('error', 'Unknown error')}")
@@ -433,7 +479,7 @@ with tab_ingest:
                         cc.metric("Pages", result.get("pages_extracted","N/A"))
                         cd.metric("Time", f"{el:.1f}s")
                         with st.expander("📋 Full Response"): st.json(result)
-                        _log_history("rag_documents", {"action": "create", "filename": uploaded_file.name}, result, el)
+                        _log_history("documents", {"action": "create", "filename": uploaded_file.name}, result, el)
                     else:
                         st.error(f"❌ {result.get('error', result.get('message','Unknown'))}")
             else:
@@ -447,40 +493,57 @@ with tab_ingest:
                         ca.metric("Doc ID", result.get("document_id","?")[:12]+"...")
                         cb.metric("Chunks", result.get("chunks_created",0))
                         cc.metric("Time", f"{el:.1f}s")
-                        _log_history("rag_documents", {"action": "create", "content_len": len(content)}, result, el)
+                        _log_history("documents", {"action": "create", "content_len": len(content)}, result, el)
                     else:
                         st.error(f"❌ {result.get('error', result.get('message','Unknown'))}")
 
 # ============================================================================
-# TAB 3 — DOCUMENTS
+# TAB 3 — DOCUMENTS (unified: docs + chunks + indexes)
 # ============================================================================
 with tab_docs:
     st.markdown("""<div class="tool-card docs">
         <h3>📄 Document Management</h3>
-        <p>List, view details, update metadata, or delete documents.</p>
+        <p>Manage documents, chunks, and indexes — all in one place.</p>
     </div>""", unsafe_allow_html=True)
 
-    if st.button("🔄 Load Documents", use_container_width=True, key="btn_load_docs"):
-        with st.spinner("Loading..."):
-            result = mcp_list_documents()
-        if result.get("success"):
+    doc_sub1, doc_sub2, doc_sub3 = st.tabs(["📄 Documents", "🧩 Chunks", "🗂️ Indexes"])
+
+    # --- Sub-tab: Documents ---
+    with doc_sub1:
+        # Persist loaded documents in session state so child buttons work across reruns
+        if "mcp_docs_list" not in st.session_state:
+            st.session_state.mcp_docs_list = None
+        if "mcp_docs_meta" not in st.session_state:
+            st.session_state.mcp_docs_meta = {}
+
+        if st.button("🔄 Load Documents", use_container_width=True, key="btn_load_docs"):
+            with st.spinner("Loading..."):
+                result = mcp_list_documents()
+            if result.get("success"):
+                st.session_state.mcp_docs_list = result
+            else:
+                st.session_state.mcp_docs_list = None
+                st.error(f"❌ {result.get('error', 'Failed to load documents')}")
+
+        # Render document list from session state (survives child-button reruns)
+        if st.session_state.mcp_docs_list and st.session_state.mcp_docs_list.get("success"):
+            result = st.session_state.mcp_docs_list
             docs = result.get("documents", [])
             st.info(f"**{result.get('total', len(docs))}** documents — **{result.get('total_chunks',0)}** total chunks")
 
             for doc in docs:
                 did = doc.get("document_id", doc.get("id", "?"))
                 dname = doc.get("document_name", doc.get("name", "Untitled"))
-                status = doc.get("status", "unknown")
-                chunks = doc.get("chunks_created", doc.get("chunks", "?"))
+                doc_status = doc.get("status", "unknown")
+                chunks_count = doc.get("chunks_created", doc.get("chunks", "?"))
                 lang = doc.get("language", "?")
-                status_icon = "🟢" if status == "processed" else "🟡" if status == "processing" else "⚪"
+                status_icon = "🟢" if doc_status in ("processed", "success") else "🟡" if doc_status == "processing" else "⚪"
 
-                with st.expander(f"{status_icon} **{dname}** — {chunks} chunks — {lang}", expanded=False):
+                with st.expander(f"{status_icon} **{dname}** — {chunks_count} chunks — {lang}", expanded=False):
                     c1, c2 = st.columns([2, 1])
                     with c1:
                         st.code(did, language=None)
-                        st.caption(f"Status: {status} | Language: {lang} | Chunks: {chunks}")
-                        # Get details button
+                        st.caption(f"Status: {doc_status} | Language: {lang} | Chunks: {chunks_count}")
                         if st.button(f"📋 Details", key=f"det_{did}"):
                             detail = mcp_get_document(did)
                             if detail.get("success"):
@@ -491,267 +554,454 @@ with tab_docs:
                     with c2:
                         st.markdown("**Update Metadata**")
                         new_name = st.text_input("Name", value=dname, key=f"name_{did}")
-                        new_status = st.selectbox("Status", ["processed","archived","pending"],
-                                                  index=0, key=f"stat_{did}")
+                        status_options = ["processed", "archived", "pending"]
+                        current_status_idx = 0
+                        if doc_status == "archived":
+                            current_status_idx = 1
+                        elif doc_status == "pending":
+                            current_status_idx = 2
+                        new_status = st.selectbox("Status", status_options,
+                                                  index=current_status_idx, key=f"stat_{did}")
                         if st.button("💾 Update", key=f"upd_{did}"):
                             updates = {}
                             if new_name != dname: updates["document_name"] = new_name
-                            if new_status != status: updates["status"] = new_status
+                            normalized_old = "processed" if doc_status == "success" else doc_status
+                            if new_status != normalized_old: updates["status"] = new_status
                             if updates:
                                 r = mcp_update_document(did, updates)
                                 if r.get("success"):
                                     st.success("Updated!")
-                                    _log_history("rag_documents", {"action": "update", "id": did[:12], **updates})
+                                    _log_history("documents", {"action": "update", "id": did[:12], **updates})
+                                    st.session_state.mcp_docs_list = mcp_list_documents()
+                                    st.rerun()
                                 else:
                                     st.error(r.get("error", "Failed"))
                             else:
                                 st.info("No changes")
 
                         st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
-                        if st.button("🗑️ Delete", key=f"del_{did}", type="secondary"):
-                            r = mcp_delete_document(did)
-                            if r.get("success"):
-                                st.success(f"Deleted: {dname}")
-                                _log_history("rag_documents", {"action": "delete", "id": did[:12], "name": dname})
+                        confirm_key = f"confirm_del_doc_{did}"
+                        if confirm_key not in st.session_state.confirm_delete:
+                            st.session_state.confirm_delete[confirm_key] = False
+                        if not st.session_state.confirm_delete[confirm_key]:
+                            if st.button("🗑️ Delete", key=f"del_{did}", type="secondary"):
+                                st.session_state.confirm_delete[confirm_key] = True
                                 st.rerun()
-                            else:
-                                st.error(r.get("error", "Failed"))
-                        st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.error(f"❌ {result.get('error', 'Failed to load documents')}")
-
-# ============================================================================
-# TAB 4 — INDEXES
-# ============================================================================
-with tab_indexes:
-    st.markdown("""<div class="tool-card indexes">
-        <h3>🗂️ Vector Index Management</h3>
-        <p>Browse, inspect, and manage vector indexes in OpenSearch.</p>
-    </div>""", unsafe_allow_html=True)
-
-    if st.button("🔄 Load Indexes", use_container_width=True, key="btn_load_idx"):
-        with st.spinner("Loading..."):
-            result = mcp_list_indexes()
-        if result.get("success"):
-            indexes = result.get("indexes", [])
-            st.info(f"**{result.get('total', len(indexes))}** indexes found")
-
-            # Filter to aris-doc indexes
-            aris_indexes = [ix for ix in indexes if isinstance(ix, dict) and "aris-doc" in str(ix.get("index",""))]
-            other_indexes = [ix for ix in indexes if isinstance(ix, dict) and "aris-doc" not in str(ix.get("index",""))]
-
-            if aris_indexes:
-                st.markdown("#### Document Indexes")
-                for ix in aris_indexes:
-                    name = ix.get("index", ix.get("name", "?"))
-                    docs_count = ix.get("docs.count", ix.get("doc_count", "?"))
-                    store_size = ix.get("store.size", ix.get("size", "?"))
-                    with st.expander(f"📁 **{name}** — {docs_count} docs — {store_size}"):
-                        c1, c2 = st.columns([3, 1])
-                        with c1:
-                            if st.button("ℹ️ Details", key=f"ixd_{name}"):
-                                info = mcp_get_index(name)
-                                st.json(info)
-                        with c2:
-                            st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
-                            if st.button("🗑️ Delete Index", key=f"ixdel_{name}", type="secondary"):
-                                r = mcp_delete_index(name)
-                                if r.get("success"):
-                                    st.success(f"Deleted: {name}")
-                                    _log_history("rag_indexes", {"action": "delete", "index": name})
+                        else:
+                            st.warning(f"⚠️ Are you sure you want to delete **{dname}**? This cannot be undone.")
+                            dc1, dc2 = st.columns(2)
+                            with dc1:
+                                if st.button("✅ Yes, Delete", key=f"cdel_y_{did}", type="primary"):
+                                    r = mcp_delete_document(did)
+                                    if r.get("success"):
+                                        st.success(f"Deleted: {dname}")
+                                        _log_history("documents", {"action": "delete", "id": did[:12], "name": dname})
+                                        st.session_state.confirm_delete[confirm_key] = False
+                                        st.session_state.mcp_docs_list = mcp_list_documents()
+                                        st.rerun()
+                                    else:
+                                        st.error(r.get("error", "Failed"))
+                            with dc2:
+                                if st.button("❌ Cancel", key=f"cdel_n_{did}"):
+                                    st.session_state.confirm_delete[confirm_key] = False
                                     st.rerun()
-                                else:
-                                    st.error(r.get("error", "Failed"))
-                            st.markdown('</div>', unsafe_allow_html=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
 
-            if other_indexes:
-                with st.expander(f"⚙️ System Indexes ({len(other_indexes)})"):
-                    for ix in other_indexes:
-                        name = ix.get("index", ix.get("name", "?"))
-                        st.text(f"  {name}")
+    # --- Sub-tab: Chunks ---
+    with doc_sub2:
+        # Auto-populate index dropdown from loaded indexes
+        if "mcp_index_names" not in st.session_state:
+            st.session_state.mcp_index_names = []
+
+        if st.button("🔄 Refresh Indexes", key="btn_refresh_idx_chunks", use_container_width=True):
+            with st.spinner("Loading indexes..."):
+                idx_result = mcp_list_indexes()
+            if idx_result.get("success"):
+                names = [ix.get("index_name", ix.get("index", ix.get("name", "")))
+                         for ix in idx_result.get("indexes", []) if isinstance(ix, dict)]
+                st.session_state.mcp_index_names = sorted(names) if names else []
+            else:
+                st.warning("Could not load indexes. You can type an index name below.")
+
+        index_options = st.session_state.mcp_index_names
+        if index_options:
+            idx_name = st.selectbox("Select Index", options=[""] + index_options,
+                                    format_func=lambda x: "(choose an index)" if x == "" else x,
+                                    key="chunk_idx_select")
         else:
-            st.error(f"❌ {result.get('error', 'Failed')}")
+            idx_name = st.text_input("Index Name", placeholder="aris-doc-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+                                     key="chunk_idx")
 
-# ============================================================================
-# TAB 5 — CHUNKS
-# ============================================================================
-with tab_chunks:
-    st.markdown("""<div class="tool-card">
-        <h3>🧩 Chunk Management</h3>
-        <p>Browse, create, edit, and delete individual vector chunks within indexes.</p>
-    </div>""", unsafe_allow_html=True)
+        if idx_name:
+            chunk_action = st.radio("Action", ["List Chunks", "Get Chunk", "Create Chunk", "Update Chunk", "Delete Chunk"],
+                                    horizontal=True, key="chunk_action")
 
-    idx_name = st.text_input("Index Name", placeholder="aris-doc-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-                             key="chunk_idx")
+            if chunk_action == "List Chunks":
+                c1, c2, c3 = st.columns(3)
+                with c1: offset = st.number_input("Offset", value=0, min_value=0, key="ch_off")
+                with c2: limit_val = st.number_input("Limit", value=20, min_value=1, max_value=100, key="ch_lim")
+                with c3: src_filter = st.text_input("Source filter", key="ch_src")
 
-    if idx_name:
-        chunk_action = st.radio("Action", ["List Chunks", "Get Chunk", "Create Chunk", "Update Chunk", "Delete Chunk"],
-                                horizontal=True, key="chunk_action")
+                if st.button("📋 List Chunks", use_container_width=True, key="btn_list_chunks"):
+                    with st.spinner("Loading..."):
+                        result = mcp_list_chunks(idx_name, offset=offset, limit=limit_val,
+                                                 source=src_filter if src_filter else None)
+                    if result.get("success"):
+                        ch_list = result.get("chunks", [])
+                        st.info(f"**{result.get('total', len(ch_list))}** total chunks (showing {len(ch_list)})")
+                        for i, ch in enumerate(ch_list):
+                            cid = ch.get("id", ch.get("_id", "?"))
+                            text_preview = ch.get("text", ch.get("content", ""))[:120]
+                            src = ch.get("source", "?")
+                            pg = ch.get("page", "?")
+                            with st.expander(f"**#{offset+i+1}** — {src} (p{pg}) — `{cid[:20]}...`"):
+                                st.text(text_preview + "...")
+                                st.code(cid, language=None)
+                    else:
+                        st.error(result.get("error", "Failed"))
 
-        if chunk_action == "List Chunks":
-            c1, c2, c3 = st.columns(3)
-            with c1: offset = st.number_input("Offset", value=0, min_value=0, key="ch_off")
-            with c2: limit = st.number_input("Limit", value=20, min_value=1, max_value=100, key="ch_lim")
-            with c3: src_filter = st.text_input("Source filter", key="ch_src")
+            elif chunk_action == "Get Chunk":
+                cid = st.text_input("Chunk ID", key="ch_get_id")
+                if st.button("🔍 Get Chunk", key="btn_get_chunk") and cid:
+                    result = mcp_get_chunk(idx_name, cid)
+                    if result.get("success"):
+                        st.json(result.get("chunk", result))
+                    else:
+                        st.error(result.get("error", "Failed"))
 
-            if st.button("📋 List Chunks", use_container_width=True, key="btn_list_chunks"):
-                with st.spinner("Loading..."):
-                    result = mcp_list_chunks(idx_name, offset=offset, limit=limit,
-                                             source=src_filter if src_filter else None)
-                if result.get("success"):
-                    chunks = result.get("chunks", [])
-                    st.info(f"**{result.get('total', len(chunks))}** total chunks (showing {len(chunks)})")
-                    for i, ch in enumerate(chunks):
-                        cid = ch.get("id", ch.get("_id", "?"))
-                        text_preview = ch.get("text", ch.get("content", ""))[:120]
-                        src = ch.get("source", "?")
-                        pg = ch.get("page", "?")
-                        with st.expander(f"**#{offset+i+1}** — {src} (p{pg}) — `{cid[:20]}...`"):
-                            st.text(text_preview + "...")
-                            st.code(cid, language=None)
-                else:
-                    st.error(result.get("error", "Failed"))
+            elif chunk_action == "Create Chunk":
+                ch_text = st.text_area("Text Content", height=150, key="ch_create_text")
+                c1, c2 = st.columns(2)
+                with c1: ch_src = st.text_input("Source", value="manual_entry", key="ch_create_src")
+                with c2: ch_pg = st.number_input("Page", value=1, min_value=1, key="ch_create_pg")
+                ch_meta = st.text_area("Metadata (JSON)", placeholder='{"key":"value"}', height=60, key="ch_create_meta")
 
-        elif chunk_action == "Get Chunk":
-            cid = st.text_input("Chunk ID", key="ch_get_id")
-            if st.button("🔍 Get Chunk", key="btn_get_chunk") and cid:
-                result = mcp_get_chunk(idx_name, cid)
-                if result.get("success"):
-                    st.json(result.get("chunk", result))
-                else:
-                    st.error(result.get("error", "Failed"))
+                if st.button("➕ Create Chunk", type="primary", use_container_width=True, key="btn_create_chunk"):
+                    if not ch_text:
+                        st.error("Text is required")
+                    else:
+                        body = {"text": ch_text, "source": ch_src, "page": ch_pg}
+                        if ch_meta:
+                            try:
+                                body["metadata"] = json.loads(ch_meta)
+                            except Exception:
+                                st.error("Invalid JSON"); st.stop()
+                        result = mcp_create_chunk(idx_name, body)
+                        if result.get("success"):
+                            st.success(f"✅ Created chunk: `{result.get('chunk_id','?')}`")
+                            _log_history("documents", {"action": "create_chunk", "index": idx_name, "text": ch_text[:50]})
+                        else:
+                            st.error(result.get("error", "Failed"))
 
-        elif chunk_action == "Create Chunk":
-            ch_text = st.text_area("Text Content", height=150, key="ch_create_text")
-            c1, c2 = st.columns(2)
-            with c1: ch_src = st.text_input("Source", value="manual_entry", key="ch_create_src")
-            with c2: ch_pg = st.number_input("Page", value=1, min_value=1, key="ch_create_pg")
-            ch_meta = st.text_area("Metadata (JSON)", placeholder='{"key":"value"}', height=60, key="ch_create_meta")
+            elif chunk_action == "Update Chunk":
+                cid = st.text_input("Chunk ID", key="ch_upd_id")
+                new_text = st.text_area("New Text (leave empty to skip)", height=100, key="ch_upd_text")
+                new_pg = st.number_input("New Page (0 = skip)", value=0, min_value=0, key="ch_upd_pg")
+                new_meta = st.text_area("New Metadata (JSON, leave empty to skip)", height=60, key="ch_upd_meta")
 
-            if st.button("➕ Create Chunk", type="primary", use_container_width=True, key="btn_create_chunk"):
-                if not ch_text:
-                    st.error("Text is required")
-                else:
-                    body = {"text": ch_text, "source": ch_src, "page": ch_pg}
-                    if ch_meta:
+                if st.button("💾 Update Chunk", type="primary", use_container_width=True, key="btn_upd_chunk") and cid:
+                    body = {}
+                    if new_text: body["text"] = new_text
+                    if new_pg > 0: body["page"] = new_pg
+                    if new_meta:
                         try:
-                            body["metadata"] = json.loads(ch_meta)
+                            body["metadata"] = json.loads(new_meta)
                         except Exception:
                             st.error("Invalid JSON"); st.stop()
-                    result = mcp_create_chunk(idx_name, body)
-                    if result.get("success"):
-                        st.success(f"✅ Created chunk: `{result.get('chunk_id','?')}`")
-                        _log_history("rag_chunks", {"action": "create", "index": idx_name, "text": ch_text[:50]})
+                    if body:
+                        result = mcp_update_chunk(idx_name, cid, body)
+                        if result.get("success"):
+                            st.success(f"✅ Updated chunk `{cid[:20]}...`")
+                            _log_history("documents", {"action": "update_chunk", "chunk_id": cid[:20], **body})
+                        else:
+                            st.error(result.get("error", "Failed"))
                     else:
-                        st.error(result.get("error", "Failed"))
+                        st.info("No changes provided")
 
-        elif chunk_action == "Update Chunk":
-            cid = st.text_input("Chunk ID", key="ch_upd_id")
-            new_text = st.text_area("New Text (leave empty to skip)", height=100, key="ch_upd_text")
-            new_pg = st.number_input("New Page (0 = skip)", value=0, min_value=0, key="ch_upd_pg")
-            new_meta = st.text_area("New Metadata (JSON, leave empty to skip)", height=60, key="ch_upd_meta")
+            elif chunk_action == "Delete Chunk":
+                cid = st.text_input("Chunk ID to delete", key="ch_del_id")
+                st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
+                ck = f"confirm_del_chunk_{cid}" if cid else ""
+                if cid and ck not in st.session_state.confirm_delete:
+                    st.session_state.confirm_delete[ck] = False
+                if cid and not st.session_state.confirm_delete.get(ck, False):
+                    if st.button("🗑️ Delete Chunk", type="secondary", use_container_width=True, key="btn_del_chunk"):
+                        st.session_state.confirm_delete[ck] = True
+                        st.rerun()
+                elif cid and st.session_state.confirm_delete.get(ck, False):
+                    st.warning(f"⚠️ Are you sure you want to delete chunk `{cid[:20]}...`?")
+                    dc1, dc2 = st.columns(2)
+                    with dc1:
+                        if st.button("✅ Yes, Delete", key="cdel_y_chunk", type="primary"):
+                            result = mcp_delete_chunk(idx_name, cid)
+                            if result.get("success"):
+                                st.success(f"✅ Deleted chunk `{cid[:20]}...`")
+                                _log_history("documents", {"action": "delete_chunk", "index": idx_name, "chunk_id": cid[:20]})
+                                st.session_state.confirm_delete[ck] = False
+                            else:
+                                st.error(result.get("error", "Failed"))
+                    with dc2:
+                        if st.button("❌ Cancel", key="cdel_n_chunk"):
+                            st.session_state.confirm_delete[ck] = False
+                            st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("Enter an index name above to manage its chunks.")
 
-            if st.button("💾 Update Chunk", type="primary", use_container_width=True, key="btn_upd_chunk") and cid:
-                body = {}
-                if new_text: body["text"] = new_text
-                if new_pg > 0: body["page"] = new_pg
-                if new_meta:
-                    try:
-                        body["metadata"] = json.loads(new_meta)
-                    except Exception:
-                        st.error("Invalid JSON"); st.stop()
-                if body:
-                    result = mcp_update_chunk(idx_name, cid, body)
-                    if result.get("success"):
-                        st.success(f"✅ Updated chunk `{cid[:20]}...`")
-                        _log_history("rag_chunks", {"action": "update", "chunk_id": cid[:20], **body})
-                    else:
-                        st.error(result.get("error", "Failed"))
-                else:
-                    st.info("No changes provided")
+    # --- Sub-tab: Indexes ---
+    with doc_sub3:
+        if st.button("🔄 Load Indexes", use_container_width=True, key="btn_load_idx"):
+            with st.spinner("Loading..."):
+                result = mcp_list_indexes()
+            if result.get("success"):
+                indexes_list = result.get("indexes", [])
+                st.info(f"**{result.get('total', len(indexes_list))}** indexes found")
 
-        elif chunk_action == "Delete Chunk":
-            cid = st.text_input("Chunk ID to delete", key="ch_del_id")
-            st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
-            if st.button("🗑️ Delete Chunk", type="secondary", use_container_width=True, key="btn_del_chunk") and cid:
-                result = mcp_delete_chunk(idx_name, cid)
-                if result.get("success"):
-                    st.success(f"✅ Deleted chunk `{cid[:20]}...`")
-                    _log_history("rag_chunks", {"action": "delete", "index": idx_name, "chunk_id": cid[:20]})
-                else:
-                    st.error(result.get("error", "Failed"))
-            st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        st.info("Enter an index name above to manage its chunks.")
+                aris_indexes = [ix for ix in indexes_list if isinstance(ix, dict) and "aris-doc" in str(ix.get("index",""))]
+                other_indexes = [ix for ix in indexes_list if isinstance(ix, dict) and "aris-doc" not in str(ix.get("index",""))]
+
+                if aris_indexes:
+                    st.markdown("#### Document Indexes")
+                    for ix in aris_indexes:
+                        name = ix.get("index", ix.get("name", "?"))
+                        docs_count = ix.get("docs.count", ix.get("doc_count", "?"))
+                        store_size = ix.get("store.size", ix.get("size", "?"))
+                        with st.expander(f"📁 **{name}** — {docs_count} docs — {store_size}"):
+                            c1, c2 = st.columns([3, 1])
+                            with c1:
+                                if st.button("ℹ️ Details", key=f"ixd_{name}"):
+                                    info = mcp_get_index(name)
+                                    st.json(info)
+                            with c2:
+                                st.markdown('<div class="danger-zone">', unsafe_allow_html=True)
+                                ick = f"confirm_del_ix_{name}"
+                                if ick not in st.session_state.confirm_delete:
+                                    st.session_state.confirm_delete[ick] = False
+                                if not st.session_state.confirm_delete[ick]:
+                                    if st.button("🗑️ Delete Index", key=f"ixdel_{name}", type="secondary"):
+                                        st.session_state.confirm_delete[ick] = True
+                                        st.rerun()
+                                else:
+                                    st.warning(f"⚠️ Delete index **{name}** and ALL its chunks? This cannot be undone.")
+                                    dc1, dc2 = st.columns(2)
+                                    with dc1:
+                                        if st.button("✅ Yes, Delete", key=f"cixdel_y_{name}", type="primary"):
+                                            r = mcp_delete_index(name)
+                                            if r.get("success"):
+                                                st.success(f"Deleted: {name}")
+                                                _log_history("documents", {"action": "delete_index", "index": name})
+                                                st.session_state.confirm_delete[ick] = False
+                                                st.rerun()
+                                            else:
+                                                st.error(r.get("error", "Failed"))
+                                    with dc2:
+                                        if st.button("❌ Cancel", key=f"cixdel_n_{name}"):
+                                            st.session_state.confirm_delete[ick] = False
+                                            st.rerun()
+                                st.markdown('</div>', unsafe_allow_html=True)
+
+                if other_indexes:
+                    with st.expander(f"⚙️ System Indexes ({len(other_indexes)})"):
+                        for ix in other_indexes:
+                            name = ix.get("index", ix.get("name", "?"))
+                            st.text(f"  {name}")
+            else:
+                st.error(f"❌ {result.get('error', 'Failed')}")
 
 # ============================================================================
-# TAB 6 — SYSTEM
+# TAB 4 — SYSTEM & SERVER (consolidated)
 # ============================================================================
 with tab_system:
     st.markdown("""<div class="tool-card system">
-        <h3>📊 System Statistics & Monitoring</h3>
-        <p>View overall RAG system stats, service health, and sync status.</p>
+        <h3>📊 System & Server Dashboard</h3>
+        <p>System statistics, server health, tools, sync, and connectivity — all in one place.</p>
     </div>""", unsafe_allow_html=True)
 
-    c1, c2 = st.columns(2)
-    with c1:
+    # --- Server status bar ---
+    srv_col1, srv_col2 = st.columns([2, 1])
+    with srv_col1:
+        with st.spinner("Checking MCP Server status..."):
+            try:
+                t0 = time.time()
+                srv_health = check_mcp_server_health()
+                ping_ms = (time.time() - t0) * 1000
+                srv_online = srv_health is not None and srv_health.get("status") in ("healthy", "ok")
+                if srv_online:
+                    st.success(f"**MCP SERVER ONLINE** — Ping: {ping_ms:.0f}ms")
+                    st.caption(f"Service: {srv_health.get('service', 'mcp')} | "
+                               f"Tools: {srv_health.get('total_tools', '?')} | "
+                               f"Name: {srv_health.get('server_name', 'ARIS RAG MCP Server')}")
+                else:
+                    st.error("**MCP SERVER OFFLINE / UNREACHABLE**")
+            except Exception as e:
+                st.error(f"**Connection Error**: {e}")
+                srv_online = False
+    with srv_col2:
+        if st.button("🔄 Force Sync", help="Trigger immediate synchronization", key="btn_sync"):
+            with st.status("Syncing...", expanded=True) as status:
+                st.write("Sending sync request...")
+                try:
+                    sync_result = _post("/sync/force", timeout=15)
+                    if isinstance(sync_result, dict) and (sync_result.get("success") or sync_result.get("status") in ("success", "synced")):
+                        st.write("Sync accepted!")
+                        status.update(label="Sync Completed!", state="complete", expanded=False)
+                    else:
+                        st.write(f"Error: {sync_result.get('error', 'Unknown')}")
+                        status.update(label="Sync Failed", state="error", expanded=True)
+                except Exception as e:
+                    st.write(f"Exception: {e}")
+                    status.update(label="Sync Error", state="error", expanded=True)
+
+    st.divider()
+
+    # --- Sub-tabs inside System & Server ---
+    sys_tab1, sys_tab2, sys_tab3, sys_tab4 = st.tabs([
+        "📊 Statistics", "🛠️ Tools", "📋 Server Info", "🔌 Connection"
+    ])
+
+    # --- Sub-tab: Statistics ---
+    with sys_tab1:
         if st.button("📊 Load System Stats", use_container_width=True, key="btn_stats"):
             with st.spinner("Loading stats..."):
                 result = mcp_get_stats()
             if result.get("success"):
                 stats = result.get("stats", result)
-                # Display processing stats
-                proc = stats.get("processing", {})
-                if proc:
-                    st.markdown("#### Processing")
-                    mc = st.columns(4)
-                    mc[0].metric("Documents", proc.get("total_documents", 0))
-                    mc[1].metric("Total Chunks", proc.get("total_chunks", 0))
-                    mc[2].metric("Total Pages", proc.get("total_pages", 0))
-                    mc[3].metric("Total Tokens", f"{proc.get('total_tokens', 0):,}")
 
-                # Query stats
+                proc = stats.get("processing", {})
+                st.markdown("#### Documents")
+                mc = st.columns(4)
+                mc[0].metric("Documents", proc.get("total_documents", 0))
+                mc[1].metric("Total Chunks", proc.get("total_chunks", 0))
+                mc[2].metric("Total Pages", proc.get("total_pages", 0))
+                mc[3].metric("Total Images", proc.get("total_images", 0))
+
+                lang_dist = proc.get("language_distribution", {})
+                if lang_dist:
+                    st.markdown("**Languages:** " + ", ".join(f"{k}: {v}" for k, v in lang_dist.items()))
+
                 queries = stats.get("queries", {})
-                if queries:
-                    st.markdown("#### Queries")
+                st.markdown("#### Queries")
+                mc = st.columns(3)
+                mc[0].metric("Total Queries", queries.get("total_queries", 0))
+                avg_resp = queries.get("avg_response_time", queries.get("average_response_time", 0)) or 0
+                mc[1].metric("Avg Response", f"{avg_resp:.2f}s")
+                success_rate = queries.get("success_rate", 0) or 0
+                mc[2].metric("Success Rate", f"{success_rate * 100:.1f}%" if isinstance(success_rate, float) and success_rate <= 1 else f"{success_rate}%")
+
+                costs = stats.get("costs", {})
+                if costs and any(v for v in costs.values() if v):
+                    st.markdown("#### Costs")
                     mc = st.columns(3)
-                    mc[0].metric("Total Queries", queries.get("total_queries", 0))
-                    mc[1].metric("Avg Response", f"{queries.get('average_response_time', 0):.2f}s")
-                    mc[2].metric("Avg Accuracy", f"{queries.get('average_accuracy', 0):.1f}%")
+                    mc[0].metric("Embedding", f"${costs.get('embedding_cost_usd', 0):.4f}")
+                    mc[1].metric("Query", f"${costs.get('query_cost_usd', 0):.4f}")
+                    mc[2].metric("Total", f"${costs.get('total_cost_usd', 0):.4f}")
 
                 with st.expander("📋 Full Stats JSON"):
                     st.json(stats)
+                _log_history("system_info", {}, result)
             else:
                 st.error(result.get("error", "Failed"))
 
-    with c2:
-        if st.button("🏥 Service Health", use_container_width=True, key="btn_health"):
+        if st.button("🏥 Service Health Check", use_container_width=True, key="btn_health"):
             health = check_mcp_server_health()
             if health:
                 st.json(health)
             else:
                 st.error("MCP server unreachable")
 
-        if st.button("🔄 Force Sync", use_container_width=True, key="btn_sync"):
-            result = _post("/sync/force", timeout=15)
-            if result.get("success"):
-                st.success("Sync completed!")
-                st.json(result)
+    # --- Sub-tab: Tools ---
+    with sys_tab2:
+        st.subheader("Available MCP Tools")
+        if st.button("Load Tools", use_container_width=True, key="btn_srv_tools"):
+            with st.spinner("Loading tools..."):
+                tools_resp = _get("/tools")
+            tools = []
+            if isinstance(tools_resp, dict):
+                tools = tools_resp.get("tools", [])
+            elif isinstance(tools_resp, list):
+                tools = tools_resp
+
+            if tools:
+                st.info(f"Found **{len(tools)}** MCP tools ready for AI agents.")
+                for i, tool in enumerate(tools):
+                    tool_name = tool.get("name", "Unknown")
+                    tool_desc = tool.get("description", "No description.")
+                    with st.expander(f"🔧 **{tool_name}**", expanded=(i == 0)):
+                        st.markdown(f"**Description:** {tool_desc}")
+                        schema = tool.get("inputSchema", tool.get("input_schema", {}))
+                        if schema:
+                            st.markdown("**Input Schema:**")
+                            st.json(schema)
             else:
-                st.error(result.get("error", "Failed"))
+                st.warning("No tools returned. Check server configuration.")
+                st.json(tools_resp)
+
+    # --- Sub-tab: Server Info ---
+    with sys_tab3:
+        st.subheader("Server Info")
+        if st.button("Load Server Info", use_container_width=True, key="btn_srv_info"):
+            with st.spinner("Loading..."):
+                info_resp = _get("/info")
+            if isinstance(info_resp, dict) and info_resp.get("service"):
+                mc = st.columns(3)
+                mc[0].metric("Version", info_resp.get("version", "?"))
+                mc[1].metric("Tools", info_resp.get("total_tools", "?"))
+                mc[2].metric("Service", info_resp.get("service", "?"))
+
+                cats = info_resp.get("tool_categories", {})
+                if cats:
+                    st.markdown("#### Tool Categories")
+                    for cat, desc in cats.items():
+                        st.write(f"**{cat}**: {desc}")
+
+                config = info_resp.get("configuration", {})
+                if config:
+                    st.markdown("#### Configuration")
+                    badges = ""
+                    for key, val in config.items():
+                        color = "rgba(16,185,129,.15)" if val is True or (isinstance(val, (int, float)) and val > 0) else "rgba(255,255,255,.06)"
+                        badges += f'<span class="feature-badge" style="background:{color};">{key.replace("_"," ").title()}: {val}</span>'
+                    st.markdown(badges, unsafe_allow_html=True)
+
+                with st.expander("Full /info JSON"):
+                    st.json(info_resp)
+            else:
+                st.warning("Could not load server info.")
+                st.json(info_resp)
+
+    # --- Sub-tab: Connection ---
+    with sys_tab4:
+        st.subheader("Connection Details")
+        st.code(f"""# MCP Server URL
+MCP_SERVER_URL: {MCP_SERVER_URL}
+
+# Architecture Flow
+Browser -> Streamlit UI -> HTTP Client -> MCP Service (port 8503)
+         -> Gateway (port 8500) -> Ingestion / Retrieval / OpenSearch
+        """, language="bash")
+
+        st.markdown("### Troubleshooting")
+        st.info("""
+If the server shows **OFFLINE**:
+1. Check if the MCP container is running: `docker ps | grep aris-mcp`
+2. Check container logs: `docker logs aris-mcp`
+3. Ensure Docker network `aris-network` connects UI and MCP containers.
+4. Verify `MCP_SERVICE_URL` is set correctly in `docker-compose.yml`.
+        """)
 
 # ============================================================================
-# TAB 7 — HISTORY
+# TAB 5 — HISTORY
 # ============================================================================
 with tab_history:
     st.markdown("### 📜 Execution History")
+    st.caption("History is persisted to disk and survives page reloads.")
     if st.session_state.mcp_history:
         if st.button("🗑️ Clear History", key="btn_clear_hist"):
             st.session_state.mcp_history = []
+            _save_persistent_history([])
             st.rerun()
 
-        icons = {"rag_query":"🔍", "rag_documents":"📄",
-                 "rag_indexes":"🗂️", "rag_stats":"📊"}
+        icons = {"search":"🔍", "documents":"📄", "system_info":"📊"}
 
         for i, entry in enumerate(reversed(st.session_state.mcp_history)):
             icon = icons.get(entry["tool"], "🔧")
@@ -778,7 +1028,7 @@ with tab_history:
 st.divider()
 st.markdown(f"""
 <div style="text-align:center; color:#64748b; font-size:.82rem;">
-    <p>🔌 MCP Client for ARIS RAG System — 4 consolidated tools</p>
+    <p>🔌 MCP Client v5.0 for ARIS RAG System — 3 tools · 5 tabs</p>
     <p>Server: <code>{MCP_SERVER_URL}</code></p>
 </div>
 """, unsafe_allow_html=True)

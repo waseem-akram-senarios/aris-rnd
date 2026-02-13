@@ -108,6 +108,8 @@ services:
       - GATEWAY_URL=http://gateway:8500
       - INGESTION_SERVICE_URL=http://ingestion:8501
       - RETRIEVAL_SERVICE_URL=http://retrieval:8502
+      - MCP_SERVICE_URL=http://mcp:8503
+      - MCP_SERVER_URL=http://mcp:8503
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
       - VECTOR_STORE_TYPE=${VECTOR_STORE_TYPE:-opensearch}
@@ -128,6 +130,8 @@ services:
       - ./logs:/app/logs
     depends_on:
       gateway:
+        condition: service_healthy
+      mcp:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:

@@ -3,7 +3,7 @@ Service container for RAG system components
 """
 import os
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from dotenv import load_dotenv
 from services.gateway.service import GatewayService
 from shared.config.settings import ARISConfig
@@ -262,6 +262,82 @@ class ServiceContainer:
             from shared.schemas import ProcessingResult
             return ProcessingResult(status="failed", document_name=file_name, error=str(e))
 
+    # ============================================================================
+    # MCP METHODS - Compatibility Wrappers
+    # ============================================================================
+
+    def get_mcp_status(self) -> Dict[str, Any]:
+        """Get MCP server health status."""
+        try:
+            async def _check():
+                return await self.gateway_service.get_mcp_status()
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _check())
+                    return future.result(timeout=5)
+            except RuntimeError:
+                return asyncio.run(_check())
+        except Exception as e:
+            logger.error(f"Error getting MCP status: {e}")
+            return {"status": "unhealthy", "error": str(e)}
+
+    def get_mcp_tools(self) -> Dict[str, Any]:
+        """Get available MCP tools."""
+        try:
+            async def _get():
+                return await self.gateway_service.get_mcp_tools()
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _get())
+                    return future.result(timeout=5)
+            except RuntimeError:
+                return asyncio.run(_get())
+        except Exception as e:
+            logger.error(f"Error getting MCP tools: {e}")
+            return {"error": str(e)}
+
+    def trigger_mcp_sync(self) -> Dict[str, Any]:
+        """Trigger force sync on MCP server."""
+        try:
+            async def _sync():
+                return await self.gateway_service.trigger_mcp_sync()
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _sync())
+                    return future.result(timeout=30)
+            except RuntimeError:
+                return asyncio.run(_sync())
+        except Exception as e:
+            logger.error(f"Error triggering MCP sync: {e}")
+            return {"success": False, "error": str(e)}
+
+    def get_mcp_stats(self) -> Dict[str, Any]:
+        """Get MCP internal stats."""
+        try:
+            async def _stats():
+                return await self.gateway_service.get_mcp_stats()
+            
+            try:
+                loop = asyncio.get_running_loop()
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _stats())
+                    return future.result(timeout=5)
+            except RuntimeError:
+                return asyncio.run(_stats())
+        except Exception as e:
+            logger.error(f"Error getting MCP stats: {e}")
+            return {"error": str(e)}
+
     def get_all_metrics(self) -> Dict:
         """Fetch all metrics (proxies to Gateway)"""
         try:
@@ -271,13 +347,6 @@ class ServiceContainer:
             logger.error(f"Error fetching metrics from UI service: {e}")
             return {}
 
-    def get_storage_status(self, document_id: str) -> Dict:
-        """Get storage status from registry (simplified)"""
-        logger.info(f"[UI] ServiceContainer: Getting storage status for document: {document_id}")
-        doc = self.get_document(document_id)
-        if not doc:
-            raise ValueError(f"Document {document_id} not found")
-        
         return {
             'document_id': document_id,
             'document_name': doc.get('document_name', 'unknown'),

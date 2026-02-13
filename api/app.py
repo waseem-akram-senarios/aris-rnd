@@ -660,6 +660,34 @@ st.markdown("""
 with st.sidebar:
     st.markdown("### ⚙️ Control Panel")
     
+    # MCP Server Status Indicator
+    if 'mcp_status_last_check' not in st.session_state:
+        st.session_state.mcp_status_last_check = 0
+        st.session_state.mcp_is_online = False
+    
+    # Check status every 30 seconds
+    import time
+    if time.time() - st.session_state.mcp_status_last_check > 30:
+        try:
+             # Use ServiceContainer if available
+             if 'service_container' not in st.session_state:
+                 st.session_state.service_container = ServiceContainer()
+             
+             # Quick check
+             from services.gateway.service import GatewayService
+             # We can't access gateway_service directly if we don't have the instance easily, 
+             # but we can use st.session_state.service_container
+             status = st.session_state.service_container.get_mcp_status()
+             st.session_state.mcp_is_online = status.get("status") == "healthy" or status.get("status") == "ok"
+             st.session_state.mcp_status_last_check = time.time()
+        except Exception:
+             st.session_state.mcp_is_online = False
+    
+    # Display Status
+    mcp_color = "🟢" if st.session_state.mcp_is_online else "🔴"
+    mcp_text = "Online" if st.session_state.mcp_is_online else "Offline"
+    st.caption(f"MCP Server: {mcp_color} {mcp_text}")
+    
     # API selection (use shared config default)
     default_api = "Cerebras" if ARISConfig.USE_CEREBRAS else "OpenAI"
     api_choice = st.radio(

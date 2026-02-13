@@ -1924,6 +1924,32 @@ class RetrievalEngine(
             
             relevant_docs = filtered_docs[:k]  # Limit to requested k after filtering
         
+        # ── FlashRank Reranking (main query path) ──
+        # The ranker was only called in the Agentic RAG sub-query path.
+        # We must also rerank the main path so rerank_score flows into citations.
+        if self.ranker and relevant_docs and len(relevant_docs) > 1:
+            try:
+                passages = [
+                    {"id": str(i), "text": doc.page_content, "meta": doc.metadata}
+                    for i, doc in enumerate(relevant_docs)
+                ]
+                rerank_query = original_question if original_question else question
+                logger.info(f"⚡ Main-path reranking {len(passages)} chunks with FlashRank...")
+                rerank_request = RerankRequest(query=rerank_query, passages=passages)
+                results = self.ranker.rerank(rerank_request)
+                
+                reranked_docs = []
+                for res in results:
+                    original_idx = int(res['id'])
+                    doc = relevant_docs[original_idx]
+                    doc.metadata['rerank_score'] = res['score']
+                    reranked_docs.append(doc)
+                
+                relevant_docs = reranked_docs[:k]
+                logger.info(f"⚡ Main-path reranking complete: top rerank_score={results[0]['score']:.4f}" if results else "⚡ Reranking returned no results")
+            except Exception as e:
+                logger.warning(f"Main-path reranking failed (using original order): {e}")
+        
         # Build context with metadata for better accuracy and collect citations
         context_parts = []
         citations = []  # Store citation information for each source
@@ -2034,7 +2060,18 @@ class RetrievalEngine(
             # First, check if ingestion already computed a high-confidence page assignment
             ingestion_page = doc.metadata.get('page')
             ingestion_confidence = doc.metadata.get('page_confidence')
-            ingestion_method = doc.metadata.get('page_extraction_method')
+            ingestion_metadata_method = doc.metadata.get('page_extraction_method')
+            
+            # Robust document_id extraction
+            document_id = doc.metadata.get('document_id')
+            if not document_id and hasattr(doc, 'id'):
+                document_id = doc.id
+            
+            # If still no document_id, try to infer from index_name if possible (aris-doc-UUID format)
+            if not document_id and 'index_name' in doc.metadata:
+                idx = doc.metadata['index_name']
+                if idx.startswith('aris-doc-'):
+                    document_id = idx.replace('aris-doc-', '')
             
             if (ingestion_page is not None and ingestion_confidence is not None 
                     and float(ingestion_confidence) >= 0.7):
@@ -2144,13 +2181,21 @@ class RetrievalEngine(
             extraction_method = 'metadata' if source_confidence >= 0.7 else ('text_marker' if source_confidence >= 0.3 else 'fallback')
             
             # Get similarity score if available (for ranking) - improved matching
-            # Priority order: OpenSearch score (from hybrid_search) > doc_scores > order_scores > position-based
+            # Priority order: rerank_score > OpenSearch score > doc_scores > order_scores > position-based
             similarity_score = None
+            rerank_score = None
             import hashlib
             
-            # PRIORITY 1: Check metadata for OpenSearch score from hybrid_search (most accurate)
-            if hasattr(doc, 'metadata') and doc.metadata:
-                # Check for OpenSearch score from hybrid_search (highest priority)
+            # PRIORITY 0: FlashRank rerank_score (highest quality — cross-encoder relevance)
+            if hasattr(doc, 'metadata') and doc.metadata and 'rerank_score' in doc.metadata:
+                rerank_score = doc.metadata.get('rerank_score')
+                # FlashRank scores are 0-1 (relevance probability). Use directly as similarity_score
+                # to ensure the ranking pipeline sees the best available signal.
+                similarity_score = rerank_score
+                logger.debug(f"Citation {i}: Using FlashRank rerank_score: {rerank_score:.4f}")
+            
+            # PRIORITY 1: Check metadata for OpenSearch score from hybrid_search
+            if similarity_score is None and hasattr(doc, 'metadata') and doc.metadata:
                 if '_opensearch_score' in doc.metadata:
                     similarity_score = doc.metadata.get('_opensearch_score')
                     logger.debug(f"Citation {i}: Using OpenSearch score from metadata: {similarity_score:.4f}")
@@ -2201,9 +2246,10 @@ class RetrievalEngine(
             # PRIORITY 4: Final fallback - Use retrieval position as similarity proxy
             # Earlier documents = higher similarity (normalized to 0.5-1.0 range)
             if similarity_score is None:
-                # Use index position (i starts at 1, so first doc gets highest score)
-                position_score = 1.0 - ((i - 1) / max(len(relevant_docs), 1)) * 0.5
-                similarity_score = 0.5 + position_score  # Map to 0.5-1.0 range
+                # position_factor: 1.0 for first doc, decays to 0.0 for last doc
+                position_factor = 1.0 - ((i - 1) / max(len(relevant_docs), 1))
+                # Map into 0.5-1.0 range: first doc = 1.0, last doc = 0.5
+                similarity_score = 0.5 + (position_factor * 0.5)
                 logger.warning(f"Citation {i}: Using position-based similarity score {similarity_score:.3f} (no actual score available)")
             
             # Ensure page is always set (fallback to 1 if None)
@@ -2266,7 +2312,7 @@ class RetrievalEngine(
             citation = {
                 'id': i,
                 'source': source if source and source != 'Unknown' else 'Unknown',
-                'document_id': doc.metadata.get('document_id', None),  # Unique document identifier
+                'document_id': document_id,  # Robust ID from metadata or inference
                 'source_confidence': source_confidence,
                 'page': page,  # Always guaranteed to be an integer >= 1
                 'image_number': None,  # Don't show misleading sequential image numbers
@@ -2283,7 +2329,8 @@ class RetrievalEngine(
                 'source_location': source_location,
                 'content_type': 'image' if is_image_content else 'text',  # Type of content
                 'extraction_method': extraction_method,  # How source was extracted
-                'similarity_score': similarity_score,  # Vector similarity score for ranking
+                'similarity_score': similarity_score,  # Best available score for ranking
+                'rerank_score': rerank_score,  # FlashRank cross-encoder score (0-1), None if not reranked
                 's3_url': doc.metadata.get('s3_url')
             }
             

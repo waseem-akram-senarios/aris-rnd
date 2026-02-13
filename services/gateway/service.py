@@ -5,7 +5,7 @@ import os
 import logging
 import asyncio
 import httpx
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from dotenv import load_dotenv
 
 from shared.config.settings import ARISConfig
@@ -21,6 +21,7 @@ class GatewayService:
     def __init__(self):
         self.ingestion_url = os.getenv("INGESTION_SERVICE_URL", "http://127.0.0.1:8501")
         self.retrieval_url = os.getenv("RETRIEVAL_SERVICE_URL", "http://127.0.0.1:8502")
+        self.mcp_url = os.getenv("MCP_SERVICE_URL", "http://127.0.0.1:8503")
         
         registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
         self.document_registry = DocumentRegistry(registry_path)
@@ -35,7 +36,7 @@ class GatewayService:
         # Registry modification tracking
         self._registry_mtime = 0
         
-        logger.info(f"Gateway initialized. Ingestion: {self.ingestion_url}, Retrieval: {self.retrieval_url}")
+        logger.info(f"Gateway initialized. Ingestion: {self.ingestion_url}, Retrieval: {self.retrieval_url}, MCP: {self.mcp_url}")
     
     def _reload_registry(self):
         """Reload document registry from disk if modified."""
@@ -536,8 +537,19 @@ class GatewayService:
                 return []
 
     async def delete_document_from_stores(self, document_id: str) -> bool:
-        """Proxies DELETE to both Ingestion and Retrieval Services"""
+        """Proxies DELETE to both Ingestion and Retrieval Services, and cleans up dedicated indexes."""
         results = []
+        
+        # 0. Get index_name before deletion for cleanup
+        index_name = None
+        try:
+            self._reload_registry()
+            doc = self.document_registry.get_document(document_id)
+            if doc:
+                index_name = doc.get("text_index") or doc.get("index_name")
+        except Exception as e:
+            logger.debug(f"Gateway: Could not fetch document metadata for index cleanup: {e}")
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             # 1. Delete from Ingestion (handles S3 and Ingestion-local Registry)
             try:
@@ -556,8 +568,68 @@ class GatewayService:
             except Exception as e:
                 logger.warning(f"Gateway: Failed to delete {document_id} from Retrieval: {e}")
                 results.append(False)
+
+            # 3. Dedicated Index Cleanup
+            # If the index name starts with 'aris-doc-', it's a dedicated index for this document
+            if index_name and index_name.startswith("aris-doc-"):
+                try:
+                    logger.info(f"Gateway: Detected dedicated index '{index_name}' for document {document_id}. Deleting index.")
+                    idx_resp = await client.delete(f"{self.retrieval_url}/admin/indexes/{index_name}?confirm=true")
+                    if idx_resp.status_code == 200:
+                        logger.info(f"Gateway: Successfully deleted dedicated index '{index_name}'")
+                    else:
+                        logger.warning(f"Gateway: Failed to delete dedicated index '{index_name}': {idx_resp.text}")
+                except Exception as e:
+                    logger.warning(f"Gateway: Error deleting dedicated index '{index_name}': {e}")
         
         return any(results)
+
+    async def delete_index_synced(self, index_name: str) -> Dict[str, Any]:
+        """
+        Deletes an index and removes all associated documents from the registry.
+        """
+        logger.info(f"Gateway: Starting synced deletion of index '{index_name}'")
+        
+        # 1. Delete the index from Retrieval service
+        deletion_result = {"success": False, "message": "Index deletion not started"}
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.delete(f"{self.retrieval_url}/admin/indexes/{index_name}?confirm=true")
+                if resp.status_code == 200:
+                    deletion_result = resp.json()
+                    logger.info(f"Gateway: Index '{index_name}' deleted from Retrieval")
+                elif resp.status_code == 404:
+                    deletion_result = {"success": False, "message": f"Index '{index_name}' does not exist", "chunks_deleted": 0}
+                    logger.info(f"Gateway: Index '{index_name}' was already gone from Retrieval")
+                else:
+                    return {"success": False, "error": f"Retrieval Service failed: {resp.text}"}
+        except Exception as e:
+            logger.error(f"Gateway: Error calling Retrieval Service for index deletion: {e}")
+            return {"success": False, "error": str(e)}
+
+        # 2. Clean up Document Registry
+        try:
+            self._reload_registry()
+            all_docs = self.document_registry.list_documents()
+            removed_count = 0
+            
+            for doc in all_docs:
+                doc_idx = doc.get("text_index") or doc.get("index_name")
+                if doc_idx == index_name:
+                    doc_id = doc.get("document_id")
+                    if doc_id:
+                        self.document_registry.remove_document(doc_id)
+                        removed_count += 1
+                        logger.info(f"Gateway: Removed document {doc_id} from registry (associated with index {index_name})")
+            
+            deletion_result["documents_removed_from_registry"] = removed_count
+            deletion_result["synced"] = True
+            
+        except Exception as e:
+            logger.warning(f"Gateway: Error during registry cleanup for index {index_name}: {e}")
+            deletion_result["registry_cleanup_error"] = str(e)
+            
+        return deletion_result
 
     async def process_document(self, file_path, file_content, file_name, parser_preference=None, progress_callback=None, index_name=None, language="eng", is_update=False, old_index_name=None) -> "ProcessingResult":
         """Proxies process_document for compatibility with UI - falls back to direct processing if microservice unavailable
@@ -798,6 +870,7 @@ class GatewayService:
         """Fetch and merge metrics from all services (sync version for UI)"""
         # Fetch from Ingestion (processing metrics)
         ingestion_metrics = {}
+
         try:
             with httpx.Client(timeout=10.0) as client:
                 resp = client.get(f"{self.ingestion_url}/metrics")
@@ -840,6 +913,57 @@ class GatewayService:
         }
         return merged
 
+    # ============================================================================
+    # MCP METHODS - Direct Communication
+    # ============================================================================
+
+    async def get_mcp_status(self) -> Dict[str, Any]:
+        """Get MCP server health status."""
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                response = await client.get(f"{self.mcp_url}/health")
+                if response.status_code == 200:
+                    return response.json()
+                return {"status": "unhealthy", "error": f"HTTP {response.status_code}"}
+            except Exception as e:
+                logger.warning(f"MCP Health check failed: {e}")
+                return {"status": "unhealthy", "error": str(e)}
+
+    async def get_mcp_tools(self) -> Dict[str, Any]:
+        """Get available MCP tools."""
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                response = await client.get(f"{self.mcp_url}/tools")
+                return response.json()
+            except Exception as e:
+                logger.error(f"Failed to fetch MCP tools: {e}")
+                return {"tools": [], "error": str(e)}
+
+    async def trigger_mcp_sync(self) -> Dict[str, Any]:
+        """Trigger force sync on MCP server."""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                # Sync Gateway->Ingestion/Retrieval happens via sync_manager usually,
+                # but we can trigger MCP specific sync here.
+                response = await client.post(f"{self.mcp_url}/sync/force")
+                return response.json()
+            except Exception as e:
+                logger.error(f"Failed to sync MCP: {e}")
+                return {"success": False, "error": str(e)}
+
+    async def get_mcp_stats(self) -> Dict[str, Any]:
+        """Get MCP internal stats."""
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                # map to rag_stats tool via api if available, else standard stats endpoint
+                response = await client.get(f"{self.mcp_url}/api/stats") 
+                if response.status_code == 200:
+                    return response.json()
+                return {"error": f"HTTP {response.status_code}"}
+            except Exception as e:
+                logger.error(f"Failed to fetch MCP stats: {e}")
+                return {"error": str(e)}
+
     def get_chunk_token_stats(self) -> Dict:
         """
         Compatibility method for UI - returns token statistics.
@@ -877,7 +1001,7 @@ class GatewayService:
             logger.error(f"Gateway: [ReqID: {request_id}] Error checking index existence: {e}")
             return False
 
-    async     def find_next_available_index_name(self, base_name: str) -> str:
+    async def find_next_available_index_name(self, base_name: str) -> str:
         """
         Find the next available index name (proxies to Ingestion Service).
         Compatibility method for UI.

@@ -330,6 +330,10 @@ class CitationRankingMixin:
             # No relevant citations found - keep all but warn
             logger.warning(f"📊 [CITATION_FILTER] No citations matched query keywords! Keeping all {len(citations)} citations.")
         
+        # ── Check if rerank_scores are available (highest quality signal) ──
+        rerank_scores = [c.get('rerank_score') for c in citations if c.get('rerank_score') is not None]
+        has_rerank = len(rerank_scores) > 0 and len(rerank_scores) >= len(citations) * 0.5  # At least half have rerank
+        
         # Check if we have similarity scores
         similarity_scores = [c.get('similarity_score') for c in citations if c.get('similarity_score') is not None]
         
@@ -339,23 +343,51 @@ class CitationRankingMixin:
             citations.sort(key=lambda c: -c.get('_content_relevance', 0))
             return citations
         
-        # Determine if scores are distance-based (lower is better) or similarity-based (higher is better)
-        # Distance-based scores are typically > 1.0, similarity-based are typically <= 1.0
+        # ── F6 FIX: When rerank_scores are available, use them directly for ranking & percentages ──
+        # FlashRank scores are 0-1 cross-encoder relevance. Much more reliable than RRF or position-based.
+        if has_rerank:
+            logger.info(f"📊 [CITATION_RANK] Using FlashRank rerank_scores for ranking ({len(rerank_scores)}/{len(citations)} citations)")
+            
+            # Sort by rerank_score (descending), fall back to content relevance
+            citations.sort(key=lambda c: (
+                -(c.get('rerank_score') or 0),
+                -c.get('_content_relevance', 0),
+                c.get('id', 0)
+            ))
+            
+            # Calculate percentages from rerank_score (0-1 → 0-100%)
+            best_rerank = max(rerank_scores) if rerank_scores else 1.0
+            for idx, citation in enumerate(citations):
+                rs = citation.get('rerank_score')
+                if rs is not None and best_rerank > 0:
+                    # Normalize relative to best: best gets 100%, others proportionally less
+                    pct = (rs / best_rerank) * 100.0
+                    citation['similarity_percentage'] = round(max(5.0, pct), 1)
+                elif citation.get('_content_relevance', 0) > 0:
+                    citation['similarity_percentage'] = round(max(10.0, 40.0 - (idx * 5)), 1)
+                else:
+                    citation['similarity_percentage'] = round(max(5.0, 20.0 - (idx * 3)), 1)
+                citation['id'] = idx + 1
+            
+            top_3 = [(c.get('source', 'Unknown')[:25], f"rerank={c.get('rerank_score', 0):.3f}", f"{c.get('similarity_percentage', 0):.0f}%") for c in citations[:3]]
+            logger.info(f"📊 [CITATION_RANK] Ranked by FlashRank rerank_score. Top 3: {top_3}")
+            
+            # CLEANUP
+            for citation in citations:
+                for field in ['_content_relevance', '_matched_keywords', '_phrase_matches']:
+                    citation.pop(field, None)
+            return citations
+        
+        # ── No rerank scores: detect score type and rank accordingly ──
         min_score = min(similarity_scores)
         max_score = max(similarity_scores)
         
-        # ENHANCED: Detect RRF scores (very small, closely packed scores like 0.004...)
-        # RRF formula: 1/(60+rank), which gives scores between 0.016 (rank 1) and 0.01 (rank 40)
+        # Detect RRF scores (very small, closely packed scores like 0.004...)
         is_rrf_scores = max_score < 0.05 and (max_score - min_score) < 0.01
         
-        # ENHANCED: Detect MIXED scoring systems (some high ~0.8, some low ~0.004)
-        # This happens when some citations have actual similarity scores and others have RRF scores
+        # Detect MIXED scoring systems (some high ~0.8, some low ~0.004)
         is_mixed_scores = max_score > 0.5 and min_score < 0.05 and len(similarity_scores) > 1
         
-        # If scores are mostly > 1.0, they're likely distance-based
-        # If scores are mostly <= 1.0, they're likely similarity-based
-        # Also check if scores are in the position-based fallback range (0.5-1.0)
-        # Position-based scores are in narrow range and decrease uniformly
         is_position_based = (max_score <= 1.0 and min_score >= 0.5 and 
                             (max_score - min_score) < 0.5 and len(similarity_scores) > 1)
         is_distance_based = max_score > 1.0 and min_score > 0.5 and not is_position_based
@@ -364,74 +396,33 @@ class CitationRankingMixin:
             score_type = "mixed" if is_mixed_scores else "RRF"
             logger.warning(f"📊 [CITATION_RANK] Detected {score_type} scores (range: {min_score:.4f}-{max_score:.4f}). "
                           f"Using CONTENT RELEVANCE as PRIMARY ranking factor.")
-            # Sort by content relevance FIRST, then by similarity score
             citations.sort(key=lambda c: (
-                -c.get('_content_relevance', 0),  # Primary: content relevance (higher = better)
-                -c.get('similarity_score', 0) if c.get('similarity_score') is not None else 999,  # Secondary: similarity
-                c.get('id', 0)  # Tertiary: original order
+                -c.get('_content_relevance', 0),
+                -c.get('similarity_score', 0) if c.get('similarity_score') is not None else 999,
+                c.get('id', 0)
             ))
-            # Calculate percentages based on content relevance ranking
-            # FIX: Top citation always gets 100%, others scale down based on relevance
             max_relevance = max([c.get('_content_relevance', 0) for c in citations]) if citations else 0
             
             for idx, citation in enumerate(citations):
                 relevance = citation.get('_content_relevance', 0)
                 if idx == 0 and relevance > 0:
-                    # TOP citation always gets 100% (it's the most relevant)
                     citation['similarity_percentage'] = 100.0
                 elif relevance > 0:
-                    # Scale percentage relative to top citation's relevance
                     if max_relevance > 0:
                         relative_relevance = relevance / max_relevance
-                        # Scale from 95% down to 50% based on relative relevance
                         citation['similarity_percentage'] = round(50.0 + (relative_relevance * 45.0), 1)
                     else:
                         citation['similarity_percentage'] = round(90.0 - (idx * 10), 1)
                 else:
-                    # Irrelevant citations get low percentages
                     citation['similarity_percentage'] = round(max(10.0, 30.0 - (idx * 5)), 1)
                 citation['id'] = idx + 1
             
             top_3 = [(c.get('source', 'Unknown')[:25], f"rel={c.get('_content_relevance', 0):.2f}", f"{c.get('similarity_percentage', 0):.0f}%") for c in citations[:3]]
             logger.info(f"📊 [CITATION_RANK] Ranked by content relevance. Top 3: {top_3}")
             
-            # CLEANUP: Remove internal fields before returning
-            internal_fields = ['_content_relevance', '_matched_keywords', '_phrase_matches']
-            for citation in citations:
-                for field in internal_fields:
-                    citation.pop(field, None)
-            
-            return citations
-        
-        if is_rrf_scores:
-            logger.warning(f"📊 [CITATION_RANK] Detected RRF scores (range: {min_score:.4f}-{max_score:.4f}). "
-                          f"Using content relevance as PRIMARY ranking factor.")
-            # Sort by content relevance FIRST, then by similarity score
-            citations.sort(key=lambda c: (
-                -c.get('_content_relevance', 0),  # Primary: content relevance (higher = better)
-                -c.get('similarity_score', 0) if c.get('similarity_score') is not None else 999,  # Secondary: similarity
-                c.get('id', 0)  # Tertiary: original order
-            ))
-            # Skip the rest of the similarity-based ranking
-            # Calculate percentages based on content relevance
-            for idx, citation in enumerate(citations):
-                relevance = citation.get('_content_relevance', 0)
-                if relevance > 0:
-                    # Scale percentage by content relevance: 100% * relevance, with minimum 50% for any relevant citation
-                    citation['similarity_percentage'] = round(max(50.0, relevance * 100.0), 1)
-                else:
-                    # Irrelevant citations get low percentages
-                    citation['similarity_percentage'] = round(max(10.0, 30.0 - (idx * 5)), 1)
-                citation['id'] = idx + 1
-            
-            top_3 = [(c.get('source', 'Unknown')[:25], c.get('_content_relevance', 0), c.get('similarity_percentage', 0)) for c in citations[:3]]
-            logger.info(f"📊 [CITATION_RANK] Ranked by content relevance. Top 3: {top_3}")
-            
-            # CLEANUP: Remove internal fields before returning
             for citation in citations:
                 for field in ['_content_relevance', '_matched_keywords', '_phrase_matches']:
                     citation.pop(field, None)
-            
             return citations
         
         if is_position_based:
