@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intelycx-aris-infra"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "aws-cdk-lib>=2.152.0",
+  "constructs>=10.3.0",
+  "pyyaml>=6.0",
+  "boto3>=1.34.0",
+]
+
+

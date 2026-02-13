@@ -1,0 +1,97 @@
+{
+  "vpc-provider:account=975049910508:filter.vpc-id=vpc-0aad20b9963e29f38:region=us-east-2:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-0aad20b9963e29f38",
+    "vpcCidrBlock": "172.31.0.0/16",
+    "ownerAccountId": "975049910508",
+    "availabilityZones": [],
+    "subnetGroups": [
+      {
+        "name": "Private",
+        "type": "Private",
+        "subnets": [
+          {
+            "subnetId": "subnet-05c352570f5e8128c",
+            "cidr": "172.31.51.0/25",
+            "availabilityZone": "us-east-2a",
+            "routeTableId": "rtb-072ed075916bc0f45"
+          },
+          {
+            "subnetId": "subnet-0835ed1aedb87026a",
+            "cidr": "172.31.52.0/25",
+            "availabilityZone": "us-east-2b",
+            "routeTableId": "rtb-072ed075916bc0f45"
+          },
+          {
+            "subnetId": "subnet-0e3e46ca86701686b",
+            "cidr": "172.31.53.0/25",
+            "availabilityZone": "us-east-2c",
+            "routeTableId": "rtb-072ed075916bc0f45"
+          }
+        ]
+      },
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-0740112606659580a",
+            "cidr": "172.31.48.128/25",
+            "availabilityZone": "us-east-2a",
+            "routeTableId": "rtb-0a0fa4948abb28e60"
+          },
+          {
+            "subnetId": "subnet-0f5a7c805e6b2050f",
+            "cidr": "172.31.0.0/20",
+            "availabilityZone": "us-east-2a",
+            "routeTableId": "rtb-0a0fa4948abb28e60"
+          },
+          {
+            "subnetId": "subnet-0fff961c5cee38514",
+            "cidr": "172.31.49.0/25",
+            "availabilityZone": "us-east-2b",
+            "routeTableId": "rtb-0a0fa4948abb28e60"
+          },
+          {
+            "subnetId": "subnet-06c86571e7dcc5fdc",
+            "cidr": "172.31.16.0/20",
+            "availabilityZone": "us-east-2b",
+            "routeTableId": "rtb-0a0fa4948abb28e60"
+          },
+          {
+            "subnetId": "subnet-0e4850a8f2d570719",
+            "cidr": "172.31.32.0/20",
+            "availabilityZone": "us-east-2c",
+            "routeTableId": "rtb-0a0fa4948abb28e60"
+          },
+          {
+            "subnetId": "subnet-0f48907b6f9831c58",
+            "cidr": "172.31.48.0/25",
+            "availabilityZone": "us-east-2c",
+            "routeTableId": "rtb-0a0fa4948abb28e60"
+          }
+        ]
+      }
+    ]
+  },
+  "load-balancer-listener:account=975049910508:listenerPort=80:loadBalancerArn=arn$:aws$:elasticloadbalancing$:us-east-2$:975049910508$:loadbalancer/app/intelycx-alb-dev/d03a8658af509291:loadBalancerType=application:region=us-east-2": {
+    "listenerArn": "arn:aws:elasticloadbalancing:us-east-2:975049910508:listener/app/intelycx-alb-dev/d03a8658af509291/a14de0845f19d39e",
+    "listenerPort": 80,
+    "securityGroupIds": [
+      "sg-0bbdbdf305674fe64"
+    ]
+  },
+  "load-balancer-listener:account=975049910508:listenerPort=443:loadBalancerArn=arn$:aws$:elasticloadbalancing$:us-east-2$:975049910508$:loadbalancer/app/intelycx-alb-dev/d03a8658af509291:loadBalancerType=application:region=us-east-2": {
+    "listenerArn": "arn:aws:elasticloadbalancing:us-east-2:975049910508:listener/app/intelycx-alb-dev/d03a8658af509291/f2803351d3adc0d8",
+    "listenerPort": 443,
+    "securityGroupIds": [
+      "sg-0bbdbdf305674fe64"
+    ]
+  },
+  "security-group:account=975049910508:region=us-east-2:securityGroupId=sg-0bbdbdf305674fe64": {
+    "securityGroupId": "sg-0bbdbdf305674fe64",
+    "allowAllOutbound": false
+  },
+  "acknowledged-issue-numbers": [
+    34892
+  ]
+}

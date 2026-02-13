@@ -1,0 +1,113 @@
+import asyncio
+import logging
+import os
+import ssl
+from pathlib import Path
+from aiohttp import web
+
+from .websocket_handler import WebSocketHandler
+from ..config.settings import load_settings
+from ..database import init_database, close_database
+from ..version import get_version
+
+
+class HealthCheckAccessLogFilter(logging.Filter):
+    """Filter to exclude health check requests from access logs."""
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Filter out health check paths from access logs
+        if hasattr(record, 'msg'):
+            msg = str(record.msg)
+            # Exclude /health and /aris/agent/health paths
+            if '/health' in msg and ('GET /health' in msg or 'GET /aris/agent/health' in msg):
+                return False
+        return True
+
+
+def create_app() -> web.Application:
+    settings = load_settings()
+
+    app = web.Application()
+    handler = WebSocketHandler(settings=settings)
+
+    async def healthcheck(_request: web.Request) -> web.Response:
+        return web.json_response({"status": "ok"})
+
+    async def startup_handler(app):
+        """Initialize database connection on startup."""
+        logger = logging.getLogger(__name__)
+        logger.info(f"🔗 Initializing database connection... (ARIS Agent v{get_version()})")
+        await init_database()
+        logger.info("✅ Database connection initialized")
+
+    async def cleanup_handler(app):
+        """Close database connection on shutdown."""
+        logging.getLogger(__name__).info("🔒 Closing database connection...")
+        await close_database()
+        logging.getLogger(__name__).info("✅ Database connection closed")
+
+    app.on_startup.append(startup_handler)
+    app.on_cleanup.append(cleanup_handler)
+    
+    # Health check endpoints - support both direct and ALB-prefixed paths
+    app.router.add_get("/health", healthcheck)
+    app.router.add_get("/aris/agent/health", healthcheck)
+    
+    # WebSocket endpoints - support both direct and ALB-prefixed paths
+    app.router.add_get("/ws", handler.handle_connection)
+    app.router.add_get("/aris/ws", handler.handle_connection)
+
+    return app
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(
+        level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+    
+    # Filter out health check requests from access logs
+    access_logger = logging.getLogger("aiohttp.access")
+    access_logger.addFilter(HealthCheckAccessLogFilter())
+
+
+def main() -> None:
+    _configure_logging()
+    logger = logging.getLogger(__name__)
+    logger.info(f"🚀 Starting ARIS Agent v{get_version()}")
+    app = create_app()
+
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", "443"))
+    logger.info(f"Initializing ARIS agent service host={host} port={port}")
+
+    # Optional TLS similar to old agent
+    cert_path = Path(os.environ.get("TLS_CERT_PATH", "/certs/server.crt"))
+    key_path = Path(os.environ.get("TLS_KEY_PATH", "/certs/server.key"))
+    ssl_context = None
+    if cert_path.exists() and key_path.exists():
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ssl_context.load_cert_chain(str(cert_path), str(key_path))
+
+    # Use explicit runner/site to ensure binding to desired host
+    runner = web.AppRunner(app)
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(runner.setup())
+    site = web.TCPSite(runner, host, port, ssl_context=ssl_context)
+    loop.run_until_complete(site.start())
+    print(f"Server running on {'https' if ssl_context else 'http'}://{host}:{port}")
+    loop.run_forever()
+
+
+if __name__ == "__main__":
+    # uvloop is optional
+    try:
+        import uvloop  # type: ignore
+
+        uvloop.install()
+    except Exception:  # pragma: no cover - optional dependency
+        pass
+
+    main()
+
+
