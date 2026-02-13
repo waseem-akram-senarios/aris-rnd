@@ -10,9 +10,9 @@ Endpoints:
 - SSE /sse - MCP Server-Sent Events endpoint
 
 MCP Tools (3):
-- search      — Query documents with quick/research/custom modes
-- documents   — Full document lifecycle: CRUD on docs, chunks, and indexes
-- system_info — System statistics and health metrics
+- retrieval   — AI-powered document search with hybrid search + FlashRank reranking
+- ingestion   — Full document lifecycle: CRUD on docs, chunks, and indexes
+- monitoring  — System statistics, health metrics, and performance monitoring
 """
 
 import os
@@ -58,21 +58,22 @@ mcp = FastMCP(
 
 3 tools available:
 
-1. search      — Find information in documents. Modes: "quick" (fast), "research" (thorough), "search" (custom).
-2. documents   — Full document lifecycle management. Actions for docs (list, get, create, update, delete),
+1. retrieval   — AI-powered document search and Q&A. Modes: "quick" (fast), "research" (thorough), "search" (custom).
+                  Uses hybrid search (semantic + keyword) with FlashRank cross-encoder reranking.
+2. ingestion   — Full document lifecycle management. Actions for docs (list, get, create, update, delete),
                   chunks (list_chunks, get_chunk, create_chunk, update_chunk, delete_chunk),
                   and indexes (list_indexes, index_info, delete_index).
-3. system_info — View system statistics (document counts, query metrics, costs).
+3. monitoring  — View system statistics (document counts, query metrics, performance, costs).
 """
 )
 
 
 # ============================================================================
-# MCP TOOLS — 3 clean tools
+# MCP TOOLS — 3 domain-specific tools
 # ============================================================================
 
 @mcp.tool()
-def search(
+def retrieval(
     query: str,
     mode: str = "search",
     filters: Optional[Dict[str, Any]] = None,
@@ -83,7 +84,8 @@ def search(
     response_language: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Search documents and get AI-generated answers.
+    AI-powered document search and question answering using RAG (Retrieval-Augmented Generation).
+    Uses hybrid search (semantic + keyword) with FlashRank cross-encoder reranking for high accuracy.
 
     Modes:
       "quick"    — Fast answer, fewer results (best for simple questions)
@@ -108,7 +110,7 @@ def search(
 
 
 @mcp.tool()
-def documents(
+def ingestion(
     action: str,
     document_id: Optional[str] = None,
     index_name: Optional[str] = None,
@@ -127,12 +129,12 @@ def documents(
     metadata: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Manage everything about documents: docs, chunks, and indexes.
+    Full document lifecycle management — ingest, organize, and manage all document data.
 
     Document actions:
       "list"           — List all documents with status and chunk counts
       "get"            — Get details of one document (needs document_id)
-      "create"         — Add a document: content (text/s3 uri) OR file_content+filename
+      "create"         — Ingest a document: content (text/s3 uri) OR file_content+filename
       "update"         — Update document metadata (needs document_id)
       "delete"         — Remove a document and all its data (needs document_id)
 
@@ -218,9 +220,10 @@ def documents(
 
 
 @mcp.tool()
-def system_info() -> Dict[str, Any]:
+def monitoring() -> Dict[str, Any]:
     """
-    Get system statistics: document counts, chunk counts, query metrics, costs, and language distribution.
+    System monitoring — get real-time statistics: document counts, chunk counts,
+    query performance metrics, API costs, and language distribution.
     """
     return mcp_engine.get_stats()
 
@@ -319,7 +322,7 @@ def run_combined_server():
             "status": "healthy",
             "service": "mcp",
             "server_name": mcp.name,
-            "tools": ["search", "documents", "system_info"],
+            "tools": ["retrieval", "ingestion", "monitoring"],
             "total_tools": 3,
             "accuracy_features": {
                 "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
@@ -338,9 +341,9 @@ def run_combined_server():
             "version": "5.0.0",
             "description": "MCP server for document management and AI-powered search",
             "tools": {
-                "search": "Search documents with quick/research/custom modes",
-                "documents": "Full document lifecycle: docs, chunks, and indexes (13 actions)",
-                "system_info": "System statistics and health metrics"
+                "retrieval": "AI-powered document search with hybrid search + FlashRank reranking",
+                "ingestion": "Full document lifecycle: ingest, manage docs, chunks, and indexes (13 actions)",
+                "monitoring": "System statistics, health metrics, and performance monitoring"
             },
             "total_tools": 3,
             "configuration": {
@@ -362,9 +365,9 @@ def run_combined_server():
         return JSONResponse({
             "total_tools": 3,
             "tools": [
-                {"name": "search", "description": "Search documents and get AI-generated answers (modes: quick, research, search)"},
-                {"name": "documents", "description": "Full document lifecycle: docs, chunks, and indexes (13 actions)"},
-                {"name": "system_info", "description": "View system statistics (documents, queries, costs)"}
+                {"name": "retrieval", "description": "AI-powered document search and Q&A with hybrid search + FlashRank reranking (modes: quick, research, search)"},
+                {"name": "ingestion", "description": "Full document lifecycle: ingest, manage docs, chunks, and indexes (13 actions)"},
+                {"name": "monitoring", "description": "System monitoring: document counts, query performance, costs, and health metrics"}
             ]
         })
     

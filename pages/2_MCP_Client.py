@@ -3,9 +3,9 @@ MCP Client - Complete Interface for ARIS RAG MCP Server v5
 3 MCP tools exposed through a premium Glassmorphism UI.
 
 Tools:
-- search      — Search documents (quick / research / custom)
-- documents   — Full document lifecycle: docs, chunks, and indexes
-- system_info — System statistics
+- retrieval   — AI-powered document search with hybrid search + FlashRank reranking
+- ingestion   — Full document lifecycle: docs, chunks, and indexes
+- monitoring  — System statistics, health metrics, and performance monitoring
 
 Improvements v5:
 - Confirmation dialogs on all destructive operations
@@ -411,7 +411,7 @@ with tab_search:
 
                     with st.expander("📊 Accuracy Info"):
                         st.json(ai)
-                    _log_history("search", {"query": query[:50], "k": k, "mode": "search"},
+                    _log_history("retrieval", {"query": query[:50], "k": k, "mode": "search"},
                                  result_count=result.get("total_results", 0), elapsed=elapsed)
                 else:
                     st.error(f"❌ {result.get('error', 'Unknown error')}")
@@ -479,7 +479,7 @@ with tab_ingest:
                         cc.metric("Pages", result.get("pages_extracted","N/A"))
                         cd.metric("Time", f"{el:.1f}s")
                         with st.expander("📋 Full Response"): st.json(result)
-                        _log_history("documents", {"action": "create", "filename": uploaded_file.name}, result, el)
+                        _log_history("ingestion", {"action": "create", "filename": uploaded_file.name}, result, el)
                     else:
                         st.error(f"❌ {result.get('error', result.get('message','Unknown'))}")
             else:
@@ -493,7 +493,7 @@ with tab_ingest:
                         ca.metric("Doc ID", result.get("document_id","?")[:12]+"...")
                         cb.metric("Chunks", result.get("chunks_created",0))
                         cc.metric("Time", f"{el:.1f}s")
-                        _log_history("documents", {"action": "create", "content_len": len(content)}, result, el)
+                        _log_history("ingestion", {"action": "create", "content_len": len(content)}, result, el)
                     else:
                         st.error(f"❌ {result.get('error', result.get('message','Unknown'))}")
 
@@ -571,7 +571,7 @@ with tab_docs:
                                 r = mcp_update_document(did, updates)
                                 if r.get("success"):
                                     st.success("Updated!")
-                                    _log_history("documents", {"action": "update", "id": did[:12], **updates})
+                                    _log_history("ingestion", {"action": "update", "id": did[:12], **updates})
                                     st.session_state.mcp_docs_list = mcp_list_documents()
                                     st.rerun()
                                 else:
@@ -595,7 +595,7 @@ with tab_docs:
                                     r = mcp_delete_document(did)
                                     if r.get("success"):
                                         st.success(f"Deleted: {dname}")
-                                        _log_history("documents", {"action": "delete", "id": did[:12], "name": dname})
+                                        _log_history("ingestion", {"action": "delete", "id": did[:12], "name": dname})
                                         st.session_state.confirm_delete[confirm_key] = False
                                         st.session_state.mcp_docs_list = mcp_list_documents()
                                         st.rerun()
@@ -689,7 +689,7 @@ with tab_docs:
                         result = mcp_create_chunk(idx_name, body)
                         if result.get("success"):
                             st.success(f"✅ Created chunk: `{result.get('chunk_id','?')}`")
-                            _log_history("documents", {"action": "create_chunk", "index": idx_name, "text": ch_text[:50]})
+                            _log_history("ingestion", {"action": "create_chunk", "index": idx_name, "text": ch_text[:50]})
                         else:
                             st.error(result.get("error", "Failed"))
 
@@ -712,7 +712,7 @@ with tab_docs:
                         result = mcp_update_chunk(idx_name, cid, body)
                         if result.get("success"):
                             st.success(f"✅ Updated chunk `{cid[:20]}...`")
-                            _log_history("documents", {"action": "update_chunk", "chunk_id": cid[:20], **body})
+                            _log_history("ingestion", {"action": "update_chunk", "chunk_id": cid[:20], **body})
                         else:
                             st.error(result.get("error", "Failed"))
                     else:
@@ -736,7 +736,7 @@ with tab_docs:
                             result = mcp_delete_chunk(idx_name, cid)
                             if result.get("success"):
                                 st.success(f"✅ Deleted chunk `{cid[:20]}...`")
-                                _log_history("documents", {"action": "delete_chunk", "index": idx_name, "chunk_id": cid[:20]})
+                                _log_history("ingestion", {"action": "delete_chunk", "index": idx_name, "chunk_id": cid[:20]})
                                 st.session_state.confirm_delete[ck] = False
                             else:
                                 st.error(result.get("error", "Failed"))
@@ -789,7 +789,7 @@ with tab_docs:
                                             r = mcp_delete_index(name)
                                             if r.get("success"):
                                                 st.success(f"Deleted: {name}")
-                                                _log_history("documents", {"action": "delete_index", "index": name})
+                                                _log_history("ingestion", {"action": "delete_index", "index": name})
                                                 st.session_state.confirm_delete[ick] = False
                                                 st.rerun()
                                             else:
@@ -898,7 +898,7 @@ with tab_system:
 
                 with st.expander("📋 Full Stats JSON"):
                     st.json(stats)
-                _log_history("system_info", {}, result)
+                _log_history("monitoring", {}, result)
             else:
                 st.error(result.get("error", "Failed"))
 
@@ -1001,7 +1001,7 @@ with tab_history:
             _save_persistent_history([])
             st.rerun()
 
-        icons = {"search":"🔍", "documents":"📄", "system_info":"📊"}
+        icons = {"retrieval":"🔍", "ingestion":"📄", "monitoring":"📊"}
 
         for i, entry in enumerate(reversed(st.session_state.mcp_history)):
             icon = icons.get(entry["tool"], "🔧")
