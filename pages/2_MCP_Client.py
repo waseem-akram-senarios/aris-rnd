@@ -1,17 +1,20 @@
 """
-MCP Client - Complete Interface for ARIS RAG MCP Server v5
-3 MCP tools exposed through a premium Glassmorphism UI.
+MCP Client - Complete Interface for ARIS RAG MCP Server v6
+7 MCP tools exposed through a premium Glassmorphism UI (Intelycx pattern).
 
 Tools:
-- retrieval   — AI-powered document search with hybrid search + FlashRank reranking
-- ingestion   — Full document lifecycle: docs, chunks, and indexes
-- monitoring  — System statistics, health metrics, and performance monitoring
+- search_knowledge_base   — AI-powered semantic search with hybrid retrieval + FlashRank reranking
+- ingest_document         — Ingest documents into the knowledge base
+- list_documents          — List all documents with status and chunk counts
+- get_document_status     — Get processing status of a specific document
+- delete_document         — Remove a document and all its indexed data
+- manage_index            — Manage vector indexes: list, inspect, or delete
+- get_system_stats        — System monitoring: document counts, query metrics, costs
 
-Improvements v5:
-- Confirmation dialogs on all destructive operations
-- Index dropdown auto-populated in chunk management
-- Persistent execution history (survives page reloads)
-- Consolidated System + Server into a single tab
+Improvements v6:
+- Separate MCP tools per action (matches Intelycx pattern)
+- Pydantic models, Annotated params, async+Context with progress
+- Rich tool metadata (tags, meta, annotations) for agent discovery
 """
 
 import streamlit as st
