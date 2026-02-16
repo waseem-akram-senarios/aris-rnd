@@ -35,17 +35,58 @@ GATEWAY_URL = os.getenv("GATEWAY_URL", "http://gateway:8500")
 # HTTP client with connection pooling for efficiency
 _http_client = None
 
+# Configurable limits (Phase 2)
+MAX_SEARCH_K = int(os.getenv("MCP_MAX_SEARCH_K", "50"))
+MAX_CHUNK_LIMIT = int(os.getenv("MCP_MAX_CHUNK_LIMIT", "100"))
+HTTP_TIMEOUT = float(os.getenv("MCP_HTTP_TIMEOUT", "300"))
+HTTP_CONNECT_TIMEOUT = float(os.getenv("MCP_HTTP_CONNECT_TIMEOUT", "10"))
+RETRY_ATTEMPTS = int(os.getenv("MCP_RETRY_ATTEMPTS", "3"))
+RETRY_BACKOFF = [1, 2, 4]  # seconds between retries
+
+
 def _get_http_client():
     """Get or create HTTP client with connection pooling."""
     global _http_client
     if _http_client is None:
         import httpx
         _http_client = httpx.Client(
-            timeout=httpx.Timeout(300.0, connect=10.0),  # 5 min timeout for long queries
+            timeout=httpx.Timeout(HTTP_TIMEOUT, connect=HTTP_CONNECT_TIMEOUT),
             limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
         )
         logger.info("✅ HTTP client initialized for MCP service calls")
     return _http_client
+
+
+def _http_with_retry(client, method: str, url: str, **kwargs):
+    """
+    Execute an HTTP request with exponential backoff retry.
+    
+    Retries on connection errors and 5xx server errors.
+    Does NOT retry on 4xx client errors (bad request, not found, etc.).
+    """
+    import httpx
+    last_error = None
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            response = client.request(method, url, **kwargs)
+            # Don't retry client errors (4xx) — they won't succeed on retry
+            if response.status_code < 500:
+                return response
+            # 5xx server errors — worth retrying
+            last_error = Exception(f"HTTP {response.status_code}: {response.text[:200]}")
+            logger.warning(f"Retry {attempt+1}/{RETRY_ATTEMPTS} for {method} {url} (HTTP {response.status_code})")
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, ConnectionError, OSError) as e:
+            last_error = e
+            logger.warning(f"Retry {attempt+1}/{RETRY_ATTEMPTS} for {method} {url}: {type(e).__name__}")
+        except Exception as e:
+            # Non-retriable error — raise immediately
+            raise
+
+        if attempt < RETRY_ATTEMPTS - 1:
+            wait = RETRY_BACKOFF[min(attempt, len(RETRY_BACKOFF) - 1)]
+            time_module.sleep(wait)
+
+    raise last_error
 
 
 def _get_cached_document_registry():
@@ -83,6 +124,7 @@ class MCPEngine:
         self.config = ARISConfig
         self._http_client = None
         logger.info("✅ MCPEngine initialized (using HTTP calls to existing services)")
+        self._check_service_connectivity()
     
     @property
     def http_client(self):
@@ -100,16 +142,32 @@ class MCPEngine:
         from shared.utils.sync_manager import get_sync_manager
         return get_sync_manager("mcp")
     
+    def _check_service_connectivity(self):
+        """Verify downstream services are reachable on startup (non-blocking)."""
+        services = {
+            "Ingestion": f"{INGESTION_SERVICE_URL}/health",
+            "Retrieval": f"{RETRIEVAL_SERVICE_URL}/health",
+            "Gateway": f"{GATEWAY_URL}/health",
+        }
+        for name, url in services.items():
+            try:
+                resp = self.http_client.get(url, timeout=5.0)
+                if resp.status_code == 200:
+                    logger.info(f"  ✅ {name} service reachable at {url}")
+                else:
+                    logger.warning(f"  ⚠️ {name} service returned HTTP {resp.status_code}")
+            except Exception as e:
+                logger.warning(f"  ⚠️ {name} service not reachable at {url}: {type(e).__name__}")
+
     def _call_ingestion_service(self, endpoint: str, data: Dict[str, Any], files: Dict = None) -> Dict[str, Any]:
-        """Call the Ingestion microservice via HTTP."""
+        """Call the Ingestion microservice via HTTP with retry."""
         url = f"{INGESTION_SERVICE_URL}{endpoint}"
         try:
             if files:
-                # Filter out None values from form data to avoid sending "None" strings
                 clean_data = {k: str(v) for k, v in data.items() if v is not None}
-                response = self.http_client.post(url, data=clean_data, files=files)
+                response = _http_with_retry(self.http_client, "POST", url, data=clean_data, files=files)
             else:
-                response = self.http_client.post(url, json=data)
+                response = _http_with_retry(self.http_client, "POST", url, json=data)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -117,10 +175,10 @@ class MCPEngine:
             raise ValueError(f"Ingestion service error: {str(e)}")
     
     def _call_retrieval_service(self, endpoint: str, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Call the Retrieval microservice via HTTP."""
+        """Call the Retrieval microservice via HTTP with retry."""
         url = f"{RETRIEVAL_SERVICE_URL}{endpoint}"
         try:
-            response = self.http_client.post(url, json=data)
+            response = _http_with_retry(self.http_client, "POST", url, json=data)
             response.raise_for_status()
             return response.json()
         except Exception as e:
@@ -578,20 +636,26 @@ class MCPEngine:
         k: int = 10,
         search_mode: str = "hybrid",
         use_agentic_rag: bool = True,
-        include_answer: bool = True
+        include_answer: bool = True,
+        response_language: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Search the RAG system via HTTP call to Retrieval microservice.
         
         REFACTORED: Calls existing Retrieval service instead of duplicate engine.
         Benefits: Shared cache, lower memory, consistent behavior.
+        
+        Args:
+            response_language: Explicit language for the answer (e.g. "English", "Spanish").
+                If not set, defaults to "English" to prevent auto-detection errors
+                on short queries.
         """
         if not query or not query.strip():
             raise ValueError("Query cannot be empty")
         
         query = query.strip()
         filters = dict(filters) if filters else {}  # Copy to avoid mutating caller's dict
-        k = min(max(1, k), 50)
+        k = min(max(1, k), MAX_SEARCH_K)
         
         valid_modes = {"semantic", "keyword", "hybrid"}
         if search_mode not in valid_modes:
@@ -607,6 +671,14 @@ class MCPEngine:
                 "search_mode": search_mode,
                 "use_agentic_rag": use_agentic_rag
             }
+            
+            # Explicit response language — prevents langdetect misidentifying
+            # short English queries as Swedish, Norwegian, etc.
+            if response_language:
+                request_data["response_language"] = response_language
+            else:
+                # Default to English for MCP API consumers (AI agents, Streamlit UI)
+                request_data["response_language"] = "English"
             
             # Add source filter if provided
             if "source" in filters:
@@ -679,7 +751,7 @@ class MCPEngine:
         """
         url = f"{GATEWAY_URL}/documents"
         try:
-            response = self.http_client.get(url)
+            response = _http_with_retry(self.http_client, "GET", url)
             response.raise_for_status()
             data = response.json()
             
@@ -724,7 +796,7 @@ class MCPEngine:
         document_id = document_id.strip()
         url = f"{GATEWAY_URL}/documents/{document_id}"
         try:
-            response = self.http_client.get(url)
+            response = _http_with_retry(self.http_client, "GET", url)
             response.raise_for_status()
             doc = response.json()
             
@@ -761,7 +833,7 @@ class MCPEngine:
         document_id = document_id.strip()
         url = f"{GATEWAY_URL}/documents/{document_id}"
         try:
-            response = self.http_client.put(url, json=updates)
+            response = _http_with_retry(self.http_client, "PUT", url, json=updates)
             response.raise_for_status()
             result = response.json()
             
@@ -786,7 +858,7 @@ class MCPEngine:
         document_id = document_id.strip()
         url = f"{GATEWAY_URL}/documents/{document_id}"
         try:
-            response = self.http_client.request("DELETE", url)
+            response = _http_with_retry(self.http_client, "DELETE", url)
             response.raise_for_status()
             result = response.json()
             
@@ -809,22 +881,68 @@ class MCPEngine:
     
     def get_stats(self) -> Dict[str, Any]:
         """
-        Get overall system statistics via Gateway service.
+        Get overall system statistics.
+        
+        Combines:
+        1. Persistent document stats from DocumentRegistry (survives restarts)
+        2. Live query/cost metrics from Gateway (ephemeral, reset on restart)
         """
-        url = f"{GATEWAY_URL}/stats"
+        # ----- 1. Persistent processing stats from DocumentRegistry -----
+        processing_stats = {}
         try:
-            response = self.http_client.get(url)
-            response.raise_for_status()
-            data = response.json()
-            
-            return {
-                "success": True,
-                "stats": data,
-                "message": "System statistics retrieved successfully"
-            }
+            docs = self.document_registry.list_documents()
+            if docs:
+                total_documents = len(docs)
+                total_chunks = sum(d.get("chunks_created", 0) for d in docs)
+                total_images = sum(d.get("images_stored", 0) for d in docs)
+                total_pages = sum(d.get("pages", d.get("pages_extracted", 0)) or 0 for d in docs)
+                
+                # Compute language distribution
+                lang_dist = {}
+                for d in docs:
+                    lang = d.get("language", "unknown") or "unknown"
+                    lang_dist[lang] = lang_dist.get(lang, 0) + 1
+                
+                processing_stats = {
+                    "total_documents": total_documents,
+                    "total_chunks": total_chunks,
+                    "total_pages": total_pages,
+                    "total_images": total_images,
+                    "language_distribution": lang_dist,
+                }
         except Exception as e:
-            logger.error(f"Failed to get stats: {e}")
-            raise ValueError(f"Failed to get system statistics: {str(e)}")
+            logger.warning(f"Could not compute processing stats from registry: {e}")
+        
+        # ----- 2. Live metrics from Gateway (queries, costs) -----
+        gateway_stats = {}
+        try:
+            response = _http_with_retry(self.http_client, "GET", f"{GATEWAY_URL}/stats")
+            response.raise_for_status()
+            gateway_stats = response.json()
+        except Exception as e:
+            logger.warning(f"Could not fetch gateway stats: {e}")
+        
+        # Merge: prefer our persistent processing stats over Gateway's ephemeral ones
+        queries = gateway_stats.get("queries", {})
+        costs = gateway_stats.get("costs", {})
+        
+        # Normalise field names so UI can always read the same keys
+        if queries:
+            # Ensure both avg_response_time AND average_response_time exist
+            art = queries.get("avg_response_time", queries.get("average_response_time", 0))
+            queries["avg_response_time"] = art
+            queries["average_response_time"] = art
+        
+        return {
+            "success": True,
+            "stats": {
+                "processing": processing_stats,
+                "queries": queries,
+                "costs": costs,
+                "error_summary": gateway_stats.get("error_summary", {}),
+            },
+            "message": "System statistics retrieved successfully"
+        }
     
     # ========================================================================
     # CRUD OPERATIONS - Vector Index Management
@@ -836,7 +954,7 @@ class MCPEngine:
         """
         url = f"{RETRIEVAL_SERVICE_URL}/admin/indexes"
         try:
-            response = self.http_client.get(url)
+            response = _http_with_retry(self.http_client, "GET", url)
             response.raise_for_status()
             data = response.json()
             
@@ -872,7 +990,7 @@ class MCPEngine:
         index_name = index_name.strip()
         url = f"{RETRIEVAL_SERVICE_URL}/admin/indexes/{index_name}"
         try:
-            response = self.http_client.get(url)
+            response = _http_with_retry(self.http_client, "GET", url)
             response.raise_for_status()
             data = response.json()
             
@@ -887,15 +1005,16 @@ class MCPEngine:
     
     def delete_index(self, index_name: str) -> Dict[str, Any]:
         """
-        Delete a vector index and all its chunks.
+        Delete a vector index and all its chunks via Gateway to ensure registry sync.
         """
         if not index_name or not index_name.strip():
             raise ValueError("index_name is required")
         
         index_name = index_name.strip()
-        url = f"{RETRIEVAL_SERVICE_URL}/admin/indexes/{index_name}?confirm=true"
+        # Route through Gateway for synchronized deletion (registry cleanup)
+        url = f"{GATEWAY_URL}/admin/indexes/{index_name}"
         try:
-            response = self.http_client.request("DELETE", url)
+            response = _http_with_retry(self.http_client, "DELETE", url)
             response.raise_for_status()
             result = response.json()
             
@@ -905,12 +1024,34 @@ class MCPEngine:
                 "success": result.get("success", True),
                 "index_name": index_name,
                 "chunks_deleted": result.get("chunks_deleted", 0),
-                "message": result.get("message", f"Index '{index_name}' deleted"),
+                "documents_removed_from_registry": result.get("documents_removed_from_registry", 0),
+                "message": result.get("message", f"Index '{index_name}' deleted and registry synced"),
+                "synced": result.get("synced", True),
                 "sync_triggered": sync_triggered
             }
         except Exception as e:
-            logger.error(f"Failed to delete index {index_name}: {e}")
-            raise ValueError(f"Failed to delete index: {str(e)}")
+            logger.error(f"Failed to delete index {index_name} via Gateway: {e}")
+            # Fallback to direct Retrieval deletion if Gateway fails or doesn't have the endpoint yet
+            logger.info(f"Attempting fallback deletion for index {index_name} via Retrieval service...")
+            fallback_url = f"{RETRIEVAL_SERVICE_URL}/admin/indexes/{index_name}?confirm=true"
+            try:
+                response = _http_with_retry(self.http_client, "DELETE", fallback_url)
+                response.raise_for_status()
+                result = response.json()
+                
+                # Trigger sync so registry knows about the deletion
+                sync_triggered = self._broadcast_sync_after_ingestion()
+                
+                return {
+                    "success": result.get("success", True),
+                    "index_name": index_name,
+                    "chunks_deleted": result.get("chunks_deleted", 0),
+                    "message": result.get("message", f"Index '{index_name}' deleted (fallback, registry synced)"),
+                    "sync_triggered": sync_triggered
+                }
+            except Exception as fe:
+                logger.error(f"Fallback deletion failed: {fe}")
+                raise ValueError(f"Failed to delete index: {str(e)}")
     
     # ========================================================================
     # CRUD OPERATIONS - Chunk-level Management
@@ -925,13 +1066,13 @@ class MCPEngine:
             raise ValueError("index_name is required")
         
         index_name = index_name.strip()
-        params = {"offset": offset, "limit": min(limit, 100)}
+        params = {"offset": offset, "limit": min(limit, MAX_CHUNK_LIMIT)}
         if source:
             params["source"] = source
         
         url = f"{RETRIEVAL_SERVICE_URL}/admin/indexes/{index_name}/chunks"
         try:
-            response = self.http_client.get(url, params=params)
+            response = _http_with_retry(self.http_client, "GET", url, params=params)
             response.raise_for_status()
             data = response.json()
             
@@ -972,7 +1113,7 @@ class MCPEngine:
         chunk_id = chunk_id.strip()
         url = f"{RETRIEVAL_SERVICE_URL}/admin/indexes/{index_name}/chunks/{chunk_id}"
         try:
-            response = self.http_client.get(url)
+            response = _http_with_retry(self.http_client, "GET", url)
             response.raise_for_status()
             data = response.json()
             
@@ -1015,7 +1156,7 @@ class MCPEngine:
             request_data["page"] = page
         
         try:
-            response = self.http_client.post(url, json=request_data)
+            response = _http_with_retry(self.http_client, "POST", url, json=request_data)
             response.raise_for_status()
             result = response.json()
             
@@ -1058,7 +1199,7 @@ class MCPEngine:
         chunk_id = chunk_id.strip()
         url = f"{RETRIEVAL_SERVICE_URL}/admin/indexes/{index_name}/chunks/{chunk_id}"
         try:
-            response = self.http_client.put(url, json=update_data)
+            response = _http_with_retry(self.http_client, "PUT", url, json=update_data)
             response.raise_for_status()
             result = response.json()
             
@@ -1087,7 +1228,7 @@ class MCPEngine:
         chunk_id = chunk_id.strip()
         url = f"{RETRIEVAL_SERVICE_URL}/admin/indexes/{index_name}/chunks/{chunk_id}"
         try:
-            response = self.http_client.request("DELETE", url)
+            response = _http_with_retry(self.http_client, "DELETE", url)
             response.raise_for_status()
             result = response.json()
             
@@ -1103,37 +1244,26 @@ class MCPEngine:
     
     def _format_citations(self, citations: list, k: int) -> List[Dict[str, Any]]:
         """
-        Format citations with high-accuracy source, page number, and document_id information.
+        Format citations for MCP consumers (AI agents, Streamlit UI).
         
-        Surfaces all critical citation fields as top-level keys so AI agent consumers
-        get precise, verifiable references without digging into nested metadata.
+        ACCURACY FIX (v5): Trust the retrieval service's ranking order and
+        similarity_percentage. The retrieval service uses FlashRank reranking,
+        content-relevance analysis, and sophisticated score normalization.
+        Re-sorting here was destroying that careful ranking. Now we preserve
+        the order and use similarity_percentage directly as confidence.
         """
         if not citations:
             return []
         
-        # Sort by score (highest relevance first)
-        def get_score(c):
-            if isinstance(c, dict):
-                sim_pct = c.get("similarity_percentage", 0)
-                if sim_pct and sim_pct > 0:
-                    return sim_pct / 100.0
-                score = c.get("rerank_score") or c.get("similarity_score") or c.get("relevance_score") or 0
-                return score / 100.0 if score > 1 else score
-            elif hasattr(c, 'metadata'):
-                meta = c.metadata
-                sim_pct = meta.get("similarity_percentage", 0)
-                if sim_pct and sim_pct > 0:
-                    return sim_pct / 100.0
-                return meta.get("rerank_score") or meta.get("similarity_score") or 0
-            return 0
+        # DO NOT re-sort. The retrieval service already ranked citations using
+        # FlashRank rerank_score → content relevance → similarity_score.
+        # Re-sorting here was Bug #2 — it overwrote the retrieval service's
+        # more sophisticated ranking with a simple positional decay formula.
         
-        citations = sorted(citations, key=get_score, reverse=True)
-        
-        # Fields that are surfaced as top-level keys (not duplicated in metadata)
+        # Fields surfaced as top-level keys for AI agent consumption
         TOP_LEVEL_KEYS = {
-            "full_text", "snippet", "source", "page", "document_id",
-            "source_location", "content_type", "page_confidence",
-            "page_extraction_method", "source_confidence",
+            "full_text", "snippet", "source_location", "content_type", 
+            "page_confidence", "page_extraction_method", "source_confidence",
             "rerank_score", "similarity_score", "relevance_score",
             "content_relevance", "similarity_percentage"
         }
@@ -1141,9 +1271,21 @@ class MCPEngine:
         formatted = []
         for i, citation in enumerate(citations[:k]):
             if hasattr(citation, 'page_content'):
-                # LangChain Document objects (from direct engine calls)
+                # LangChain Document objects (from direct engine calls — rare in HTTP mode)
                 metadata = citation.metadata if hasattr(citation, 'metadata') else {}
-                rerank_score = metadata.get('rerank_score') or metadata.get('similarity_score')
+                
+                # Use similarity_percentage from retrieval if available, else fallback
+                sim_pct = metadata.get("similarity_percentage", 0)
+                if sim_pct and sim_pct > 0:
+                    confidence = min(100.0, max(0.0, sim_pct))
+                else:
+                    # Fallback: use rerank_score (0-1) or positional decay
+                    rs = metadata.get('rerank_score')
+                    if rs and rs > 0:
+                        confidence = min(100.0, rs * 100.0)
+                    else:
+                        confidence = self.calculate_confidence_score(i, len(citations), metadata.get('similarity_score'))
+                
                 page = metadata.get("page", 1)
                 if page is None or (isinstance(page, int) and page < 1):
                     page = 1
@@ -1159,20 +1301,26 @@ class MCPEngine:
                     "page_confidence": metadata.get("page_confidence"),
                     "page_extraction_method": metadata.get("page_extraction_method"),
                     "source_confidence": metadata.get("source_confidence"),
-                    "confidence": self.calculate_confidence_score(i, len(citations), rerank_score),
-                    "metadata": {k: v for k, v in metadata.items() 
-                                if k not in TOP_LEVEL_KEYS and k != "page_content"}
+                    "rerank_score": metadata.get("rerank_score"),
+                    "confidence": confidence,
+                    "confidence_percentage": round(confidence),
+                    "metadata": {mk: mv for mk, mv in metadata.items()
+                                if mk not in TOP_LEVEL_KEYS and mk != "page_content"}
                 })
             elif isinstance(citation, dict):
-                # Dict citations (from retrieval service HTTP response)
+                # Dict citations (from retrieval service HTTP response — normal path)
+                # TRUST similarity_percentage from retrieval service
                 sim_pct = citation.get("similarity_percentage")
                 if sim_pct and sim_pct > 0:
                     confidence = min(100.0, max(0.0, sim_pct))
                 else:
-                    rerank_score = citation.get("rerank_score") or citation.get("similarity_score") or citation.get("relevance_score")
-                    if rerank_score and rerank_score > 1:
-                        rerank_score = rerank_score / 100.0
-                    confidence = self.calculate_confidence_score(i, len(citations), rerank_score)
+                    # Fallback: use rerank_score (0-1 from FlashRank)
+                    rs = citation.get("rerank_score")
+                    if rs and rs > 0:
+                        confidence = min(100.0, rs * 100.0)
+                    else:
+                        # Last resort: positional decay (rarely hit now)
+                        confidence = self.calculate_confidence_score(i, len(citations), citation.get("similarity_score"))
                 
                 page = citation.get("page", 1)
                 if page is None or (isinstance(page, int) and page < 1):
@@ -1189,9 +1337,11 @@ class MCPEngine:
                     "page_confidence": citation.get("page_confidence"),
                     "page_extraction_method": citation.get("page_extraction_method"),
                     "source_confidence": citation.get("source_confidence"),
+                    "rerank_score": citation.get("rerank_score"),
                     "confidence": confidence,
-                    "metadata": {k: v for k, v in citation.items() 
-                                if k not in TOP_LEVEL_KEYS}
+                    "confidence_percentage": round(confidence),
+                    "metadata": {mk: mv for mk, mv in citation.items()
+                                if mk not in TOP_LEVEL_KEYS and mk not in {"full_text", "snippet", "metadata"}}
                 })
         
         return formatted

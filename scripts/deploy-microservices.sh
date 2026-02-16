@@ -72,7 +72,7 @@ EXCLUDE_PATTERNS=(
     "--exclude=*.md"
 )
 
-rsync -avz --progress \
+rsync -avz --delete --progress \
     -e "ssh -i $PEM_FILE -o StrictHostKeyChecking=no" \
     "${EXCLUDE_PATTERNS[@]}" \
     "$PROJECT_ROOT/" \

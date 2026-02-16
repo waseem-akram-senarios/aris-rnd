@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "intelycx-rag-mcp-server"
+version = "1.0.0"
+description = "Intelycx RAG Knowledge Base MCP Server for document ingestion and semantic search using FastMCP"
+authors = [
+    {name = "Intelycx", email = "dev@intelycx.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.11.0",
+    "pydantic>=2.5.0",
+    "aiohttp>=3.9.0",
+    "starlette>=0.27.0",
+    "boto3>=1.35.0",
+    "botocore>=1.35.0",
+    # Vector store implementations
+    "opensearch-py>=2.4.2",
+    "requests-aws4auth>=1.2.3",
+    "asyncpg>=0.29.0",  # PostgreSQL with pgvector
+    "qdrant-client>=1.7.0",  # Qdrant vector database
+    # Embedding providers (Bedrock is via boto3)
+    "openai>=1.12.0",  # OpenAI embeddings (optional)
+    "sentence-transformers>=2.2.0",  # Local embeddings (optional)
+    "torch>=2.0.0",  # Required for sentence-transformers
+    # Additional dependencies
+    "httpx>=0.25.0",
+]
+
+[project.scripts]
+intelycx-rag-mcp-server = "app.server:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.json", "*.yaml", "*.yml"]

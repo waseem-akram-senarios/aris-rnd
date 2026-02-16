@@ -1,0 +1,143 @@
+# Active Context
+
+## Current focus
+- ✅ **PHASE 1 COMPLETE: RAG Foundation Architecture** - Production-ready abstraction layers for document ingestion
+- ✅ **Vector Store Abstraction** - Multi-backend support (OpenSearch, PGVector, Qdrant) with unified interface
+- ✅ **Embedding Service Abstraction** - Configurable providers (Bedrock, OpenAI, Local) with cost-aware profiles
+- ✅ **Semantic Chunking** - Three strategies (semantic, fixed, recursive) with intelligent overlap
+- ✅ **BREAKTHROUGH: Database-First Architecture** - Complete PostgreSQL integration with persistent storage
+- ✅ **BREAKTHROUGH: Email Attachments Working** - Full PDF creation and email attachment workflow operational
+- ✅ **Template Variable Resolution** - Complex template mapping system for inter-action data flow
+- ✅ **UnifiedPlanManager** - Centralized plan and action management with database-first operations
+- ✅ **Conservative Planning Rules** - Intelligent plan optimization to prevent over-engineering
+- ✅ **Complete FastMCP architecture** - Four MCP servers operational: intelycx-core, intelycx-email, intelycx-file-generator, intelycx-rag
+- ✅ **Working multi-tool pipeline** - Login → fake data → format → PDF → email chain functional
+- ✅ **File Generator MCP Server** - Dedicated PDF creation service with S3 storage backend
+- ✅ **Volume-mounted development** - Live code reload for all MCP servers
+- ✅ **Fixed tool execution** - Resolved JWT token injection and routing issues
+- ✅ **Core libraries architecture** - Memory and file processing extracted to `app/core/`
+- ✅ **Enhanced document processing** with 12+ file types including JSON, XML, HTML, Markdown
+- ✅ **Modern MCP integration** using FastMCP client library for better performance
+- ✅ **Transparent memory management** - Database-backed session storage with automatic persistence
+- ✅ **Clean codebase structure** - Removed utils folder, proper separation of concerns
+- ✅ Dynamic system prompts based on tool availability to prevent hallucinations
+- ✅ Guardrails implemented and integrated in WebSocket flow; toggle via `rag_params.guardrails`
+- ✅ Agent supports streaming of token-like chunks followed by final message
+- ✅ Cognito JWT verification implemented with JWKS caching
+- ✅ **JWT authentication for Intelycx Core API** - AI Agent manages credentials and tokens automatically
+- ✅ **Chain of thought messaging** - Real-time progress updates during authentication, tool loading, and execution
+- ✅ **Advanced FastMCP implementation** - All tools enhanced with comprehensive metadata, validation, and structured outputs
+- ✅ **RESOLVED: Docker network connectivity** - Fixed DNS resolution between ARIS containers and Intelycx API
+- ✅ **RESOLVED: FastMCP serialization** - Implemented proper Pydantic models and object conversion for Bedrock compatibility
+- ✅ **NEW: Planning Phase Implementation** - Agent creates detailed execution plans before tool execution
+- ✅ **NEW: Enhanced Chain-of-Thought** - Structured action tracking with status updates (starting/in_progress/completed/failed)
+- ✅ **REFACTOR: Planning Module Architecture** - Moved planning models to proper domain module structure
+- ✅ **ANALYZED: Concurrency & Session Management** - Confirmed true concurrent request handling with proper isolation
+- ✅ **Version Management System** - Current version 2.0.3, automatic version inclusion in all WebSocket messages
+
+## Recent achievements
+- **🎯 PHASE 1: RAG Foundation Architecture** - Complete abstraction layers for scalable document ingestion
+  - **Vector Store Abstraction** (`services/mcp-servers/intelycx-rag/app/vector_stores/`):
+    - `OpenSearchVectorStore`: k-NN plugin, AWS IAM auth, HNSW indexing, batch operations
+    - `PGVectorStore`: PostgreSQL with pgvector extension, separate DB, IVFFlat/HNSW indexes
+    - `QdrantVectorStore`: Modern vector DB, quantization support, high-performance search
+    - `VectorStoreFactory`: Config-driven selection, unified interface for all backends
+  - **Embedding Service Abstraction** (`services/mcp-servers/intelycx-rag/app/embeddings/`):
+    - `BedrockEmbeddingService`: Titan v1/v2, Cohere Embed, retry logic, batch processing
+    - `OpenAIEmbeddingService`: text-embedding-3-small/large, efficient batch API (2048 inputs)
+    - `LocalEmbeddingService`: sentence-transformers, zero API cost, CPU/GPU support
+    - `EmbeddingServiceFactory`: Cost-aware profiles (economy/standard/premium)
+  - **Chunking Strategies** (`services/mcp-servers/intelycx-rag/app/chunking/`):
+    - `SemanticChunker`: Respects sentences/paragraphs/headers, preserves code blocks, intelligent overlap
+    - `FixedSizeChunker`: Fast, predictable, word-boundary aware
+    - `RecursiveChunker`: LangChain-style hierarchical splitting with multiple separators
+    - `ChunkerFactory`: Strategy pattern with profile-based configs
+  - **Architecture Decisions**:
+    - ECS + SQS pipeline for scalable async ingestion (100s of MB documents)
+    - Configurable storage (DynamoDB default, PostgreSQL option) for status tracking
+    - Multi-backend from day 1 (OpenSearch → PGVector → Qdrant priority)
+    - Budget-conscious design: Fargate Spot, batch optimization, local embeddings option
+  - **Dependencies Updated**: opensearch-py, asyncpg, qdrant-client, openai, sentence-transformers, torch
+
+
+- **🎯 BREAKTHROUGH: Database-First Architecture & Email Attachments** - Complete implementation of persistent storage and email workflow
+  - **PostgreSQL Integration**: Full database schema with chats, plans, actions, and session_memory tables
+  - **Database-First Rule**: Plans stored in database BEFORE execution; execution halts if storage fails
+  - **UnifiedPlanManager**: Centralized plan lifecycle management with database operations and WebSocket notifications
+  - **Template Variable System**: Complex template resolution for inter-action data flow ({{action_id.field_name}})
+  - **Email Attachments Working**: Complete PDF creation → email attachment workflow operational
+  - **Clean Attachment Filenames**: Proper filename extraction from S3 presigned URLs
+  - **Recursive Template Resolution**: Handles nested dictionaries and arrays for complex argument structures
+  - **Conservative Planning Rules**: Intelligent plan optimization preventing over-engineering (2-3 actions vs 4-5)
+  - **Data Formatting Guidelines**: Ensures human-readable PDF content instead of raw JSON dumps
+  - **Schema Validation**: All database column names and types properly aligned with SQLAlchemy models
+  - **Tool Result Persistence**: PDF files and email results stored and retrievable across sessions
+- **🎯 ANALYSIS: Concurrency & Session Management** - Comprehensive analysis of concurrent request handling
+  - **Confirmed Concurrent Processing**: Live testing with 2 simultaneous users proved true concurrent execution
+  - **Session Lifecycle Mapping**: Documented lazy initialization pattern (connection → first message → session active)
+  - **Resource Usage Analysis**: ~5MB per idle connection, ~15MB per active session, MCP initialization ~5-6s
+  - **State Isolation Verified**: Each WebSocket gets independent agent instance, memory, and MCP connections
+  - **Performance Profiling**: Email sending ~500ms, fake data generation ~25ms, no blocking between users
+  - **Scalability Assessment**: Current architecture good for <50 concurrent users, identified optimization paths
+  - **Architecture Validation**: Async/await throughout prevents blocking, proper per-connection state management
+- **🎯 REFACTOR: Planning Module Architecture** - Improved domain organization and code structure
+  - **Domain Cohesion**: Moved planning models from generic `models/` to dedicated `planning/models.py`
+  - **Proper Module Structure**: Planning module now contains all related functionality (models, planner, executioner, observers)
+  - **Import Cleanup**: Updated all imports to use proper domain-based paths (`planning.models` vs `models.planning`)
+  - **Better Organization**: Planning is now recognized as a major domain with its own complete module structure
+- **🎯 MAJOR: Docker Network & FastMCP Serialization Resolution** - Fixed critical production issues
+  - **Network Connectivity**: Resolved DNS resolution failures between ARIS containers and Intelycx API by connecting to correct Docker network
+  - **FastMCP Compliance**: Removed invalid `output_schema` parameters and implemented proper Pydantic model patterns
+  - **Object Serialization**: Added comprehensive FastMCP object conversion to handle Pydantic models for Bedrock LLM compatibility
+  - **Error Handling**: Fixed NoneType errors and improved error resilience in authentication flows
+  - **Root Cause Analysis**: Discovered FastMCP design patterns requiring manual deserialization for external system integration
+- **🎯 MAJOR: Advanced FastMCP Implementation** - Complete enhancement of all tools following FastMCP best practices
+  - **Type Safety**: Pydantic Field validation with constraints (min_length, max_length, patterns)
+  - **Rich Metadata**: Comprehensive tool decorators with tags, annotations, descriptions, and version info
+  - **Structured Outputs**: Pydantic response models for consistent API contracts (LoginResponse, ManufacturingDataResponse, EmailResponse)
+  - **Enhanced Context Usage**: Multi-stage progress reporting with notifications and structured logging
+  - **Enum Support**: Type-safe constrained values (DataType, EmailPriority) for better validation
+  - **Parameter Validation**: Input constraints and error handling for security and reliability
+  - **Consistent Architecture**: Context parameter placement, error handling patterns, and response structures
+- **Enhanced multi-stage FastMCP Context** - 6-stage data generation and 5-stage email workflows
+- **Implemented structured logging** - Rich metadata with extra parameters for comprehensive debugging
+- **Optimized logging verbosity** - Reduced duplication between LLM Bedrock and MCP Server Manager
+- **Optimized health check configuration** - Moved to docker-compose.yml with reduced log noise
+- **Simplified logging strategy** - Context-first approach for better AI agent visibility
+- **Completed Intelycx-Core MCP server** - FastMCP implementation with login and fake data tools
+- **Fixed tool execution pipeline** - Resolved JWT token injection for login vs data tools
+- **Implemented volume mounting** - Live development for all MCP servers
+- **Core libraries extraction** - Memory and file processing moved to `app/core/` for reusability
+- **Enhanced file processing** for 12+ document types (added JSON, XML, HTML, Markdown support)
+- **FastMCP integration** - Modern MCP client library for better performance and reliability
+- **Transparent memory management** - SessionMemoryManager with pluggable backends, no longer exposed as tools
+- **Clean architecture** - Removed utils folder, proper separation of concerns
+- S3 integration with 4MB file size limits and proper error handling
+- **JWT authentication system** for Intelycx Core API with automatic token management and refresh
+- **Chain of thought messaging** providing real-time user feedback during system operations
+
+## Open decisions
+- Should guardrails be enabled by default via a config flag (e.g., `GUARDRAILS_DEFAULT=true`) and overridable per request?
+- Model selection defaults: clarify and document supported model IDs for Bedrock
+- Authentication strategy for MCP servers in production (currently using simple API keys)
+
+## Next steps (proposed)
+- **PHASE 2: RAG Services & Infrastructure** (In Progress)
+  - Storage abstraction for document status (DynamoDB + PostgreSQL option)
+  - Configuration system (YAML-based) for vector stores, embeddings, chunking
+  - Document Processor ECS service (S3 → chunks → S3 staging)
+  - Vector Indexer ECS service (chunks → embeddings → vector store)
+  - Ingestion trigger Lambda (Function URL API)
+  - CDK infrastructure stack (ECS, SQS, DynamoDB, networking)
+  - LocalStack docker-compose for local development
+  - Update RAG MCP server tools (ingest_document, get_document_status, search)
+- **Agent Evolution**
+  - Migrate additional tools from old agent implementation using core libraries
+  - Add unit tests for core libraries (memory management, file processing, MCP servers)
+  - Implement real API endpoints beyond fake data (machine details, production summaries)
+  - Add config-level guardrails default and server-side override rules
+- **Infrastructure & Production**
+  - Flesh out `AgentStack` with ECS/ALB and secret wiring; add CI/CD pipeline
+  - Implement more sophisticated MCP server authentication (JWT, mTLS)
+  - Add observability and monitoring for MCP server health and performance
+  - Performance optimization for core libraries (caching, connection pooling)

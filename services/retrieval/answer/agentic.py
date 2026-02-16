@@ -186,25 +186,31 @@ class AgenticRAGMixin:
             extraction_method = 'metadata' if source_confidence >= 0.7 else ('text_marker' if source_confidence >= 0.3 else 'fallback')
             
             # Get similarity score if available (for ranking)
+            # Priority: rerank_score > doc_scores > order_scores > metadata > position fallback
             similarity_score = None
+            rerank_score = None
             doc_content_key = chunk_text[:200] if chunk_text else ""
             import hashlib
             content_hash = hashlib.md5(chunk_text.encode('utf-8')).hexdigest() if chunk_text else ""
             
-            # Try multiple matching strategies
-            if doc_content_key in doc_scores:
+            # PRIORITY 0: FlashRank rerank_score (highest quality — cross-encoder relevance)
+            if hasattr(doc, 'metadata') and doc.metadata and 'rerank_score' in doc.metadata:
+                rerank_score = doc.metadata.get('rerank_score')
+                similarity_score = rerank_score  # Use as primary score
+                logger.info(f"Agentic Citation {i}: ✅ Using FlashRank rerank_score: {rerank_score:.4f}")
+            # PRIORITY 1: doc_scores from similarity_search_with_score
+            elif doc_content_key in doc_scores:
                 similarity_score = doc_scores[doc_content_key]
             elif content_hash in doc_scores:
                 similarity_score = doc_scores[content_hash]
-            # Use order-based score as fallback
+            # PRIORITY 2: Use order-based score as fallback
             elif doc_content_key in doc_order_scores:
-                # Convert order score to similarity-like score (0.5 to 1.0 range)
                 order_score = doc_order_scores[doc_content_key]
                 similarity_score = 0.5 + (order_score * 0.5)  # Map 0.0-1.0 order to 0.5-1.0 similarity
             elif content_hash in doc_order_scores:
                 order_score = doc_order_scores[content_hash]
                 similarity_score = 0.5 + (order_score * 0.5)
-            # Also try to get from metadata if stored there
+            # PRIORITY 3: metadata fallback
             elif hasattr(doc, 'metadata') and 'similarity_score' in doc.metadata:
                 similarity_score = doc.metadata.get('similarity_score')
             
@@ -275,7 +281,8 @@ class AgenticRAGMixin:
                 'section': section,
                 'snippet': snippet_clean,
                 'full_text': chunk_text,
-                'similarity_score': similarity_score,  # Vector similarity score for ranking
+                'similarity_score': similarity_score,  # Best available score for ranking
+                'rerank_score': rerank_score,  # FlashRank cross-encoder score (0-1), None if not reranked
                 'start_char': start_char,
                 'end_char': end_char,
                 'chunk_index': doc.metadata.get('chunk_index', None),

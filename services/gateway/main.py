@@ -233,12 +233,20 @@ async def update_document(
 @app.delete("/documents/{document_id}")
 async def delete_document(document_id: str, service: GatewayService = Depends(get_service)):
     """Delete document from registry and vector stores"""
-    await service.delete_document_from_stores(document_id)
-    success = service.remove_document(document_id)
-    if not success:
-        raise HTTPException(status_code=404, detail=f"Document {document_id} not found")
+    # 1. First, delete from both Ingestion and Retrieval stores
+    # This also handles dedicated index cleanup
+    any_store_deleted = await service.delete_document_from_stores(document_id)
     
-    return {"status": "success", "message": f"Document {document_id} deleted"}
+    # 2. Finally, ensure it's removed from local registry
+    # Ingestion service might have already removed it since it shares the same registry
+    success = service.remove_document(document_id)
+    
+    # If it was deleted from stores OR successfully removed from registry, return success
+    if any_store_deleted or success:
+        return {"status": "success", "message": f"Document {document_id} deleted"}
+    else:
+        # Only 404 if it wasn't in stores AND wasn't in registry originally
+        raise HTTPException(status_code=404, detail=f"Document {document_id} not found or already deleted")
 
 @app.get("/documents/{document_id}/images")
 async def get_document_images(document_id: str, service: GatewayService = Depends(get_service)):
@@ -302,6 +310,15 @@ async def query_images(request: Dict[str, Any], service: GatewayService = Depend
     
     filter_msg = f" from {len(active_sources)} document(s)" if active_sources else " from all documents"
     return {"images": images, "total": len(images), "message": f"Found {len(images)} images{filter_msg}"}
+
+# ============================================================================
+# INDEX ENDPOINTS
+# ============================================================================
+
+@app.delete("/admin/indexes/{index_name}")
+async def delete_index(index_name: str, service: GatewayService = Depends(get_service)):
+    """Delete an index and clean up associated document registry entries."""
+    return await service.delete_index_synced(index_name)
 
 # ============================================================================
 # STATS ENDPOINTS
@@ -558,6 +575,65 @@ async def broadcast_sync(
     except Exception as e:
         logger.error(f"Error broadcasting sync: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# MCP PROXY ENDPOINTS - For UI Integration
+# ============================================================================
+
+@app.get("/mcp/status")
+async def get_mcp_status(service: GatewayService = Depends(get_service)):
+    """Get MCP server health & status (Proxies to MCP service)"""
+    mcp_url = os.getenv("MCP_SERVICE_URL", "http://127.0.0.1:8503")
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            response = await client.get(f"{mcp_url}/health")
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"status": "unhealthy", "error": f"HTTP {response.status_code}", "service": "mcp"}
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e), "service": "mcp", "details": "Could not reach MCP server"}
+
+@app.get("/mcp/tools")
+async def get_mcp_tools(service: GatewayService = Depends(get_service)):
+    """Get available MCP tools (Proxies to MCP service)"""
+    mcp_url = os.getenv("MCP_SERVICE_URL", "http://127.0.0.1:8503")
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            response = await client.get(f"{mcp_url}/tools")
+            return response.json()
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Failed to fetch MCP tools: {e}")
+
+@app.post("/mcp/sync")
+async def trigger_mcp_sync(service: GatewayService = Depends(get_service)):
+    """Trigger force sync on MCP server (Proxies to MCP service)"""
+    mcp_url = os.getenv("MCP_SERVICE_URL", "http://127.0.0.1:8503")
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            # First, sync Gateway -> Ingestion/Retrieval
+            await force_sync(service)
+            
+            # Then, explicit sync for MCP
+            response = await client.post(f"{mcp_url}/sync/force")
+            return response.json()
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Failed to sync MCP: {e}")
+
+@app.get("/mcp/stats")
+async def get_mcp_stats(service: GatewayService = Depends(get_service)):
+    """Get MCP internal stats (Proxies to MCP service)"""
+    mcp_url = os.getenv("MCP_SERVICE_URL", "http://127.0.0.1:8503")
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        try:
+            response = await client.get(f"{mcp_url}/api/stats") # Uses the /api/stats endpoint mapping to rag_stats
+            if response.status_code != 200:
+                # Fallback to direct tool call if API endpoint varies
+                return {"error": "Stats unavailable", "status": response.status_code}
+            return response.json()
+        except Exception as e:
+            # If /api/stats not available, generic error
+            return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

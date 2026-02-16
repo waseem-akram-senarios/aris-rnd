@@ -101,24 +101,34 @@ class PageExtractionMixin:
                     logger.debug(f"Extracted source from chunk text marker: {source}")
                 return source, 0.5
         
-        # Try document_index lookup using chunk_index (confidence: 0.3)
+        # Try document_index lookup using document_id (NEW - more direct than chunk_index) (confidence: 0.4)
+        doc_id = doc.metadata.get('document_id')
+        if not doc_id and hasattr(doc, 'id'): # LangChain sometimes puts ID at top level
+            doc_id = doc.id
+            
+        if doc_id and hasattr(self, 'document_index_map') and self.document_index_map:
+            # Check if this document_id (or part of it) maps to a source name
+            for doc_name, idx_name in self.document_index_map.items():
+                if doc_id in idx_name or doc_id == idx_name or doc_id == doc_name:
+                    source = normalize_source(doc_name)
+                    if source and source != 'Unknown':
+                        logger.info(f"Recovered source '{source}' from document_index_map using doc_id: {doc_id}")
+                        return source, 0.4
+
+        # Try document_index (backwards compatibility for list of chunks) lookup using chunk_index (confidence: 0.3)
         if hasattr(self, 'document_index') and self.document_index and doc.metadata.get('chunk_index') is not None:
             chunk_index = doc.metadata.get('chunk_index')
-            for doc_id, chunk_indices in self.document_index.items():
+            for doc_id_mapped, chunk_indices in self.document_index.items():
                 if chunk_index in chunk_indices:
-                    source = normalize_source(doc_id)
+                    source = normalize_source(doc_id_mapped)
                     if source and source != 'Unknown':
                         logger.info(f"Recovered source from document_index: {source}")
                         return source, 0.3
         
-        # Fallback to provided sources list (last resort) (confidence: 0.1)
-        if fallback_sources:
-            for fallback_source in fallback_sources:
-                if fallback_source and str(fallback_source).strip() and str(fallback_source).strip() != 'Unknown':
-                    source = normalize_source(str(fallback_source).strip())
-                    if source and source != 'Unknown':
-                        logger.debug(f"Using fallback source: {source}")
-                        return source, 0.1
+        # [REMOVED] Fallback to provided sources list (last resort)
+        # CRITICAL FIX: This was causing misattribution by assigning legitimate sources from 
+        # neighboring search results to chunks that actually have missing/unknown metadata.
+        # It is better to show 'Unknown' than to provide a false citation.
         
         # Log warning if we couldn't find a source
         logger.warning(f"Could not extract source from chunk. Metadata keys: {list(doc.metadata.keys()) if hasattr(doc, 'metadata') else 'N/A'}")

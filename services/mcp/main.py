@@ -1,24 +1,23 @@
 """
-MCP Microservice - Model Context Protocol Server
+ARIS RAG MCP Server — Model Context Protocol for Document Intelligence
 
-This microservice provides an MCP server with FastAPI health endpoints
-for document ingestion and semantic search in the ARIS RAG system.
+FastMCP server providing AI-powered document search, ingestion lifecycle
+management, and system monitoring for the ARIS RAG platform.
 
-Endpoints:
-- GET /health - Health check endpoint
-- GET /info - Service information
-- SSE /sse - MCP Server-Sent Events endpoint
-
-MCP Tools:
-- rag_query, rag_documents, rag_indexes, rag_chunks, rag_stats (5 consolidated tools)
+Tools (7):
+- search_knowledge_base    — AI-powered semantic search with hybrid search + FlashRank reranking
+- ingest_document          — Ingest a document (text, file, or S3 URI) into the knowledge base
+- list_documents           — List all documents with status and chunk counts
+- get_document_status      — Get processing status and details of a specific document
+- delete_document          — Remove a document and all its data from the system
+- manage_index             — Manage vector indexes: list, inspect, or delete
+- get_system_stats         — System monitoring: document counts, query metrics, costs
 """
 
 import os
 import sys
 import logging
-import asyncio
-from typing import Optional, Dict, Any
-from contextlib import asynccontextmanager
+from typing import Optional, Dict, Any, List, Annotated
 from datetime import datetime
 
 # Add project root to path
@@ -26,9 +25,6 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..
 sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-
 load_dotenv()
 
 # Configure logging
@@ -38,438 +34,741 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# Filter to exclude health check requests from uvicorn access logs
+class HealthCheckAccessLogFilter(logging.Filter):
+    """Filter to exclude health check requests from access logs."""
+    def filter(self, record: logging.LogRecord) -> bool:
+        if hasattr(record, 'msg'):
+            msg = str(record.msg)
+            if 'GET /health' in msg or '"GET /health' in msg:
+                return False
+        return True
+
+# Apply filter to uvicorn access logger
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.addFilter(HealthCheckAccessLogFilter())
+
+
 # Import FastMCP
 try:
-    from fastmcp import FastMCP
+    from fastmcp import FastMCP, Context
 except ImportError:
     raise ImportError(
         "FastMCP is not installed. Install it with: pip install fastmcp"
     )
 
+from pydantic import Field
+
+
 # Import MCP Engine
 from services.mcp.engine import MCPEngine
 
-# Initialize the MCP Engine
-mcp_engine = MCPEngine()
+# Global engine — lazy init
+_engine: Optional[MCPEngine] = None
+
+
+def get_engine() -> MCPEngine:
+    """Get or create the MCP engine (lazy initialization)."""
+    global _engine
+    if _engine is None:
+        logger.info("🚀 Initializing ARIS RAG MCP Engine...")
+        _engine = MCPEngine()
+        logger.info("✅ MCP Engine initialized successfully")
+    return _engine
+
 
 # Initialize the MCP server
 mcp = FastMCP(
     name="ARIS RAG MCP Server",
-    instructions="""MCP server for ARIS RAG system - full document management with CRUD operations.
+    on_duplicate_tools="warn",
+    instructions="""ARIS RAG MCP Server — AI-powered document intelligence platform.
 
-This server provides professional-grade RAG (Retrieval Augmented Generation) tools
-with complete Create, Read, Update, Delete capabilities.
+7 tools available:
 
-4 CONSOLIDATED TOOLS (all 18 functionalities covered):
-
-1. rag_query - Search with mode: "quick"|"research"|"search"
-2. rag_documents - Document & Chunk CRUD with action: "list"|"get"|"create"|"update"|"delete"|"list_chunks"|"get_chunk"|"create_chunk"|"update_chunk"|"delete_chunk"
-3. rag_indexes - Manage indexes with action: "list"|"info"|"delete"
-4. rag_stats - System statistics
+1. search_knowledge_base  — Semantic search with hybrid retrieval + FlashRank reranking.
+                            Modes: "quick" (fast), "research" (deep analysis), "search" (custom).
+2. ingest_document        — Ingest documents (text, file upload, or S3 URI) into the knowledge base.
+3. list_documents         — List all documents with status, language, and chunk counts.
+4. get_document_status    — Get full details and processing status of a document.
+5. delete_document        — Permanently remove a document and all its indexed data.
+6. manage_index           — Manage vector indexes: list all, get details, or delete an index.
+7. get_system_stats       — Real-time system monitoring: document counts, query metrics, API costs.
 """
 )
 
 
 # ============================================================================
-# MCP TOOLS (4 consolidated tools - all 18 functionalities covered)
+# TOOL 1: search_knowledge_base
 # ============================================================================
 
-@mcp.tool()
-def rag_query(
-    query: str,
-    mode: str = "search",
-    filters: Optional[Dict[str, Any]] = None,
-    k: int = 10,
-    search_mode: str = "hybrid",
-    use_agentic_rag: Optional[bool] = None,
-    include_answer: bool = True
-) -> Dict[str, Any]:
-    """
-    Search the RAG system. Use mode to choose speed vs depth.
-    
-    mode: "quick" = fast/simple (gpt-4o-mini), "research" = deep analysis (gpt-4o + agentic),
-          "search" = customizable (default). Other params: filters, k, search_mode, include_answer.
-    """
-    if mode == "quick":
-        return mcp_engine.search(query=query, filters=filters, k=min(k, 5), search_mode="hybrid",
-                                 use_agentic_rag=False, include_answer=include_answer)
-    if mode == "research":
-        return mcp_engine.search(query=query, filters=filters, k=max(k, 15), search_mode="hybrid",
-                                use_agentic_rag=True, include_answer=include_answer)
-    uar = use_agentic_rag if use_agentic_rag is not None else True
-    return mcp_engine.search(query=query, filters=filters, k=k, search_mode=search_mode,
-                             use_agentic_rag=uar, include_answer=include_answer)
-
-
-@mcp.tool()
-def rag_documents(
-    action: str,
-    document_id: Optional[str] = None,
-    content: Optional[str] = None,
-    file_content: Optional[str] = None,
-    filename: Optional[str] = None,
-    document_name: Optional[str] = None,
-    status: Optional[str] = None,
-    language: Optional[str] = None,
-    index_name: Optional[str] = None,
-    chunk_id: Optional[str] = None,
-    text: Optional[str] = None,
-    source: str = "manual_entry",
-    page: Optional[int] = None,
-    offset: int = 0,
-    limit: int = 20,
-    metadata: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    """
-    Document & Chunk CRUD — unified tool.
-
-    DOCUMENT actions (no index_name needed):
-      action="list"   — list all documents
-      action="get"    — get document details (document_id required)
-      action="create" — ingest text/S3 via content, OR upload binary via file_content+filename
-      action="update" — update document metadata (document_id required; optional document_name, status, language, metadata)
-      action="delete" — delete a document (document_id required)
-
-    CHUNK actions (index_name required):
-      action="list_chunks"   — list chunks in an index (optional source, offset, limit)
-      action="get_chunk"     — get a single chunk (chunk_id required)
-      action="create_chunk"  — create a chunk (text required; optional source, page, metadata)
-      action="update_chunk"  — update a chunk (chunk_id required; optional text, page, metadata)
-      action="delete_chunk"  — delete a chunk (chunk_id required)
-    """
-    # ---- Document actions ----
-    if action == "list":
-        return mcp_engine.list_documents()
-    if action == "get":
-        if not document_id:
-            return {"success": False, "error": "document_id required for action=get"}
-        return mcp_engine.get_document(document_id)
-    if action == "delete":
-        if not document_id:
-            return {"success": False, "error": "document_id required for action=delete"}
-        return mcp_engine.delete_document(document_id)
-    if action == "update":
-        if not document_id:
-            return {"success": False, "error": "document_id required for action=update"}
-        updates = {}
-        if document_name is not None: updates["document_name"] = document_name
-        if status is not None: updates["status"] = status
-        if language is not None: updates["language"] = language
-        if metadata is not None: updates["metadata"] = metadata
-        if not updates:
-            return {"success": False, "message": "Provide at least one of: document_name, status, language, metadata"}
-        return mcp_engine.update_document(document_id, updates)
-    if action == "create":
-        if file_content and filename:
-            return mcp_engine.upload_document(file_content, filename, metadata)
-        if content:
-            return mcp_engine.ingest(content, metadata)
-        return {"success": False, "error": "For create use content (text or s3://uri) OR file_content+filename"}
-
-    # ---- Chunk actions (require index_name) ----
-    if action in ("list_chunks", "get_chunk", "create_chunk", "update_chunk", "delete_chunk"):
-        if not index_name:
-            return {"success": False, "error": f"index_name required for action={action}"}
-
-    if action == "list_chunks":
-        return mcp_engine.list_chunks(index_name, source=source, offset=offset, limit=limit)
-    if action == "get_chunk":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=get_chunk"}
-        return mcp_engine.get_chunk(index_name, chunk_id)
-    if action == "delete_chunk":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=delete_chunk"}
-        return mcp_engine.delete_chunk(index_name, chunk_id)
-    if action == "create_chunk":
-        if not text:
-            return {"success": False, "error": "text required for action=create_chunk"}
-        return mcp_engine.create_chunk(index_name, text, source=source, page=page, metadata=metadata)
-    if action == "update_chunk":
-        if not chunk_id:
-            return {"success": False, "error": "chunk_id required for action=update_chunk"}
-        return mcp_engine.update_chunk(index_name, chunk_id, text=text, page=page, metadata=metadata)
-
-    return {"success": False, "error": f"Unknown action: {action}. Use: list, get, create, update, delete, list_chunks, get_chunk, create_chunk, update_chunk, delete_chunk"}
-
-
-@mcp.tool()
-def rag_indexes(
-    action: str = "list",
-    index_name: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Index management: action="list"|"info"|"delete".
-    For info/delete, provide index_name.
-    """
-    if action == "list":
-        return mcp_engine.list_indexes()
-    if not index_name:
-        return {"success": False, "error": "index_name required for action=info or delete"}
-    if action == "info":
-        return mcp_engine.get_index_info(index_name)
-    if action == "delete":
-        return mcp_engine.delete_index(index_name)
-    return {"success": False, "error": f"Unknown action: {action}. Use: list, info, delete"}
-
-
-@mcp.tool()
-def rag_stats() -> Dict[str, Any]:
-    """Get system statistics: documents, chunks, indexes, costs."""
-    return mcp_engine.get_stats()
-
-
-# ============================================================================
-# FASTAPI APPLICATION
-# ============================================================================
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan handler."""
-    logger.info("🚀 Starting MCP Microservice...")
-    logger.info(f"   Server: {mcp.name}")
-    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
-    yield
-    logger.info("👋 Shutting down MCP Microservice...")
-
-
-app = FastAPI(
-    title="ARIS RAG MCP Server",
-    description="""
-    **Model Context Protocol (MCP) Server for ARIS RAG System**
-    
-    This microservice provides MCP tools for AI agents to interact with 
-    the ARIS RAG document system.
-    
-    ## MCP Tools Available
-    
-    - **rag_query**: Search (mode: quick|research|search)
-    - **rag_documents**: Document & Chunk CRUD (action: list|get|create|update|delete|list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk)
-    - **rag_indexes**: Index management (action: list|info|delete)
-    - **rag_stats**: System statistics
-    
-    ## Accuracy Features
-    
-    - Hybrid Search (semantic + keyword)
-    - FlashRank Reranking
-    - Agentic RAG Query Decomposition
-    - Confidence Scoring
-    - Cross-language Support
-    
-    ## Endpoints
-    
-    - `GET /health` - Health check
-    - `GET /info` - Service information
-    - `GET /sse` - MCP Server-Sent Events endpoint
-    """,
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint for the MCP microservice."""
-    from shared.config.settings import ARISConfig
-    
-    return {
-        "status": "healthy",
-        "service": "mcp",
-        "server_name": mcp.name,
-        "tools": {
-            "query": ["rag_query"],
-            "documents_and_chunks": ["rag_documents"],
-            "indexes": ["rag_indexes"],
-            "system": ["rag_stats"]
-        },
-        "total_tools": 4,
-        "accuracy_features": {
-            "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
-            "reranking": ARISConfig.ENABLE_RERANKING,
-            "agentic_rag": ARISConfig.DEFAULT_USE_AGENTIC_RAG,
-            "auto_translate": ARISConfig.ENABLE_AUTO_TRANSLATE
-        },
-        "timestamp": datetime.now().isoformat()
+@mcp.tool(
+    name="search_knowledge_base",
+    description="Search the knowledge base using AI-powered hybrid search (semantic + keyword) with FlashRank cross-encoder reranking",
+    tags={"rag", "search", "retrieval", "knowledge-base", "semantic",
+          "capability:knowledge_search", "domain:document_intelligence", "requires_auth:false"},
+    meta={
+        "version": "2.0",
+        "category": "search",
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "knowledge_search",
+        "domain": "document_intelligence",
+        "requires_auth": False,
+        "priority": 1
+    },
+    annotations={
+        "title": "Knowledge Base Search",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True
     }
+)
+async def search_knowledge_base(
+    query: Annotated[str, Field(
+        description="Search query for finding relevant knowledge in documents",
+        min_length=1,
+        max_length=2000
+    )],
+    mode: Annotated[str, Field(
+        description='Search mode: "quick" (fast, k=5), "research" (deep, agentic RAG), "search" (custom)'
+    )] = "search",
+    k: Annotated[int, Field(
+        ge=1,
+        le=50,
+        description="Maximum number of results to return"
+    )] = 10,
+    search_mode: Annotated[str, Field(
+        description='Underlying search strategy: "hybrid" (default), "semantic", or "keyword"'
+    )] = "hybrid",
+    filters: Annotated[Optional[Dict[str, Any]], Field(
+        None,
+        description='Filter results, e.g. {"source": "filename.pdf"} to restrict to one document'
+    )] = None,
+    use_agentic_rag: Annotated[Optional[bool], Field(
+        None,
+        description="Force agentic RAG on/off. None = auto (on for research mode)"
+    )] = None,
+    include_answer: Annotated[bool, Field(
+        description="Generate an AI-synthesized answer from the results"
+    )] = True,
+    response_language: Annotated[Optional[str], Field(
+        None,
+        description='Language for the answer: "English", "Spanish", etc. Defaults to English.'
+    )] = None,
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    Search documents and get AI-generated answers using RAG.
 
+    Uses hybrid search (semantic + keyword) with FlashRank cross-encoder
+    reranking for high accuracy. Returns ranked citations with confidence
+    scores, page numbers, and source attribution.
 
-@app.get("/info")
-async def service_info():
-    """Get detailed information about the MCP service."""
-    from shared.config.settings import ARISConfig
-    
-    return {
-        "service": "ARIS RAG MCP Server",
-        "version": "2.0.0",
-        "description": "Model Context Protocol server with full CRUD operations for document management and search",
-        "tool_categories": {
-            "query": {
-                "tools": ["rag_query"],
-                "description": "Search with mode: quick|research|search"
-            },
-            "documents_and_chunks": {
-                "tools": ["rag_documents"],
-                "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"
-            },
-            "indexes": {
-                "tools": ["rag_indexes"],
-                "description": "Index management: list|info|delete"
-            },
-            "system": {
-                "tools": ["rag_stats"],
-                "description": "System statistics"
+    Modes:
+      "quick"    — Fast answer, fewer results (k=5, no agentic RAG)
+      "research" — Deep analysis with sub-queries (k=15+, agentic RAG)
+      "search"   — Full control over all parameters (default)
+
+    Examples:
+        search_knowledge_base("What is the LME approach?")
+        search_knowledge_base("safety protocols", mode="research", k=15)
+        search_knowledge_base("maintenance", filters={"source": "manual.pdf"})
+    """
+    engine = get_engine()
+
+    if ctx:
+        await ctx.info(
+            "🔍 Starting knowledge base search...",
+            extra={
+                "stage": "search_start",
+                "query": query[:100],
+                "mode": mode,
+                "k": k,
+                "search_mode": search_mode,
+                "tool_version": "2.0"
             }
-        },
-        "total_tools": 4,
-        "configuration": {
-            "embedding_model": ARISConfig.EMBEDDING_MODEL,
-            "chunk_size": ARISConfig.DEFAULT_CHUNK_SIZE,
-            "chunk_overlap": ARISConfig.DEFAULT_CHUNK_OVERLAP,
-            "retrieval_k": ARISConfig.DEFAULT_RETRIEVAL_K,
-            "semantic_weight": ARISConfig.DEFAULT_SEMANTIC_WEIGHT,
-            "reranking_enabled": ARISConfig.ENABLE_RERANKING,
-            "agentic_rag_enabled": ARISConfig.DEFAULT_USE_AGENTIC_RAG
-        },
-        "endpoints": {
-            "health": "/health",
-            "info": "/info",
-            "tools": "/tools",
-            "mcp_sse": "/sse"
-        }
+        )
+        await ctx.report_progress(progress=10, total=100)
+
+    try:
+        if ctx:
+            await ctx.info("🧠 Processing query and retrieving documents...",
+                           extra={"stage": "retrieval"})
+            await ctx.report_progress(progress=30, total=100)
+
+        if mode == "quick":
+            result = engine.search(
+                query=query, filters=filters, k=min(k, 5),
+                search_mode="hybrid", use_agentic_rag=False,
+                include_answer=include_answer, response_language=response_language
+            )
+        elif mode == "research":
+            result = engine.search(
+                query=query, filters=filters, k=max(k, 15),
+                search_mode="hybrid", use_agentic_rag=True,
+                include_answer=include_answer, response_language=response_language
+            )
+        else:
+            uar = use_agentic_rag if use_agentic_rag is not None else True
+            result = engine.search(
+                query=query, filters=filters, k=k,
+                search_mode=search_mode, use_agentic_rag=uar,
+                include_answer=include_answer, response_language=response_language
+            )
+
+        if ctx:
+            await ctx.info(
+                f"✅ Search completed — {result.get('total_results', 0)} results found",
+                extra={
+                    "stage": "search_complete",
+                    "total_results": result.get("total_results", 0),
+                    "sources": result.get("sources", []),
+                }
+            )
+            await ctx.report_progress(progress=100, total=100)
+
+        return result
+
+    except Exception as e:
+        error_msg = f"Knowledge base search failed: {str(e)}"
+        if ctx:
+            await ctx.error(f"❌ {error_msg}",
+                            extra={"stage": "search_exception",
+                                   "exception_class": type(e).__name__})
+        logger.error(f"search_knowledge_base error: {e}")
+        return {"success": False, "error": error_msg}
+
+
+# ============================================================================
+# TOOL 2: ingest_document
+# ============================================================================
+
+@mcp.tool(
+    name="ingest_document",
+    description="Ingest a document into the knowledge base with automatic chunking, embedding, and vector indexing",
+    tags={"rag", "documents", "ingestion", "knowledge-base",
+          "capability:document_ingestion", "domain:document_intelligence", "requires_auth:false"},
+    meta={
+        "version": "2.0",
+        "category": "document_management",
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "document_ingestion",
+        "domain": "document_intelligence",
+        "requires_auth": False,
+        "priority": 2
+    },
+    annotations={
+        "title": "Document Ingestion",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
     }
+)
+async def ingest_document(
+    content: Annotated[Optional[str], Field(
+        None,
+        description="Text content or S3 URI (s3://bucket/key) to ingest"
+    )] = None,
+    file_content: Annotated[Optional[str], Field(
+        None,
+        description="Base64-encoded file content for file upload"
+    )] = None,
+    filename: Annotated[Optional[str], Field(
+        None,
+        description="Filename for the uploaded file (required with file_content)"
+    )] = None,
+    metadata: Annotated[Optional[Dict[str, Any]], Field(
+        None,
+        description="Additional metadata to attach to the document"
+    )] = None,
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    Ingest a document into the ARIS knowledge base.
+
+    The system automatically: parses the document (PDF/TXT/images),
+    detects language, chunks text into ~800-token pieces, generates
+    embeddings via OpenAI, and indexes everything in OpenSearch.
+
+    Two ingestion methods:
+      1. content — Raw text or S3 URI (s3://bucket/key)
+      2. file_content + filename — Base64-encoded file upload
+
+    Examples:
+        ingest_document(content="Important policy text here...")
+        ingest_document(content="s3://my-bucket/docs/manual.pdf")
+        ingest_document(file_content="<base64>", filename="report.pdf")
+    """
+    engine = get_engine()
+
+    if ctx:
+        await ctx.info("📄 Starting document ingestion...",
+                       extra={"stage": "ingestion_start",
+                              "has_content": bool(content),
+                              "has_file": bool(file_content and filename),
+                              "tool_version": "2.0"})
+        await ctx.report_progress(progress=10, total=100)
+
+    try:
+        if file_content and filename:
+            if ctx:
+                await ctx.info(f"📤 Uploading file: {filename}",
+                               extra={"stage": "file_upload", "filename": filename})
+                await ctx.report_progress(progress=40, total=100)
+            result = engine.upload_document(file_content, filename, metadata)
+        elif content:
+            if ctx:
+                await ctx.info("⚙️ Processing text content...",
+                               extra={"stage": "text_processing",
+                                      "content_length": len(content)})
+                await ctx.report_progress(progress=40, total=100)
+            result = engine.ingest(content, metadata)
+        else:
+            return {"success": False,
+                    "error": "Provide content (text or s3://uri) OR file_content + filename"}
+
+        if ctx:
+            await ctx.info(
+                f"✅ Document ingested successfully!",
+                extra={"stage": "ingestion_complete",
+                       "document_id": result.get("document_id")}
+            )
+            await ctx.report_progress(progress=100, total=100)
+
+        return result
+
+    except Exception as e:
+        error_msg = f"Document ingestion failed: {str(e)}"
+        if ctx:
+            await ctx.error(f"❌ {error_msg}",
+                            extra={"stage": "ingestion_exception",
+                                   "exception_class": type(e).__name__})
+        logger.error(f"ingest_document error: {e}")
+        return {"success": False, "error": error_msg}
 
 
-@app.get("/tools")
-async def list_tools():
-    """List all available MCP tools (4 consolidated tools)."""
-    return {
-        "total_tools": 4,
-        "categories": {
-            "query": ["rag_query"],
-            "documents_and_chunks": ["rag_documents"],
-            "indexes": ["rag_indexes"],
-            "system": ["rag_stats"]
-        },
-        "tools": [
-            {"name": "rag_query", "category": "query", "description": "Search with mode: quick|research|search"},
-            {"name": "rag_documents", "category": "documents_and_chunks", "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"},
-            {"name": "rag_indexes", "category": "indexes", "description": "Index management: action list|info|delete"},
-            {"name": "rag_stats", "category": "system", "description": "System statistics"}
-        ]
+# ============================================================================
+# TOOL 3: list_documents
+# ============================================================================
+
+@mcp.tool(
+    name="list_documents",
+    description="List all documents in the knowledge base with status, language, and chunk counts",
+    tags={"rag", "documents", "knowledge-base",
+          "capability:document_listing", "domain:document_intelligence", "requires_auth:false"},
+    meta={
+        "version": "2.0",
+        "category": "document_management",
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "document_listing",
+        "domain": "document_intelligence",
+        "requires_auth": False,
+        "priority": 3
+    },
+    annotations={
+        "title": "List Documents",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
     }
-
-
-# ============================================================================
-# REST API ENDPOINTS - HTTP interface for Streamlit UI and external clients
-# These mirror the MCP tools so all consumers use the same validated code path.
-# ============================================================================
-
-from pydantic import BaseModel, Field
-from typing import Optional as Opt
-
-
-class SearchRequest(BaseModel):
-    """Request body for /api/search."""
-    query: str
-    filters: Opt[Dict[str, Any]] = None
-    k: int = Field(default=5, ge=1, le=50)
-    search_mode: str = Field(default="hybrid")
-    use_agentic_rag: bool = True
-    include_answer: bool = True
-
-
-class IngestRequest(BaseModel):
-    """Request body for /api/ingest."""
-    content: str
-    metadata: Opt[Dict[str, Any]] = None
-
-
-class UploadRequest(BaseModel):
-    """Request body for /api/upload."""
-    file_content: str  # base64 for binary, plain text for .txt/.md/.html
-    filename: str
-    metadata: Opt[Dict[str, Any]] = None
-
-
-@app.post("/api/search")
-async def api_search(req: SearchRequest):
+)
+async def list_documents(
+    ctx: Context = None
+) -> Dict[str, Any]:
     """
-    Search documents via MCP Engine (HTTP wrapper).
-    Used by Streamlit UI and any REST client.
+    List all documents in the ARIS knowledge base.
+
+    Returns document IDs, filenames, processing status, chunk counts,
+    detected language, and index information for every document.
+
+    Examples:
+        list_documents()
     """
+    engine = get_engine()
+
+    if ctx:
+        await ctx.info("📋 Listing documents...", extra={"stage": "list_start"})
+        await ctx.report_progress(progress=30, total=100)
+
     try:
-        result = mcp_engine.search(
-            query=req.query,
-            filters=req.filters,
-            k=req.k,
-            search_mode=req.search_mode,
-            use_agentic_rag=req.use_agentic_rag,
-            include_answer=req.include_answer,
-        )
+        result = engine.list_documents()
+
+        if ctx:
+            total = result.get("total", 0)
+            await ctx.info(f"✅ Found {total} documents",
+                           extra={"stage": "list_complete", "total": total})
+            await ctx.report_progress(progress=100, total=100)
+
         return result
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
+
     except Exception as e:
-        logger.error(f"/api/search error: {type(e).__name__}: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/ingest")
-async def api_ingest(req: IngestRequest):
-    """
-    Ingest text/S3-URI content via MCP Engine (HTTP wrapper).
-    Used by Streamlit UI and any REST client.
-    """
-    try:
-        result = mcp_engine.ingest(
-            content=req.content,
-            metadata=req.metadata,
-        )
-        return result
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
-    except Exception as e:
-        logger.error(f"/api/ingest error: {type(e).__name__}: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/api/upload")
-async def api_upload(req: UploadRequest):
-    """
-    Upload a document via MCP Engine (HTTP wrapper).
-    file_content is base64-encoded for binary files (PDF, DOCX)
-    or plain UTF-8 text for text files (TXT, MD, HTML).
-    Used by Streamlit UI and any REST client.
-    """
-    try:
-        result = mcp_engine.upload_document(
-            file_content=req.file_content,
-            filename=req.filename,
-            metadata=req.metadata,
-        )
-        return result
-    except ValueError as e:
-        return {"success": False, "error": str(e)}
-    except Exception as e:
-        logger.error(f"/api/upload error: {type(e).__name__}: {e}")
-        return {"success": False, "error": str(e)}
+        error_msg = f"Failed to list documents: {str(e)}"
+        if ctx:
+            await ctx.error(f"❌ {error_msg}",
+                            extra={"stage": "list_exception"})
+        logger.error(f"list_documents error: {e}")
+        return {"success": False, "error": error_msg}
 
 
 # ============================================================================
-# SYNC ENDPOINTS - Real-time cross-service synchronization
+# TOOL 4: get_document_status
 # ============================================================================
 
-# Global sync manager for MCP service
+@mcp.tool(
+    name="get_document_status",
+    description="Get the processing status and details of a specific document",
+    tags={"rag", "documents", "knowledge-base",
+          "capability:document_status", "domain:document_intelligence", "requires_auth:false"},
+    meta={
+        "version": "2.0",
+        "category": "document_management",
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "document_status",
+        "domain": "document_intelligence",
+        "requires_auth": False,
+        "priority": 3
+    },
+    annotations={
+        "title": "Get Document Status",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
+    }
+)
+async def get_document_status(
+    document_id: Annotated[str, Field(
+        description="Unique document identifier",
+        min_length=1
+    )],
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    Get the processing status and details of a document.
+
+    Returns document name, status, chunk count, language, index names,
+    and metadata for the specified document ID.
+
+    Examples:
+        get_document_status("dd6364bb-e0ae-4ab3-ab05-3d92861d8ca5")
+    """
+    engine = get_engine()
+
+    if ctx:
+        await ctx.info(f"🔎 Getting status for document {document_id[:12]}...",
+                       extra={"stage": "status_start", "document_id": document_id})
+        await ctx.report_progress(progress=30, total=100)
+
+    try:
+        result = engine.get_document(document_id)
+
+        if ctx:
+            await ctx.info(f"✅ Document status retrieved",
+                           extra={"stage": "status_complete",
+                                  "document_id": document_id})
+            await ctx.report_progress(progress=100, total=100)
+
+        return result
+
+    except Exception as e:
+        error_msg = f"Failed to get document status: {str(e)}"
+        if ctx:
+            await ctx.error(f"❌ {error_msg}",
+                            extra={"stage": "status_exception"})
+        logger.error(f"get_document_status error: {e}")
+        return {"success": False, "error": error_msg}
+
+
+# ============================================================================
+# TOOL 5: delete_document
+# ============================================================================
+
+@mcp.tool(
+    name="delete_document",
+    description="Delete a document and all its indexed data from the knowledge base",
+    tags={"rag", "documents", "knowledge-base",
+          "capability:document_deletion", "domain:document_intelligence", "requires_auth:false"},
+    meta={
+        "version": "2.0",
+        "category": "document_management",
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "document_deletion",
+        "domain": "document_intelligence",
+        "requires_auth": False,
+        "priority": 3
+    },
+    annotations={
+        "title": "Delete Document",
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": True,
+        "openWorldHint": False
+    }
+)
+async def delete_document(
+    document_id: Annotated[str, Field(
+        description="Unique document identifier to delete",
+        min_length=1
+    )],
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    Permanently delete a document and all its data from the knowledge base.
+
+    Removes the document record, all text chunks, embeddings, and images
+    from both OpenSearch and the document registry.
+
+    This operation is destructive and cannot be undone.
+
+    Examples:
+        delete_document("dd6364bb-e0ae-4ab3-ab05-3d92861d8ca5")
+    """
+    engine = get_engine()
+
+    if ctx:
+        await ctx.info(f"🗑️ Deleting document {document_id[:12]}...",
+                       extra={"stage": "delete_start", "document_id": document_id})
+        await ctx.report_progress(progress=20, total=100)
+
+    try:
+        result = engine.delete_document(document_id)
+
+        if ctx:
+            success = result.get("success", False)
+            icon = "✅" if success else "❌"
+            await ctx.info(f"{icon} Delete {'completed' if success else 'failed'}",
+                           extra={"stage": "delete_complete",
+                                  "document_id": document_id,
+                                  "success": success})
+            await ctx.report_progress(progress=100, total=100)
+
+        return result
+
+    except Exception as e:
+        error_msg = f"Failed to delete document: {str(e)}"
+        if ctx:
+            await ctx.error(f"❌ {error_msg}",
+                            extra={"stage": "delete_exception"})
+        logger.error(f"delete_document error: {e}")
+        return {"success": False, "error": error_msg}
+
+
+# ============================================================================
+# TOOL 6: manage_index
+# ============================================================================
+
+@mcp.tool(
+    name="manage_index",
+    description="Manage vector indexes: list all indexes, get index details, or delete an index",
+    tags={"rag", "indexes", "knowledge-base",
+          "capability:index_management", "domain:document_intelligence", "requires_auth:false"},
+    meta={
+        "version": "2.0",
+        "category": "index_management",
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "index_management",
+        "domain": "document_intelligence",
+        "requires_auth": False,
+        "priority": 4
+    },
+    annotations={
+        "title": "Index Management",
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
+    }
+)
+async def manage_index(
+    action: Annotated[str, Field(
+        description='Action: "list" (all indexes), "info" (one index), "delete" (remove index)'
+    )],
+    index_name: Annotated[Optional[str], Field(
+        None,
+        description="Index name (required for info and delete actions)"
+    )] = None,
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    Manage OpenSearch vector indexes.
+
+    Actions:
+      "list"   — List all vector indexes with chunk counts and sizes
+      "info"   — Get detailed information about a specific index
+      "delete" — Delete an index and all its chunks (destructive!)
+
+    Examples:
+        manage_index(action="list")
+        manage_index(action="info", index_name="aris-doc-abc123")
+        manage_index(action="delete", index_name="aris-doc-abc123")
+    """
+    engine = get_engine()
+
+    if ctx:
+        await ctx.info(f"🗂️ Managing indexes: {action}...",
+                       extra={"stage": "index_start", "action": action,
+                              "index_name": index_name})
+        await ctx.report_progress(progress=20, total=100)
+
+    try:
+        if action == "list":
+            result = engine.list_indexes()
+        elif action == "info":
+            if not index_name:
+                return {"success": False, "error": "index_name is required for 'info' action"}
+            result = engine.get_index_info(index_name)
+        elif action == "delete":
+            if not index_name:
+                return {"success": False, "error": "index_name is required for 'delete' action"}
+            result = engine.delete_index(index_name)
+        else:
+            return {"success": False,
+                    "error": f"Unknown action '{action}'. Valid: list, info, delete"}
+
+        if ctx:
+            await ctx.info(f"✅ Index {action} completed",
+                           extra={"stage": "index_complete", "action": action})
+            await ctx.report_progress(progress=100, total=100)
+
+        return result
+
+    except Exception as e:
+        error_msg = f"Index management failed: {str(e)}"
+        if ctx:
+            await ctx.error(f"❌ {error_msg}",
+                            extra={"stage": "index_exception"})
+        logger.error(f"manage_index error: {e}")
+        return {"success": False, "error": error_msg}
+
+
+# ============================================================================
+# TOOL 7: get_system_stats
+# ============================================================================
+
+@mcp.tool(
+    name="get_system_stats",
+    description="Get real-time system statistics: document counts, query metrics, performance, and API costs",
+    tags={"monitoring", "stats", "health",
+          "capability:system_monitoring", "domain:document_intelligence", "requires_auth:false"},
+    meta={
+        "version": "2.0",
+        "category": "monitoring",
+        "author": "intelycx",
+        "server_type": "rag",
+        "capability": "system_monitoring",
+        "domain": "document_intelligence",
+        "requires_auth": False,
+        "priority": 5
+    },
+    annotations={
+        "title": "System Statistics",
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False
+    }
+)
+async def get_system_stats(
+    ctx: Context = None
+) -> Dict[str, Any]:
+    """
+    Get real-time system monitoring statistics.
+
+    Returns:
+    - Document counts, chunk counts, page counts, image counts
+    - Language distribution across documents
+    - Query performance: total queries, success rate, avg response time
+    - API costs: embedding and query costs in USD
+    - Error summary
+
+    Examples:
+        get_system_stats()
+    """
+    engine = get_engine()
+
+    if ctx:
+        await ctx.info("📊 Gathering system statistics...",
+                       extra={"stage": "stats_start", "tool_version": "2.0"})
+        await ctx.report_progress(progress=20, total=100)
+
+    try:
+        result = engine.get_stats()
+
+        if ctx:
+            await ctx.info("✅ Statistics retrieved successfully",
+                           extra={"stage": "stats_complete"})
+            await ctx.report_progress(progress=100, total=100)
+
+        return result
+
+    except Exception as e:
+        error_msg = f"Failed to get system stats: {str(e)}"
+        if ctx:
+            await ctx.error(f"❌ {error_msg}",
+                            extra={"stage": "stats_exception"})
+        logger.error(f"get_system_stats error: {e}")
+        return {"success": False, "error": error_msg}
+
+
+# ============================================================================
+# HEALTH CHECK — @mcp.custom_route (matches Intelycx pattern)
+# ============================================================================
+
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request: Request) -> JSONResponse:
+    """Health check endpoint for monitoring and Docker health checks."""
+    try:
+        from shared.config.settings import ARISConfig
+        return JSONResponse({
+            "status": "healthy",
+            "service": "aris-rag-mcp-server",
+            "server_name": "ARIS RAG MCP Server",
+            "version": "6.0.0",
+            "transport": "http",
+            "tools": [
+                "search_knowledge_base",
+                "ingest_document",
+                "list_documents",
+                "get_document_status",
+                "delete_document",
+                "manage_index",
+                "get_system_stats",
+            ],
+            "total_tools": 7,
+            "accuracy_features": {
+                "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
+                "reranking": ARISConfig.ENABLE_RERANKING,
+                "agentic_rag": ARISConfig.DEFAULT_USE_AGENTIC_RAG,
+                "auto_translate": ARISConfig.ENABLE_AUTO_TRANSLATE
+            },
+            "timestamp": datetime.now().isoformat()
+        })
+    except Exception as e:
+        return JSONResponse(
+            {"status": "unhealthy", "error": str(e)},
+            status_code=500
+        )
+
+
+# ============================================================================
+# HELPER — sync manager singleton
+# ============================================================================
+
 _mcp_sync_manager = None
+
 
 def get_mcp_sync_manager():
     """Get or create sync manager for MCP service."""
@@ -480,81 +779,47 @@ def get_mcp_sync_manager():
     return _mcp_sync_manager
 
 
-@app.post("/sync/force")
-async def force_sync():
-    """Force full synchronization of MCP service state."""
-    try:
-        sync_mgr = get_mcp_sync_manager()
-        result = sync_mgr.force_full_sync()
-        
-        # Clear cached document registry to force reload with fresh state
-        from services.mcp.engine import _get_cached_document_registry
-        if hasattr(_get_cached_document_registry, '_registry'):
-            del _get_cached_document_registry._registry
-        
-        logger.info("✅ [MCP] Force sync completed, caches cleared")
-        
-        return {
-            "success": True,
-            "message": "MCP sync completed and caches cleared",
-            "result": result
-        }
-    except Exception as e:
-        logger.error(f"[MCP] Force sync failed: {e}")
-        return {"success": False, "error": str(e)}
+# ============================================================================
+# INPUT VALIDATION — shared validators for Starlette handlers
+# ============================================================================
+
+def _validate_search_body(body: dict) -> tuple:
+    """Validate /api/search request body."""
+    query = (body.get("query") or "").strip()
+    if not query:
+        return None, "query is required and cannot be empty"
+    k = body.get("k", 5)
+    if not isinstance(k, int) or k < 1 or k > 50:
+        return None, "k must be an integer between 1 and 50"
+    search_mode = body.get("search_mode", "hybrid")
+    if search_mode not in ("semantic", "keyword", "hybrid"):
+        return None, "search_mode must be one of: semantic, keyword, hybrid"
+    body["query"] = query
+    body["k"] = k
+    body["search_mode"] = search_mode
+    return body, None
 
 
-@app.get("/sync/status")
-async def sync_status():
-    """Get current synchronization status for MCP service."""
-    try:
-        sync_mgr = get_mcp_sync_manager()
-        status = sync_mgr.get_sync_status()
-        
-        return {
-            "success": True,
-            "service": "mcp",
-            "status": status
-        }
-    except Exception as e:
-        logger.error(f"[MCP] Sync status failed: {e}")
-        return {"success": False, "error": str(e)}
+def _validate_ingest_body(body: dict) -> tuple:
+    """Validate /api/ingest request body."""
+    content = (body.get("content") or "").strip()
+    if not content:
+        return None, "content is required and cannot be empty"
+    body["content"] = content
+    return body, None
 
 
-@app.post("/sync/check")
-async def check_sync():
-    """Check for changes and sync if needed."""
-    try:
-        sync_mgr = get_mcp_sync_manager()
-        result = sync_mgr.check_and_sync()
-        
-        return {
-            "success": True,
-            "checked": True,
-            "result": result
-        }
-    except Exception as e:
-        logger.error(f"[MCP] Sync check failed: {e}")
-        return {"success": False, "error": str(e)}
-
-
-@app.post("/sync/instant")
-async def instant_sync():
-    """Perform immediate synchronization without waiting for interval."""
-    try:
-        sync_mgr = get_mcp_sync_manager()
-        result = sync_mgr.instant_sync()
-        
-        logger.info("⚡ [MCP] Instant sync completed")
-        
-        return {
-            "success": True,
-            "message": "Instant sync completed",
-            "result": result
-        }
-    except Exception as e:
-        logger.error(f"[MCP] Instant sync failed: {e}")
-        return {"success": False, "error": str(e)}
+def _validate_upload_body(body: dict) -> tuple:
+    """Validate /api/upload request body."""
+    file_content = (body.get("file_content") or "").strip()
+    filename = (body.get("filename") or "").strip()
+    if not file_content:
+        return None, "file_content is required"
+    if not filename:
+        return None, "filename is required"
+    body["file_content"] = file_content
+    body["filename"] = filename
+    return body, None
 
 
 # ============================================================================
@@ -564,74 +829,43 @@ async def instant_sync():
 def run_combined_server():
     """
     Run combined FastAPI + MCP server.
-    
-    Uses FastMCP's http_app as the base and mounts FastAPI routes on it.
+    Uses FastMCP's http_app as the base and mounts REST routes on it.
     """
     import uvicorn
-    from starlette.applications import Starlette
-    from starlette.routing import Route, Mount
-    from starlette.responses import JSONResponse
-    
+    from starlette.routing import Route
+
     port = int(os.getenv("MCP_SERVER_PORT", "8503"))
     host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
-    
-    logger.info(f"🚀 Starting Combined MCP + FastAPI Server on {host}:{port}")
-    logger.info(f"   MCP SSE endpoint: http://{host}:{port}/sse")
-    logger.info(f"   Health endpoint: http://{host}:{port}/health")
-    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
-    
+
+    logger.info(f"🚀 Starting ARIS RAG MCP Server on {host}:{port}")
+    logger.info(f"   MCP endpoint: http://{host}:{port}/mcp")
+    logger.info(f"   Health: http://{host}:{port}/health")
+    logger.info(f"   Tools: 7 MCP tools (Intelycx pattern)")
+
     # Get the MCP's HTTP app (Starlette-based)
     mcp_http_app = mcp.http_app()
-    
-    # Create health check handler
-    async def health_handler(request):
-        from shared.config.settings import ARISConfig
-        return JSONResponse({
-            "status": "healthy",
-            "service": "mcp",
-            "server_name": mcp.name,
-            "tools": {
-                "query": ["rag_query"],
-                "documents_and_chunks": ["rag_documents"],
-                "indexes": ["rag_indexes"],
-                "system": ["rag_stats"]
-            },
-            "total_tools": 4,
-            "accuracy_features": {
-                "hybrid_search": ARISConfig.DEFAULT_USE_HYBRID_SEARCH,
-                "reranking": ARISConfig.ENABLE_RERANKING,
-                "agentic_rag": ARISConfig.DEFAULT_USE_AGENTIC_RAG,
-                "auto_translate": ARISConfig.ENABLE_AUTO_TRANSLATE
-            },
-            "timestamp": datetime.now().isoformat()
-        })
-    
-    # Create info handler
+
+    engine = get_engine()
+
+    # ------------------------------------------------------------------
+    # Info / tools / sse redirect
+    # ------------------------------------------------------------------
     async def info_handler(request):
         from shared.config.settings import ARISConfig
         return JSONResponse({
             "service": "ARIS RAG MCP Server",
-            "version": "2.0.0",
-            "description": "Model Context Protocol server with full CRUD operations for document management and search",
-            "tool_categories": {
-                "query": {
-                    "tools": ["rag_query"],
-                    "description": "Search with mode: quick|research|search"
-                },
-                "documents_and_chunks": {
-                    "tools": ["rag_documents"],
-                    "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"
-                },
-                "indexes": {
-                    "tools": ["rag_indexes"],
-                    "description": "Index management: list|info|delete"
-                },
-                "system": {
-                    "tools": ["rag_stats"],
-                    "description": "System statistics"
-                }
+            "version": "6.0.0",
+            "description": "MCP server for document management and AI-powered search",
+            "tools": {
+                "search_knowledge_base": "AI-powered semantic search with hybrid retrieval + FlashRank reranking",
+                "ingest_document": "Ingest documents (text, file, S3) into the knowledge base",
+                "list_documents": "List all documents with status and chunk counts",
+                "get_document_status": "Get processing status of a specific document",
+                "delete_document": "Remove a document and all its indexed data",
+                "manage_index": "Manage vector indexes: list, inspect, or delete",
+                "get_system_stats": "System monitoring: document counts, query metrics, costs"
             },
-            "total_tools": 4,
+            "total_tools": 7,
             "configuration": {
                 "embedding_model": ARISConfig.EMBEDDING_MODEL,
                 "chunk_size": ARISConfig.DEFAULT_CHUNK_SIZE,
@@ -642,31 +876,33 @@ def run_combined_server():
                 "health": "/health",
                 "info": "/info",
                 "tools": "/tools",
-                "mcp_sse": "/sse"
+                "mcp": "/mcp"
             }
         })
-    
-    # Create tools list handler
+
     async def tools_handler(request):
         return JSONResponse({
-            "total_tools": 4,
+            "total_tools": 7,
             "tools": [
-                {"name": "rag_query", "category": "query", "description": "Search with mode: quick|research|search"},
-                {"name": "rag_documents", "category": "documents_and_chunks", "description": "Document & Chunk CRUD: list|get|create|update|delete + list_chunks|get_chunk|create_chunk|update_chunk|delete_chunk"},
-                {"name": "rag_indexes", "category": "indexes", "description": "Index management: action list|info|delete"},
-                {"name": "rag_stats", "category": "system", "description": "System statistics"}
+                {"name": "search_knowledge_base", "description": "AI-powered semantic search with hybrid retrieval + FlashRank reranking (modes: quick, research, search)"},
+                {"name": "ingest_document", "description": "Ingest documents (text, file, S3) into the knowledge base with automatic chunking and embedding"},
+                {"name": "list_documents", "description": "List all documents with status, language, and chunk counts"},
+                {"name": "get_document_status", "description": "Get processing status and details of a specific document"},
+                {"name": "delete_document", "description": "Permanently delete a document and all its indexed data"},
+                {"name": "manage_index", "description": "Manage vector indexes: list all, get details, or delete an index"},
+                {"name": "get_system_stats", "description": "System monitoring: document counts, query performance, costs, and health metrics"}
             ]
         })
-    
-    # Create a redirect from /sse to /mcp for backwards compatibility
+
     async def sse_redirect(request):
         from starlette.responses import RedirectResponse
-        # Include any query parameters
         query_string = request.url.query
         redirect_url = "/mcp" + ("?" + query_string if query_string else "")
         return RedirectResponse(url=redirect_url, status_code=307)
-    
-    # Create sync handlers for cross-service synchronization
+
+    # ------------------------------------------------------------------
+    # Sync handlers
+    # ------------------------------------------------------------------
     async def sync_force_handler(request):
         try:
             sync_mgr = get_mcp_sync_manager()
@@ -675,53 +911,47 @@ def run_combined_server():
             if hasattr(_get_cached_document_registry, '_registry'):
                 del _get_cached_document_registry._registry
             logger.info("✅ [MCP] Force sync completed, caches cleared")
-            return JSONResponse({"success": True, "message": "MCP sync completed and caches cleared", "result": result})
+            return JSONResponse({"success": True, "message": "MCP sync completed", "result": result})
         except Exception as e:
             logger.error(f"[MCP] Force sync failed: {e}")
             return JSONResponse({"success": False, "error": str(e)})
-    
+
     async def sync_status_handler(request):
         try:
             sync_mgr = get_mcp_sync_manager()
-            status = sync_mgr.get_sync_status()
-            return JSONResponse({"success": True, "service": "mcp", "status": status})
+            return JSONResponse({"success": True, "service": "mcp", "status": sync_mgr.get_sync_status()})
         except Exception as e:
-            logger.debug(f"operation: {type(e).__name__}: {e}")
             return JSONResponse({"success": False, "error": str(e)})
-    
+
     async def sync_check_handler(request):
         try:
             sync_mgr = get_mcp_sync_manager()
-            result = sync_mgr.check_and_sync()
-            return JSONResponse({"success": True, "checked": True, "result": result})
+            return JSONResponse({"success": True, "checked": True, "result": sync_mgr.check_and_sync()})
         except Exception as e:
-            logger.debug(f"operation: {type(e).__name__}: {e}")
             return JSONResponse({"success": False, "error": str(e)})
-    
+
     async def sync_instant_handler(request):
         try:
             sync_mgr = get_mcp_sync_manager()
-            result = sync_mgr.instant_sync()
-            return JSONResponse({"success": True, "message": "Instant sync completed", "result": result})
+            return JSONResponse({"success": True, "message": "Instant sync completed", "result": sync_mgr.instant_sync()})
         except Exception as e:
-            logger.debug(f"operation: {type(e).__name__}: {e}")
             return JSONResponse({"success": False, "error": str(e)})
-    
-    # ----------------------------------------------------------------
+
+    # ------------------------------------------------------------------
     # REST API handlers (for Streamlit UI and external REST clients)
-    # These mirror the MCP tools so all consumers use the same code path.
-    # ----------------------------------------------------------------
+    # ------------------------------------------------------------------
     async def api_search_handler(request):
-        """Search documents via MCP Engine."""
         try:
             body = await request.json()
-            result = mcp_engine.search(
-                query=body.get("query", ""),
-                filters=body.get("filters"),
-                k=body.get("k", 5),
-                search_mode=body.get("search_mode", "hybrid"),
+            body, err = _validate_search_body(body)
+            if err:
+                return JSONResponse({"success": False, "error": err}, status_code=400)
+            result = engine.search(
+                query=body["query"], filters=body.get("filters"),
+                k=body["k"], search_mode=body["search_mode"],
                 use_agentic_rag=body.get("use_agentic_rag", True),
                 include_answer=body.get("include_answer", True),
+                response_language=body.get("response_language"),
             )
             return JSONResponse(result)
         except ValueError as e:
@@ -731,111 +961,93 @@ def run_combined_server():
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_ingest_handler(request):
-        """Ingest text/S3-URI content via MCP Engine."""
         try:
             body = await request.json()
-            result = mcp_engine.ingest(
-                content=body.get("content", ""),
-                metadata=body.get("metadata"),
-            )
-            return JSONResponse(result)
-        except ValueError as e:
-            return JSONResponse({"success": False, "error": str(e)}, status_code=400)
+            body, err = _validate_ingest_body(body)
+            if err:
+                return JSONResponse({"success": False, "error": err}, status_code=400)
+            return JSONResponse(engine.ingest(content=body["content"], metadata=body.get("metadata")))
         except Exception as e:
-            logger.error(f"/api/ingest error: {type(e).__name__}: {e}")
+            logger.error(f"/api/ingest error: {e}")
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_upload_handler(request):
-        """Upload a document via MCP Engine."""
         try:
             body = await request.json()
-            result = mcp_engine.upload_document(
-                file_content=body.get("file_content", ""),
-                filename=body.get("filename", ""),
-                metadata=body.get("metadata"),
-            )
-            return JSONResponse(result)
-        except ValueError as e:
-            return JSONResponse({"success": False, "error": str(e)}, status_code=400)
+            body, err = _validate_upload_body(body)
+            if err:
+                return JSONResponse({"success": False, "error": err}, status_code=400)
+            return JSONResponse(engine.upload_document(
+                file_content=body["file_content"], filename=body["filename"],
+                metadata=body.get("metadata")))
         except Exception as e:
-            logger.error(f"/api/upload error: {type(e).__name__}: {e}")
+            logger.error(f"/api/upload error: {e}")
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-    # --- Document CRUD ---
     async def api_list_documents_handler(request):
         try:
-            return JSONResponse(mcp_engine.list_documents())
+            return JSONResponse(engine.list_documents())
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_get_document_handler(request):
         try:
-            doc_id = request.path_params["document_id"]
-            return JSONResponse(mcp_engine.get_document(doc_id))
+            return JSONResponse(engine.get_document(request.path_params["document_id"]))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_update_document_handler(request):
         try:
-            doc_id = request.path_params["document_id"]
             body = await request.json()
-            return JSONResponse(mcp_engine.update_document(doc_id, body))
+            return JSONResponse(engine.update_document(request.path_params["document_id"], body))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_delete_document_handler(request):
         try:
-            doc_id = request.path_params["document_id"]
-            return JSONResponse(mcp_engine.delete_document(doc_id))
+            return JSONResponse(engine.delete_document(request.path_params["document_id"]))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_stats_handler(request):
         try:
-            return JSONResponse(mcp_engine.get_stats())
+            return JSONResponse(engine.get_stats())
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-    # --- Index Management ---
     async def api_list_indexes_handler(request):
         try:
-            return JSONResponse(mcp_engine.list_indexes())
+            return JSONResponse(engine.list_indexes())
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_get_index_handler(request):
         try:
-            idx = request.path_params["index_name"]
-            return JSONResponse(mcp_engine.get_index_info(idx))
+            return JSONResponse(engine.get_index_info(request.path_params["index_name"]))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_delete_index_handler(request):
         try:
-            idx = request.path_params["index_name"]
-            return JSONResponse(mcp_engine.delete_index(idx))
+            return JSONResponse(engine.delete_index(request.path_params["index_name"]))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-    # --- Chunk Management ---
     async def api_list_chunks_handler(request):
         try:
             idx = request.path_params["index_name"]
             params = request.query_params
-            return JSONResponse(mcp_engine.list_chunks(
-                idx,
-                source=params.get("source"),
+            return JSONResponse(engine.list_chunks(
+                idx, source=params.get("source"),
                 offset=int(params.get("offset", 0)),
-                limit=int(params.get("limit", 20)),
-            ))
+                limit=int(params.get("limit", 20))))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_get_chunk_handler(request):
         try:
-            idx = request.path_params["index_name"]
-            cid = request.path_params["chunk_id"]
-            return JSONResponse(mcp_engine.get_chunk(idx, cid))
+            return JSONResponse(engine.get_chunk(
+                request.path_params["index_name"], request.path_params["chunk_id"]))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
@@ -843,41 +1055,37 @@ def run_combined_server():
         try:
             idx = request.path_params["index_name"]
             body = await request.json()
-            return JSONResponse(mcp_engine.create_chunk(
-                idx, body.get("text", ""),
-                source=body.get("source", "manual_entry"),
-                page=body.get("page"),
-                metadata=body.get("metadata"),
-            ))
+            text = (body.get("text") or "").strip()
+            if not text:
+                return JSONResponse({"success": False, "error": "text is required"}, status_code=400)
+            return JSONResponse(engine.create_chunk(
+                idx, text, source=body.get("source", "manual_entry"),
+                page=body.get("page"), metadata=body.get("metadata")))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_update_chunk_handler(request):
         try:
-            idx = request.path_params["index_name"]
-            cid = request.path_params["chunk_id"]
             body = await request.json()
-            return JSONResponse(mcp_engine.update_chunk(
-                idx, cid,
-                text=body.get("text"),
-                page=body.get("page"),
-                metadata=body.get("metadata"),
-            ))
+            if body.get("text") is None and body.get("page") is None and body.get("metadata") is None:
+                return JSONResponse({"success": False, "error": "Provide text, page, or metadata"}, status_code=400)
+            return JSONResponse(engine.update_chunk(
+                request.path_params["index_name"], request.path_params["chunk_id"],
+                text=body.get("text"), page=body.get("page"), metadata=body.get("metadata")))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
     async def api_delete_chunk_handler(request):
         try:
-            idx = request.path_params["index_name"]
-            cid = request.path_params["chunk_id"]
-            return JSONResponse(mcp_engine.delete_chunk(idx, cid))
+            return JSONResponse(engine.delete_chunk(
+                request.path_params["index_name"], request.path_params["chunk_id"]))
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-    # Add custom routes to the MCP HTTP app
-    # Note: Routes are matched in order, so insert at beginning
+    # ------------------------------------------------------------------
+    # Mount routes
+    # ------------------------------------------------------------------
     routes_to_add = [
-        Route("/health", health_handler, methods=["GET"]),
         Route("/info", info_handler, methods=["GET"]),
         Route("/tools", tools_handler, methods=["GET"]),
         Route("/sse", sse_redirect, methods=["GET", "POST"]),
@@ -909,50 +1117,20 @@ def run_combined_server():
     ]
     for i, route in enumerate(routes_to_add):
         mcp_http_app.routes.insert(i, route)
-    
-    # Run the combined server
-    logger.info(f"   Available routes: /health, /info, /tools, /api/*, /sync/*, /sse (→ /mcp), /mcp")
+
+    logger.info(f"   Routes: /health, /info, /tools, /api/*, /sync/*, /sse → /mcp")
     uvicorn.run(mcp_http_app, host=host, port=port)
 
 
-def run_mcp_only():
-    """Run the MCP server only with SSE transport."""
-    port = int(os.getenv("MCP_SERVER_PORT", "8503"))
-    host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
-    transport = os.getenv("MCP_TRANSPORT", "sse")
-    
-    logger.info(f"🚀 Starting MCP Server on {host}:{port}")
-    logger.info(f"   Transport: {transport}")
-    logger.info(f"   Tools: 4 MCP tools (rag_query, rag_documents, rag_indexes, rag_stats)")
-    
-    if transport == "stdio":
-        mcp.run(transport="stdio")
-    else:
-        mcp.run(transport="sse", host=host, port=port)
-
-
-def run_fastapi_only():
-    """Run only the FastAPI server (without MCP)."""
-    import uvicorn
-    
-    port = int(os.getenv("MCP_SERVER_PORT", "8503"))
-    host = os.getenv("MCP_SERVER_HOST", "0.0.0.0")
-    
-    logger.info(f"🌐 Starting FastAPI on {host}:{port}")
-    uvicorn.run(app, host=host, port=port)
+def main():
+    """Main entry point for the server."""
+    logger.info("🚀 Starting ARIS RAG MCP Server with FastMCP")
+    mcp.run(transport="http", host="0.0.0.0", port=int(os.getenv("MCP_SERVER_PORT", "8503")))
 
 
 if __name__ == "__main__":
-    # Determine mode from environment
-    # 'combined' (default) - Both FastAPI endpoints + MCP SSE
-    # 'mcp' - MCP server only
-    # 'api' - FastAPI only
     mode = os.getenv("MCP_MODE", "combined")
-    
-    if mode == "api":
-        run_fastapi_only()
-    elif mode == "mcp":
-        run_mcp_only()
+    if mode == "mcp":
+        main()
     else:
         run_combined_server()
-
