@@ -14,16 +14,13 @@ if _API_DIR in sys.path:
 
 import streamlit as st
 import os
-import io
 import json
 import pandas as pd
 import numpy as np
 import time
 from dotenv import load_dotenv
-from services.ingestion.processor import DocumentProcessor
-from services.ingestion.parsers.parser_factory import ParserFactory
 from metrics.metrics_collector import MetricsCollector
-from shared.utils.chunking_strategies import get_all_strategies, get_chunking_params, validate_custom_params
+from shared.utils.chunking_strategies import get_all_strategies, get_chunking_params
 from shared.config.settings import ARISConfig
 from storage.document_registry import DocumentRegistry
 from api.service import ServiceContainer  # Unified Service Layer
@@ -659,34 +656,6 @@ st.markdown("""
 # Sidebar for settings
 with st.sidebar:
     st.markdown("### ⚙️ Control Panel")
-    
-    # MCP Server Status Indicator
-    if 'mcp_status_last_check' not in st.session_state:
-        st.session_state.mcp_status_last_check = 0
-        st.session_state.mcp_is_online = False
-    
-    # Check status every 30 seconds
-    import time
-    if time.time() - st.session_state.mcp_status_last_check > 30:
-        try:
-             # Use ServiceContainer if available
-             if 'service_container' not in st.session_state:
-                 st.session_state.service_container = ServiceContainer()
-             
-             # Quick check
-             from services.gateway.service import GatewayService
-             # We can't access gateway_service directly if we don't have the instance easily, 
-             # but we can use st.session_state.service_container
-             status = st.session_state.service_container.get_mcp_status()
-             st.session_state.mcp_is_online = status.get("status") == "healthy" or status.get("status") == "ok"
-             st.session_state.mcp_status_last_check = time.time()
-        except Exception:
-             st.session_state.mcp_is_online = False
-    
-    # Display Status
-    mcp_color = "🟢" if st.session_state.mcp_is_online else "🔴"
-    mcp_text = "Online" if st.session_state.mcp_is_online else "Offline"
-    st.caption(f"MCP Server: {mcp_color} {mcp_text}")
     
     # API selection (use shared config default)
     default_api = "Cerebras" if ARISConfig.USE_CEREBRAS else "OpenAI"
@@ -1518,6 +1487,19 @@ with st.sidebar:
         accept_multiple_files=True,
         help="Upload PDF, TXT, or DOCX files"
     )
+
+
+    with st.expander("✍️ Or add text directly (no file upload)", expanded=False):
+        text_title = st.text_input(
+            "Text Title (optional)",
+            placeholder="e.g., meeting_notes_2026-02-16.txt",
+            help="If empty, a timestamped filename will be generated."
+        )
+        pasted_text = st.text_area(
+            "Text Content",
+            height=180,
+            placeholder="Paste or type text you want to ingest into the RAG system..."
+        )
     
     # Store processing parameters in session state for continuation after rerun
     process_key = "pending_processing"
@@ -1529,23 +1511,42 @@ with st.sidebar:
         params = st.session_state[process_key]
     
     if st.button("Process Documents", type="primary"):
-        if uploaded_files:
-            # Read file contents immediately (before storing in session state)
-            # Streamlit file objects become invalid after rerun, so we need to read them now
+        # Accept either uploaded files OR directly entered text (or both)
+        has_files = bool(uploaded_files)
+        has_text = bool(pasted_text and pasted_text.strip())
+        if has_files or has_text:
+            # Read contents immediately (Streamlit file objects become invalid after rerun)
             files_data = []
-            for uploaded_file in uploaded_files:
-                file_content = uploaded_file.read()
+
+            if has_files:
+                for uploaded_file in uploaded_files:
+                    file_content = uploaded_file.read()
+                    files_data.append({
+                        'name': uploaded_file.name,
+                        'content': file_content,
+                        'type': uploaded_file.type
+                    })
+
+            if has_text:
+                # Treat pasted text as a synthetic .txt document
+                import time as _time
+                safe_name = (text_title or "").strip()
+                if not safe_name:
+                    safe_name = f"pasted_text_{int(_time.time())}.txt"
+                # Ensure it ends with .txt so downstream parsers behave consistently
+                if not safe_name.lower().endswith(".txt"):
+                    safe_name = safe_name + ".txt"
                 files_data.append({
-                    'name': uploaded_file.name,
-                    'content': file_content,
-                    'type': uploaded_file.type
+                    'name': safe_name,
+                    'content': pasted_text.encode('utf-8', errors='replace'),
+                    'type': 'text/plain'
                 })
-            
+
             # Store processing parameters in session state (with file contents, not file objects)
             # Use explicit document language from upload section
             document_language = ingestion_language
             st.session_state[process_key] = {
-                'files_data': files_data,  # Store file contents, not file objects
+                'files_data': files_data,  # Store raw bytes, not file objects
                 'use_cerebras': use_cerebras,
                 'parser_preference': parser_preference,
                 'embedding_model': embedding_model,
@@ -1562,8 +1563,8 @@ with st.sidebar:
             should_process = True
             params = st.session_state[process_key]
         else:
-            st.warning("Please upload at least one document")
-    
+            st.warning("Please upload at least one document or paste text to ingest")
+
     # Continue processing if there's pending processing
     if should_process:
         # Convert stored file data back to format expected by process_uploaded_files
@@ -3429,3 +3430,4 @@ if st.session_state.documents_processed and container:
         - Source attribution
         - Long-term storage: documents persist across restarts
         """)
+
