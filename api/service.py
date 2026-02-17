@@ -3,6 +3,7 @@ Service container for RAG system components
 """
 import os
 import logging
+import inspect
 from typing import Dict, Optional, List, Any
 from dotenv import load_dotenv
 from services.gateway.service import GatewayService
@@ -137,49 +138,46 @@ class ServiceContainer:
         response_language: Optional[str] = None,
         filter_language: Optional[str] = None,
         auto_translate: bool = False,
-        active_sources: Optional[List[str]] = None  # NEW: Document filtering
+        active_sources: Optional[List[str]] = None
     ) -> Dict:
-        """Query Gateway with full RAG parameters"""
-        # Get active_sources from parameter or gateway_service
-        effective_sources = active_sources or self.gateway_service.active_sources
-        if effective_sources:
-            logger.info(f"[UI] ServiceContainer: Query filtered to documents: {effective_sources}")
-        else:
-            logger.info(f"[UI] ServiceContainer: Query across ALL documents")
-        
-        logger.info(f"[UI] ServiceContainer: Proxying full RAG query to Gateway: {question[:50]}...")
+        """Query Gateway with full RAG parameters (sync wrapper)."""
+        effective_sources = active_sources or getattr(self.gateway_service, "active_sources", None)
+
         try:
-            async def _query():
-                # Pass active_sources explicitly to gateway service
-                logger.info(f"[UI] ServiceContainer: Calling gateway with active_sources={effective_sources}")
-                
-                return await self.gateway_service.query_with_rag(
-                    question=question,
-                    k=k,
-                    use_mmr=use_mmr,
-                    use_hybrid_search=use_hybrid_search,
-                    semantic_weight=semantic_weight,
-                    search_mode=search_mode,
-                    use_agentic_rag=use_agentic_rag,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    document_id=document_id,
-                    response_language=response_language,
-                    filter_language=filter_language,
-                    auto_translate=auto_translate,
-                    active_sources=effective_sources  # CRITICAL: Pass explicitly
-                )
-            
-            try:
-                loop = asyncio.get_running_loop()
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(asyncio.run, _query())
-                    return future.result(timeout=120)
-            except RuntimeError:
-                return asyncio.run(_query())
+            result_or_coro = self.gateway_service.query_with_rag(
+                question=question,
+                k=k,
+                use_mmr=use_mmr,
+                use_hybrid_search=use_hybrid_search,
+                semantic_weight=semantic_weight,
+                search_mode=search_mode,
+                use_agentic_rag=use_agentic_rag,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                document_id=document_id,
+                response_language=response_language,
+                filter_language=filter_language,
+                auto_translate=auto_translate,
+                active_sources=effective_sources,
+            )
+
+            # If gateway_service is async, run it; if sync, return directly.
+            if inspect.isawaitable(result_or_coro):
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop and loop.is_running():
+                    # We are already inside an event loop; run in a thread to avoid nesting asyncio.run
+                    return asyncio.run(asyncio.to_thread(lambda: asyncio.run(result_or_coro)))
+                else:
+                    return asyncio.run(result_or_coro)
+
+            return result_or_coro
+
         except Exception as e:
-            logger.error(f"Gateway query_with_rag failed: {e}")
+            logger.error(f"Gateway query_with_rag failed: {e}", exc_info=True)
             return {"answer": f"Error: {e}", "citations": [], "num_chunks_used": 0}
 
     @property
