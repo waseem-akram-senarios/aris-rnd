@@ -169,8 +169,13 @@ class ServiceContainer:
                     loop = None
 
                 if loop and loop.is_running():
-                    # We are already inside an event loop; run in a thread to avoid nesting asyncio.run
-                    return asyncio.run(asyncio.to_thread(lambda: asyncio.run(result_or_coro)))
+                    # Already inside an event loop (e.g. Streamlit) — run in a
+                    # background thread that creates its own loop to avoid the
+                    # "asyncio.run() cannot be called from a running event loop" error.
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        future = pool.submit(asyncio.run, result_or_coro)
+                        return future.result(timeout=120)
                 else:
                     return asyncio.run(result_or_coro)
 
