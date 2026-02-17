@@ -235,7 +235,7 @@ async def ingest_document(
     logger.info(f"POST /ingest - [ReqID: {request_id}] File: {file.filename}")
     
     # Validate file type
-    allowed_extensions = {'.pdf', '.txt', '.docx', '.doc'}
+    allowed_extensions = {'.pdf', '.txt', '.md', '.docx', '.doc'}
     file_ext = os.path.splitext(file.filename)[1].lower()
     
     if file_ext not in allowed_extensions:
@@ -895,7 +895,7 @@ async def ingest_document_full(
     logger.info(f"POST /ingest/full - [ReqID: {request_id}] File: {file.filename}, Parser: {parser}")
     
     # Validate file type
-    allowed_extensions = {'.pdf', '.txt', '.docx', '.doc'}
+    allowed_extensions = {'.pdf', '.txt', '.md', '.docx', '.doc'}
     file_ext = os.path.splitext(file.filename)[1].lower()
     
     if file_ext not in allowed_extensions:
