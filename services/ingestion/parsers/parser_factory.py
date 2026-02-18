@@ -3,6 +3,7 @@ Parser factory for selecting and managing document parsers.
 """
 import os
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Type
 from .base_parser import BaseParser, ParsedDocument
 from scripts.setup_logging import get_logger
@@ -72,6 +73,8 @@ class ParserFactory:
         try:
             from .text_parser import TextParser
             cls.register_parser('txt', TextParser)
+            # Treat Markdown as plain text for ingestion.
+            cls.register_parser('md', TextParser)
         except ImportError as e:
             logger.debug(f"operation: {type(e).__name__}: {e}")
             pass
@@ -94,11 +97,28 @@ class ParserFactory:
         cls._register_default_parsers()
         
         # Get file extension
-        _, ext = os.path.splitext(file_path.lower())
-        ext = ext.lstrip('.')
+        ext = Path(file_path).suffix.lower().lstrip('.')
         
         if not ext:
             return None
+
+        # --- Hard guards for non-PDF formats ---
+        # Some parsers (Docling/Textract/OCRmyPDF/Llama-Scan) are PDF-oriented.
+        # If a user explicitly selects them for plain-text inputs, ingestion will fail.
+        if ext in {"txt", "md"}:
+            try:
+                from .text_parser import TextParser
+                return TextParser()
+            except ImportError as e:
+                logger.warning(f"Text parser not available for .{ext}: {e}")
+                return None
+
+        pdf_only = {"pymupdf", "docling", "textract", "ocrmypdf", "llama-scan", "llamascan"}
+        if preferred_parser and preferred_parser.lower() in pdf_only and ext != "pdf":
+            logger.warning(
+                f"Ignoring preferred_parser='{preferred_parser}' for non-PDF input '.{ext}'. Falling back to auto selection."
+            )
+            preferred_parser = None
         
         # Handle preferred parser
         if preferred_parser and preferred_parser.lower() != 'auto':
