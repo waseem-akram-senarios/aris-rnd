@@ -350,18 +350,6 @@ class ServiceContainer:
             logger.error(f"Error fetching metrics from UI service: {e}")
             return {}
 
-        return {
-            'document_id': document_id,
-            'document_name': doc.get('document_name', 'unknown'),
-            'text_index': doc.get('text_index') or 'aris-rag-index',
-            'text_chunks_count': doc.get('chunks_created', 0),
-            'text_storage_status': 'completed' if doc.get('chunks_created', 0) > 0 else 'pending',
-            'images_index': 'aris-rag-images-index',
-            'images_count': doc.get('image_count', 0),
-            'images_storage_status': 'completed' if doc.get('images_detected', False) and doc.get('image_count', 0) > 0 else 'pending',
-            'ocr_enabled': str(doc.get('parser_used', '')).lower() == 'docling'
-        }
-
 
 def create_service_container(**kwargs) -> ServiceContainer:
     """Create a service container (compatibility wrapper)"""
