@@ -19,19 +19,19 @@ class CitationRankingMixin:
         """
         Merge duplicate citations (same source + page).
         Combines snippets intelligently and preserves best metadata.
-        
+
         Args:
             citations: List of citation dictionaries
-        
+
         Returns:
             Deduplicated list of citations with updated IDs
         """
         from scripts.setup_logging import get_logger
         logger = get_logger("aris_rag.rag_system")
-        
+
         if not citations:
             return []
-        
+
         # Group citations by (source, page) tuple
         # Ensure all citations have page numbers before grouping
         citation_groups = {}
@@ -49,11 +49,11 @@ class CitationRankingMixin:
                 citation['page_confidence'] = citation.get('page_confidence', 0.1)
                 logger.debug(f"Deduplication: Citation missing page, set to 1 for source '{source}'")
             key = (source, page)
-            
+
             if key not in citation_groups:
                 citation_groups[key] = []
             citation_groups[key].append(citation)
-        
+
         # Merge citations in each group
         merged_citations = []
         for group_key, group_citations in citation_groups.items():
@@ -69,7 +69,45 @@ class CitationRankingMixin:
                     1.0 if c.get('image_ref') else 0.0,  # Prefer citations with visual references
                     c.get('source_confidence', 0) + c.get('page_confidence', 0)
                 ))
-                
+
+                # -------------------------------
+                # Preserve / merge scoring fields
+                # -------------------------------
+
+                # Merge rerank_score: keep best (highest) if any
+                rerank_scores = [
+                    c.get("rerank_score") for c in group_citations
+                    if c.get("rerank_score") is not None
+                ]
+                if rerank_scores:
+                    best_citation["rerank_score"] = max(rerank_scores)
+
+                # Preserve OpenSearch raw score too (useful for downstream)
+                os_scores = [
+                    c.get("_opensearch_score") for c in group_citations
+                    if c.get("_opensearch_score") is not None
+                ]
+                if os_scores:
+                    best_citation["_opensearch_score"] = max(os_scores)
+
+                # Merge similarity_score: pick best available score from group
+                sim_scores = [
+                    c.get("similarity_score") for c in group_citations
+                    if c.get("similarity_score") is not None
+                ]
+                if sim_scores:
+                    # Heuristic:
+                    # - if any score > 1.0, likely a distance (lower is better)
+                    # - else likely a similarity (higher is better)
+                    if any(s > 1.0 for s in sim_scores):
+                        best_citation["similarity_score"] = min(sim_scores)
+                    else:
+                        best_citation["similarity_score"] = max(sim_scores)
+
+                # If similarity_score is still missing, but we have OpenSearch score, use it
+                if best_citation.get("similarity_score") is None and best_citation.get("_opensearch_score") is not None:
+                    best_citation["similarity_score"] = best_citation["_opensearch_score"]
+
                 # Merge snippets - combine unique portions
                 all_snippets = [c.get('snippet', '') for c in group_citations if c.get('snippet')]
                 if all_snippets:
@@ -79,7 +117,7 @@ class CitationRankingMixin:
                         if '--- Page' in s: score += 2000  # Strong preference for page markers
                         if 'Image' in s and 'Page' in s: score += 1000  # Preference for image+page context
                         return score
-                    
+
                     best_snippet = max(all_snippets, key=snippet_score)
                     # If snippets are very different, combine them
                     if len(set(all_snippets)) > 1:
@@ -91,30 +129,30 @@ class CitationRankingMixin:
                                 combined += " ... " + snippet[:200]
                         best_snippet = combined[:500]  # Limit total length
                     best_citation['snippet'] = best_snippet
-                
+
                 # Preserve best metadata from all citations
-                best_citation['source'] = group_key[0] # Use normalized source (basename)
+                best_citation['source'] = group_key[0]  # Use normalized source (basename)
                 best_citation['source_confidence'] = max(
                     c.get('source_confidence', 0) for c in group_citations
                 )
                 best_citation['page_confidence'] = max(
                     c.get('page_confidence', 0) for c in group_citations
                 )
-                
+
                 # Ensure page is always set (double-check after merge)
                 if best_citation.get('page') is None or best_citation.get('page') < 1:
                     best_citation['page'] = group_key[1] if group_key[1] else 1
                     best_citation['page_confidence'] = best_citation.get('page_confidence', 0.1)
                     logger.debug(f"Deduplication: Merged citation missing page, set to {best_citation['page']}")
-                
+
                 # Merge other metadata if available
                 if any(c.get('section') for c in group_citations):
                     sections = [c.get('section') for c in group_citations if c.get('section')]
                     best_citation['section'] = sections[0] if sections else None
-                
+
                 merged_citations.append(best_citation)
                 logger.debug(f"Merged {len(group_citations)} duplicate citations for {group_key}")
-        
+
         # Re-number IDs sequentially and ensure all citations have page numbers
         for i, citation in enumerate(merged_citations, 1):
             citation['id'] = i
@@ -123,10 +161,11 @@ class CitationRankingMixin:
                 citation['page'] = 1
                 citation['page_confidence'] = citation.get('page_confidence', 0.1)
                 logger.warning(f"Deduplication: Final citation {i} missing page, set to 1")
-        
+
         logger.info(f"Deduplicated citations: {len(citations)} -> {len(merged_citations)}")
         return merged_citations
     
+
     def _count_flexible_keyword_matches(self, keywords: List[str], text: str) -> float:
         """
         Count keyword matches with flexible substring matching.
