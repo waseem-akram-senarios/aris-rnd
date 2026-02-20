@@ -568,7 +568,7 @@ class CitationRankingMixin:
                             # Use a curve that doesn't go below 30% for top results
                             similarity_percentage = max(30.0, 100.0 - (idx * (70.0 / max(num_citations - 1, 1))))
                         citation['similarity_percentage'] = round(similarity_percentage, 2)
-                        logger.debug(f"Citation rank {idx+1}: Using rank-based percentage {similarity_percentage:.1f}%")
+                        logger.info(f"Citation rank {idx+1}: Using rank-based percentage {similarity_percentage:.1f}%")
                     elif scores_are_similar:
                         # Scores are very close - use a gentler falloff starting from 100%
                         # First citation gets 100%, subsequent ones decrease gently (95%, 90%, 85%...)
@@ -577,32 +577,37 @@ class CitationRankingMixin:
                         else:
                             similarity_percentage = max(70.0, 100.0 - (idx * 5.0))
                         citation['similarity_percentage'] = round(similarity_percentage, 2)
-                        logger.debug(f"Citation rank {idx+1}: Using similar-score percentage {similarity_percentage:.1f}%")
+                        logger.info(f"Citation rank {idx+1}: Using similar-score percentage {similarity_percentage:.1f}%")
                     elif score_range < 0.0001:
                         # All scores are essentially equal - give 100% to first (best) citation, 95% to others
                         if idx == 0:
                             citation['similarity_percentage'] = 100.0
                         else:
                             citation['similarity_percentage'] = 95.0
-                        logger.debug(f"Citation {citation.get('id')}: All scores equal, assigning {citation['similarity_percentage']}%")
+                        logger.info(f"Citation {citation.get('id')}: All scores equal, assigning {citation['similarity_percentage']}%")
                     elif is_distance_based:
                         # For distance: lower score = higher percentage
                         # Invert: (worst - current) / (worst - best) * 100
-                        similarity_percentage = ((worst_score - sim_score) / score_range) * 100.0
+                        # similarity_percentage = ((worst_score - sim_score) / score_range) * 100.0
+                        similarity_percentage = sim_score * 100.0
                         # Ensure percentage is in valid range
                         similarity_percentage = max(0.0, min(100.0, similarity_percentage))
                         citation['similarity_percentage'] = round(similarity_percentage, 2)
+                        logger.info(f"Distance based Citation {idx+1}: distance score={sim_score:.4f}, calculated_percentage={similarity_percentage:.2f}%")
                     else:
                         # For similarity: higher score = higher percentage
                         # Normalize: (current - worst) / (best - worst) * 100
-                        similarity_percentage = ((sim_score - worst_score) / score_range) * 100.0
+                        # similarity_percentage = ((sim_score - worst_score) / score_range) * 100.0
+                        similarity_percentage = sim_score * 100.0
                         # Ensure percentage is in valid range
                         similarity_percentage = max(0.0, min(100.0, similarity_percentage))
                         citation['similarity_percentage'] = round(similarity_percentage, 2)
+                        logger.info(f"Similarity based Citation {idx+1}: similarity score={sim_score:.4f}, calculated_percentage={similarity_percentage:.2f}%, worst={worst_score:.4f}, score_range={score_range:.4f}")
                     
                     # Debug logging for all citations to see what's happening
                     if citation.get('id', 0) <= 6 or idx <= 5:
                         sim_pct = citation.get('similarity_percentage')
+                        logger.info(f"Citation {idx+1}: similarity_percentage={sim_pct:.2f}%, citation_id={citation.get('id')}")
                         sim_pct_str = f"{sim_pct:.2f}%" if sim_pct is not None else "N/A"
                         logger.info(f"Citation {idx+1}: score={sim_score:.4f}, calculated_percentage={sim_pct_str}, source={citation.get('source', 'Unknown')[:40]}")
                     
