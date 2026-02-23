@@ -592,6 +592,25 @@ class DocumentProcessor:
                     
                     # Convert grouped pages back to lists for processing
                     sorted_page_nums = sorted(grouped_by_page.keys())
+
+                    ####################################################################
+                    # Build compact page char ranges (Option 02) for stable page mapping
+                    ####################################################################
+                    page_char_ranges = []
+                    for p in sorted_page_nums:
+                        page_char_ranges.append({
+                            "page": p,
+                            "start_char": grouped_by_page[p]["start_char"],
+                            "end_char": grouped_by_page[p]["end_char"],
+                        })
+
+                    base_metadata["page_char_ranges"] = page_char_ranges
+                    logger.info(f"[STEP 4.2] Added page_char_ranges to metadata for {len(page_char_ranges)} pages")
+                    logger.info(f"\n\n[STEP 4.2] page_char_ranges: {page_char_ranges}...")
+                    base_metadata["total_pages_mapped"] = len(page_char_ranges)
+                    ####################################################################
+                    ####################################################################
+
                     
                     # Limit the number of blocks stored in metadata if it's too large to prevent OpenSearch failures
                     max_meta_blocks = getattr(ARISConfig, 'MAX_PAGE_BLOCKS_PER_DOC', 2000)
@@ -609,11 +628,26 @@ class DocumentProcessor:
                             page_text = "\n".join(page_data['text_parts'])
                             
                             page_meta = base_metadata.copy()
+                            ####################################################################
+                            ####################################################################
                             page_meta.update({
                                 'page': page_num,
+
+                                # Keep page boundaries explicitly
+                                'page_start_char': page_data['start_char'],
+                                'page_end_char': page_data['end_char'],
+
+                                # Backward compatibility (some code may expect these keys)
                                 'start_char': page_data['start_char'],
-                                'end_char': page_data['end_char']
+                                'end_char': page_data['end_char'],
                             })
+                            # page_meta.update({
+                            #     'page': page_num,
+                            #     'start_char': page_data['start_char'],
+                            #     'end_char': page_data['end_char']
+                            # })
+                            ####################################################################
+                            ####################################################################
                             
                             texts_to_process.append(page_text)
                             metadatas_to_process.append(page_meta)

@@ -214,6 +214,20 @@ class AgenticRAGMixin:
             elif hasattr(doc, 'metadata') and 'similarity_score' in doc.metadata:
                 similarity_score = doc.metadata.get('similarity_score')
             
+            ######################################################
+            # PRIORITY 4: final fallback (position-based proxy)
+            ######################################################
+            if similarity_score is None:
+                # position_factor: 1.0 for first doc, decays to 0.0 for last doc
+                position_factor = 1.0 - ((i - 1) / max(len(relevant_docs) - 1, 1))
+                similarity_score = 0.5 + (position_factor * 0.5)  # 0.5..1.0
+                logger.warning(
+                    f"\n\n\nAgentic Citation {i}: Using position-based similarity score {similarity_score:.3f} "
+                    f"(no rerank/doc_scores/metadata score available)"
+                )
+            ######################################################
+            ######################################################
+            
             # Ensure page is always set (fallback to 1 if None) - double check for agentic RAG
             if page is None:
                 page = 1

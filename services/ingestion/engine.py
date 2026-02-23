@@ -202,17 +202,26 @@ class IngestionEngine:
             logger.info(f"Saved {len(self.document_index_map)} document-index mappings")
         except Exception as e:
             logger.error(f"Could not save document index map: {e}")
-            
+
+
+    ######################################################################################################################
+    # CRITICAL FUNCTION: This is where we assign page numbers to chunks based on original metadata from DocumentProcessor.
+    ######################################################################################################################
     def _assign_metadata_to_chunks(self, chunks: List[Document], original_metadata: Dict) -> List[Document]:
         """
-        Assigns accurate page numbers and other metadata to chunks.
-        Uses page_blocks from original_metadata to find the correct page for each chunk offset.
-        Optimized for large documents with 100,000+ blocks.
-        
-        ENHANCED: Prioritizes image metadata for image-transcribed content to ensure correct page citations.
+        Assign accurate page numbers + citation metadata to chunks.
+
+        UPDATED (Option 02):
+        - Prefer compact page->char-range mapping: original_metadata['page_char_ranges']
+        to compute page by maximum overlap using chunk global start/end chars.
+        - Compute chunk-level global start_char/end_char even for "pre_assigned" page-level texts
+        (page_start_char + chunk.start_index).
+        - Fall back to page_blocks overlap only if page_char_ranges not available.
+        - Final fallback: single-page / unknown page.
         """
         page_blocks = original_metadata.get('page_blocks', [])
-        
+        page_char_ranges = original_metadata.get('page_char_ranges', [])
+
         # Build image page mapping from image references if available
         image_page_map = {}  # Map image_index -> page
         image_refs = original_metadata.get('image_refs', [])
@@ -224,9 +233,9 @@ class IngestionEngine:
                     img_page = block.get('page') or block.get('image_page')
                     if img_idx is not None and img_page is not None:
                         image_page_map[img_idx] = img_page
-        
-        if not page_blocks:
-            # If no blocks, use fallback page for all chunks and set citation metadata
+
+        # If we have neither blocks nor ranges, we cannot do deterministic mapping.
+        if not page_blocks and not page_char_ranges:
             fallback_page = original_metadata.get('page') or original_metadata.get('source_page') or 1
             total_pages = original_metadata.get('pages', 1) or 1
             for chunk in chunks:
@@ -237,23 +246,41 @@ class IngestionEngine:
                 if 'page_extraction_method' not in chunk.metadata:
                     chunk.metadata['page_extraction_method'] = 'fallback_no_blocks'
                 if 'page_confidence' not in chunk.metadata:
-                    # Higher confidence for single-page docs (page 1 is guaranteed correct)
                     chunk.metadata['page_confidence'] = 0.9 if total_pages <= 1 else 0.3
             return chunks
-            
-        # Optimization: Sort blocks by start_char for faster lookup
-        # Some blocks might be unsorted depending on the parser
-        page_blocks = sorted(page_blocks, key=lambda x: x.get('start_char', 0))
-        
-        # Use a pointer to avoid O(N*M) - since both chunks and blocks are mostly sorted by offset
-        block_idx = 0
-        num_blocks = len(page_blocks)
-        
+
+        # If we don't have page_char_ranges but we do have page_blocks, build a compact range map on the fly.
+        # (This keeps the logic stable even if DocumentProcessor didn’t attach the ranges.)
+        if not page_char_ranges and page_blocks:
+            tmp = {}
+            for b in page_blocks:
+                if not isinstance(b, dict):
+                    continue
+                p = b.get('page')
+                if p is None:
+                    continue
+                s = b.get('start_char', 0)
+                e = b.get('end_char', 0)
+                if p not in tmp:
+                    tmp[p] = [s, e]
+                else:
+                    tmp[p][0] = min(tmp[p][0], s)
+                    tmp[p][1] = max(tmp[p][1], e)
+            page_char_ranges = [{"page": p, "start_char": se[0], "end_char": se[1]} for p, se in sorted(tmp.items())]
+
+        # Optimize blocks search only if we actually use page_blocks
+        use_blocks = bool(page_blocks) and not bool(page_char_ranges)
+        if use_blocks:
+            page_blocks = sorted(page_blocks, key=lambda x: x.get('start_char', 0))
+            block_idx = 0
+            num_blocks = len(page_blocks)
+
         for chunk in chunks:
-            # PRIORITY 1: Check if chunk has image metadata - use image's page number
+            # ---------------------------
+            # PRIORITY 1: image_index -> image_page_map
+            # ---------------------------
             chunk_image_idx = chunk.metadata.get('image_index')
             if chunk_image_idx is not None and chunk_image_idx in image_page_map:
-                # This chunk is from an image - use image's page number
                 img_page = image_page_map[chunk_image_idx]
                 chunk.metadata['page'] = img_page
                 chunk.metadata['source_page'] = img_page
@@ -262,8 +289,10 @@ class IngestionEngine:
                 chunk.metadata['page_extraction_method'] = 'image_metadata'
                 chunk.metadata['page_confidence'] = 0.95
                 continue
-            
-            # PRIORITY 2: Check for image_ref in chunk metadata
+
+            # ---------------------------
+            # PRIORITY 2: image_ref
+            # ---------------------------
             image_ref = chunk.metadata.get('image_ref')
             if image_ref and isinstance(image_ref, dict):
                 img_page = image_ref.get('page') or image_ref.get('image_page')
@@ -275,99 +304,302 @@ class IngestionEngine:
                     chunk.metadata['page_extraction_method'] = 'image_ref'
                     chunk.metadata['page_confidence'] = 0.9
                     continue
-            
-            # PRIORITY 3: If chunk already has a valid page number (from DocumentProcessor's page-level processing), use it
-            if 'page' in chunk.metadata and chunk.metadata['page']:
-                # Ensure source_page is also set
-                if 'source_page' not in chunk.metadata:
-                    chunk.metadata['source_page'] = chunk.metadata['page']
-                if 'page_extraction_method' not in chunk.metadata:
-                    chunk.metadata['page_extraction_method'] = 'pre_assigned'
-                if 'page_confidence' not in chunk.metadata:
-                    chunk.metadata['page_confidence'] = 0.85
-                continue
-                
-            # Get start_index from LangChain splitter - maps to character position
+
+            # ---------------------------
+            # Compute chunk global start/end chars (CRITICAL for correct citations)
+            # ---------------------------
             start_index = chunk.metadata.get('start_index', 0)
             chunk_length = len(chunk.page_content) if hasattr(chunk, 'page_content') else 0
-            end_index = start_index + chunk_length
-            
-            # IMPROVED: Also set start_char and end_char for retrieval compatibility
-            chunk.metadata['start_char'] = start_index
-            chunk.metadata['end_char'] = end_index
-            
-            # Accuracy Upgrade: Use Maximum Overlap for Page Assignment
-            # Instead of just checking where the chunk starts, we calculate which page 
-            # contains the MOST characters from this chunk.
-            
-            best_page = 1
-            max_overlap_chars = 0
-            
-            # Check blocks starting from current position
-            # We might need to check multiple blocks if the chunk spans pages
-            temp_idx = block_idx
-            
-            while temp_idx < num_blocks:
-                block = page_blocks[temp_idx]
-                block_start = block.get('start_char', 0)
-                block_end = block.get('end_char', 0)
-                
-                # If block starts after chunk ends, we can stop searching
-                if block_start >= end_index:
-                    break
-                
-                # Calculate overlap
-                overlap_start = max(start_index, block_start)
-                overlap_end = min(end_index, block_end)
-                overlap_chars = max(0, overlap_end - overlap_start)
-                
-                if overlap_chars > max_overlap_chars:
-                    max_overlap_chars = overlap_chars
-                    best_page = block.get('page', 1)
-                
-                temp_idx += 1
-            
-            # If no overlap found (rare, e.g. gaps in blocks), find the nearest block
-            if max_overlap_chars == 0:
-                # Find the block whose character range is closest to this chunk's start
-                min_distance = float('inf')
-                nearest_page = 1
-                for blk in page_blocks:
-                    blk_start = blk.get('start_char', 0)
-                    blk_end = blk.get('end_char', 0)
-                    # Distance: 0 if chunk start is inside block, else min gap
-                    if blk_start <= start_index <= blk_end:
-                        nearest_page = blk.get('page', 1)
-                        min_distance = 0
+            local_end_index = start_index + chunk_length
+
+            # If the chunk comes from page-level text, DocumentProcessor sets page_start_char (and often start_char=end_char as page bounds).
+            # If it comes from full-doc text, these are typically absent -> base=0.
+            page_base = (
+                chunk.metadata.get('page_start_char')
+                if chunk.metadata.get('page_start_char') is not None
+                else chunk.metadata.get('start_char')  # in page-level mode this was page start in Step 4.2
+                if chunk.metadata.get('start_char') is not None and chunk.metadata.get('end_char') is not None and chunk.metadata.get('end_char') >= chunk.metadata.get('start_char')
+                else 0
+            ) or 0
+
+            global_start = int(page_base) + int(start_index)
+            global_end = global_start + int(chunk_length)
+
+            chunk.metadata['start_char'] = global_start
+            chunk.metadata['end_char'] = global_end
+
+            # Keep original pre-assigned page if present (we will validate/override deterministically below)
+            pre_assigned_page = chunk.metadata.get('page') or chunk.metadata.get('source_page')
+
+            # ---------------------------
+            # Option 02: page_char_ranges overlap (preferred)
+            # ---------------------------
+            if page_char_ranges:
+                best_page = pre_assigned_page or 1
+                max_overlap_chars = 0
+
+                for r in page_char_ranges:
+                    rs = r.get('start_char', 0)
+                    re = r.get('end_char', 0)
+                    # overlap between [global_start, global_end) and [rs, re)
+                    overlap = max(0, min(global_end, re) - max(global_start, rs))
+                    if overlap > max_overlap_chars:
+                        max_overlap_chars = overlap
+                        best_page = r.get('page', best_page)
+
+                chunk.metadata['page'] = best_page
+                if 'source_page' not in chunk.metadata:
+                    chunk.metadata['source_page'] = best_page
+
+                chunk.metadata['page_extraction_method'] = 'char_range_ingestion'
+                chunk.metadata['page_confidence'] = 0.98 if max_overlap_chars > 0 else 0.75
+                continue
+
+            # ---------------------------
+            # Fallback: page_blocks maximum overlap (only if ranges not available)
+            # ---------------------------
+            if use_blocks:
+                best_page = 1
+                max_overlap_chars = 0
+                temp_idx = block_idx
+
+                while temp_idx < num_blocks:
+                    block = page_blocks[temp_idx]
+                    block_start = block.get('start_char', 0)
+                    block_end = block.get('end_char', 0)
+
+                    if block_start >= global_end:
                         break
-                    dist = min(abs(start_index - blk_start), abs(start_index - blk_end))
-                    if dist < min_distance:
-                        min_distance = dist
-                        nearest_page = blk.get('page', 1)
-                chunk_page = nearest_page
-            else:
-                chunk_page = best_page
-            
-            # Advance block_idx pointer to keep it close to current chunk position
-            # This keeps the search window efficient for sorted chunks
-            while block_idx < num_blocks - 1:
-                next_block_end = page_blocks[block_idx].get('end_char', 0)
-                if next_block_end < start_index:
-                    block_idx += 1
+
+                    overlap_start = max(global_start, block_start)
+                    overlap_end = min(global_end, block_end)
+                    overlap_chars = max(0, overlap_end - overlap_start)
+
+                    if overlap_chars > max_overlap_chars:
+                        max_overlap_chars = overlap_chars
+                        best_page = block.get('page', 1)
+
+                    temp_idx += 1
+
+                if max_overlap_chars == 0:
+                    min_distance = float('inf')
+                    nearest_page = 1
+                    for blk in page_blocks:
+                        blk_start = blk.get('start_char', 0)
+                        blk_end = blk.get('end_char', 0)
+                        if blk_start <= global_start <= blk_end:
+                            nearest_page = blk.get('page', 1)
+                            min_distance = 0
+                            break
+                        dist = min(abs(global_start - blk_start), abs(global_start - blk_end))
+                        if dist < min_distance:
+                            min_distance = dist
+                            nearest_page = blk.get('page', 1)
+                    chunk_page = nearest_page
                 else:
-                    break
-            
-            chunk.metadata['page'] = chunk_page
-            # Also set source_page for consistency if missing
-            if 'source_page' not in chunk.metadata:
-                chunk.metadata['source_page'] = chunk_page
-            
-            # Store page extraction method and confidence for debugging
-            chunk.metadata['page_extraction_method'] = 'char_position_ingestion'
-            # High confidence if overlap was found, lower if nearest-block fallback was used
-            chunk.metadata['page_confidence'] = 0.95 if max_overlap_chars > 0 else 0.7
-                
+                    chunk_page = best_page
+
+                while block_idx < num_blocks - 1:
+                    next_block_end = page_blocks[block_idx].get('end_char', 0)
+                    if next_block_end < global_start:
+                        block_idx += 1
+                    else:
+                        break
+
+                chunk.metadata['page'] = chunk_page
+                if 'source_page' not in chunk.metadata:
+                    chunk.metadata['source_page'] = chunk_page
+
+                chunk.metadata['page_extraction_method'] = 'char_position_ingestion'
+                chunk.metadata['page_confidence'] = 0.95 if max_overlap_chars > 0 else 0.7
+                continue
+
+            # ---------------------------
+            # Last resort: trust pre-assigned if present, otherwise page 1
+            # ---------------------------
+            if pre_assigned_page:
+                chunk.metadata['page'] = pre_assigned_page
+                chunk.metadata.setdefault('source_page', pre_assigned_page)
+                chunk.metadata.setdefault('page_extraction_method', 'pre_assigned')
+                chunk.metadata.setdefault('page_confidence', 0.85)
+            else:
+                chunk.metadata['page'] = 1
+                chunk.metadata.setdefault('source_page', 1)
+                chunk.metadata.setdefault('page_extraction_method', 'fallback_no_blocks')
+                chunk.metadata.setdefault('page_confidence', 0.3)
+
         return chunks
+
+    ######################################################################################################################
+    ######################################################################################################################
+
+    # def _assign_metadata_to_chunks(self, chunks: List[Document], original_metadata: Dict) -> List[Document]:
+    #     """
+    #     Assigns accurate page numbers and other metadata to chunks.
+    #     Uses page_blocks from original_metadata to find the correct page for each chunk offset.
+    #     Optimized for large documents with 100,000+ blocks.
+        
+    #     ENHANCED: Prioritizes image metadata for image-transcribed content to ensure correct page citations.
+    #     """
+
+    #     page_char_ranges = original_metadata.get("page_char_ranges", [])
+    #     page_blocks = original_metadata.get('page_blocks', [])
+        
+    #     # Build image page mapping from image references if available
+    #     image_page_map = {}  # Map image_index -> page
+    #     image_refs = original_metadata.get('image_refs', [])
+    #     if not image_refs:
+    #         # Try to extract from page_blocks that have image metadata
+    #         for block in page_blocks:
+    #             if isinstance(block, dict) and block.get('type') == 'image':
+    #                 img_idx = block.get('image_index')
+    #                 img_page = block.get('page') or block.get('image_page')
+    #                 if img_idx is not None and img_page is not None:
+    #                     image_page_map[img_idx] = img_page
+        
+    #     if not page_blocks and not page_char_ranges:
+    #         # If no blocks, use fallback page for all chunks and set citation metadata
+    #         fallback_page = original_metadata.get('page') or original_metadata.get('source_page') or 1
+    #         total_pages = original_metadata.get('pages', 1) or 1
+    #         for chunk in chunks:
+    #             if 'page' not in chunk.metadata or not chunk.metadata['page']:
+    #                 chunk.metadata['page'] = fallback_page
+    #             if 'source_page' not in chunk.metadata:
+    #                 chunk.metadata['source_page'] = fallback_page
+    #             if 'page_extraction_method' not in chunk.metadata:
+    #                 chunk.metadata['page_extraction_method'] = 'fallback_no_blocks'
+    #             if 'page_confidence' not in chunk.metadata:
+    #                 # Higher confidence for single-page docs (page 1 is guaranteed correct)
+    #                 chunk.metadata['page_confidence'] = 0.9 if total_pages <= 1 else 0.3
+    #         return chunks
+            
+    #     # Optimization: Sort blocks by start_char for faster lookup
+    #     # Some blocks might be unsorted depending on the parser
+    #     page_blocks = sorted(page_blocks, key=lambda x: x.get('start_char', 0))
+        
+    #     # Use a pointer to avoid O(N*M) - since both chunks and blocks are mostly sorted by offset
+    #     block_idx = 0
+    #     num_blocks = len(page_blocks)
+        
+    #     for chunk in chunks:
+    #         # PRIORITY 1: Check if chunk has image metadata - use image's page number
+    #         chunk_image_idx = chunk.metadata.get('image_index')
+    #         if chunk_image_idx is not None and chunk_image_idx in image_page_map:
+    #             # This chunk is from an image - use image's page number
+    #             img_page = image_page_map[chunk_image_idx]
+    #             chunk.metadata['page'] = img_page
+    #             chunk.metadata['source_page'] = img_page
+    #             chunk.metadata['image_page'] = img_page
+    #             chunk.metadata['has_image'] = True
+    #             chunk.metadata['page_extraction_method'] = 'image_metadata'
+    #             chunk.metadata['page_confidence'] = 0.95
+    #             continue
+            
+    #         # PRIORITY 2: Check for image_ref in chunk metadata
+    #         image_ref = chunk.metadata.get('image_ref')
+    #         if image_ref and isinstance(image_ref, dict):
+    #             img_page = image_ref.get('page') or image_ref.get('image_page')
+    #             if img_page:
+    #                 chunk.metadata['page'] = img_page
+    #                 chunk.metadata['source_page'] = img_page
+    #                 chunk.metadata['image_page'] = img_page
+    #                 chunk.metadata['has_image'] = True
+    #                 chunk.metadata['page_extraction_method'] = 'image_ref'
+    #                 chunk.metadata['page_confidence'] = 0.9
+    #                 continue
+            
+    #         # PRIORITY 3: If chunk already has a valid page number (from DocumentProcessor's page-level processing), use it
+    #         if 'page' in chunk.metadata and chunk.metadata['page']:
+    #             # Ensure source_page is also set
+    #             if 'source_page' not in chunk.metadata:
+    #                 chunk.metadata['source_page'] = chunk.metadata['page']
+    #             if 'page_extraction_method' not in chunk.metadata:
+    #                 chunk.metadata['page_extraction_method'] = 'pre_assigned'
+    #             if 'page_confidence' not in chunk.metadata:
+    #                 chunk.metadata['page_confidence'] = 0.85
+    #             continue
+                
+    #         # Get start_index from LangChain splitter - maps to character position
+    #         start_index = chunk.metadata.get('start_index', 0)
+    #         chunk_length = len(chunk.page_content) if hasattr(chunk, 'page_content') else 0
+    #         end_index = start_index + chunk_length
+            
+    #         # IMPROVED: Also set start_char and end_char for retrieval compatibility
+    #         chunk.metadata['start_char'] = start_index
+    #         chunk.metadata['end_char'] = end_index
+            
+    #         # Accuracy Upgrade: Use Maximum Overlap for Page Assignment
+    #         # Instead of just checking where the chunk starts, we calculate which page 
+    #         # contains the MOST characters from this chunk.
+            
+    #         best_page = 1
+    #         max_overlap_chars = 0
+            
+    #         # Check blocks starting from current position
+    #         # We might need to check multiple blocks if the chunk spans pages
+    #         temp_idx = block_idx
+            
+    #         while temp_idx < num_blocks:
+    #             block = page_blocks[temp_idx]
+    #             block_start = block.get('start_char', 0)
+    #             block_end = block.get('end_char', 0)
+                
+    #             # If block starts after chunk ends, we can stop searching
+    #             if block_start >= end_index:
+    #                 break
+                
+    #             # Calculate overlap
+    #             overlap_start = max(start_index, block_start)
+    #             overlap_end = min(end_index, block_end)
+    #             overlap_chars = max(0, overlap_end - overlap_start)
+                
+    #             if overlap_chars > max_overlap_chars:
+    #                 max_overlap_chars = overlap_chars
+    #                 best_page = block.get('page', 1)
+                
+    #             temp_idx += 1
+            
+    #         # If no overlap found (rare, e.g. gaps in blocks), find the nearest block
+    #         if max_overlap_chars == 0:
+    #             # Find the block whose character range is closest to this chunk's start
+    #             min_distance = float('inf')
+    #             nearest_page = 1
+    #             for blk in page_blocks:
+    #                 blk_start = blk.get('start_char', 0)
+    #                 blk_end = blk.get('end_char', 0)
+    #                 # Distance: 0 if chunk start is inside block, else min gap
+    #                 if blk_start <= start_index <= blk_end:
+    #                     nearest_page = blk.get('page', 1)
+    #                     min_distance = 0
+    #                     break
+    #                 dist = min(abs(start_index - blk_start), abs(start_index - blk_end))
+    #                 if dist < min_distance:
+    #                     min_distance = dist
+    #                     nearest_page = blk.get('page', 1)
+    #             chunk_page = nearest_page
+    #         else:
+    #             chunk_page = best_page
+            
+    #         # Advance block_idx pointer to keep it close to current chunk position
+    #         # This keeps the search window efficient for sorted chunks
+    #         while block_idx < num_blocks - 1:
+    #             next_block_end = page_blocks[block_idx].get('end_char', 0)
+    #             if next_block_end < start_index:
+    #                 block_idx += 1
+    #             else:
+    #                 break
+            
+    #         chunk.metadata['page'] = chunk_page
+    #         # Also set source_page for consistency if missing
+    #         if 'source_page' not in chunk.metadata:
+    #             chunk.metadata['source_page'] = chunk_page
+            
+    #         # Store page extraction method and confidence for debugging
+    #         chunk.metadata['page_extraction_method'] = 'char_position_ingestion'
+    #         # High confidence if overlap was found, lower if nearest-block fallback was used
+    #         chunk.metadata['page_confidence'] = 0.95 if max_overlap_chars > 0 else 0.7
+                
+    #     return chunks
     
     def process_documents(self, texts: List[str], metadatas: List[Dict] = None, progress_callback: Optional[Callable] = None, index_name: Optional[str] = None):
         """Process and chunk documents, then create vector store"""
