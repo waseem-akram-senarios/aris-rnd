@@ -2062,6 +2062,14 @@ class RetrievalEngine(
             ingestion_confidence = doc.metadata.get('page_confidence')
             ingestion_metadata_method = doc.metadata.get('page_extraction_method')
             
+            logger.info(
+                f"[OS_META] i={i} source={doc.metadata.get('source', 'Unknown')} "
+                f"page={doc.metadata.get('page')} source_page={doc.metadata.get('source_page')} "
+                f"page_conf={doc.metadata.get('page_confidence')} method={doc.metadata.get('page_extraction_method')} "
+                f"start_char={doc.metadata.get('start_char')} end_char={doc.metadata.get('end_char')} "
+                f"has_page_blocks={'page_blocks' in doc.metadata}"
+            )
+
             # Robust document_id extraction
             document_id = doc.metadata.get('document_id')
             if not document_id and hasattr(doc, 'id'):
@@ -2073,14 +2081,58 @@ class RetrievalEngine(
                 if idx.startswith('aris-doc-'):
                     document_id = idx.replace('aris-doc-', '')
             
-            if (ingestion_page is not None and ingestion_confidence is not None 
-                    and float(ingestion_confidence) >= 0.7):
-                # Trust the ingestion-time page assignment
-                page = int(ingestion_page)
-                page_confidence = float(ingestion_confidence)
-            else:
+            #########################################################################
+            # --- Trust ingestion when method is deterministic / high-confidence ---
+            #########################################################################
+            deterministic_methods = {
+                "char_range_ingestion",       # ✅ your new Option-02 method
+                "char_position_ingestion",    # existing strong method when page_blocks exist
+                "image_metadata",
+                "image_ref",
+            }
+
+            page = None
+            page_confidence = None
+
+            if ingestion_page is not None:
+                method = (ingestion_metadata_method or "").strip()
+                try:
+                    conf = float(ingestion_confidence) if ingestion_confidence is not None else None
+                except Exception:
+                    conf = None
+
+                # 1) Hard trust for deterministic ingestion methods (no re-guessing)
+                if method in deterministic_methods and (conf is None or conf >= 0.95):
+                    page = int(ingestion_page)
+                    page_confidence = conf if conf is not None else 0.95
+
+                # 2) Soft trust for other ingestion methods only when confidence is very high
+                elif conf is not None and conf >= 0.90:
+                    page = int(ingestion_page)
+                    page_confidence = conf
+
+            # 3) If not trusted, fall back to retrieval-time extraction
+            if page is None or page_confidence is None:
                 page, page_confidence = self._extract_page_number(doc, chunk_text)
             
+
+            logger.info(
+                f"\t[PAGE_OVERRIDE] source={doc.metadata.get('source')} "
+                f"ingestion_page={ingestion_page} conf={ingestion_confidence} method={ingestion_metadata_method} "
+                f"final_page={page} final_conf={page_confidence}"
+            )
+
+            # if (ingestion_page is not None and ingestion_confidence is not None 
+            #         and float(ingestion_confidence) >= 0.7):
+            #     # Trust the ingestion-time page assignment
+            #     page = int(ingestion_page)
+            #     page_confidence = float(ingestion_confidence)
+            # else:
+            #     page, page_confidence = self._extract_page_number(doc, chunk_text)
+            #########################################################################
+            #########################################################################
+
+
             start_char = doc.metadata.get('start_char', None)
             end_char = doc.metadata.get('end_char', None)
             
