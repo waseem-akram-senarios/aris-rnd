@@ -68,7 +68,7 @@ class TestMicroserviceIntegration:
         """Test document upload through microservices"""
         # Create test document
         test_file = temp_dir / "integration_test.pdf"
-        test_file.write_bytes(b"%PDF-1.4\n%âãÏÓ\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n")
+        test_file.write_bytes(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n")
         
         # Upload via Gateway
         with open(test_file, 'rb') as f:
@@ -124,7 +124,7 @@ class TestMicroserviceIntegration:
         """Test S3 integration across services"""
         # Test S3 upload if enabled
         test_file = temp_dir / "s3_test.pdf"
-        test_file.write_bytes(b"%PDF-1.4\n%âãÏÓ\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n")
+        test_file.write_bytes(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n")
         
         # Upload with S3 storage
         with open(test_file, 'rb') as f:

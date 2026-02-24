@@ -45,18 +45,52 @@ TAB_LABELS = {
     "Search":    "🔍 Search",
     "Ingest":    "📥 Add Documents",
     "Documents": "📄 Documents",
-    "Indexes":   "🗂️ Indexes",
-    "Chunks":    "🧩 Chunks",
-    "System":    "📊 System",
+    "System":    "📊 System & Server",
     "History":   "📜 History",
+}
+
+# Sub-tabs inside the Documents tab
+DOC_SUB_TAB_LABELS = {
+    "Documents": "📄 Documents",
+    "Chunks":    "🧩 Chunks",
+    "Indexes":   "🗂️ Indexes",
+}
+
+# Sub-tabs inside System & Server tab
+SYS_SUB_TAB_LABELS = {
+    "Statistics":  "📊 Statistics",
+    "Tools":       "🛠️ Tools",
+    "ServerInfo":  "📋 Server Info",
+    "Connection":  "🔌 Connection",
 }
 
 
 def click_tab(page: Page, short_label: str):
-    """Click a Streamlit tab by its short label (e.g. 'Documents')."""
+    """Click a top-level Streamlit tab by its short label (e.g. 'Documents')."""
     full = TAB_LABELS.get(short_label, short_label)
+    # Some emojis (e.g. 📜) get garbled in Playwright Unicode matching;
+    # fall back to a partial text match on the plain-text portion.
     tab = page.get_by_role("tab", name=full, exact=True)
+    if tab.count() == 0:
+        # Fallback: match by the plain-text part only (e.g. "History")
+        tab = page.get_by_role("tab", name=short_label, exact=False)
+    # If multiple matches (e.g. 'Documents' main tab vs sub-tab), pick .first
+    if tab.count() > 1:
+        tab = tab.first
     tab.click()
+    page.wait_for_timeout(500)
+
+
+def click_sub_tab(page: Page, short_label: str, source: str = "doc"):
+    """Click a sub-tab inside Documents or System tab."""
+    labels = DOC_SUB_TAB_LABELS if source == "doc" else SYS_SUB_TAB_LABELS
+    full = labels.get(short_label, short_label)
+    tabs = page.get_by_role("tab", name=full, exact=True)
+    # Sub-tabs are rendered after main tabs; pick the last match
+    if tabs.count() > 1:
+        tabs.last.click()
+    else:
+        tabs.click()
     page.wait_for_timeout(500)
 
 
