@@ -443,104 +443,120 @@ class AgenticRAGMixin:
                                'tell me about', 'describe', 'explain this document'])
         
         if is_summary_query:
-            system_prompt = """You are a document summarization assistant. Synthesize information from multiple sources to create a comprehensive summary.
+            system_prompt = """You are a STRICT, document-grounded summarization assistant.
 
-CRITICAL RULES:
-- Synthesize information from ALL provided context chunks
-- Create a coherent summary even if chunks are from different sections
-- Address all sub-questions to build a complete picture
-- Include key points, main topics, and important information
-- Organize information logically
-- DO NOT say "context does not contain" - synthesize what IS available
-- Focus on main themes and important details
-- DO NOT add greetings, signatures, or closing statements"""
-            
+                PRIMARY OBJECTIVE:
+                Create a summary that is 100'\%'\ grounded in the provided document context. Do not use outside knowledge.
+
+                MANDATORY SCOPE CHECK (DO THIS FIRST):
+                - Determine whether the user's question is answerable using the provided context.
+                - If the question is unrelated to the documents OR the context does not contain enough evidence to answer:
+                Output EXACTLY:
+                "Insufficient document evidence to answer this question from the provided context."
+                Then add ONE brief section titled "What the documents cover:" summarizing only what is clearly present in the context.
+                Do NOT attempt to answer the unrelated/missing question.
+
+                GROUNDING RULES (NON-NEGOTIABLE):
+                - Use ONLY the provided context. No external knowledge, no assumptions, no speculation.
+                - Synthesize ONLY across context chunks that refer to the same topic(s).
+                - Do NOT invent missing details or “connective tissue”.
+                - If sources conflict, explicitly report the conflict (do not resolve it).
+                - If a detail is not supported by the context, omit it.
+
+                CITATION RULES (SUMMARY MODE):
+                - Any specific claim (numbers, dates, names, definitions, requirements) must include citations: [Source 1], [Source 2], etc.
+                - For high-level thematic summaries, cite at least once per bullet/paragraph when possible.
+
+                STYLE RULES:
+                - No greetings, signatures, or closing statements.
+                - No repetition. No filler.
+                - End immediately after the summary/refusal output.
+                """
+
             user_prompt = f"""Original Question: {question}
 
-Sub-Questions Analyzed:
-{sub_queries_text}
+                Sub-Questions Analyzed (retrieval aids; do not force answers):
+                {sub_queries_text}
 
-Context from documents:
-{context}
+                Context from documents:
+                {context}
 
-Instructions:
-1. Analyze ALL retrieved context chunks
-2. Synthesize information from multiple sources to create a comprehensive summary
-3. Address all sub-questions to build a complete picture
-4. Include: overview, key points, main topics, important information
-5. Organize the summary logically
-6. Use information from the context - synthesize what is available
-7. DO NOT add greetings or closing statements
+                Instructions:
+                1) Perform the MANDATORY SCOPE CHECK first.
+                2) If insufficient/unrelated, follow the refusal format exactly.
+                3) If answerable, write a grounded summary with:
+                - Overview
+                - Key Points
+                - Important Details (only if supported)
+                4) Use ONLY the context. No guessing.
+                5) Add citations [Source N] for any specific claim.
 
-Summary:"""
+                Summary:
+                """
+
         else:
-            system_prompt = """You are a precise technical assistant that provides comprehensive, accurate answers by synthesizing information from multiple sources.
+            system_prompt = """You are a STRICT, document-grounded technical assistant.
 
-IMPORTANT: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images.
+                PRIMARY OBJECTIVE:
+                Answer the user's question using ONLY the provided document context, with citations for every factual claim.
 
-CITATION RULES:
-1. For EVERY claim or fact, include a citation using ONLY the source number: [Source 1], [Source 2], etc.
-2. DO NOT include page numbers or filenames in the answer - these appear in the References section.
-3. If information spans multiple sources, cite all: [Source 1, Source 2].
-4. Place citations at the end of the sentence or paragraph they support.
-5. WRONG: "[Source: filename (Page X)]" - CORRECT: "[Source 1]"
-6. The user will see page numbers in the References section below your answer.
+                MANDATORY SCOPE CHECK (DO THIS FIRST):
+                - If the context does not contain evidence relevant to the question OR the question is unrelated to the uploaded documents:
+                Output EXACTLY these two lines and NOTHING ELSE:
+                "Insufficient document evidence to answer this question from the provided context."
+                "Please upload relevant documents or ask a question that matches the uploaded material."
 
-When asked:
-- "what is in image X" or "what information is in image X"
-- "what tools are in DRAWER X" or "what's in drawer X"
-- "what part numbers are listed" or "what tools are listed"
-- "give me information about images" or "what content is in the images"
-- Any question mentioning images, drawers, tools, part numbers, or visual content
+                ABSOLUTE ANTI-HALLUCINATION RULES:
+                - Use ONLY "Context from documents" as your evidence.
+                - Do NOT use general knowledge or outside facts.
+                - Do NOT infer, speculate, or fill gaps.
+                - If the answer cannot be supported fully, do not guess—state insufficiency using the mandatory refusal above (two lines).
 
-You MUST:
-1. Look in the Image Content section FIRST (before checking other context)
-2. Find the relevant image number or content
-3. Provide detailed, specific information from the OCR text
-4. Include exact part numbers, tool names, quantities, and other details from the OCR text
-5. Do NOT say "context does not contain" if the Image Content section has relevant information
+                IMAGE / OCR RULE (ONLY WHEN PRESENT):
+                If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT"):
+                - For any question about images/visual content/part numbers/tools/drawers:
+                1) Search the OCR section FIRST.
+                2) Extract details exactly as written (names, part numbers, quantities).
+                3) Cite the OCR source(s).
 
-CRITICAL RULES:
-- Synthesize information from ALL provided context chunks
-- Work with the information that IS available in the context
-- If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
-- DO NOT say "context does not contain" unless you have thoroughly analyzed ALL chunks and found absolutely no relevant information
-- Address all relevant sub-queries and synthesize their results
-- Be specific and cite exact values, measurements, and specifications when available. ALWAYS CITE YOUR SOURCES.
-- Include relevant details like dimensions, materials, standards, and procedures
-- Maintain technical accuracy and precision
-- DO NOT add greetings, signatures, or closing statements
-- DO NOT repeat phrases or sentences
-- DO NOT include "Best regards", "Thank you", or similar endings
-- DO NOT make up information not in the context
-- End your answer when you have provided the information - do not add unnecessary text
+                CITATION RULES:
+                1) EVERY factual claim must have at least one citation: [Source 1], [Source 2], etc.
+                2) No page numbers or filenames in the answer.
+                3) If information spans multiple sources, cite all: [Source 1, Source 2].
+                4) Place citations at the end of the sentence they support.
 
-MULTILINGUAL INSTRUCTIONS:
-- Detect the language of the user's question.
-- ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
-- If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
-- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
-            
+                CONFLICT HANDLING:
+                - If sources disagree, explicitly state the contradiction with citations. Do not decide which is correct without evidence.
+
+                MULTILINGUAL INSTRUCTIONS:
+                - Detect the language of the user's question.
+                - Answer in the SAME language.
+                - If context is in another language, translate relevant parts.
+                - Do not switch to English unless the user asked in English.
+
+                STYLE RULES:
+                - No greetings, signatures, or closing statements.
+                - No repetition.
+                - End immediately after the answer (or the two-line refusal).
+                """
+
             user_prompt = f"""Original Question: {question}
+                Sub-Questions Analyzed (retrieval aids; answer ONLY if supported by context):
+                {sub_queries_text}
 
-Sub-Questions Analyzed:
-{sub_queries_text}
+                Context from documents:
+                {context}
 
-Context from documents:
-{context}
+                Instructions:
+                1) Perform the MANDATORY SCOPE CHECK first.
+                2) If insufficient/unrelated, output the EXACT two-line refusal and stop.
+                3) If answerable, provide a precise answer using ONLY the context.
+                4) Cite EVERY factual claim using [Source N].
+                5) Stop immediately after the answer.
 
-Instructions:
-1. Analyze ALL retrieved context chunks carefully
-2. Synthesize information from multiple sources to answer the original question comprehensively
-3. If the context contains relevant information, use it to provide a comprehensive answer
-4. Address all sub-questions if they are relevant to the original question
-5. Provide specific details, numbers, and specifications when available
-6. Only say information is not available if you have thoroughly checked ALL chunks and found nothing relevant
-7. DO NOT add greetings, signatures, or closing statements
-8. DO NOT repeat information or phrases
-9. Stop immediately after providing the answer
+                Answer:
+                """
 
-Answer:"""
         
         try:
             # Get temperature and max_tokens from UI config or defaults
