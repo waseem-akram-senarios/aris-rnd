@@ -133,49 +133,50 @@ class AnswerGeneratorMixin:
             language_instruction = f"\n\nCRITICAL: You MUST answer strictly in {response_language}. Translate any information from the context into {response_language} if necessary. Do not answer in any other language."
         else:
             language_instruction = """
-MULTILINGUAL INSTRUCTIONS:
-- Detect the language of the user's question.
-- ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
-- If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
-- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to).
+                MULTILINGUAL INSTRUCTIONS:
+                - Detect the language of the user's question.
+                - ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
+                - If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
+                - Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to).
 
-ROMAN ENGLISH / TRANSLITERATED TEXT HANDLING:
-- If the question is in Roman English (e.g., "ye kya hai", "mujhe batao", "kaise kare") or other transliterated languages:
-  - Recognize this as a valid question in that language (e.g., Hindi/Urdu written in Latin script)
-  - Provide a DETAILED and COMPREHENSIVE answer, not a brief one
-  - Answer in the SAME format as the question (Roman English if asked in Roman English)
-  - Include all relevant details, specifications, and information from the context
-  - Do NOT provide shorter answers just because the question is in Roman/transliterated text
-  - Treat Roman English questions with the SAME importance and detail level as English questions"""
+                ROMAN ENGLISH / TRANSLITERATED TEXT HANDLING:
+                - If the question is in Roman English (e.g., "ye kya hai", "mujhe batao", "kaise kare") or other transliterated languages:
+                - Recognize this as a valid question in that language (e.g., Hindi/Urdu written in Latin script)
+                - Provide a DETAILED and COMPREHENSIVE answer, not a brief one
+                - Answer in the SAME format as the question (Roman English if asked in Roman English)
+                - Include all relevant details, specifications, and information from the context
+                - Do NOT provide shorter answers just because the question is in Roman/transliterated text
+                - Treat Roman English questions with the SAME importance and detail level as English questions"""
 
         if is_summary_query:
             # Use synthesis-friendly prompt for summaries
             system_prompt = f"""You are a document summarization assistant. Your task is to synthesize information from the provided context to create a comprehensive summary.{language_instruction}
 
-CRITICAL RULES:
-- Synthesize information from ALL provided context chunks to create a coherent summary
-- Create a summary even if chunks are from different sections of the document
-- Include key points, main topics, and important information from the context
-- Organize information logically (overview, main points, important details)
-- DO NOT say "context does not contain" - instead, synthesize what IS available
-- Focus on main themes, important details, and key information
-- DO NOT add greetings, signatures, or closing statements
-- End your answer when you have provided the summary"""
+                CRITICAL RULES:
+                - Synthesize information from ALL provided context chunks to create a coherent summary
+                - Create a summary even if chunks are from different sections of the document
+                - Include key points, main topics, and important information from the context
+                - Organize information logically (overview, main points, important details)
+                - Focus on main themes, important details, and key information
+                - DO NOT add greetings, signatures, or closing statements
+                - End your answer when you have provided the summary"""
             
             user_prompt = f"""Context from documents:
-{context}
+                {context}
 
-Question: {question}
+                Question: {question}
 
-Instructions:
-1. Read ALL context chunks carefully
-2. Synthesize information from multiple chunks to create a comprehensive summary
-3. Include: overview, key points, main topics, important information
-4. Organize the summary logically
-5. Use information from the context - do not say it's not available
-6. DO NOT add greetings or closing statements
+                Instructions:
+                1. Read ALL context chunks carefully
+                2. Synthesize information from multiple chunks to create a comprehensive summary
+                3. Include: overview, key points, main topics, important information
+                4. Organize the summary logically
+                5. Use information from the context - do not say it's not available
+                6. DO NOT add greetings or closing statements
+                7. If the context does not contain relevant information, simply say "The context does not contain information relevant to summarizing the document." and end the answer immediately.
+                8. Do NOT add citations if context does not contain specific information - just summarize what is there without citing.
 
-Summary:"""
+                Summary:"""
         else:
             # Synthesis-friendly prompt for all queries - encourages working with available information
             # Add document filtering instruction if specific document mentioned
@@ -183,66 +184,65 @@ Summary:"""
             if mentioned_documents and question_doc_number is not None:
                 mentioned_doc_name = os.path.basename(mentioned_documents[0]) if mentioned_documents else ""
                 document_filter_instruction = f"""
-
-CRITICAL DOCUMENT FILTERING: The question specifically asks about "{mentioned_doc_name}". 
-- You MUST ONLY use information from this specific document
-- DO NOT use information from other documents, even if they have similar names
-- If the context contains information from other documents, IGNORE it
-- Only answer based on the specified document: {mentioned_doc_name}
-- If the specified document is not in the context, state that clearly"""
+                    CRITICAL DOCUMENT FILTERING: The question specifically asks about "{mentioned_doc_name}". 
+                    - You MUST ONLY use information from this specific document
+                    - DO NOT use information from other documents, even if they have similar names
+                    - If the context contains information from other documents, IGNORE it
+                    - Only answer based on the specified document: {mentioned_doc_name}
+                    - If the specified document is not in the context, state that clearly"""
             
             system_prompt = f"""You are a precise technical assistant that provides accurate, detailed answers by synthesizing information from the provided context.{language_instruction}
 
-IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first. If the metadata shows "exact count not available" but images are detected, state that images are present but the exact count requires re-processing the document.{document_filter_instruction}
+                IMPORTANT: If the context includes a "Document Metadata" section, use it to answer questions about document properties like image counts, page counts, etc. When asked about images in a document, check the Document Metadata section first. If the metadata shows "exact count not available" but images are detected, state that images are present but the exact count requires re-processing the document.{document_filter_instruction}
+                CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content.
 
-CRITICAL: If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), you MUST USE THIS SECTION to answer questions about what is inside images. This section contains OCR text extracted from images and is the PRIMARY and MOST RELIABLE source for answering questions about image content.
+                CITATION RULES:
+                1. For EVERY claim or fact, include a citation using ONLY the source number: [Source 1], [Source 2], etc.
+                2. DO NOT include page numbers or filenames in the answer text - these appear in the References section.
+                3. If information spans multiple sources, cite all: [Source 1, Source 2].
+                4. Place citations at the end of the sentence or paragraph they support.
+                5. WRONG: "[Source: Policy Manual (Page 6)]" - CORRECT: "[Source 1]"
+                6. The user will see page numbers in the References section below your answer.
 
-CITATION RULES:
-1. For EVERY claim or fact, include a citation using ONLY the source number: [Source 1], [Source 2], etc.
-2. DO NOT include page numbers or filenames in the answer text - these appear in the References section.
-3. If information spans multiple sources, cite all: [Source 1, Source 2].
-4. Place citations at the end of the sentence or paragraph they support.
-5. WRONG: "[Source: Policy Manual (Page 6)]" - CORRECT: "[Source 1]"
-6. The user will see page numbers in the References section below your answer.
+                When asked:
+                - "what is in image X" or "what information is in image X"
+                - "what tools are in DRAWER X" or "what's in drawer X"
+                - "what part numbers are listed" or "what tools are listed"
+                - "give me information about images" or "what content is in the images"
+                - "where can I find [tool name]" or "where is [item]"
+                - "what drawer has [item]" or "location of [part number]"
+                - Any question mentioning images, drawers, tools, part numbers, or visual content
 
-When asked:
-- "what is in image X" or "what information is in image X"
-- "what tools are in DRAWER X" or "what's in drawer X"
-- "what part numbers are listed" or "what tools are listed"
-- "give me information about images" or "what content is in the images"
-- "where can I find [tool name]" or "where is [item]"
-- "what drawer has [item]" or "location of [part number]"
-- Any question mentioning images, drawers, tools, part numbers, or visual content
+                You MUST:
+                1. Look in the Image Content section FIRST (before checking other context)
+                2. Find the relevant image number or content
+                3. Search the OCR text for the specific tool/item name or part number mentioned in the question
+                4. Provide detailed, specific information from the OCR text
+                5. Include exact part numbers, tool names, quantities, drawer numbers, and other details from the OCR text
+                6. Do NOT say "context does not contain" if the Image Content section has relevant information
 
-You MUST:
-1. Look in the Image Content section FIRST (before checking other context)
-2. Find the relevant image number or content
-3. Search the OCR text for the specific tool/item name or part number mentioned in the question
-4. Provide detailed, specific information from the OCR text
-5. Include exact part numbers, tool names, quantities, drawer numbers, and other details from the OCR text
-6. Do NOT say "context does not contain" if the Image Content section has relevant information
+                IMPORTANT: When asked about specific tools, items, or part numbers (e.g., "Where can I find the Mallet?"):
+                1. FIRST check the "=== IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES) ===" section
+                2. Search the OCR text for the tool/item name or part number
+                3. Look for drawer numbers, locations, or quantities associated with the item
+                4. Provide specific information from the OCR text, including drawer numbers, page numbers, and quantities
+                5. DO NOT say "context does not contain" if you haven't thoroughly searched the Image Content section
 
-IMPORTANT: When asked about specific tools, items, or part numbers (e.g., "Where can I find the Mallet?"):
-1. FIRST check the "=== IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES) ===" section
-2. Search the OCR text for the tool/item name or part number
-3. Look for drawer numbers, locations, or quantities associated with the item
-4. Provide specific information from the OCR text, including drawer numbers, page numbers, and quantities
-5. DO NOT say "context does not contain" if you haven't thoroughly searched the Image Content section
-
-CRITICAL RULES:
-- Synthesize information from ALL provided context chunks to answer the question
-- Work with the information that IS available in the context
-- If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
-- DO NOT say "context does not contain" unless you have thoroughly analyzed ALL chunks and found absolutely no relevant information
-- Be specific and cite exact values, measurements, and specifications when available. ALWAYS CITE YOUR SOURCES.
-- Include relevant details like dimensions, materials, standards, and procedures
-- Maintain technical accuracy and precision
-- If multiple sources provide information, synthesize them clearly
-- DO NOT add greetings, signatures, or closing statements
-- DO NOT repeat phrases or sentences
-- DO NOT include "Best regards", "Thank you", or similar endings
-- DO NOT make up information not in the context
-- End your answer when you have provided the information - do not add unnecessary text"""
+                CRITICAL RULES:
+                - Synthesize information from ALL provided context chunks to answer the question
+                - Work with the information that IS available in the context
+                - DO NOT say "context does not contain" unless you have thoroughly analyzed ALL chunks and found absolutely no relevant information
+                - Be specific and cite exact values, measurements, and specifications when available.
+                - Include relevant details like dimensions, materials, standards, and procedures
+                - Maintain technical accuracy and precision
+                - If multiple sources provide information, synthesize them clearly
+                - DO NOT add greetings, signatures, or closing statements
+                - DO NOT repeat phrases or sentences
+                - DO NOT include "Best regards", "Thank you", or similar endings
+                - DO NOT make up information not in the context
+                - DO NOT add citations if the information is not directly supported by the context.
+                - DO NOT add citations if context does not contain specific information - just answer with the information that is there without citing.
+                - End your answer when you have provided the information - do not add unnecessary text"""
         
             # Add document filtering instruction to user prompt if specific document mentioned
             user_doc_filter_instruction = ""
@@ -251,25 +251,27 @@ CRITICAL RULES:
                 user_doc_filter_instruction = f"\n\nCRITICAL: The question asks specifically about \"{mentioned_doc_name}\". Only use information from this document. Ignore information from other documents."
             
             user_prompt = f"""Context from documents:
-{context}
+                {context}
 
-Question: {question}{user_doc_filter_instruction}
+                Question: {question}{user_doc_filter_instruction}
 
-Instructions:
-1. If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), check it FIRST for questions about images, drawers, tools, or part numbers
-2. For questions about specific tools, items, or part numbers (e.g., "Where can I find the Mallet?"), search the Image Content section OCR text for the tool/item name or part number
-3. Read ALL context chunks carefully
-4. Synthesize information from the context to answer the question
-5. If the context contains relevant information, use it to provide a comprehensive answer
-6. Include specific details, numbers, and specifications when available
-7. For image-related questions, prioritize information from the Image Content section
-8. When searching for tools/items, look for drawer numbers, locations, quantities, and part numbers in the OCR text
-9. Only say information is not available if you have thoroughly checked ALL chunks AND the Image Content section (if present) and found nothing relevant
-10. DO NOT add greetings, signatures, or closing statements
-11. DO NOT repeat information or phrases
-12. Stop immediately after providing the answer
+                Instructions:
+                1. If the context includes an "IMAGE CONTENT (OCR TEXT EXTRACTED FROM IMAGES)" section (look for ⚠️⚠️⚠️ markers or "=== IMAGE CONTENT" header), check it FIRST for questions about images, drawers, tools, or part numbers
+                2. For questions about specific tools, items, or part numbers (e.g., "Where can I find the Mallet?"), search the Image Content section OCR text for the tool/item name or part number
+                3. Read ALL context chunks carefully
+                4. Synthesize information from the context to answer the question
+                5. If the context contains relevant information, use it to provide a comprehensive answer
+                6. Include specific details, numbers, and specifications when available
+                7. For image-related questions, prioritize information from the Image Content section
+                8. When searching for tools/items, look for drawer numbers, locations, quantities, and part numbers in the OCR text
+                9. Only say information is not available if you have thoroughly checked ALL chunks AND the Image Content section (if present) and found nothing relevant
+                10. DO NOT add greetings, signatures, or closing statements
+                11. DO NOT repeat information or phrases
+                12. DO NOT add citations if the information is not directly supported by the context.
+                13. DO NOT add citations if context does not contain specific information - just answer with the information that is there without citing.
+                14. Stop immediately after providing the answer
 
-Answer:"""
+                Answer:"""
         
         try:
             # Get temperature and max_tokens from UI config or defaults
@@ -363,40 +365,42 @@ Answer:"""
             language_instruction = f"\n\nCRITICAL: You MUST answer strictly in {response_language}. Translate any information from the context into {response_language} if necessary. Do not answer in any other language."
         else:
              language_instruction = """
-MULTILINGUAL INSTRUCTIONS:
-- Detect the language of the user's question.
-- ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
-- If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
-- Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
+                MULTILINGUAL INSTRUCTIONS:
+                - Detect the language of the user's question.
+                - ANSWER IN THE SAME LANGUAGE AS THE USER'S QUESTION.
+                - If the retrieved context is in a different language, TRANSLATE the relevant information into the language of the question.
+                - Do NOT answer in English if the user asks in Spanish, French, etc. (unless explicitly asked to)."""
 
         # Synthesis-friendly prompt for Cerebras
         prompt = f"""You are a precise technical assistant. Synthesize information from the provided context to answer the question. Be specific and accurate.{language_instruction}
 
-CITATION RULES:
-1. For EVERY claim or fact, include a citation using ONLY the source number: [Source 1], [Source 2], etc.
-2. DO NOT include page numbers or filenames in the answer - these appear in the References section.
-3. If information spans multiple sources, cite all: [Source 1, Source 2].
-4. Place citations at the end of the sentence or paragraph they support.
-5. WRONG: "[Source: filename (Page X)]" - CORRECT: "[Source 1]"
+            CITATION RULES:
+            1. For EVERY claim or fact, include a citation using ONLY the source number: [Source 1], [Source 2], etc.
+            2. DO NOT include page numbers or filenames in the answer - these appear in the References section.
+            3. If information spans multiple sources, cite all: [Source 1, Source 2].
+            4. Place citations at the end of the sentence or paragraph they support.
+            5. WRONG: "[Source: filename (Page X)]" - CORRECT: "[Source 1]"
 
-CRITICAL: DO NOT add greetings, signatures, or closing statements. DO NOT repeat phrases. End your answer when you have provided the information.
+            CRITICAL: DO NOT add greetings, signatures, or closing statements. DO NOT repeat phrases. End your answer when you have provided the information.
 
-Context:
-{context}
+            Context:
+            {context}
 
-Question: {question}
+            Question: {question}
 
-Instructions:
-- Synthesize information from ALL context chunks to answer the question
-- Work with the information that IS available in the context
-- If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
-- Only say information is not available if you have thoroughly checked ALL chunks and found nothing relevant
-- Be specific with numbers, measurements, and technical details. ALWAYS CITE YOUR SOURCES.
-- Provide comprehensive and accurate answers
-- DO NOT add "Best regards", "Thank you", or similar endings
-- Stop immediately after providing the answer
+            Instructions:
+            - Synthesize information from ALL context chunks to answer the question
+            - Work with the information that IS available in the context
+            - If the context contains relevant information (even if not a perfect match), synthesize it to answer the question
+            - Only say information is not available if you have thoroughly checked ALL chunks and found nothing relevant
+            - Be specific with numbers, measurements, and technical details. ALWAYS CITE YOUR SOURCES.
+            - Provide comprehensive and accurate answers
+            - DO NOT add "Best regards", "Thank you", or similar endings
+            - DO NOT add citations if the information is not directly supported by the context.
+            - DO NOT add citations if context does not contain specific information - just answer with the information that is there without citing.
+            - Stop immediately after providing the answer
 
-Answer:"""
+            Answer:"""
         
         headers = {
             "Authorization": f"Bearer {self.cerebras_api_key}",
