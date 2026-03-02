@@ -162,11 +162,29 @@ class AssistantRAGClient:
                 vector_store_id=state.vector_store_id,
                 files=file_streams,
             )
+            file_counts_obj = getattr(file_batch, "file_counts", None)
+
+            file_counts = None
+            if file_counts_obj:
+                file_counts = {
+                    "completed": getattr(file_counts_obj, "completed", None),
+                    "failed": getattr(file_counts_obj, "failed", None),
+                    "in_progress": getattr(file_counts_obj, "in_progress", None),
+                    "total": getattr(file_counts_obj, "total", None),
+                }
+
             return {
                 "vector_store_id": state.vector_store_id,
                 "file_batch_status": getattr(file_batch, "status", None),
-                "file_counts": getattr(file_batch, "file_counts", None),
+                "file_counts": file_counts,
             }
+
+            # return {
+            #     "vector_store_id": state.vector_store_id,
+            #     "file_batch_status": getattr(file_batch, "status", None),
+            #     "file_counts": getattr(file_batch, "file_counts", None),
+            # }
+
         except Exception as e:
             logger.warning(
                 f"upload_and_poll helper failed; falling back to manual upload. "
