@@ -66,10 +66,10 @@ class IngestionEngine:
         
         # Vector store configuration - REQUIRE OpenSearch
         self.vector_store_type = vector_store_type.lower()
-        if self.vector_store_type != 'opensearch':
+        if self.vector_store_type not in ['opensearch', 'pgvector']:
             raise ValueError(
-                f"Vector store type must be 'opensearch'. Got '{vector_store_type}'. "
-                f"Please set VECTOR_STORE_TYPE=opensearch and configure AWS_OPENSEARCH_DOMAIN."
+                f"Vector store type must be 'opensearch' or 'pgvector'. Got '{vector_store_type}'. "
+                f"Please set VECTOR_STORE_TYPE=opensearch or VECTOR_STORE_TYPE=pgvector and configure the respective domain."
             )
         
         # Validate OpenSearch domain - REQUIRED, no fallback
