@@ -66,6 +66,8 @@ class RetrievalEngine(
                  vector_store_type="opensearch",
                  opensearch_domain=None,
                  opensearch_index=None,
+                 pgvector_connection_string=None,
+                 pgvector_collection=None,
                  chunk_size=None,
                  chunk_overlap=None):
         self.use_cerebras = use_cerebras
@@ -86,26 +88,34 @@ class RetrievalEngine(
         self.simple_query_model = ARISConfig.SIMPLE_QUERY_MODEL
         self.deep_query_model = ARISConfig.DEEP_QUERY_MODEL
         
-        # Vector store configuration - REQUIRE OpenSearch
+        # Vector store configuration
         self.vector_store_type = vector_store_type.lower()
-        if self.vector_store_type != 'opensearch':
+        if self.vector_store_type not in ['opensearch', 'pgvector', 'faiss']:
             raise ValueError(
-                f"Vector store type must be 'opensearch'. Got '{vector_store_type}'. "
-                f"Please set VECTOR_STORE_TYPE=opensearch and configure AWS_OPENSEARCH_DOMAIN."
+                f"Vector store type must be one of 'opensearch', 'pgvector', or 'faiss'. Got '{vector_store_type}'."
             )
         
-        # Validate OpenSearch domain - REQUIRED, no fallback
-        if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
-            # Use default from ARISConfig if not provided
-            opensearch_domain = ARISConfig.AWS_OPENSEARCH_DOMAIN
-            if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
-                raise ValueError(
-                    f"OpenSearch domain is required. Please set AWS_OPENSEARCH_DOMAIN in .env file. "
-                    f"Got: '{opensearch_domain}'"
-                )
-        
-        self.opensearch_domain = str(opensearch_domain).strip()
+        # OpenSearch config (required only when selected)
+        self.opensearch_domain = None
         self.opensearch_index = opensearch_index or ARISConfig.AWS_OPENSEARCH_INDEX
+        if self.vector_store_type == "opensearch":
+            if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
+                opensearch_domain = ARISConfig.AWS_OPENSEARCH_DOMAIN
+                if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
+                    raise ValueError(
+                        f"OpenSearch domain is required. Please set AWS_OPENSEARCH_DOMAIN in .env file. "
+                        f"Got: '{opensearch_domain}'"
+                    )
+            self.opensearch_domain = str(opensearch_domain).strip()
+
+        # PGVector config (required only when selected)
+        self.pgvector_connection_string = pgvector_connection_string or ARISConfig.PGVECTOR_CONNECTION_STRING
+        self.pgvector_collection = pgvector_collection or ARISConfig.PGVECTOR_COLLECTION
+        if self.vector_store_type == "pgvector" and not self.pgvector_connection_string:
+            raise ValueError(
+                "PGVector connection is required. Set PGVECTOR_CONNECTION_STRING in environment "
+                "or pass pgvector_connection_string."
+            )
         
         # Active document filter (set by UI to restrict queries to selected docs)
         self.active_sources: Optional[List[str]] = None
@@ -177,6 +187,18 @@ class RetrievalEngine(
                                     continue
             except Exception as e:
                 logger.debug(f"operation: {type(e).__name__}: {e}")
+                self.vectorstore = None
+        elif self.vector_store_type == "pgvector":
+            try:
+                self.vectorstore = VectorStoreFactory.create_vector_store(
+                    store_type="pgvector",
+                    embeddings=self.embeddings,
+                    pgvector_connection_string=self.pgvector_connection_string,
+                    pgvector_collection=self.pgvector_collection
+                )
+                logger.info(f"✅ Initialized PGVector collection: {self.pgvector_collection}")
+            except Exception as e:
+                logger.error(f"Failed to initialize PGVector vectorstore: {e}")
                 self.vectorstore = None
         
         # Metrics collector
@@ -1123,7 +1145,9 @@ class RetrievalEngine(
                         store_type="opensearch",
                         embeddings=self.embeddings,
                         opensearch_domain=self.opensearch_domain,
-                        opensearch_index=target_index
+                        opensearch_index=target_index,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection
                     )
                     # Verify index has documents - BUT skip this check if we have per-document indexes
                     # Per-document indexes (aris-doc-*) are the primary storage, not the default index
@@ -1170,6 +1194,16 @@ class RetrievalEngine(
                         logger.info(f"Skipping default index check - using per-document indexes ({len(self.document_index_map)} indexes available)")
                 except Exception as e:
                     logger.warning(f"Could not initialize OpenSearch vectorstore for querying: {e}")
+            elif self.vector_store_type == "pgvector":
+                try:
+                    self.vectorstore = VectorStoreFactory.create_vector_store(
+                        store_type="pgvector",
+                        embeddings=self.embeddings,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not initialize PGVector vectorstore for querying: {e}")
             else:
                 return {
                     "answer": "No documents have been uploaded yet. Please upload documents first.",
@@ -1198,7 +1232,9 @@ class RetrievalEngine(
                         store_type="opensearch",
                         embeddings=self.embeddings,
                         opensearch_domain=self.opensearch_domain,
-                        opensearch_index=target_index
+                        opensearch_index=target_index,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection
                     )
                     logger.info(f"✅ Initialized OpenSearch vectorstore (domain: {self.opensearch_domain}, index: {target_index})")
                 except Exception as e:
@@ -1206,6 +1242,17 @@ class RetrievalEngine(
                     raise ValueError(
                         f"Could not initialize OpenSearch. Please check your AWS_OPENSEARCH_DOMAIN configuration. Error: {e}"
                     )
+            elif self.vector_store_type == "pgvector":
+                try:
+                    self.vectorstore = VectorStoreFactory.create_vector_store(
+                        store_type="pgvector",
+                        embeddings=self.embeddings,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection
+                    )
+                    logger.info(f"✅ Initialized PGVector vectorstore (collection: {self.pgvector_collection})")
+                except Exception as e:
+                    logger.error(f"Failed to initialize PGVector vectorstore: {e}")
             
             # If still None AND no per-document indexes, check document registry for better error message
             has_per_doc_indexes = hasattr(self, 'document_index_map') and self.document_index_map and len(self.document_index_map) > 0
@@ -3466,4 +3513,3 @@ class RetrievalEngine(
             "response_tokens": response_tokens,
             "total_tokens": total_tokens
         }
-

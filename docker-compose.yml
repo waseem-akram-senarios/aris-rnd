@@ -1,4 +1,18 @@
 services:
+  # PostgreSQL with pgvector extension for vector storage
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: pgvector-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: aris_rag_db
+      POSTGRES_PASSWORD: hello_aris
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+
   # Ingestion Service - Handles document processing and indexing
   ingestion:
     build: .
@@ -39,6 +53,7 @@ services:
       timeout: 10s
       retries: 3
 
+
   # Retrieval Service - Handles queries and vector store interactions
   retrieval:
     image: aris-microservice:latest
@@ -68,6 +83,7 @@ services:
       timeout: 10s
       retries: 3
 
+
   # Gateway Service - API Gateway and Orchestrator
   gateway:
     image: aris-microservice:latest
@@ -96,6 +112,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
 
   # Streamlit UI - Main Interface
   ui:
@@ -139,6 +156,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
 
   # MCP Server - Model Context Protocol interface for AI agents
   mcp:
@@ -187,6 +205,11 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+
+volumes:
+  pgdata:
+
 
 networks:
   default:

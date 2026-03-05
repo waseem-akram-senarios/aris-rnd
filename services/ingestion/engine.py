@@ -48,6 +48,8 @@ class IngestionEngine:
                  vector_store_type="opensearch",
                  opensearch_domain=None,
                  opensearch_index=None,
+                 pgvector_connection_string=None,
+                 pgvector_collection=None,
                  chunk_size=None,
                  chunk_overlap=None):
         self.use_cerebras = use_cerebras
@@ -72,18 +74,27 @@ class IngestionEngine:
                 f"Please set VECTOR_STORE_TYPE=opensearch or VECTOR_STORE_TYPE=pgvector and configure the respective domain."
             )
         
-        # Validate OpenSearch domain - REQUIRED, no fallback
-        if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
-            # Use default from ARISConfig if not provided
-            opensearch_domain = ARISConfig.AWS_OPENSEARCH_DOMAIN
-            if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
-                raise ValueError(
-                    f"OpenSearch domain is required. Please set AWS_OPENSEARCH_DOMAIN in .env file. "
-                    f"Got: '{opensearch_domain}'"
-                )
-        
-        self.opensearch_domain = str(opensearch_domain).strip()
+        # OpenSearch config (required only when OpenSearch is selected)
+        self.opensearch_domain = None
         self.opensearch_index = opensearch_index or ARISConfig.AWS_OPENSEARCH_INDEX
+        if self.vector_store_type == "opensearch":
+            if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
+                opensearch_domain = ARISConfig.AWS_OPENSEARCH_DOMAIN
+                if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
+                    raise ValueError(
+                        f"OpenSearch domain is required. Please set AWS_OPENSEARCH_DOMAIN in .env file. "
+                        f"Got: '{opensearch_domain}'"
+                    )
+            self.opensearch_domain = str(opensearch_domain).strip()
+
+        # PGVector config (required only when pgvector is selected)
+        self.pgvector_connection_string = pgvector_connection_string or ARISConfig.PGVECTOR_CONNECTION_STRING
+        self.pgvector_collection = pgvector_collection or ARISConfig.PGVECTOR_COLLECTION
+        if self.vector_store_type == "pgvector" and not self.pgvector_connection_string:
+            raise ValueError(
+                "PGVector connection is required. Set PGVECTOR_CONNECTION_STRING in environment "
+                "or pass pgvector_connection_string."
+            )
         
         # Active document filter (set by UI to restrict queries to selected docs)
         self.active_sources: Optional[List[str]] = None
@@ -773,7 +784,9 @@ class IngestionEngine:
                             store_type=self.vector_store_type,
                             embeddings=self.embeddings,
                             opensearch_domain=self.opensearch_domain,
-                            opensearch_index=index_name  # Use document-specific index
+                            opensearch_index=index_name,  # Use document-specific index
+                            pgvector_connection_string=self.pgvector_connection_string,
+                            pgvector_collection=self.pgvector_collection
                         )
                     except ValueError as e:
                         logger.error(f"OpenSearch initialization failed: {e}")
@@ -791,7 +804,9 @@ class IngestionEngine:
                                 store_type=self.vector_store_type,
                                 embeddings=self.embeddings,
                                 opensearch_domain=self.opensearch_domain,
-                                opensearch_index=index_name
+                                opensearch_index=index_name,
+                                pgvector_connection_string=self.pgvector_connection_string,
+                                pgvector_collection=self.pgvector_collection
                             )
                         except ValueError as e:
                             logger.error(f"OpenSearch initialization failed: {e}")
@@ -819,7 +834,9 @@ class IngestionEngine:
                         store_type=self.vector_store_type,
                         embeddings=self.embeddings,
                         opensearch_domain=self.opensearch_domain,
-                        opensearch_index=self.opensearch_index
+                        opensearch_index=self.opensearch_index,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection
                     )
                 except ValueError as e:
                     logger.error(f"OpenSearch initialization failed: {e}")

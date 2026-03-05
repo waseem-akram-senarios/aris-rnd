@@ -81,7 +81,7 @@ def get_engine() -> MCPEngine:
 # Initialize the MCP server
 mcp = FastMCP(
     name="ARIS RAG MCP Server",
-    on_duplicate_tools="warn",
+    on_duplicate="warn",
     instructions="""ARIS RAG MCP Server — AI-powered document intelligence platform.
 
 7 tools available:

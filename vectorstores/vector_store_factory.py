@@ -1,6 +1,6 @@
 """
 Vector Store Factory for creating and managing different vector store backends.
-Supports FAISS (local) and OpenSearch (cloud).
+Supports FAISS (local), OpenSearch (cloud), and PGVector (PostgreSQL).
 """
 import os
 import logging
@@ -29,13 +29,15 @@ class VectorStoreFactory:
         embeddings: OpenAIEmbeddings,
         opensearch_domain: Optional[str] = None,
         opensearch_index: Optional[str] = None,
-        opensearch_endpoint: Optional[str] = None
+        opensearch_endpoint: Optional[str] = None,
+        pgvector_connection_string: Optional[str] = None,
+        pgvector_collection: Optional[str] = None
     ):
         """
         Create a vector store instance.
         
         Args:
-            store_type: Type of vector store ("faiss" or "opensearch")
+            store_type: Type of vector store ("faiss", "opensearch", or "pgvector")
             embeddings: Embeddings model to use
             opensearch_domain: OpenSearch domain name (required for OpenSearch)
             opensearch_index: OpenSearch index name (optional, defaults to "aris-rag-index")
@@ -58,8 +60,15 @@ class VectorStoreFactory:
                 index_name=opensearch_index or "aris-rag-index",
                 endpoint=opensearch_endpoint
             )
+        elif store_type.lower() == "pgvector":
+            from .pgvector_store import PgVectorStore
+            return PgVectorStore(
+                embeddings=embeddings,
+                connection_string=pgvector_connection_string or os.getenv("PGVECTOR_CONNECTION_STRING"),
+                collection_name=pgvector_collection or os.getenv("PGVECTOR_COLLECTION", "aris_rag_index")
+            )
         else:
-            raise ValueError(f"Unknown vector store type: {store_type}. Supported types: 'faiss', 'opensearch'")
+            raise ValueError(f"Unknown vector store type: {store_type}. Supported types: 'faiss', 'opensearch', 'pgvector'")
     
     @staticmethod
     def load_vector_store(
@@ -67,13 +76,15 @@ class VectorStoreFactory:
         embeddings: OpenAIEmbeddings,
         path: str,
         opensearch_domain: Optional[str] = None,
-        opensearch_index: Optional[str] = None
+        opensearch_index: Optional[str] = None,
+        pgvector_connection_string: Optional[str] = None,
+        pgvector_collection: Optional[str] = None
     ):
         """
         Load an existing vector store from disk or cloud.
         
         Args:
-            store_type: Type of vector store ("faiss" or "opensearch")
+            store_type: Type of vector store ("faiss", "opensearch", or "pgvector")
             embeddings: Embeddings model to use
             path: Path to load from (for FAISS) or index name (for OpenSearch)
             opensearch_domain: OpenSearch domain name (required for OpenSearch)
@@ -97,6 +108,13 @@ class VectorStoreFactory:
             )
             # OpenSearch loads from the index automatically
             return store
+        elif store_type.lower() == "pgvector":
+            from .pgvector_store import PgVectorStore
+            return PgVectorStore(
+                embeddings=embeddings,
+                connection_string=pgvector_connection_string or os.getenv("PGVECTOR_CONNECTION_STRING"),
+                collection_name=pgvector_collection or path or os.getenv("PGVECTOR_COLLECTION", "aris_rag_index")
+            )
         else:
             raise ValueError(f"Unknown vector store type: {store_type}")
 
@@ -325,4 +343,3 @@ def create_vector_store(
         opensearch_domain=opensearch_domain,
         opensearch_index=opensearch_index
     )
-

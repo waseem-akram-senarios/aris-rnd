@@ -748,6 +748,11 @@ class DocumentProcessor:
                             doc_metadata['opensearch_index'] = self.rag_system.opensearch_index
                             doc_metadata['text_index'] = self.rag_system.opensearch_index
                         doc_metadata['storage_location'] = 'opensearch_cloud'
+                    elif self.rag_system.vector_store_type.lower() == 'pgvector':
+                        if hasattr(self.rag_system, 'pgvector_collection') and self.rag_system.pgvector_collection:
+                            doc_metadata['pgvector_collection'] = self.rag_system.pgvector_collection
+                            doc_metadata['text_index'] = self.rag_system.pgvector_collection
+                        doc_metadata['storage_location'] = 'pgvector'
                     else:
                         doc_metadata['storage_location'] = 'local_faiss'
                 
@@ -1148,4 +1153,3 @@ class DocumentProcessor:
             except:
                 pass
             raise
-

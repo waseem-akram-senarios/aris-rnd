@@ -65,21 +65,21 @@ if 'active_sources' not in st.session_state:
 if 'active_loaded_docs' not in st.session_state:
     st.session_state.active_loaded_docs = []
 
-# AUTO-INITIALIZE: For OpenSearch, enable queries immediately if documents exist in registry
+# AUTO-INITIALIZE: For remote vector stores, enable queries immediately if documents exist in registry
 # This allows querying the independent retrieval service without having to "load" documents first
 if not st.session_state.documents_processed:
     try:
         existing_docs = st.session_state.document_registry.list_documents()
         if existing_docs and len(existing_docs) > 0:
-            # Check if using OpenSearch (independent retrieval)
+            # Check if using an independent remote store
             vector_store_type = ARISConfig.VECTOR_STORE_TYPE.lower()
-            if vector_store_type == 'opensearch':
-                # Auto-initialize ServiceContainer for OpenSearch
+            if vector_store_type in ['opensearch', 'pgvector']:
+                # Auto-initialize ServiceContainer for remote stores
                 if 'service_container' not in st.session_state:
                     st.session_state.service_container = ServiceContainer()
                 st.session_state.documents_processed = True
                 st.session_state.vectorstore_loaded = True
-                logger.info(f"Auto-initialized for OpenSearch: {len(existing_docs)} documents available for querying")
+                logger.info(f"Auto-initialized for {vector_store_type}: {len(existing_docs)} documents available for querying")
     except Exception as e:
         logger.warning(f"Could not auto-initialize: {e}")
 
@@ -134,6 +134,18 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
         st.session_state.document_processor = container.document_processor
         st.session_state.metrics_collector = getattr(container, 'metrics_collector', MetricsCollector())
         st.session_state.document_registry = container.document_registry
+
+    # Ensure gateway service uses current vector store settings for this run
+    if container and hasattr(container, "gateway_service"):
+        container.gateway_service.vector_store_type = vector_store_type.lower()
+        if hasattr(container.gateway_service, "opensearch_domain"):
+            container.gateway_service.opensearch_domain = opensearch_domain
+        if hasattr(container.gateway_service, "opensearch_index"):
+            container.gateway_service.opensearch_index = opensearch_index
+        if hasattr(container.gateway_service, "pgvector_connection_string"):
+            container.gateway_service.pgvector_connection_string = ARISConfig.PGVECTOR_CONNECTION_STRING
+        if hasattr(container.gateway_service, "pgvector_collection"):
+            container.gateway_service.pgvector_collection = ARISConfig.PGVECTOR_COLLECTION
         
         # Try to load existing vectorstore if FAISS and not already loaded
         if vector_store_type.lower() == 'faiss' and not st.session_state.vectorstore_loaded:
@@ -980,7 +992,11 @@ with st.sidebar:
     
     # Initialize vector_store_choice in session state if not set (for use in Document Library)
     if 'vector_store_choice' not in st.session_state:
-        st.session_state.vector_store_choice = "OpenSearch" if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else "FAISS"
+        st.session_state.vector_store_choice = (
+            "OpenSearch" if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch"
+            else "PGVector" if ARISConfig.VECTOR_STORE_TYPE.lower() == "pgvector"
+            else "FAISS"
+        )
     
     # Load and display stored documents
     if 'document_registry' in st.session_state:
@@ -1239,6 +1255,9 @@ with st.sidebar:
                             opensearch_domain = doc.get('opensearch_domain', 'N/A')
                             opensearch_index = doc.get('opensearch_index', 'N/A')
                             st.caption(f"☁️ Storage: OpenSearch Cloud (Domain: {opensearch_domain}, Index: {opensearch_index})")
+                        elif vector_store_type.lower() == 'pgvector':
+                            pg_collection = doc.get('pgvector_collection') or ARISConfig.PGVECTOR_COLLECTION
+                            st.caption(f"🐘 Storage: PGVector (Collection: {pg_collection})")
                         else:
                             st.caption(f"💾 Storage: Local FAISS")
                         
@@ -1282,6 +1301,19 @@ with st.sidebar:
                         st.caption(f"🌐 OpenSearch Domain: `{opensearch_domain}`")
                     if opensearch_index:
                         st.caption(f"📇 OpenSearch Index: `{opensearch_index}`")
+                elif vector_store_type.lower() == 'pgvector':
+                    st.info("""
+                    **Long-term Storage:**
+                    - ✅ Document metadata saved to: `storage/document_registry.json`
+                    - ✅ Vectorstore embeddings saved to: PostgreSQL (pgvector)
+                    - ✅ Documents persist across server restarts
+                    - ✅ Auto-loaded on startup
+                    """)
+
+                    registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
+                    pg_collection = ARISConfig.PGVECTOR_COLLECTION
+                    st.caption(f"📁 Registry: `{registry_path}`")
+                    st.caption(f"🐘 PGVector Collection: `{pg_collection}`")
                 else:
                     st.info("""
                     **Long-term Storage:**
@@ -1383,13 +1415,18 @@ with st.sidebar:
     # Vector Store selection (use shared config default)
     st.divider()
     st.header("💾 Vector Store Settings")
-    default_vector_store = "OpenSearch" if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else "FAISS"
+    default_vector_store = (
+        "OpenSearch" if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch"
+        else "PGVector" if ARISConfig.VECTOR_STORE_TYPE.lower() == "pgvector"
+        else "FAISS"
+    )
     vector_store_choice = st.radio(
         "Choose Vector Store:",
-        ["FAISS", "OpenSearch"],
-        index=1 if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else 0,
+        ["FAISS", "OpenSearch", "PGVector"],
+        index=1 if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else (2 if ARISConfig.VECTOR_STORE_TYPE.lower() == "pgvector" else 0),
         help="FAISS: Local storage, fast, no cloud required. "
-             "OpenSearch: Cloud storage, scalable, requires AWS OpenSearch domain."
+             "OpenSearch: Cloud storage, scalable, requires AWS OpenSearch domain. "
+             "PGVector: PostgreSQL + pgvector, scalable, requires PostgreSQL connection."
     )
     # Store in session state for use in Document Library section
     st.session_state.vector_store_choice = vector_store_choice
@@ -1412,6 +1449,16 @@ with st.sidebar:
         load_dotenv()
         if not os.getenv('AWS_OPENSEARCH_ACCESS_KEY_ID') or not os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY'):
             st.error("⚠️ OpenSearch credentials not found in .env file. Please add AWS_OPENSEARCH_ACCESS_KEY_ID and AWS_OPENSEARCH_SECRET_ACCESS_KEY")
+    elif vector_store_choice == "PGVector":
+        pg_cfg = ARISConfig.get_pgvector_config()
+        pg_conn = pg_cfg.get("connection_string")
+        pg_collection = pg_cfg.get("collection") or "aris_rag_index"
+        st.success("🐘 **PGVector Auto-Configured**")
+        st.caption(f"Collection: `{pg_collection}`")
+        if pg_conn:
+            st.caption("Connection: configured via `PGVECTOR_CONNECTION_STRING`")
+        else:
+            st.error("⚠️ PGVector connection not found. Please set `PGVECTOR_CONNECTION_STRING` in your environment.")
     else:
         st.info("💡 FAISS stores data locally in the 'vectorstore/' directory")
     
@@ -2415,6 +2462,8 @@ if st.session_state.documents_processed and container:
                         except Exception as e:
                             st.error(f"Failed to initialize service container: {e}")
                             st.stop()
+                    if container and hasattr(container, "gateway_service") and "vector_store_choice" in st.session_state:
+                        container.gateway_service.vector_store_type = st.session_state.vector_store_choice.lower()
                     result = container.query_with_rag(
                         question,
                         use_hybrid_search=(search_mode_param == "hybrid" or search_mode_param == "keyword"),
@@ -3170,6 +3219,8 @@ if st.session_state.documents_processed and container:
                     if not container:
                         st.error("Service container not initialized. Please upload a document first.")
                     else:
+                        if hasattr(container, "gateway_service") and "vector_store_choice" in st.session_state:
+                            container.gateway_service.vector_store_type = st.session_state.vector_store_choice.lower()
                         results = {}
                         import time as time_module
                         import pandas as pd
@@ -3430,4 +3481,3 @@ if st.session_state.documents_processed and container:
         - Source attribution
         - Long-term storage: documents persist across restarts
         """)
-

@@ -26,9 +26,12 @@ class GatewayService:
         registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
         self.document_registry = DocumentRegistry(registry_path)
         self._active_sources = []
+        self._vector_store_type = ARISConfig.VECTOR_STORE_TYPE.lower()
         self._opensearch_index = ARISConfig.AWS_OPENSEARCH_INDEX  # Make it settable
         # Use ARISConfig default if env vars are not set
         self._opensearch_domain = os.getenv("OPENSEARCH_DOMAIN") or os.getenv("AWS_OPENSEARCH_DOMAIN") or ARISConfig.AWS_OPENSEARCH_DOMAIN
+        self._pgvector_connection_string = os.getenv("PGVECTOR_CONNECTION_STRING") or ARISConfig.PGVECTOR_CONNECTION_STRING
+        self._pgvector_collection = os.getenv("PGVECTOR_COLLECTION") or ARISConfig.PGVECTOR_COLLECTION
         
         # Compatibility attributes for UI
         self.use_cerebras = ARISConfig.USE_CEREBRAS
@@ -151,7 +154,8 @@ class GatewayService:
                 "active_sources": self._active_sources,
                 "response_language": response_language,
                 "filter_language": filter_language,
-                "auto_translate": auto_translate
+                "auto_translate": auto_translate,
+                "vector_store_type": self._vector_store_type
             }
             try:
                 headers = {"X-Request-ID": request_id}
@@ -251,7 +255,8 @@ class GatewayService:
         
         # Build payload with all parameters
         payload = {
-            "question": question
+            "question": question,
+            "vector_store_type": self._vector_store_type
         }
         
         if k is not None:
@@ -403,9 +408,11 @@ class GatewayService:
             # Create a temporary RetrievalEngine for querying
             engine = RetrievalEngine(
                 use_cerebras=self.use_cerebras,
-                vector_store_type=ARISConfig.VECTOR_STORE_TYPE,
+                vector_store_type=self._vector_store_type,
                 opensearch_domain=self._opensearch_domain,
                 opensearch_index=self._opensearch_index,
+                pgvector_connection_string=self._pgvector_connection_string,
+                pgvector_collection=self._pgvector_collection,
                 chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
                 chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
             )
@@ -459,10 +466,15 @@ class GatewayService:
             headers = {"X-Request-ID": request_id}
             files = {"file": (file_name, file_content)}
             data = {"parser_preference": parser_preference} if parser_preference else {}
+            data["vector_store_type"] = self._vector_store_type
             if index_name:
                 data["index_name"] = index_name
             if language:
                 data["language"] = language
+            if self._pgvector_connection_string:
+                data["pgvector_connection_string"] = self._pgvector_connection_string
+            if self._pgvector_collection:
+                data["pgvector_collection"] = self._pgvector_collection
             try:
                 response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data, headers=headers)
                 response.raise_for_status()
@@ -496,7 +508,8 @@ class GatewayService:
         async with httpx.AsyncClient(timeout=60.0) as client:
             payload = {
                 "question": question,
-                "k": k
+                "k": k,
+                "vector_store_type": self._vector_store_type
             }
             # Add filter - prefer active_sources over source
             if active_sources:
@@ -652,10 +665,15 @@ class GatewayService:
                 headers = {"X-Request-ID": request_id}
                 files = {"file": (file_name, file_content)}
                 data = {"parser_preference": parser_preference} if parser_preference else {}
+                data["vector_store_type"] = self._vector_store_type
                 if index_name:
                     data["index_name"] = index_name
                 if language:
                     data["language"] = language
+                if self._pgvector_connection_string:
+                    data["pgvector_connection_string"] = self._pgvector_connection_string
+                if self._pgvector_collection:
+                    data["pgvector_collection"] = self._pgvector_collection
                 # Pass update flags to ingestion service
                 if is_update:
                     data["is_update"] = "true"
@@ -769,9 +787,11 @@ class GatewayService:
             # Create a temporary IngestionEngine
             engine = IngestionEngine(
                 use_cerebras=self.use_cerebras,
-                vector_store_type=ARISConfig.VECTOR_STORE_TYPE,
+                vector_store_type=self._vector_store_type,
                 opensearch_domain=self._opensearch_domain,
                 opensearch_index=self._opensearch_index,
+                pgvector_connection_string=self._pgvector_connection_string,
+                pgvector_collection=self._pgvector_collection,
                 chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
                 chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
             )
@@ -802,7 +822,11 @@ class GatewayService:
 
     @property
     def vector_store_type(self):
-        return ARISConfig.VECTOR_STORE_TYPE
+        return self._vector_store_type
+
+    @vector_store_type.setter
+    def vector_store_type(self, value):
+        self._vector_store_type = (value or ARISConfig.VECTOR_STORE_TYPE).lower()
 
     @property
     def opensearch_domain(self):
@@ -819,6 +843,22 @@ class GatewayService:
     @opensearch_index.setter
     def opensearch_index(self, value):
         self._opensearch_index = value
+
+    @property
+    def pgvector_connection_string(self):
+        return self._pgvector_connection_string
+
+    @pgvector_connection_string.setter
+    def pgvector_connection_string(self, value):
+        self._pgvector_connection_string = value
+
+    @property
+    def pgvector_collection(self):
+        return self._pgvector_collection
+
+    @pgvector_collection.setter
+    def pgvector_collection(self, value):
+        self._pgvector_collection = value
 
     def save_vectorstore(self, path: str = "vectorstore") -> bool:
         """

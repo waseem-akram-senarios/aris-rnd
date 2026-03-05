@@ -56,6 +56,15 @@ class ARISConfig:
     AWS_OPENSEARCH_ACCESS_KEY_ID: Optional[str] = os.getenv('AWS_OPENSEARCH_ACCESS_KEY_ID')
     AWS_OPENSEARCH_SECRET_ACCESS_KEY: Optional[str] = os.getenv('AWS_OPENSEARCH_SECRET_ACCESS_KEY')
     AWS_OPENSEARCH_REGION: str = os.getenv('AWS_OPENSEARCH_REGION', 'us-east-2')
+
+    # PGVector Configuration
+    PGVECTOR_CONNECTION_STRING: Optional[str] = os.getenv('PGVECTOR_CONNECTION_STRING')
+    PGVECTOR_COLLECTION: str = os.getenv('PGVECTOR_COLLECTION', 'aris_rag_index')
+    PGVECTOR_HOST: Optional[str] = os.getenv('PGVECTOR_HOST')
+    PGVECTOR_PORT: str = os.getenv('PGVECTOR_PORT', '5432')
+    PGVECTOR_DATABASE: Optional[str] = os.getenv('PGVECTOR_DATABASE')
+    PGVECTOR_USER: Optional[str] = os.getenv('PGVECTOR_USER')
+    PGVECTOR_PASSWORD: Optional[str] = os.getenv('PGVECTOR_PASSWORD')
     
     # S3 Storage Configuration
     ENABLE_S3_STORAGE: bool = os.getenv('ENABLE_S3_STORAGE', 'true').lower() == 'true'
@@ -236,6 +245,19 @@ class ARISConfig:
             'access_key_id': cls.AWS_OPENSEARCH_ACCESS_KEY_ID,
             'secret_access_key': cls.AWS_OPENSEARCH_SECRET_ACCESS_KEY,
             'region': cls.AWS_OPENSEARCH_REGION
+        }
+
+    @classmethod
+    def get_pgvector_config(cls) -> dict:
+        """Get PGVector configuration"""
+        return {
+            'connection_string': cls.PGVECTOR_CONNECTION_STRING,
+            'collection': cls.PGVECTOR_COLLECTION,
+            'host': cls.PGVECTOR_HOST,
+            'port': cls.PGVECTOR_PORT,
+            'database': cls.PGVECTOR_DATABASE,
+            'user': cls.PGVECTOR_USER,
+            'password': cls.PGVECTOR_PASSWORD,
         }
     
     @classmethod

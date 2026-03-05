@@ -34,6 +34,9 @@ llama-scan>=0.1.8
 # Vector store backends
 opensearch-py>=2.0.0
 requests-aws4auth>=1.1.0
+psycopg2-binary>=2.9.9
+pgvector>=0.2.5
+SQLAlchemy>=2.0.0
 
 # FastAPI for REST API
 fastapi>=0.104.0
