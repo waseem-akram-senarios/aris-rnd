@@ -782,6 +782,18 @@ class DocumentProcessor:
                             doc_metadata['opensearch_index'] = self.rag_system.opensearch_index
                             doc_metadata['text_index'] = self.rag_system.opensearch_index
                         doc_metadata['storage_location'] = 'opensearch_cloud'
+                    elif self.rag_system.vector_store_type.lower() == 'pgvector':
+                        if hasattr(self.rag_system, 'pgvector_collection') and self.rag_system.pgvector_collection:
+                            doc_metadata['pgvector_collection'] = self.rag_system.pgvector_collection
+                            doc_metadata['text_index'] = self.rag_system.pgvector_collection
+                        doc_metadata['storage_location'] = 'pgvector'
+                    elif self.rag_system.vector_store_type.lower() == 'qdrant':
+                        if hasattr(self.rag_system, 'qdrant_collection') and self.rag_system.qdrant_collection:
+                            doc_metadata['qdrant_collection'] = self.rag_system.qdrant_collection
+                            doc_metadata['text_index'] = self.rag_system.qdrant_collection
+                        if hasattr(self.rag_system, 'qdrant_url') and self.rag_system.qdrant_url:
+                            doc_metadata['qdrant_url'] = self.rag_system.qdrant_url
+                        doc_metadata['storage_location'] = 'qdrant'
                     else:
                         doc_metadata['storage_location'] = 'local_faiss'
                 
@@ -1182,4 +1194,3 @@ class DocumentProcessor:
             except:
                 pass
             raise
-

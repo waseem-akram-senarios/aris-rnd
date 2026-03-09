@@ -261,6 +261,9 @@ async def get_document_images(document_id: str, service: GatewayService = Depend
 @app.post("/query", response_model=QueryResponse)
 async def query_rag(request: QueryRequest, service: GatewayService = Depends(get_service)):
     """Query the Retrieval service with hybrid search as default"""
+    if request.vector_store_type:
+        service.vector_store_type = request.vector_store_type
+
     # Handle document filtering
     if request.active_sources is not None:
         service.active_sources = request.active_sources
@@ -301,6 +304,9 @@ async def query_images(request: Dict[str, Any], service: GatewayService = Depend
     k = request.get("k", 5)
     source = request.get("source")
     active_sources = request.get("active_sources")
+    vector_store_type = request.get("vector_store_type")
+    if vector_store_type:
+        service.vector_store_type = vector_store_type
     
     # Use active_sources from request, or from gateway service state
     if active_sources is None and hasattr(service, 'active_sources') and service.active_sources:

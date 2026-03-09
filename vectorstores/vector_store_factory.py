@@ -1,6 +1,6 @@
 """
 Vector Store Factory for creating and managing different vector store backends.
-Supports FAISS (local) and OpenSearch (cloud).
+Supports FAISS (local), OpenSearch (cloud), PGVector (PostgreSQL), and Qdrant.
 """
 import os
 import logging
@@ -29,13 +29,18 @@ class VectorStoreFactory:
         embeddings: OpenAIEmbeddings,
         opensearch_domain: Optional[str] = None,
         opensearch_index: Optional[str] = None,
-        opensearch_endpoint: Optional[str] = None
+        opensearch_endpoint: Optional[str] = None,
+        pgvector_connection_string: Optional[str] = None,
+        pgvector_collection: Optional[str] = None,
+        qdrant_url: Optional[str] = None,
+        qdrant_collection: Optional[str] = None,
+        qdrant_api_key: Optional[str] = None
     ):
         """
         Create a vector store instance.
         
         Args:
-            store_type: Type of vector store ("faiss" or "opensearch")
+            store_type: Type of vector store ("faiss", "opensearch", "pgvector", or "qdrant")
             embeddings: Embeddings model to use
             opensearch_domain: OpenSearch domain name (required for OpenSearch)
             opensearch_index: OpenSearch index name (optional, defaults to "aris-rag-index")
@@ -58,8 +63,24 @@ class VectorStoreFactory:
                 index_name=opensearch_index or "aris-rag-index",
                 endpoint=opensearch_endpoint
             )
+        elif store_type.lower() == "pgvector":
+            from .pgvector_store import PgVectorStore
+            return PgVectorStore(
+                embeddings=embeddings,
+                connection_string=pgvector_connection_string or os.getenv("PGVECTOR_CONNECTION_STRING"),
+                collection_name=pgvector_collection or os.getenv("PGVECTOR_COLLECTION", "aris_rag_index")
+            )
+        elif store_type.lower() == "qdrant":
+            from .qdrant_store import QdrantStore
+            return QdrantStore(
+                embeddings=embeddings,
+                url=qdrant_url or os.getenv("QDRANT_URL"),
+                collection_name=qdrant_collection or os.getenv("QDRANT_COLLECTION", "aris_rag_index"),
+                api_key=qdrant_api_key or os.getenv("QDRANT_API_KEY"),
+                prefer_grpc=(os.getenv("QDRANT_PREFER_GRPC", "false").lower() == "true"),
+            )
         else:
-            raise ValueError(f"Unknown vector store type: {store_type}. Supported types: 'faiss', 'opensearch'")
+            raise ValueError(f"Unknown vector store type: {store_type}. Supported types: 'faiss', 'opensearch', 'pgvector', 'qdrant'")
     
     @staticmethod
     def load_vector_store(
@@ -67,13 +88,18 @@ class VectorStoreFactory:
         embeddings: OpenAIEmbeddings,
         path: str,
         opensearch_domain: Optional[str] = None,
-        opensearch_index: Optional[str] = None
+        opensearch_index: Optional[str] = None,
+        pgvector_connection_string: Optional[str] = None,
+        pgvector_collection: Optional[str] = None,
+        qdrant_url: Optional[str] = None,
+        qdrant_collection: Optional[str] = None,
+        qdrant_api_key: Optional[str] = None
     ):
         """
         Load an existing vector store from disk or cloud.
         
         Args:
-            store_type: Type of vector store ("faiss" or "opensearch")
+            store_type: Type of vector store ("faiss", "opensearch", "pgvector", or "qdrant")
             embeddings: Embeddings model to use
             path: Path to load from (for FAISS) or index name (for OpenSearch)
             opensearch_domain: OpenSearch domain name (required for OpenSearch)
@@ -97,6 +123,22 @@ class VectorStoreFactory:
             )
             # OpenSearch loads from the index automatically
             return store
+        elif store_type.lower() == "pgvector":
+            from .pgvector_store import PgVectorStore
+            return PgVectorStore(
+                embeddings=embeddings,
+                connection_string=pgvector_connection_string or os.getenv("PGVECTOR_CONNECTION_STRING"),
+                collection_name=pgvector_collection or path or os.getenv("PGVECTOR_COLLECTION", "aris_rag_index")
+            )
+        elif store_type.lower() == "qdrant":
+            from .qdrant_store import QdrantStore
+            return QdrantStore(
+                embeddings=embeddings,
+                url=qdrant_url or os.getenv("QDRANT_URL"),
+                collection_name=qdrant_collection or path or os.getenv("QDRANT_COLLECTION", "aris_rag_index"),
+                api_key=qdrant_api_key or os.getenv("QDRANT_API_KEY"),
+                prefer_grpc=(os.getenv("QDRANT_PREFER_GRPC", "false").lower() == "true"),
+            )
         else:
             raise ValueError(f"Unknown vector store type: {store_type}")
 
@@ -325,4 +367,3 @@ def create_vector_store(
         opensearch_domain=opensearch_domain,
         opensearch_index=opensearch_index
     )
-
