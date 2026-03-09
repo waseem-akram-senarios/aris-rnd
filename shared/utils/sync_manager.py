@@ -113,6 +113,31 @@ class SyncManager:
         # For backward compatibility with existing calls
         return False
     
+    def _build_index_map_from_registry(self) -> Dict[str, str]:
+        """Build an index map from the registry's persisted text_index metadata."""
+        if not self.document_registry:
+            return {}
+        
+        try:
+            registry_docs = self.document_registry.list_documents()
+        except Exception as e:
+            logger.warning(f"[{self.service_name}] Could not load registry documents for index map bootstrap: {e}")
+            return {}
+        
+        derived_map: Dict[str, str] = {}
+        for doc in registry_docs:
+            if doc.get("status") != "success":
+                continue
+            
+            document_name = (doc.get("document_name") or "").strip()
+            text_index = (doc.get("text_index") or "").strip()
+            if not document_name or not text_index:
+                continue
+            
+            derived_map[document_name] = text_index
+        
+        return derived_map
+    
     def sync_index_map(self, force: bool = False) -> Optional[Dict[str, str]]:
         """
         Sync document index map from disk.
@@ -129,19 +154,26 @@ class SyncManager:
                 if force or current_mtime > self._index_map_mtime:
                     with open(self.index_map_path, 'r') as f:
                         index_map = json.load(f)
+                    derived_map = self._build_index_map_from_registry()
+                    if any(index_map.get(name) != idx for name, idx in derived_map.items()):
+                        index_map.update(derived_map)
+                        with open(self.index_map_path, 'w') as f:
+                            json.dump(index_map, f, indent=2)
+                        current_mtime = os.path.getmtime(self.index_map_path)
                     self._index_map_mtime = current_mtime
                     self._cached_index_map = index_map
                     logger.info(f"✅ [{self.service_name}] Synced index map ({len(index_map)} mappings)")
                     return index_map
             else:
-                # Create empty index map if doesn't exist
+                # Bootstrap from registry if possible, otherwise create an empty map.
                 os.makedirs(os.path.dirname(self.index_map_path), exist_ok=True)
+                index_map = self._build_index_map_from_registry()
                 with open(self.index_map_path, 'w') as f:
-                    json.dump({}, f)
+                    json.dump(index_map, f, indent=2)
                 self._index_map_mtime = os.path.getmtime(self.index_map_path)
-                self._cached_index_map = {}
-                logger.info(f"✅ [{self.service_name}] Created empty index map")
-                return {}
+                self._cached_index_map = index_map
+                logger.info(f"✅ [{self.service_name}] Created index map ({len(index_map)} mappings)")
+                return index_map
             return None
         except Exception as e:
             logger.warning(f"[{self.service_name}] Could not sync index map: {e}")

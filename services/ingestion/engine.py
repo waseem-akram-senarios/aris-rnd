@@ -211,6 +211,8 @@ class IngestionEngine:
                     logger.info(f"Loaded {len(self.document_index_map)} document-index mappings")
             except Exception as e:
                 logger.warning(f"Could not load document index map: {e}")
+        
+        self._sync_document_index_map_with_registry(persist=True)
     
     def _save_document_index_map(self):
         """Save document-to-index mapping to file."""
@@ -225,6 +227,65 @@ class IngestionEngine:
             logger.info(f"Saved {len(self.document_index_map)} document-index mappings")
         except Exception as e:
             logger.error(f"Could not save document index map: {e}")
+    
+    def _build_document_index_map_from_registry(self) -> Dict[str, str]:
+        """Build document-to-index mappings from registry metadata."""
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        try:
+            from storage.document_registry import DocumentRegistry
+            registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+            registry_docs = registry.list_documents()
+        except Exception as e:
+            logger.warning(f"Could not load registry documents for index-map sync: {e}")
+            return {}
+        
+        derived_map: Dict[str, str] = {}
+        for doc in registry_docs:
+            if doc.get("status") != "success":
+                continue
+            
+            document_name = (doc.get("document_name") or "").strip()
+            text_index = (doc.get("text_index") or "").strip()
+            if not document_name or not text_index:
+                continue
+            
+            derived_map[document_name] = text_index
+        
+        if derived_map:
+            logger.info(f"Derived {len(derived_map)} document-index mappings from registry metadata")
+        return derived_map
+    
+    def _sync_document_index_map_with_registry(self, persist: bool = False) -> bool:
+        """Merge registry-backed index mappings into the in-memory document index map."""
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        derived_map = self._build_document_index_map_from_registry()
+        if not derived_map:
+            return False
+        
+        merged_map = dict(self.document_index_map)
+        changed = False
+        
+        for document_name, index_name in derived_map.items():
+            if merged_map.get(document_name) != index_name:
+                merged_map[document_name] = index_name
+                changed = True
+        
+        if not changed:
+            return False
+        
+        self.document_index_map = merged_map
+        logger.info(
+            f"Updated document index map from registry ({len(self.document_index_map)} total mappings)"
+        )
+        
+        if persist:
+            self._save_document_index_map()
+        
+        return True
 
 
     ######################################################################################################################

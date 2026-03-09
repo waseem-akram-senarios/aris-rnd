@@ -334,6 +334,8 @@ class RetrievalEngine(
                 logger.warning(f"Could not load document index map: {e}")
         else:
             self._document_index_map_mtime = 0
+        
+        self._sync_document_index_map_with_registry(persist=True)
     
     def _check_and_reload_document_index_map(self):
         """Check if document_index_map file was modified and reload if needed."""
@@ -364,9 +366,125 @@ class RetrievalEngine(
         try:
             with open(self.document_index_map_path, 'w') as f:
                 json.dump(self.document_index_map, f, indent=2)
+            self._document_index_map_mtime = os.path.getmtime(self.document_index_map_path)
             logger.info(f"Saved {len(self.document_index_map)} document-index mappings")
         except Exception as e:
             logger.error(f"Could not save document index map: {e}")
+    
+    def _build_document_index_map_from_registry(self) -> Dict[str, str]:
+        """Build document-to-index mappings from the registry's persisted text_index values."""
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        try:
+            from storage.document_registry import DocumentRegistry
+            registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+            registry_docs = registry.list_documents()
+        except Exception as e:
+            logger.warning(f"Could not load registry documents for index-map sync: {e}")
+            return {}
+        
+        derived_map: Dict[str, str] = {}
+        for doc in registry_docs:
+            if doc.get("status") != "success":
+                continue
+            
+            document_name = (doc.get("document_name") or "").strip()
+            text_index = (doc.get("text_index") or "").strip()
+            
+            if not document_name or not text_index:
+                continue
+            
+            derived_map[document_name] = text_index
+        
+        if derived_map:
+            logger.info(f"Derived {len(derived_map)} document-index mappings from registry metadata")
+        return derived_map
+    
+    def _sync_document_index_map_with_registry(self, persist: bool = False) -> bool:
+        """Merge registry-backed text_index values into the in-memory index map."""
+        from scripts.setup_logging import get_logger
+        logger = get_logger("aris_rag.rag_system")
+        
+        derived_map = self._build_document_index_map_from_registry()
+        if not derived_map:
+            return False
+        
+        merged_map = dict(self.document_index_map)
+        changed = False
+        
+        for document_name, index_name in derived_map.items():
+            if merged_map.get(document_name) != index_name:
+                merged_map[document_name] = index_name
+                changed = True
+        
+        if not changed:
+            return False
+        
+        self.document_index_map = merged_map
+        logger.info(
+            f"Updated document index map from registry ({len(self.document_index_map)} total mappings)"
+        )
+        
+        if persist:
+            self._save_document_index_map()
+        
+        return True
+    
+    def _build_no_results_response(
+        self,
+        question: str,
+        active_sources: Optional[List[str]] = None,
+        query_start_time: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """Return a safe response when retrieval finds no usable context."""
+        response_time = 0.0
+        if query_start_time is not None:
+            response_time = max(0.0, time_module.time() - query_start_time)
+        
+        answer = "I couldn't find any relevant passages in the indexed documents for that question."
+        if active_sources:
+            answer = (
+                f"I couldn't find any relevant passages in the selected document(s): "
+                f"{', '.join(active_sources)}."
+            )
+            try:
+                from storage.document_registry import DocumentRegistry
+                registry = DocumentRegistry(ARISConfig.DOCUMENT_REGISTRY_PATH)
+                docs_missing_searchable_text = []
+                for document_name in active_sources:
+                    matches = registry.find_documents_by_name(document_name)
+                    if not matches:
+                        continue
+                    
+                    has_searchable_text = any(
+                        (doc.get("text_storage_status") == "success") or
+                        ((doc.get("text_chunks_stored") or 0) > 0)
+                        for doc in matches
+                    )
+                    if not has_searchable_text:
+                        docs_missing_searchable_text.append(document_name)
+                
+                if docs_missing_searchable_text:
+                    answer = (
+                        "The selected document(s) are registered, but their searchable text is "
+                        "not available in the active vector index yet. Please re-upload or "
+                        f"reindex: {', '.join(docs_missing_searchable_text)}."
+                    )
+            except Exception as e:
+                logger.debug(f"operation: {type(e).__name__}: {e}")
+        
+        return {
+            "answer": answer,
+            "sources": [],
+            "context_chunks": [],
+            "citations": [],
+            "num_chunks_used": 0,
+            "response_time": response_time,
+            "context_tokens": 0,
+            "response_tokens": 0,
+            "total_tokens": 0,
+        }
     
     def load_selected_documents(self, document_names: List[str], path: str = "vectorstore") -> Dict:
         """
@@ -1596,6 +1714,13 @@ class RetrievalEngine(
             
             # IMPORTANT: use request-scoped active_sources (not only self.active_sources)
             if active_sources:
+                missing_sources = [doc_name for doc_name in active_sources if doc_name not in self.document_index_map]
+                if missing_sources:
+                    logger.info(
+                        f"Refreshing document index map from registry for missing sources: {missing_sources}"
+                    )
+                    self._sync_document_index_map_with_registry(persist=True)
+                
                 # Search only indexes for selected documents
                 # First, check if we have direct document_id -> index mapping
                 if hasattr(self, '_document_id_to_index') and self._document_id_to_index:
@@ -2047,6 +2172,13 @@ class RetrievalEngine(
                 logger.info(f"After removing invalid sources: {len(filtered_docs)} docs, Final sources: {final_sources}")
             
             relevant_docs = filtered_docs[:k]  # Limit to requested k after filtering
+        
+        if not relevant_docs:
+            return self._build_no_results_response(
+                question=original_question if original_question else question,
+                active_sources=active_sources,
+                query_start_time=query_start_time,
+            )
         
         # ── FlashRank Reranking (main query path) ──
         # The ranker was only called in the Agentic RAG sub-query path.
