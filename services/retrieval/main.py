@@ -57,6 +57,11 @@ async def lifespan(app: FastAPI):
         vector_store_type=ARISConfig.VECTOR_STORE_TYPE,
         opensearch_domain=ARISConfig.AWS_OPENSEARCH_DOMAIN,
         opensearch_index=ARISConfig.AWS_OPENSEARCH_INDEX,
+        pgvector_connection_string=ARISConfig.PGVECTOR_CONNECTION_STRING,
+        pgvector_collection=ARISConfig.PGVECTOR_COLLECTION,
+        qdrant_url=ARISConfig.QDRANT_URL,
+        qdrant_collection=ARISConfig.QDRANT_COLLECTION,
+        qdrant_api_key=ARISConfig.QDRANT_API_KEY,
         chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
         chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
     )
@@ -131,6 +136,39 @@ def get_engine() -> RetrievalEngine:
         raise HTTPException(status_code=500, detail="Retrieval engine not initialized")
     return engine
 
+
+def resolve_engine_for_request(
+    requested_vector_store_type: Optional[str] = None,
+    requested_pgvector_connection_string: Optional[str] = None,
+    requested_pgvector_collection: Optional[str] = None,
+    requested_qdrant_url: Optional[str] = None,
+    requested_qdrant_collection: Optional[str] = None,
+    requested_qdrant_api_key: Optional[str] = None,
+) -> RetrievalEngine:
+    """
+    Return global engine when config matches; otherwise create request-scoped engine.
+    """
+    base_engine = get_engine()
+    requested_store = (requested_vector_store_type or base_engine.vector_store_type or ARISConfig.VECTOR_STORE_TYPE).lower()
+
+    if requested_store == base_engine.vector_store_type:
+        return base_engine
+
+    logger.info(f"[retrieval] Using request-scoped engine with vector_store_type={requested_store}")
+    return RetrievalEngine(
+        use_cerebras=ARISConfig.USE_CEREBRAS,
+        vector_store_type=requested_store,
+        opensearch_domain=ARISConfig.AWS_OPENSEARCH_DOMAIN,
+        opensearch_index=ARISConfig.AWS_OPENSEARCH_INDEX,
+        pgvector_connection_string=requested_pgvector_connection_string or ARISConfig.PGVECTOR_CONNECTION_STRING,
+        pgvector_collection=requested_pgvector_collection or ARISConfig.PGVECTOR_COLLECTION,
+        qdrant_url=requested_qdrant_url or ARISConfig.QDRANT_URL,
+        qdrant_collection=requested_qdrant_collection or ARISConfig.QDRANT_COLLECTION,
+        qdrant_api_key=requested_qdrant_api_key or ARISConfig.QDRANT_API_KEY,
+        chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
+        chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
+    )
+
 @app.get("/health")
 async def health_check():
     """Health check with registry and index map sync verification"""
@@ -182,6 +220,7 @@ async def query_rag(
     logger.info(f"POST /query - [ReqID: {request_id}] Question: {query_request.question[:50]}...")
     
     try:
+        engine = resolve_engine_for_request(query_request.vector_store_type)
         # Determine active sources for filtering
         active_sources = query_request.active_sources
         logger.info(f"POST /query - [ReqID: {request_id}] active_sources from request: {active_sources}")
@@ -306,6 +345,7 @@ async def query_images(
         logger.info(f"POST /query/images - [ReqID: {request_id}] Query: '{image_request.question[:50]}...' across ALL documents")
     
     try:
+        engine = resolve_engine_for_request(image_request.vector_store_type)
         # Use the engine's query_images method with active_sources support
         results = engine.query_images(
             question=image_request.question,
@@ -1117,6 +1157,7 @@ async def query_rag_full(
     start_time = time_module.time()
     
     logger.info(f"POST /query/full - [ReqID: {request_id}] Question: {query_request.question[:50]}...")
+    engine = resolve_engine_for_request(query_request.vector_store_type)
     logger.info(f"POST /query/full - [ReqID: {request_id}] Settings: mode={query_request.search_mode}, "
                 f"agentic={query_request.use_agentic_rag}, k={query_request.k}, "
                 f"include_images={query_request.include_images}")
