@@ -110,6 +110,7 @@ logs/
 *.sqlite3
 *.db-shm
 *.db-wal
+qdrant_storage/
 
 # Temporary files
 *.tmp

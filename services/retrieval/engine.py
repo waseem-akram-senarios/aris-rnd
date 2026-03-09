@@ -66,6 +66,11 @@ class RetrievalEngine(
                  vector_store_type="opensearch",
                  opensearch_domain=None,
                  opensearch_index=None,
+                 pgvector_connection_string=None,
+                 pgvector_collection=None,
+                 qdrant_url=None,
+                 qdrant_collection=None,
+                 qdrant_api_key=None,
                  chunk_size=None,
                  chunk_overlap=None):
         self.use_cerebras = use_cerebras
@@ -86,26 +91,41 @@ class RetrievalEngine(
         self.simple_query_model = ARISConfig.SIMPLE_QUERY_MODEL
         self.deep_query_model = ARISConfig.DEEP_QUERY_MODEL
         
-        # Vector store configuration - REQUIRE OpenSearch
+        # Vector store configuration
         self.vector_store_type = vector_store_type.lower()
-        if self.vector_store_type != 'opensearch':
+        if self.vector_store_type not in ['opensearch', 'pgvector', 'qdrant', 'faiss']:
             raise ValueError(
-                f"Vector store type must be 'opensearch'. Got '{vector_store_type}'. "
-                f"Please set VECTOR_STORE_TYPE=opensearch and configure AWS_OPENSEARCH_DOMAIN."
+                f"Vector store type must be one of 'opensearch', 'pgvector', 'qdrant', or 'faiss'. Got '{vector_store_type}'."
             )
         
-        # Validate OpenSearch domain - REQUIRED, no fallback
-        if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
-            # Use default from ARISConfig if not provided
-            opensearch_domain = ARISConfig.AWS_OPENSEARCH_DOMAIN
-            if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
-                raise ValueError(
-                    f"OpenSearch domain is required. Please set AWS_OPENSEARCH_DOMAIN in .env file. "
-                    f"Got: '{opensearch_domain}'"
-                )
-        
-        self.opensearch_domain = str(opensearch_domain).strip()
+        # OpenSearch config (required only when selected)
+        self.opensearch_domain = None
         self.opensearch_index = opensearch_index or ARISConfig.AWS_OPENSEARCH_INDEX
+        if self.vector_store_type == "opensearch":
+            if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
+                opensearch_domain = ARISConfig.AWS_OPENSEARCH_DOMAIN
+                if not opensearch_domain or len(str(opensearch_domain).strip()) < 3:
+                    raise ValueError(
+                        f"OpenSearch domain is required. Please set AWS_OPENSEARCH_DOMAIN in .env file. "
+                        f"Got: '{opensearch_domain}'"
+                    )
+            self.opensearch_domain = str(opensearch_domain).strip()
+
+        # PGVector config (required only when selected)
+        self.pgvector_connection_string = pgvector_connection_string or ARISConfig.PGVECTOR_CONNECTION_STRING
+        self.pgvector_collection = pgvector_collection or ARISConfig.PGVECTOR_COLLECTION
+        if self.vector_store_type == "pgvector" and not self.pgvector_connection_string:
+            raise ValueError(
+                "PGVector connection is required. Set PGVECTOR_CONNECTION_STRING in environment "
+                "or pass pgvector_connection_string."
+            )
+
+        # Qdrant config (required only when selected)
+        self.qdrant_url = qdrant_url or ARISConfig.QDRANT_URL
+        self.qdrant_collection = qdrant_collection or ARISConfig.QDRANT_COLLECTION
+        self.qdrant_api_key = qdrant_api_key or ARISConfig.QDRANT_API_KEY
+        if self.vector_store_type == "qdrant" and not self.qdrant_url:
+            raise ValueError("Qdrant URL is required. Set QDRANT_URL in environment or pass qdrant_url.")
         
         # Active document filter (set by UI to restrict queries to selected docs)
         self.active_sources: Optional[List[str]] = None
@@ -177,6 +197,31 @@ class RetrievalEngine(
                                     continue
             except Exception as e:
                 logger.debug(f"operation: {type(e).__name__}: {e}")
+                self.vectorstore = None
+        elif self.vector_store_type == "pgvector":
+            try:
+                self.vectorstore = VectorStoreFactory.create_vector_store(
+                    store_type="pgvector",
+                    embeddings=self.embeddings,
+                    pgvector_connection_string=self.pgvector_connection_string,
+                    pgvector_collection=self.pgvector_collection
+                )
+                logger.info(f"✅ Initialized PGVector collection: {self.pgvector_collection}")
+            except Exception as e:
+                logger.error(f"Failed to initialize PGVector vectorstore: {e}")
+                self.vectorstore = None
+        elif self.vector_store_type == "qdrant":
+            try:
+                self.vectorstore = VectorStoreFactory.create_vector_store(
+                    store_type="qdrant",
+                    embeddings=self.embeddings,
+                    qdrant_url=self.qdrant_url,
+                    qdrant_collection=self.qdrant_collection,
+                    qdrant_api_key=self.qdrant_api_key
+                )
+                logger.info(f"✅ Initialized Qdrant collection: {self.qdrant_collection}")
+            except Exception as e:
+                logger.error(f"Failed to initialize Qdrant vectorstore: {e}")
                 self.vectorstore = None
         
         # Metrics collector
@@ -1123,7 +1168,12 @@ class RetrievalEngine(
                         store_type="opensearch",
                         embeddings=self.embeddings,
                         opensearch_domain=self.opensearch_domain,
-                        opensearch_index=target_index
+                        opensearch_index=target_index,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection,
+                        qdrant_url=self.qdrant_url,
+                        qdrant_collection=self.qdrant_collection,
+                        qdrant_api_key=self.qdrant_api_key
                     )
                     # Verify index has documents - BUT skip this check if we have per-document indexes
                     # Per-document indexes (aris-doc-*) are the primary storage, not the default index
@@ -1170,6 +1220,27 @@ class RetrievalEngine(
                         logger.info(f"Skipping default index check - using per-document indexes ({len(self.document_index_map)} indexes available)")
                 except Exception as e:
                     logger.warning(f"Could not initialize OpenSearch vectorstore for querying: {e}")
+            elif self.vector_store_type == "pgvector":
+                try:
+                    self.vectorstore = VectorStoreFactory.create_vector_store(
+                        store_type="pgvector",
+                        embeddings=self.embeddings,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not initialize PGVector vectorstore for querying: {e}")
+            elif self.vector_store_type == "qdrant":
+                try:
+                    self.vectorstore = VectorStoreFactory.create_vector_store(
+                        store_type="qdrant",
+                        embeddings=self.embeddings,
+                        qdrant_url=self.qdrant_url,
+                        qdrant_collection=self.qdrant_collection,
+                        qdrant_api_key=self.qdrant_api_key
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not initialize Qdrant vectorstore for querying: {e}")
             else:
                 return {
                     "answer": "No documents have been uploaded yet. Please upload documents first.",
@@ -1198,7 +1269,12 @@ class RetrievalEngine(
                         store_type="opensearch",
                         embeddings=self.embeddings,
                         opensearch_domain=self.opensearch_domain,
-                        opensearch_index=target_index
+                        opensearch_index=target_index,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection,
+                        qdrant_url=self.qdrant_url,
+                        qdrant_collection=self.qdrant_collection,
+                        qdrant_api_key=self.qdrant_api_key
                     )
                     logger.info(f"✅ Initialized OpenSearch vectorstore (domain: {self.opensearch_domain}, index: {target_index})")
                 except Exception as e:
@@ -1206,6 +1282,29 @@ class RetrievalEngine(
                     raise ValueError(
                         f"Could not initialize OpenSearch. Please check your AWS_OPENSEARCH_DOMAIN configuration. Error: {e}"
                     )
+            elif self.vector_store_type == "pgvector":
+                try:
+                    self.vectorstore = VectorStoreFactory.create_vector_store(
+                        store_type="pgvector",
+                        embeddings=self.embeddings,
+                        pgvector_connection_string=self.pgvector_connection_string,
+                        pgvector_collection=self.pgvector_collection
+                    )
+                    logger.info(f"✅ Initialized PGVector vectorstore (collection: {self.pgvector_collection})")
+                except Exception as e:
+                    logger.error(f"Failed to initialize PGVector vectorstore: {e}")
+            elif self.vector_store_type == "qdrant":
+                try:
+                    self.vectorstore = VectorStoreFactory.create_vector_store(
+                        store_type="qdrant",
+                        embeddings=self.embeddings,
+                        qdrant_url=self.qdrant_url,
+                        qdrant_collection=self.qdrant_collection,
+                        qdrant_api_key=self.qdrant_api_key
+                    )
+                    logger.info(f"✅ Initialized Qdrant vectorstore (collection: {self.qdrant_collection})")
+                except Exception as e:
+                    logger.error(f"Failed to initialize Qdrant vectorstore: {e}")
             
             # If still None AND no per-document indexes, check document registry for better error message
             has_per_doc_indexes = hasattr(self, 'document_index_map') and self.document_index_map and len(self.document_index_map) > 0
@@ -1756,8 +1855,13 @@ class RetrievalEngine(
         # If hybrid search didn't work or wasn't used, use standard search
         # Skip if we already have relevant_docs from per-document index path
         if relevant_docs is None and not skip_retriever_logic:
+            # Qdrant + current qdrant-client can fail on LangChain MMR path.
+            effective_use_mmr = bool(use_mmr) and self.vector_store_type.lower() != "qdrant"
+            if use_mmr and not effective_use_mmr:
+                logger.info("MMR disabled for Qdrant; using similarity retrieval for compatibility.")
+
             # Retrieve relevant documents with MMR optimized for maximum accuracy
-            if use_mmr:
+            if effective_use_mmr:
                 # Use MMR with accuracy-optimized parameters
                 fetch_k = ARISConfig.DEFAULT_MMR_FETCH_K
                 lambda_mult = ARISConfig.DEFAULT_MMR_LAMBDA
@@ -1807,18 +1911,34 @@ class RetrievalEngine(
                     search_kwargs=search_kwargs
                 )
         
-        # Use invoke for newer LangChain versions, fallback to get_relevant_documents
         # Use retrieval_question for better matching (expanded for summaries)
         # Only use retriever if we don't already have relevant_docs (from per-doc index path)
         if not skip_retriever_logic and retriever is not None:
             try:
-                relevant_docs = retriever.invoke(retrieval_question)
-            except AttributeError as e:
-                logger.debug(f"operation: {type(e).__name__}: {e}")
-                # Fallback for older versions
-                relevant_docs = retriever.get_relevant_documents(retrieval_question)
+                if hasattr(retriever, "invoke"):
+                    relevant_docs = retriever.invoke(retrieval_question)
+                elif hasattr(retriever, "get_relevant_documents"):
+                    relevant_docs = retriever.get_relevant_documents(retrieval_question)
+                else:
+                    raise AttributeError(
+                        f"Retriever type '{type(retriever).__name__}' has neither "
+                        "'invoke' nor 'get_relevant_documents'."
+                    )
             except Exception as e:
                 error_str = str(e)
+                recovered_with_fallback = False
+                # Qdrant client compatibility fallback: force plain similarity search
+                if self.vector_store_type.lower() == "qdrant" and "has no attribute 'search'" in error_str:
+                    logger.warning(
+                        "Qdrant retriever compatibility issue on MMR/search path; "
+                        "falling back to direct similarity_search."
+                    )
+                    try:
+                        relevant_docs = self.vectorstore.similarity_search(retrieval_question, k=k)
+                    except Exception:
+                        relevant_docs = self.vectorstore.similarity_search(retrieval_question, k=max(1, min(k, 4)))
+                    recovered_with_fallback = True
+
                 # Check for dimension mismatch error
                 if 'dimension' in error_str.lower() or 'invalid dimension' in error_str.lower():
                     logger.error(f"Embedding dimension mismatch error: {error_str}")
@@ -1838,7 +1958,11 @@ class RetrievalEngine(
                         "citations": [],
                         "context_chunks": []
                     }
-                raise
+                if recovered_with_fallback:
+                    logger.info("Qdrant fallback similarity retrieval succeeded.")
+                    pass
+                else:
+                    raise
 
         # If UI selected specific documents, filter results to those sources (strict filtering with robust matching)
         # CRITICAL: Always apply post-retrieval filter to prevent document mixing (OpenSearch index isolation is not guaranteed)
@@ -3518,4 +3642,3 @@ class RetrievalEngine(
             "response_tokens": response_tokens,
             "total_tokens": total_tokens
         }
-
