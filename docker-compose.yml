@@ -1,6 +1,21 @@
 services:
+
+  qdrant-db:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"  # HTTP/REST API & Dashboard
+      - "6334:6334"  # gRPC API
+    environment:
+      - QDRANT__SERVICE__API_KEY=aris-rnd-qdrant-key
+    volumes:
+      # Persists your collections/data on your local machine
+      - ./qdrant_storage:/qdrant/storage
+
+
   # PostgreSQL with pgvector extension for vector storage
-  db:
+  pgvector-db:
     image: pgvector/pgvector:pg17
     container_name: pgvector-db
     ports:

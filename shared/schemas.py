@@ -22,7 +22,7 @@ class QueryRequest(BaseModel):
     response_language: Optional[str] = Field(default=None, description="Language for the LLM response (e.g. 'English', 'Spanish', 'fr').")
     filter_language: Optional[str] = Field(default=None, description="Filter results by document language code (e.g. 'eng', 'spa', 'fra').")
     auto_translate: bool = Field(default=True, description="Automatically translate non-English queries to English for better semantic search.")
-    vector_store_type: Optional[Literal['faiss', 'opensearch', 'pgvector']] = Field(default=None, description="Optional vector store override for this request.")
+    vector_store_type: Optional[Literal['faiss', 'opensearch', 'pgvector', 'qdrant']] = Field(default=None, description="Optional vector store override for this request.")
 
 
 class ProcessingResult(BaseModel):
@@ -165,12 +165,14 @@ class ChunkingSettings(BaseModel):
 
 class VectorStoreSettings(BaseModel):
     """Vector store configuration settings"""
-    vector_store_type: Literal['faiss', 'opensearch', 'pgvector'] = Field(default='opensearch', description="Vector store type")
+    vector_store_type: Literal['faiss', 'opensearch', 'pgvector', 'qdrant'] = Field(default='opensearch', description="Vector store type")
     opensearch_domain: Optional[str] = Field(default='intelycx-waseem-os', description="OpenSearch domain name")
     opensearch_index: str = Field(default='aris-rag-index', description="OpenSearch index name")
     opensearch_region: str = Field(default='us-east-2', description="AWS region for OpenSearch")
     pgvector_connection_string: Optional[str] = Field(default=None, description="PostgreSQL connection string for pgvector")
     pgvector_collection: str = Field(default='aris_rag_index', description="PGVector collection/table namespace")
+    qdrant_url: Optional[str] = Field(default=None, description="Qdrant URL")
+    qdrant_collection: str = Field(default='aris_rag_index', description="Qdrant collection name")
 
 
 class RetrievalSettings(BaseModel):
@@ -228,7 +230,7 @@ class ImageQueryRequest(BaseModel):
     source: Optional[str] = Field(default=None, description="Optional single document source to filter by (deprecated, use active_sources)", examples=["document.pdf"])
     active_sources: Optional[List[str]] = Field(default=None, description="Optional list of document names to filter images. Empty list = all documents.", examples=[["document1.pdf", "document2.pdf"]])
     k: int = Field(default=5, ge=1, le=50, description="Number of images to retrieve", examples=[5])
-    vector_store_type: Optional[Literal['faiss', 'opensearch', 'pgvector']] = Field(default=None, description="Optional vector store override for this request.")
+    vector_store_type: Optional[Literal['faiss', 'opensearch', 'pgvector', 'qdrant']] = Field(default=None, description="Optional vector store override for this request.")
 
 
 class ImageResult(BaseModel):
@@ -868,7 +870,7 @@ class FullQueryRequest(BaseModel):
         description="Number of images to retrieve if include_images is True",
         examples=[5]
     )
-    vector_store_type: Optional[Literal['faiss', 'opensearch', 'pgvector']] = Field(default=None, description="Optional vector store override for this request.")
+    vector_store_type: Optional[Literal['faiss', 'opensearch', 'pgvector', 'qdrant']] = Field(default=None, description="Optional vector store override for this request.")
 
 
 class FullQueryResponse(BaseModel):

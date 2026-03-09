@@ -73,7 +73,7 @@ if not st.session_state.documents_processed:
         if existing_docs and len(existing_docs) > 0:
             # Check if using an independent remote store
             vector_store_type = ARISConfig.VECTOR_STORE_TYPE.lower()
-            if vector_store_type in ['opensearch', 'pgvector']:
+            if vector_store_type in ['opensearch', 'pgvector', 'qdrant']:
                 # Auto-initialize ServiceContainer for remote stores
                 if 'service_container' not in st.session_state:
                     st.session_state.service_container = ServiceContainer()
@@ -146,6 +146,12 @@ def process_uploaded_files(uploaded_files, use_cerebras, parser_preference,
             container.gateway_service.pgvector_connection_string = ARISConfig.PGVECTOR_CONNECTION_STRING
         if hasattr(container.gateway_service, "pgvector_collection"):
             container.gateway_service.pgvector_collection = ARISConfig.PGVECTOR_COLLECTION
+        if hasattr(container.gateway_service, "qdrant_url"):
+            container.gateway_service.qdrant_url = ARISConfig.QDRANT_URL
+        if hasattr(container.gateway_service, "qdrant_collection"):
+            container.gateway_service.qdrant_collection = ARISConfig.QDRANT_COLLECTION
+        if hasattr(container.gateway_service, "qdrant_api_key"):
+            container.gateway_service.qdrant_api_key = ARISConfig.QDRANT_API_KEY
         
         # Try to load existing vectorstore if FAISS and not already loaded
         if vector_store_type.lower() == 'faiss' and not st.session_state.vectorstore_loaded:
@@ -995,6 +1001,7 @@ with st.sidebar:
         st.session_state.vector_store_choice = (
             "OpenSearch" if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch"
             else "PGVector" if ARISConfig.VECTOR_STORE_TYPE.lower() == "pgvector"
+            else "Qdrant" if ARISConfig.VECTOR_STORE_TYPE.lower() == "qdrant"
             else "FAISS"
         )
     
@@ -1258,6 +1265,9 @@ with st.sidebar:
                         elif vector_store_type.lower() == 'pgvector':
                             pg_collection = doc.get('pgvector_collection') or ARISConfig.PGVECTOR_COLLECTION
                             st.caption(f"🐘 Storage: PGVector (Collection: {pg_collection})")
+                        elif vector_store_type.lower() == 'qdrant':
+                            qdrant_collection = doc.get('qdrant_collection') or ARISConfig.QDRANT_COLLECTION
+                            st.caption(f"🧭 Storage: Qdrant (Collection: {qdrant_collection})")
                         else:
                             st.caption(f"💾 Storage: Local FAISS")
                         
@@ -1314,6 +1324,19 @@ with st.sidebar:
                     pg_collection = ARISConfig.PGVECTOR_COLLECTION
                     st.caption(f"📁 Registry: `{registry_path}`")
                     st.caption(f"🐘 PGVector Collection: `{pg_collection}`")
+                elif vector_store_type.lower() == 'qdrant':
+                    st.info("""
+                    **Long-term Storage:**
+                    - ✅ Document metadata saved to: `storage/document_registry.json`
+                    - ✅ Vectorstore embeddings saved to: Qdrant
+                    - ✅ Documents persist across server restarts
+                    - ✅ Auto-loaded on startup
+                    """)
+
+                    registry_path = ARISConfig.DOCUMENT_REGISTRY_PATH
+                    qdrant_collection = ARISConfig.QDRANT_COLLECTION
+                    st.caption(f"📁 Registry: `{registry_path}`")
+                    st.caption(f"🧭 Qdrant Collection: `{qdrant_collection}`")
                 else:
                     st.info("""
                     **Long-term Storage:**
@@ -1418,15 +1441,17 @@ with st.sidebar:
     default_vector_store = (
         "OpenSearch" if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch"
         else "PGVector" if ARISConfig.VECTOR_STORE_TYPE.lower() == "pgvector"
+        else "Qdrant" if ARISConfig.VECTOR_STORE_TYPE.lower() == "qdrant"
         else "FAISS"
     )
     vector_store_choice = st.radio(
         "Choose Vector Store:",
-        ["FAISS", "OpenSearch", "PGVector"],
-        index=1 if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else (2 if ARISConfig.VECTOR_STORE_TYPE.lower() == "pgvector" else 0),
+        ["FAISS", "OpenSearch", "PGVector", "Qdrant"],
+        index=1 if ARISConfig.VECTOR_STORE_TYPE.lower() == "opensearch" else (2 if ARISConfig.VECTOR_STORE_TYPE.lower() == "pgvector" else (3 if ARISConfig.VECTOR_STORE_TYPE.lower() == "qdrant" else 0)),
         help="FAISS: Local storage, fast, no cloud required. "
              "OpenSearch: Cloud storage, scalable, requires AWS OpenSearch domain. "
-             "PGVector: PostgreSQL + pgvector, scalable, requires PostgreSQL connection."
+             "PGVector: PostgreSQL + pgvector, scalable, requires PostgreSQL connection. "
+             "Qdrant: Dedicated vector database, scalable, requires Qdrant URL."
     )
     # Store in session state for use in Document Library section
     st.session_state.vector_store_choice = vector_store_choice
@@ -1459,6 +1484,16 @@ with st.sidebar:
             st.caption("Connection: configured via `PGVECTOR_CONNECTION_STRING`")
         else:
             st.error("⚠️ PGVector connection not found. Please set `PGVECTOR_CONNECTION_STRING` in your environment.")
+    elif vector_store_choice == "Qdrant":
+        q_cfg = ARISConfig.get_qdrant_config()
+        q_url = q_cfg.get("url")
+        q_collection = q_cfg.get("collection") or "aris_rag_index"
+        st.success("🧭 **Qdrant Auto-Configured**")
+        st.caption(f"Collection: `{q_collection}`")
+        if q_url:
+            st.caption(f"URL: `{q_url}`")
+        else:
+            st.error("⚠️ Qdrant URL not found. Please set `QDRANT_URL` in your environment.")
     else:
         st.info("💡 FAISS stores data locally in the 'vectorstore/' directory")
     

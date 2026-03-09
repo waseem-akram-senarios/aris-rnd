@@ -65,6 +65,12 @@ class ARISConfig:
     PGVECTOR_DATABASE: Optional[str] = os.getenv('PGVECTOR_DATABASE')
     PGVECTOR_USER: Optional[str] = os.getenv('PGVECTOR_USER')
     PGVECTOR_PASSWORD: Optional[str] = os.getenv('PGVECTOR_PASSWORD')
+
+    # Qdrant Configuration
+    QDRANT_URL: Optional[str] = os.getenv('QDRANT_URL')
+    QDRANT_API_KEY: Optional[str] = os.getenv('QDRANT_API_KEY')
+    QDRANT_COLLECTION: str = os.getenv('QDRANT_COLLECTION', 'aris_rag_index')
+    QDRANT_PREFER_GRPC: bool = os.getenv('QDRANT_PREFER_GRPC', 'false').lower() == 'true'
     
     # S3 Storage Configuration
     ENABLE_S3_STORAGE: bool = os.getenv('ENABLE_S3_STORAGE', 'true').lower() == 'true'
@@ -258,6 +264,16 @@ class ARISConfig:
             'database': cls.PGVECTOR_DATABASE,
             'user': cls.PGVECTOR_USER,
             'password': cls.PGVECTOR_PASSWORD,
+        }
+
+    @classmethod
+    def get_qdrant_config(cls) -> dict:
+        """Get Qdrant configuration"""
+        return {
+            'url': cls.QDRANT_URL,
+            'api_key': cls.QDRANT_API_KEY,
+            'collection': cls.QDRANT_COLLECTION,
+            'prefer_grpc': cls.QDRANT_PREFER_GRPC,
         }
     
     @classmethod

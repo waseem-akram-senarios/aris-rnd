@@ -55,6 +55,9 @@ async def lifespan(app: FastAPI):
         opensearch_index=ARISConfig.AWS_OPENSEARCH_INDEX,
         pgvector_connection_string=ARISConfig.PGVECTOR_CONNECTION_STRING,
         pgvector_collection=ARISConfig.PGVECTOR_COLLECTION,
+        qdrant_url=ARISConfig.QDRANT_URL,
+        qdrant_collection=ARISConfig.QDRANT_COLLECTION,
+        qdrant_api_key=ARISConfig.QDRANT_API_KEY,
         chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
         chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
     )
@@ -162,6 +165,9 @@ def _reconfigure_engine_if_needed(
     opensearch_index: Optional[str] = None,
     pgvector_connection_string: Optional[str] = None,
     pgvector_collection: Optional[str] = None,
+    qdrant_url: Optional[str] = None,
+    qdrant_collection: Optional[str] = None,
+    qdrant_api_key: Optional[str] = None,
 ):
     """
     Reconfigure global ingestion engine/processor for per-request vector DB selection.
@@ -173,6 +179,9 @@ def _reconfigure_engine_if_needed(
     target_os_index = opensearch_index or ARISConfig.AWS_OPENSEARCH_INDEX
     target_pg_conn = pgvector_connection_string or ARISConfig.PGVECTOR_CONNECTION_STRING
     target_pg_collection = pgvector_collection or ARISConfig.PGVECTOR_COLLECTION
+    target_qdrant_url = qdrant_url or ARISConfig.QDRANT_URL
+    target_qdrant_collection = qdrant_collection or ARISConfig.QDRANT_COLLECTION
+    target_qdrant_api_key = qdrant_api_key or ARISConfig.QDRANT_API_KEY
 
     if engine is not None:
         same_store = getattr(engine, "vector_store_type", None) == target_store
@@ -180,7 +189,10 @@ def _reconfigure_engine_if_needed(
         same_os_index = getattr(engine, "opensearch_index", None) == target_os_index
         same_pg_conn = getattr(engine, "pgvector_connection_string", None) == target_pg_conn
         same_pg_collection = getattr(engine, "pgvector_collection", None) == target_pg_collection
-        if same_store and same_os_domain and same_os_index and same_pg_conn and same_pg_collection:
+        same_qdrant_url = getattr(engine, "qdrant_url", None) == target_qdrant_url
+        same_qdrant_collection = getattr(engine, "qdrant_collection", None) == target_qdrant_collection
+        same_qdrant_api_key = getattr(engine, "qdrant_api_key", None) == target_qdrant_api_key
+        if same_store and same_os_domain and same_os_index and same_pg_conn and same_pg_collection and same_qdrant_url and same_qdrant_collection and same_qdrant_api_key:
             return
 
     logger.info(
@@ -193,6 +205,9 @@ def _reconfigure_engine_if_needed(
         opensearch_index=target_os_index,
         pgvector_connection_string=target_pg_conn,
         pgvector_collection=target_pg_collection,
+        qdrant_url=target_qdrant_url,
+        qdrant_collection=target_qdrant_collection,
+        qdrant_api_key=target_qdrant_api_key,
         chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
         chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
     )
@@ -264,6 +279,9 @@ async def ingest_document(
     vector_store_type: Optional[str] = Form(default=None),
     pgvector_connection_string: Optional[str] = Form(default=None),
     pgvector_collection: Optional[str] = Form(default=None),
+    qdrant_url: Optional[str] = Form(default=None),
+    qdrant_collection: Optional[str] = Form(default=None),
+    qdrant_api_key: Optional[str] = Form(default=None),
     is_update: Optional[str] = Form(default=None),  # String "true" from form data
     old_index_name: Optional[str] = Form(default=None),
     background_tasks: BackgroundTasks = None,
@@ -288,7 +306,10 @@ async def ingest_document(
         opensearch_domain=ARISConfig.AWS_OPENSEARCH_DOMAIN,
         opensearch_index=index_name or ARISConfig.AWS_OPENSEARCH_INDEX,
         pgvector_connection_string=pgvector_connection_string,
-        pgvector_collection=pgvector_collection
+        pgvector_collection=pgvector_collection,
+        qdrant_url=qdrant_url,
+        qdrant_collection=qdrant_collection,
+        qdrant_api_key=qdrant_api_key
     )
     processor = get_processor()
     processor = get_processor()
@@ -508,6 +529,9 @@ async def process_document_sync(
     vector_store_type: Optional[str] = Form(default=None),
     pgvector_connection_string: Optional[str] = Form(default=None),
     pgvector_collection: Optional[str] = Form(default=None),
+    qdrant_url: Optional[str] = Form(default=None),
+    qdrant_collection: Optional[str] = Form(default=None),
+    qdrant_api_key: Optional[str] = Form(default=None),
     force_update: Optional[bool] = Form(default=False),
     processor: DocumentProcessor = Depends(get_processor)
 ):
@@ -526,7 +550,10 @@ async def process_document_sync(
         opensearch_domain=ARISConfig.AWS_OPENSEARCH_DOMAIN,
         opensearch_index=index_name or ARISConfig.AWS_OPENSEARCH_INDEX,
         pgvector_connection_string=pgvector_connection_string,
-        pgvector_collection=pgvector_collection
+        pgvector_collection=pgvector_collection,
+        qdrant_url=qdrant_url,
+        qdrant_collection=qdrant_collection,
+        qdrant_api_key=qdrant_api_key
     )
     processor = get_processor()
     
@@ -869,9 +896,12 @@ async def ingest_document_full(
     # Index Settings
     index_name: Optional[str] = Form(default=None, description="Custom OpenSearch index name (auto-generated if not provided)"),
     # Vector DB Settings
-    vector_store_type: Optional[str] = Form(default=None, description="Vector store backend: opensearch or pgvector"),
+    vector_store_type: Optional[str] = Form(default=None, description="Vector store backend: opensearch, pgvector, or qdrant"),
     pgvector_connection_string: Optional[str] = Form(default=None, description="Optional PGVector connection string override"),
     pgvector_collection: Optional[str] = Form(default=None, description="Optional PGVector collection name override"),
+    qdrant_url: Optional[str] = Form(default=None, description="Optional Qdrant URL override"),
+    qdrant_collection: Optional[str] = Form(default=None, description="Optional Qdrant collection override"),
+    qdrant_api_key: Optional[str] = Form(default=None, description="Optional Qdrant API key override"),
     # Update Settings
     force_update: bool = Form(default=False, description="Force re-processing even if identical content exists"),
     # OCR Settings
@@ -974,7 +1004,10 @@ async def ingest_document_full(
         opensearch_domain=ARISConfig.AWS_OPENSEARCH_DOMAIN,
         opensearch_index=index_name or ARISConfig.AWS_OPENSEARCH_INDEX,
         pgvector_connection_string=pgvector_connection_string,
-        pgvector_collection=pgvector_collection
+        pgvector_collection=pgvector_collection,
+        qdrant_url=qdrant_url,
+        qdrant_collection=qdrant_collection,
+        qdrant_api_key=qdrant_api_key
     )
     
     # Validate file type

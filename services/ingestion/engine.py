@@ -50,6 +50,9 @@ class IngestionEngine:
                  opensearch_index=None,
                  pgvector_connection_string=None,
                  pgvector_collection=None,
+                 qdrant_url=None,
+                 qdrant_collection=None,
+                 qdrant_api_key=None,
                  chunk_size=None,
                  chunk_overlap=None):
         self.use_cerebras = use_cerebras
@@ -68,10 +71,10 @@ class IngestionEngine:
         
         # Vector store configuration - REQUIRE OpenSearch
         self.vector_store_type = vector_store_type.lower()
-        if self.vector_store_type not in ['opensearch', 'pgvector']:
+        if self.vector_store_type not in ['opensearch', 'pgvector', 'qdrant']:
             raise ValueError(
-                f"Vector store type must be 'opensearch' or 'pgvector'. Got '{vector_store_type}'. "
-                f"Please set VECTOR_STORE_TYPE=opensearch or VECTOR_STORE_TYPE=pgvector and configure the respective domain."
+                f"Vector store type must be 'opensearch', 'pgvector', or 'qdrant'. Got '{vector_store_type}'. "
+                f"Please set VECTOR_STORE_TYPE and configure the respective backend."
             )
         
         # OpenSearch config (required only when OpenSearch is selected)
@@ -94,6 +97,15 @@ class IngestionEngine:
             raise ValueError(
                 "PGVector connection is required. Set PGVECTOR_CONNECTION_STRING in environment "
                 "or pass pgvector_connection_string."
+            )
+
+        # Qdrant config (required only when qdrant is selected)
+        self.qdrant_url = qdrant_url or ARISConfig.QDRANT_URL
+        self.qdrant_collection = qdrant_collection or ARISConfig.QDRANT_COLLECTION
+        self.qdrant_api_key = qdrant_api_key or ARISConfig.QDRANT_API_KEY
+        if self.vector_store_type == "qdrant" and not self.qdrant_url:
+            raise ValueError(
+                "Qdrant URL is required. Set QDRANT_URL in environment or pass qdrant_url."
             )
         
         # Active document filter (set by UI to restrict queries to selected docs)
@@ -786,7 +798,10 @@ class IngestionEngine:
                             opensearch_domain=self.opensearch_domain,
                             opensearch_index=index_name,  # Use document-specific index
                             pgvector_connection_string=self.pgvector_connection_string,
-                            pgvector_collection=self.pgvector_collection
+                            pgvector_collection=self.pgvector_collection,
+                            qdrant_url=self.qdrant_url,
+                            qdrant_collection=self.qdrant_collection,
+                            qdrant_api_key=self.qdrant_api_key
                         )
                     except ValueError as e:
                         logger.error(f"OpenSearch initialization failed: {e}")
@@ -806,7 +821,10 @@ class IngestionEngine:
                                 opensearch_domain=self.opensearch_domain,
                                 opensearch_index=index_name,
                                 pgvector_connection_string=self.pgvector_connection_string,
-                                pgvector_collection=self.pgvector_collection
+                                pgvector_collection=self.pgvector_collection,
+                                qdrant_url=self.qdrant_url,
+                                qdrant_collection=self.qdrant_collection,
+                                qdrant_api_key=self.qdrant_api_key
                             )
                         except ValueError as e:
                             logger.error(f"OpenSearch initialization failed: {e}")
@@ -836,7 +854,10 @@ class IngestionEngine:
                         opensearch_domain=self.opensearch_domain,
                         opensearch_index=self.opensearch_index,
                         pgvector_connection_string=self.pgvector_connection_string,
-                        pgvector_collection=self.pgvector_collection
+                        pgvector_collection=self.pgvector_collection,
+                        qdrant_url=self.qdrant_url,
+                        qdrant_collection=self.qdrant_collection,
+                        qdrant_api_key=self.qdrant_api_key
                     )
                 except ValueError as e:
                     logger.error(f"OpenSearch initialization failed: {e}")

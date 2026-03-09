@@ -32,6 +32,9 @@ class GatewayService:
         self._opensearch_domain = os.getenv("OPENSEARCH_DOMAIN") or os.getenv("AWS_OPENSEARCH_DOMAIN") or ARISConfig.AWS_OPENSEARCH_DOMAIN
         self._pgvector_connection_string = os.getenv("PGVECTOR_CONNECTION_STRING") or ARISConfig.PGVECTOR_CONNECTION_STRING
         self._pgvector_collection = os.getenv("PGVECTOR_COLLECTION") or ARISConfig.PGVECTOR_COLLECTION
+        self._qdrant_url = os.getenv("QDRANT_URL") or ARISConfig.QDRANT_URL
+        self._qdrant_collection = os.getenv("QDRANT_COLLECTION") or ARISConfig.QDRANT_COLLECTION
+        self._qdrant_api_key = os.getenv("QDRANT_API_KEY") or ARISConfig.QDRANT_API_KEY
         
         # Compatibility attributes for UI
         self.use_cerebras = ARISConfig.USE_CEREBRAS
@@ -413,6 +416,9 @@ class GatewayService:
                 opensearch_index=self._opensearch_index,
                 pgvector_connection_string=self._pgvector_connection_string,
                 pgvector_collection=self._pgvector_collection,
+                qdrant_url=self._qdrant_url,
+                qdrant_collection=self._qdrant_collection,
+                qdrant_api_key=self._qdrant_api_key,
                 chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
                 chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
             )
@@ -475,6 +481,12 @@ class GatewayService:
                 data["pgvector_connection_string"] = self._pgvector_connection_string
             if self._pgvector_collection:
                 data["pgvector_collection"] = self._pgvector_collection
+            if self._qdrant_url:
+                data["qdrant_url"] = self._qdrant_url
+            if self._qdrant_collection:
+                data["qdrant_collection"] = self._qdrant_collection
+            if self._qdrant_api_key:
+                data["qdrant_api_key"] = self._qdrant_api_key
             try:
                 response = await client.post(f"{self.ingestion_url}/ingest", files=files, data=data, headers=headers)
                 response.raise_for_status()
@@ -674,6 +686,12 @@ class GatewayService:
                     data["pgvector_connection_string"] = self._pgvector_connection_string
                 if self._pgvector_collection:
                     data["pgvector_collection"] = self._pgvector_collection
+                if self._qdrant_url:
+                    data["qdrant_url"] = self._qdrant_url
+                if self._qdrant_collection:
+                    data["qdrant_collection"] = self._qdrant_collection
+                if self._qdrant_api_key:
+                    data["qdrant_api_key"] = self._qdrant_api_key
                 # Pass update flags to ingestion service
                 if is_update:
                     data["is_update"] = "true"
@@ -792,6 +810,9 @@ class GatewayService:
                 opensearch_index=self._opensearch_index,
                 pgvector_connection_string=self._pgvector_connection_string,
                 pgvector_collection=self._pgvector_collection,
+                qdrant_url=self._qdrant_url,
+                qdrant_collection=self._qdrant_collection,
+                qdrant_api_key=self._qdrant_api_key,
                 chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
                 chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
             )
@@ -859,6 +880,30 @@ class GatewayService:
     @pgvector_collection.setter
     def pgvector_collection(self, value):
         self._pgvector_collection = value
+
+    @property
+    def qdrant_url(self):
+        return self._qdrant_url
+
+    @qdrant_url.setter
+    def qdrant_url(self, value):
+        self._qdrant_url = value
+
+    @property
+    def qdrant_collection(self):
+        return self._qdrant_collection
+
+    @qdrant_collection.setter
+    def qdrant_collection(self, value):
+        self._qdrant_collection = value
+
+    @property
+    def qdrant_api_key(self):
+        return self._qdrant_api_key
+
+    @qdrant_api_key.setter
+    def qdrant_api_key(self, value):
+        self._qdrant_api_key = value
 
     def save_vectorstore(self, path: str = "vectorstore") -> bool:
         """

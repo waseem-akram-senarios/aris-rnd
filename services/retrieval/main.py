@@ -59,6 +59,9 @@ async def lifespan(app: FastAPI):
         opensearch_index=ARISConfig.AWS_OPENSEARCH_INDEX,
         pgvector_connection_string=ARISConfig.PGVECTOR_CONNECTION_STRING,
         pgvector_collection=ARISConfig.PGVECTOR_COLLECTION,
+        qdrant_url=ARISConfig.QDRANT_URL,
+        qdrant_collection=ARISConfig.QDRANT_COLLECTION,
+        qdrant_api_key=ARISConfig.QDRANT_API_KEY,
         chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
         chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
     )
@@ -138,6 +141,9 @@ def resolve_engine_for_request(
     requested_vector_store_type: Optional[str] = None,
     requested_pgvector_connection_string: Optional[str] = None,
     requested_pgvector_collection: Optional[str] = None,
+    requested_qdrant_url: Optional[str] = None,
+    requested_qdrant_collection: Optional[str] = None,
+    requested_qdrant_api_key: Optional[str] = None,
 ) -> RetrievalEngine:
     """
     Return global engine when config matches; otherwise create request-scoped engine.
@@ -156,6 +162,9 @@ def resolve_engine_for_request(
         opensearch_index=ARISConfig.AWS_OPENSEARCH_INDEX,
         pgvector_connection_string=requested_pgvector_connection_string or ARISConfig.PGVECTOR_CONNECTION_STRING,
         pgvector_collection=requested_pgvector_collection or ARISConfig.PGVECTOR_COLLECTION,
+        qdrant_url=requested_qdrant_url or ARISConfig.QDRANT_URL,
+        qdrant_collection=requested_qdrant_collection or ARISConfig.QDRANT_COLLECTION,
+        qdrant_api_key=requested_qdrant_api_key or ARISConfig.QDRANT_API_KEY,
         chunk_size=ARISConfig.DEFAULT_CHUNK_SIZE,
         chunk_overlap=ARISConfig.DEFAULT_CHUNK_OVERLAP
     )
