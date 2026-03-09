@@ -26,10 +26,11 @@ Ingest documents, run semantic search, and get AI-generated answers — all expo
                      │                              │
                      └──────────┬───────────────────┘
                                 │
-               ┌────────────────▼────────────────┐
-               │        Shared Storage           │
-               │  AWS OpenSearch · S3 · Registry │
-               └─────────────────────────────────┘
+               ┌──────────────────────────────────────────┐
+               │              Shared Storage             │
+               │ OpenSearch · PGVector · Qdrant · S3     │
+               │ Registry · Local Vectorstore            │
+               └──────────────────────────────────────────┘
 
           ┌──────────────────────────────────┐
           │       MCP Server (:8503)         │
@@ -43,12 +44,21 @@ Ingest documents, run semantic search, and get AI-generated answers — all expo
 | Service       | Port | Role |
 |---------------|------|------|
 | **Gateway**   | 8500 | API gateway & orchestrator. Routes requests, manages document registry, coordinates sync. |
-| **Ingestion** | 8501 | Document processing pipeline. Parses, chunks, embeds, and indexes into OpenSearch. |
-| **Retrieval** | 8502 | Query engine. Semantic/hybrid search, FlashRank reranking, image retrieval, LLM answer generation. |
+| **Ingestion** | 8501 | Document processing pipeline. Parses, chunks, embeds, and indexes into the configured vector backend. |
+| **Retrieval** | 8502 | Query engine. Semantic/hybrid search, FlashRank reranking, image retrieval, and answer generation across the selected vector backend. |
 | **MCP**       | 8503 | Model Context Protocol server. 7 tools for AI agents (Claude, Cursor, etc.). |
 | **UI**        | 80   | Streamlit web interface. Document Q&A, Admin Management, MCP Client. |
 
-All five services run from a **single Docker image** (`aris-microservice:latest`); the `SERVICE_TYPE` environment variable selects which service starts.
+All five core app services run from a **single Docker image** (`aris-microservice:latest`); the `SERVICE_TYPE` environment variable selects which service starts.
+
+### Vector Backends
+
+| Backend      | Purpose |
+|--------------|---------|
+| **OpenSearch** | Default production backend for hybrid retrieval, reranking, and existing document indexes |
+| **PGVector**   | PostgreSQL + vector extension backend for semantic search |
+| **Qdrant**     | Dedicated vector database backend for semantic search |
+| **FAISS**      | Local filesystem fallback for lightweight/local usage |
 
 ---
 
@@ -146,7 +156,7 @@ aris-rag/
 ├── api/                  # Streamlit API layer
 ├── pages/                # Streamlit pages (Admin, MCP Client)
 ├── app.py                # Streamlit entry point
-├── vectorstores/         # OpenSearch / FAISS integration
+├── vectorstores/         # OpenSearch, PGVector, Qdrant, and FAISS integrations
 ├── storage/              # Document registry
 ├── metrics/              # RAG metrics collector
 ├── scripts/              # Deploy, entrypoint, parser setup
@@ -154,7 +164,7 @@ aris-rag/
 ├── docs/                 # API reference, accuracy guides
 │
 ├── Dockerfile            # Multi-stage build
-├── docker-compose.yml    # 5-container orchestration
+├── docker-compose.yml    # 5 core app services + pgvector + qdrant
 ├── pytest.ini
 └── .env                  # Not committed
 ```
@@ -173,6 +183,15 @@ AWS_OPENSEARCH_INDEX=aris-documents
 AWS_OPENSEARCH_ACCESS_KEY_ID=AKIA...
 AWS_OPENSEARCH_SECRET_ACCESS_KEY=...
 AWS_OPENSEARCH_REGION=us-east-2
+
+# PGVector (Optional)
+PGVECTOR_CONNECTION_STRING=postgresql+psycopg2://postgres:password@pgvector-db:5432/aris_rag_db
+PGVECTOR_COLLECTION=aris_rag_index
+
+# Qdrant (Optional)
+QDRANT_URL=http://qdrant:6333
+QDRANT_API_KEY=your-qdrant-api-key
+QDRANT_COLLECTION=aris_rag_index
 
 # AWS S3 (Optional)
 ENABLE_S3_STORAGE=true
@@ -198,7 +217,7 @@ VECTOR_STORE_TYPE=opensearch
 | **MCP**         | FastMCP (SSE transport)                                   |
 | **LLMs**        | OpenAI GPT-4o, Cerebras Llama-3.3-70B                    |
 | **Embeddings**  | OpenAI `text-embedding-3-large` (3072-dim)                |
-| **Vector Store**| AWS OpenSearch (primary), FAISS (fallback)                |
+| **Vector Store**| OpenSearch, PGVector, Qdrant, FAISS                       |
 | **Reranking**   | FlashRank `ms-marco-MiniLM-L-12-v2`                      |
 | **Parsing**     | Docling, PyMuPDF, OCRmyPDF, Tesseract, LlamaScan (LLaVA) |
 | **Storage**     | AWS S3, local filesystem                                  |
